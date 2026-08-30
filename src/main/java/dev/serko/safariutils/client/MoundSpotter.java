@@ -79,8 +79,8 @@ public final class MoundSpotter {
 
 	/** Both the HUD and the waypoints ask every frame; the answer changes far slower. */
 	private static final long CACHE_MILLIS = 150;
-	/** A missing interaction entity must stay absent before the mound is considered broken. */
-	private static final long ABSENCE_CONFIRM_MILLIS = 3_000;
+	/** Two cached scans reject a one-frame unload without leaving cleared marks behind. */
+	private static final long ABSENCE_CONFIRM_MILLIS = 300;
 	private static List<BlockPos> cached = List.of();
 	private static long cachedAt;
 
@@ -93,6 +93,9 @@ public final class MoundSpotter {
 	/** Completed positions cannot be re-added by a stale interaction entity. */
 	private static final Set<BlockPos> completed = new HashSet<>();
 	private static final Map<BlockPos, Long> absentSince = new java.util.HashMap<>();
+	/** Most recent mound struck locally; its coordinate-free chat line confirms this position. */
+	private static BlockPos pendingLocalBreak;
+	private static long pendingLocalBreakAt;
 	/**
 	 * Whether any mound at all has ever been detected this run — a mound does not
 	 * move, so this alone tells "no mounds spawned this run at all, bad RNG" apart
@@ -225,6 +228,8 @@ public final class MoundSpotter {
 		confirmedVisible.clear();
 		completed.clear();
 		absentSince.clear();
+		pendingLocalBreak = null;
+		pendingLocalBreakAt = 0;
 		everDetectedAny = false;
 		cached = List.of();
 		cachedAt = 0;
@@ -232,13 +237,34 @@ public final class MoundSpotter {
 		lastSafeMode = SafeMode.mounds();
 	}
 
+	/** Remembers the exact locally struck mound until Hypixel confirms that it broke. */
+	public static void onAttack(Entity entity) {
+		if (!EntityTypeIds.is(entity, "interaction")) return;
+		BlockPos attacked = nearestCatalog(entity.blockPosition(), StaticWaypointCatalog.mounds());
+		if (attacked == null || completed.contains(attacked)
+			|| !everSeen.contains(attacked) && !detectedLive.contains(attacked)) return;
+		pendingLocalBreak = attacked;
+		pendingLocalBreakAt = System.currentTimeMillis();
+	}
+
 	/** Uses the local break message as an immediate confirmation when available. */
 	public static void onChatMessage(String line) {
 		String lower = line.toLowerCase(java.util.Locale.ROOT);
 		boolean broke = lower.contains("mound falls apart") || lower.contains("mound fell apart");
 		if (!broke) return;
-		// The message has no coordinates. Let the next entity scan remove the exact
-		// interaction that vanished instead of guessing among nearby mounds.
+		if (pendingLocalBreak != null && System.currentTimeMillis() - pendingLocalBreakAt <= 2_000L) {
+			BlockPos broken = pendingLocalBreak;
+			completed.add(broken);
+			everSeen.remove(broken);
+			detectedLive.remove(broken);
+			confirmedVisible.remove(broken);
+			absentSince.remove(broken);
+			cached = cached.stream().filter(pos -> !pos.equals(broken)).toList();
+		}
+		pendingLocalBreak = null;
+		pendingLocalBreakAt = 0;
+		// If no recent local hit was available, the disappearance scan still resolves
+		// party-member breaks without guessing among nearby mounds.
 		cachedAt = 0;
 	}
 

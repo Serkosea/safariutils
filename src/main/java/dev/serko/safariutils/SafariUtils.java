@@ -44,6 +44,7 @@ import dev.serko.safariutils.session.SparklingStats;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
+import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -171,6 +172,10 @@ public class SafariUtils implements ClientModInitializer {
 			// A drop being picked up would clear itself a few seconds later anyway;
 			// dropping it on the interaction just makes the mark go when you expect.
 			FloorDrops.onInteract(pos);
+			return InteractionResult.PASS;
+		});
+		AttackEntityCallback.EVENT.register((player, level, hand, entity, hitResult) -> {
+			MoundSpotter.onAttack(entity);
 			return InteractionResult.PASS;
 		});
 		UseBlockCallback.EVENT.register((player, level, hand, hit) -> {

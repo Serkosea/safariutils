@@ -28,8 +28,8 @@ public final class FloorDrops {
 	private static final int SCAN_INTERVAL_TICKS = 5;
 	/** Exactly this many string displays make a drop. Fewer is scenery. */
 	private static final int STRING_DISPLAYS = 3;
-	/** How long a detected drop survives a temporary scan gap. */
-	private static final long HOLD_MILLIS = 5_000;
+	/** Two missed scans prevent flicker while clearing a teammate's pickup promptly. */
+	private static final long HOLD_MILLIS = 300;
 
 	private static final Map<BlockPos, Long> confirmed = new HashMap<>();
 	/** Catalog candidates positively matched to the three-display drop this run. */

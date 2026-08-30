@@ -10,6 +10,7 @@ import dev.serko.safariutils.data.SafariBiome;
 import dev.serko.safariutils.api.SharedSparklingProviders;
 import dev.serko.safariutils.session.SessionManager;
 import dev.serko.safariutils.session.SparklingStats;
+import dev.serko.safariutils.session.RunHistory;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.ChatFormatting;
@@ -144,10 +145,12 @@ public final class SafariCommands {
 			}))
 			.then(ClientCommands.literal("sparkling")
 				.executes(ctx -> {
+					int since = RunHistory.runsSinceLastSparkling();
 					ctx.getSource().sendFeedback(prefixed(
-						"Sparkling totals: %d/%d unique, %d total, %d duplicates, %d Rainbow Feathers"
+						"Sparkling Totals: %d/%d Unique, %d Total, %d Duplicates, %d Rainbow Feathers, %s Since Last"
 							.formatted(SparklingStats.unique(), Critters.total(), SparklingStats.total(),
-								SparklingStats.duplicates(), SparklingStats.rainbowFeathers()),
+								SparklingStats.duplicates(), SparklingStats.rainbowFeathers(),
+								since < 0 ? "—" : String.valueOf(since)),
 						ChatFormatting.GOLD));
 					return 1;
 				})

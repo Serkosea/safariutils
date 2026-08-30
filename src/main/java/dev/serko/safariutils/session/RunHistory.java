@@ -42,6 +42,7 @@ public final class RunHistory {
 	private static int totalSafariEssence;
 	private static int totalRainbowFeathers;
 	private static int totalSparklings;
+	private static int runsSinceLastSparkling = -1;
 	private static Path file;
 
 	/** One species' lifetime total across every saved run. */
@@ -152,6 +153,11 @@ public final class RunHistory {
 		return totalSparklings;
 	}
 
+	/** Completed saved runs after the newest run containing a Sparkling, or -1 if none do. */
+	public static int runsSinceLastSparkling() {
+		return runsSinceLastSparkling;
+	}
+
 	/** Rebuilds every aggregate in one pass after the underlying history changes. */
 	private static void rebuildStats() {
 		Map<Critter, Integer> values = new HashMap<>();
@@ -164,6 +170,7 @@ public final class RunHistory {
 		totalSafariEssence = 0;
 		totalRainbowFeathers = 0;
 		totalSparklings = 0;
+		runsSinceLastSparkling = -1;
 		for (RunRecord run : runs) {
 			if (run.hasShardData()) pricedRuns++;
 			totalTimeMillis += run.durationMillis();
@@ -177,6 +184,12 @@ public final class RunHistory {
 				if (caught == 0) continue;
 				values.merge(critter, caught, Integer::sum);
 			}
+		}
+		for (int i = runs.size() - 1, since = 0; i >= 0; i--, since++) {
+			RunRecord run = runs.get(i);
+			if (run.sparklings == null || run.sparklings.isEmpty()) continue;
+			runsSinceLastSparkling = since;
+			break;
 		}
 
 		List<SpeciesStat> ordered = new ArrayList<>();

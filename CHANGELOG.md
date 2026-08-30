@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1] - 2026-08-30
+
+### Fixes
+
+- The `/safari stats sparkling` summary now shows how many saved runs have passed since the last Sparkling run.
+- Rockmite mound waypoints now disappear immediately for local breaks and promptly when entering a Cavern already cleared by party members.
+- Floor-drop waypoints now disappear promptly when a nearby teammate collects them.
+
 ## [1.1.0] - 2026-08-30
 
 ### Fixes and improvements

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0] - 2026-08-30
+
+### Fixes and improvements
+
+- Added shared banner appearance settings for font style, text shadow, configurable or alert-matched backgrounds, borders, and timer bars.
+- Blank custom chat-alert text now suppresses only that message while preserving banners and sounds.
+- Ignore Uniques now hides ordinary hitboxes and markers for shared Sparkling species without hiding Sparkling duplicates.
+- Inline setting edits no longer block unrelated clicks; manually edited slider values still guard their own slider.
+- Sound pickers now explain right-click previews and use each alert's configured volume and pitch.
+- Missing HUD objectives are grouped together, with a separate Unique Only display option.
+- Added an option to remove the Icy cold overlay throughout the Safari.
+
 ## [1.0.0] - 2026-08-29
 
 The first standalone Safari Utils release.

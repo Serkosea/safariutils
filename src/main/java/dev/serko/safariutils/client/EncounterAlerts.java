@@ -587,12 +587,16 @@ public final class EncounterAlerts implements HudElement {
 
 	/** Sends one line to whoever the setting names, or nowhere. */
 	static void post(SafariConfig.Broadcast to, String message) {
+		// A blank custom field intentionally disables that one chat line without
+		// disabling the rest of a multi-stage encounter.
+		if (message == null || message.isBlank()) return;
 		String command = to.command();
 		if (command == null) return;
 		ChatQueue.enqueue(command + " " + message, true);
 	}
 
 	static void postDelayed(SafariConfig.Broadcast to, String message, long delayMillis) {
+		if (message == null || message.isBlank()) return;
 		String command = to.command();
 		if (command == null) return;
 		ChatQueue.enqueueDelayed(command + " " + message, true, delayMillis);
@@ -763,15 +767,7 @@ public final class EncounterAlerts implements HudElement {
 	/** Silent unless asked for: a run fires plenty of these. */
 	private static void sound(float pitch, float volume, int choice) {
 		Minecraft client = Minecraft.getInstance();
-		if (client.player != null) {
-			// Minecraft caps a single sound's effective gain near 1. Layer louder
-			// settings so the upper half of the slider remains perceptible.
-			int layers = Math.max(1, (int) Math.ceil(volume));
-			for (int layer = 0; layer < layers; layer++) {
-				float layerVolume = Math.min(1f, volume - layer);
-				AlertSounds.play(client, choice, layerVolume, pitch);
-			}
-		}
+		if (client.player != null) AlertSounds.play(client, choice, volume, pitch);
 	}
 
 	private static void chat(String text, ChatFormatting style) {
@@ -812,7 +808,9 @@ public final class EncounterAlerts implements HudElement {
 		alpha = Math.min(alpha, (int) (0xFF * Math.min(1.0, age / 180.0)));
 
 		Font font = client.font;
-		int frameWidth = font.width(message) + 16;
+		SafariConfig.AlertConfig appearance = ConfigManager.get().alerts;
+		Component styledMessage = styledBannerText(message, appearance.bannerFont);
+		int frameWidth = font.width(styledMessage) + 16;
 		int edgeMargin = 5;
 		int availableWidth = Math.max(1, graphics.guiWidth() - edgeMargin * 2);
 		float scale = Math.min(displayedScale, availableWidth / (float) frameWidth);
@@ -828,28 +826,27 @@ public final class EncounterAlerts implements HudElement {
 
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(scale, scale);
-		drawBannerFrame(graphics, font, message, centreX, y, alpha, rainbowMessage,
+		drawBannerFrame(graphics, font, styledMessage, centreX, y, alpha, rainbowMessage,
+			appearance,
 			(float) Math.clamp(1.0 - age / (double) displayMillis, 0.0, 1.0));
 		if (rainbowMessage) {
-			rainbowCenteredText(graphics, font, message, centreX, y + 1, alpha);
+			rainbowCenteredText(graphics, font, message, centreX, y + 1, alpha,
+				appearance.bannerFont, appearance.bannerTextShadow);
 		} else {
-			graphics.text(font, Component.literal(message), centreX - font.width(message) / 2, y + 1,
-				(alpha << 24) | (colour & 0xFFFFFF), false);
+			graphics.text(font, styledMessage, centreX - font.width(styledMessage) / 2, y + 1,
+				(alpha << 24) | (colour & 0xFFFFFF), appearance.bannerTextShadow);
 		}
 		graphics.pose().popMatrix();
 	}
 
-	private static void drawBannerFrame(GuiGraphicsExtractor graphics, Font font, String text,
-			int centreX, int textY, int alpha, boolean rainbow, float remaining) {
+	private static void drawBannerFrame(GuiGraphicsExtractor graphics, Font font, Component text,
+			int centreX, int textY, int alpha, boolean rainbow,
+			SafariConfig.AlertConfig appearance, float remaining) {
 		int width = font.width(text) + 16;
 		int left = centreX - width / 2;
 		int right = left + width;
 		int top = textY - 4;
 		int bottom = textY + 14;
-		int panelAlpha = Math.min(155, alpha);
-		graphics.fillGradient(left, top, right, bottom,
-			(panelAlpha << 24) | 0x121925, (panelAlpha << 24) | 0x080B11);
-
 		int leftAccent = colour & 0xFFFFFF;
 		int rightAccent = leftAccent;
 		if (rainbow) {
@@ -857,34 +854,71 @@ public final class EncounterAlerts implements HudElement {
 			leftAccent = java.awt.Color.HSBtoRGB(phase, 0.55f, 1f) & 0xFFFFFF;
 			rightAccent = java.awt.Color.HSBtoRGB((phase + 0.5f) % 1f, 0.55f, 1f) & 0xFFFFFF;
 		}
+		int background = Colours.argb(appearance.bannerBackgroundColour, 0x9B121925);
+		int panelAlpha = (background >>> 24) * alpha / 255;
+		if (appearance.bannerBackground && panelAlpha > 0) {
+			int topRgb = appearance.bannerBackgroundMatchAlertColour
+				? blendRgb(0x080B11, leftAccent, 0.24f)
+				: background & 0xFFFFFF;
+			int bottomRgb = switch (appearance.bannerBackgroundStyle) {
+				case 0 -> topRgb;
+				case 1 -> appearance.bannerBackgroundMatchAlertColour && rainbow
+					? blendRgb(0x080B11, rightAccent, 0.19f) : shade(topRgb, 0.80f);
+				default -> appearance.bannerBackgroundMatchAlertColour && rainbow
+					? blendRgb(0x05070B, rightAccent, 0.13f) : shade(topRgb, 0.45f);
+			};
+			graphics.fillGradient(left, top, right, bottom,
+				(panelAlpha << 24) | topRgb, (panelAlpha << 24) | bottomRgb);
+		}
+
 		int leftColor = (alpha << 24) | leftAccent;
 		int rightColor = (alpha << 24) | rightAccent;
 		int borderColor = rainbow ? leftColor : (alpha << 24) | leftAccent;
 		int progressRgb = mixWithWhite(rainbow ? rightAccent : leftAccent, 0.32f);
 		int progressColor = (alpha << 24) | progressRgb;
-		int thickness = 1;
+		int thickness = Math.max(1, Math.round(appearance.bannerBorderThickness));
 		// Horizontal edges own the corners; vertical edges stop before them, so the
 		// same alpha is written exactly once everywhere around the frame.
-		graphics.fill(left, top, right, top + thickness, borderColor);
-		graphics.fill(left, bottom - thickness, right, bottom, borderColor);
-		graphics.fill(left, top + thickness, left + thickness, bottom - thickness, borderColor);
-		graphics.fill(right - thickness, top + thickness, right, bottom - thickness, borderColor);
-		drawSmoothProgress(graphics, left, right, top, bottom, progressColor, remaining);
+		if (appearance.bannerBorder) {
+			graphics.fill(left, top, right, top + thickness, borderColor);
+			graphics.fill(left, bottom - thickness, right, bottom, borderColor);
+			graphics.fill(left, top + thickness, left + thickness, bottom - thickness, borderColor);
+			graphics.fill(right - thickness, top + thickness, right, bottom - thickness, borderColor);
+		}
+		drawSmoothProgress(graphics, left, right, top, bottom, progressColor, remaining,
+			appearance.bannerTopBar, appearance.bannerBottomBar, appearance.bannerBorder ? thickness : 0);
 	}
 
 	/** Draws inset duration bars at quarter-pixel horizontal resolution. */
 	private static void drawSmoothProgress(GuiGraphicsExtractor graphics, int left, int right,
-			int top, int bottom, int color, float remaining) {
+			int top, int bottom, int color, float remaining, int topDirection,
+			int bottomDirection, int borderInset) {
+		if (topDirection == 0 && bottomDirection == 0) return;
 		int horizontalPrecision = 4;
-		int scaledLeft = (left + 1) * horizontalPrecision;
-		int scaledRight = (right - 1) * horizontalPrecision;
-		int progressWidth = Math.round((right - left - 2) * horizontalPrecision * remaining);
+		int inset = Math.max(1, borderInset);
+		int scaledLeft = (left + inset) * horizontalPrecision;
+		int scaledRight = (right - inset) * horizontalPrecision;
+		int progressWidth = Math.round((right - left - inset * 2) * horizontalPrecision * remaining);
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(1f / horizontalPrecision, 1f);
-		// Endpoints remain inside the vertical borders even at full duration.
-		graphics.fill(scaledRight - progressWidth, top + 1, scaledRight, top + 2, color);
-		graphics.fill(scaledLeft, bottom - 2, scaledLeft + progressWidth, bottom - 1, color);
+		if (topDirection != 0) {
+			int start = topDirection == 1 ? scaledLeft : scaledRight - progressWidth;
+			graphics.fill(start, top + inset, start + progressWidth, top + inset + 1, color);
+		}
+		if (bottomDirection != 0) {
+			int start = bottomDirection == 1 ? scaledLeft : scaledRight - progressWidth;
+			graphics.fill(start, bottom - inset - 1, start + progressWidth, bottom - inset, color);
+		}
 		graphics.pose().popMatrix();
+	}
+
+	private static Component styledBannerText(String text, int fontStyle) {
+		Component component = Component.literal(text);
+		return switch (fontStyle) {
+			case 1 -> component.copy().withStyle(ChatFormatting.BOLD);
+			case 2 -> component.copy().withStyle(ChatFormatting.ITALIC);
+			default -> component;
+		};
 	}
 
 	private static int mixWithWhite(int rgb, float amount) {
@@ -897,6 +931,21 @@ public final class EncounterAlerts implements HudElement {
 		return red << 16 | green << 8 | blue;
 	}
 
+	private static int shade(int rgb, float brightness) {
+		int red = Math.round((rgb >> 16 & 0xFF) * brightness);
+		int green = Math.round((rgb >> 8 & 0xFF) * brightness);
+		int blue = Math.round((rgb & 0xFF) * brightness);
+		return red << 16 | green << 8 | blue;
+	}
+
+	private static int blendRgb(int base, int tint, float tintAmount) {
+		float baseAmount = 1f - tintAmount;
+		int red = Math.round((base >> 16 & 0xFF) * baseAmount + (tint >> 16 & 0xFF) * tintAmount);
+		int green = Math.round((base >> 8 & 0xFF) * baseAmount + (tint >> 8 & 0xFF) * tintAmount);
+		int blue = Math.round((base & 0xFF) * baseAmount + (tint & 0xFF) * tintAmount);
+		return red << 16 | green << 8 | blue;
+	}
+
 	static HudPanel editorPanel() {
 		HudPanel panel = new HudPanel();
 		panel.title("Banner Alert", 0xFFFFC857);
@@ -905,16 +954,17 @@ public final class EncounterAlerts implements HudElement {
 	}
 
 	private static void rainbowCenteredText(GuiGraphicsExtractor graphics, Font font,
-										 String text, int centreX, int y, int alpha) {
-		int x = centreX - font.width(text) / 2;
+			String text, int centreX, int y, int alpha, int fontStyle, boolean shadow) {
+		int x = centreX - font.width(styledBannerText(text, fontStyle)) / 2;
 		float phase = (System.currentTimeMillis() % 4_000L) / 4_000f;
 		for (int i = 0; i < text.length(); i++) {
 			String character = String.valueOf(text.charAt(i));
 			int rgb = java.awt.Color.HSBtoRGB(
 				(phase + i / (float) Math.max(1, text.length())) % 1f, 0.45f, 1f);
-			graphics.text(font, Component.literal(character), x, y,
-				(alpha << 24) | (rgb & 0xFFFFFF), false);
-			x += font.width(character);
+			Component styledCharacter = styledBannerText(character, fontStyle);
+			graphics.text(font, styledCharacter, x, y,
+				(alpha << 24) | (rgb & 0xFFFFFF), shadow);
+			x += font.width(styledCharacter);
 		}
 	}
 }

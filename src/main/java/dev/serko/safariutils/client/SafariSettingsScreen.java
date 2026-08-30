@@ -81,6 +81,7 @@ public final class SafariSettingsScreen extends Screen {
 	private boolean updatingColourControls;
 	private Number editingNumberOriginal;
 	private int inlineEditorLeft, inlineEditorTop, inlineEditorRight, inlineEditorBottom;
+	private int editingSliderLeft, editingSliderTop, editingSliderRight, editingSliderBottom;
 	private Field choiceField;
 	private Object choiceOwner;
 	private SettingChoice choiceDropdown;
@@ -232,7 +233,11 @@ public final class SafariSettingsScreen extends Screen {
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
 		applyTheme();
-		boolean modalOpen = unlockPanel || customThemePanel || editor != null || choiceField != null;
+		boolean editingSameSlider = editingInlineText && editingNumber && editor != null
+			&& inside(mouseX, mouseY, editingSliderLeft, editingSliderTop,
+				editingSliderRight, editingSliderBottom);
+		boolean modalOpen = unlockPanel || customThemePanel
+			|| editor != null && !editingInlineText || choiceField != null || editingSameSlider;
 		int backgroundMouseX = modalOpen ? Integer.MIN_VALUE : mouseX;
 		int backgroundMouseY = modalOpen ? Integer.MIN_VALUE : mouseY;
 		graphics.fill(0, 0, width, height, BACKGROUND);
@@ -786,6 +791,7 @@ public final class SafariSettingsScreen extends Screen {
 				float value = ((Number) field.get(owner)).floatValue();
 				if (editingInlineText && editingNumber
 					&& editingField == field && editingOwner == owner) {
+					setEditingSliderBounds(x, y, right - x, height);
 					String originalLabel = formatNumber(editingNumberOriginal.floatValue()) + "  ✎";
 					int editorWidth = font.width(originalLabel) + 4;
 					int editorX = x + controlWidth - editorWidth;
@@ -807,8 +813,10 @@ public final class SafariSettingsScreen extends Screen {
 				int editLeft = x + controlWidth - editWidth;
 				// Added after the track hit so reverse hit-testing gives the displayed
 				// value and pencil priority over dragging when their areas overlap.
-				hits.add(new Hit(editLeft, controlY - 2, x + controlWidth, controlY + 14,
-					() -> openSliderEditor(owner, field, editLeft, controlY - 2, editWidth)));
+				hits.add(new Hit(editLeft, controlY - 2, x + controlWidth, controlY + 14, () -> {
+					setEditingSliderBounds(x, y, right - x, height);
+					openSliderEditor(owner, field, editLeft, controlY - 2, editWidth);
+				}));
 			} else if (field.isAnnotationPresent(SettingColor.class)) {
 				int colour = Colours.argb((String) field.get(owner), 0xFFFFFFFF);
 				drawColour(graphics, x, controlY, controlWidth, colour);
@@ -876,11 +884,13 @@ public final class SafariSettingsScreen extends Screen {
 
 	private void drawChoiceModal(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
 		List<String> labels = choiceLabels();
-		int maxRows = Math.max(1, (height - 98) / 27);
+		boolean soundChoice = isSoundChoice(choiceField);
+		int hintHeight = soundChoice ? 12 : 0;
+		int maxRows = Math.max(1, (height - 98 - hintHeight) / 27);
 		int columns = Math.clamp((labels.size() + maxRows - 1) / maxRows, 2, 6);
 		int rows = (labels.size() + columns - 1) / columns;
 		int w = Math.min(680, width - 30);
-		int h = Math.min(height - 30, 68 + rows * 27);
+		int h = Math.min(height - 30, 68 + hintHeight + rows * 27);
 		int x = (width - w) / 2;
 		int y = (height - h) / 2;
 		graphics.fill(0, 0, width, height, 0xAA000000);
@@ -888,13 +898,16 @@ public final class SafariSettingsScreen extends Screen {
 		outline(graphics, x, y, w, h, CYAN);
 		SettingInfo option = choiceField.getAnnotation(SettingInfo.class);
 		graphics.text(font, "Choose " + displayName(option.name()), x + 14, y + 14, TEXT);
+		if (soundChoice) {
+			graphics.text(font, "Right-click a sound to preview it", x + 14, y + 26, CYAN);
+		}
 		int cellWidth = (w - 28 - (columns - 1) * 6) / columns;
 		int current = choiceValue();
 		for (int index = 0; index < labels.size(); index++) {
 			int column = index % columns;
 			int row = index / columns;
 			int cellX = x + 14 + column * (cellWidth + 6);
-			int cellY = y + 36 + row * 27;
+			int cellY = y + 36 + hintHeight + row * 27;
 			if (cellY + 22 > y + h - 30) continue;
 			int value = choiceStoredValue(index);
 			boolean active = current == value;
@@ -906,7 +919,7 @@ public final class SafariSettingsScreen extends Screen {
 				cellX + cellWidth / 2, cellY + 7, active ? TEXT : MUTED);
 			hits.add(new Hit(cellX, cellY, cellX + cellWidth, cellY + 22,
 				() -> chooseDropdownValue(value)));
-			if (isSoundChoice(choiceField)) {
+			if (soundChoice) {
 				soundPreviewHits.add(new SoundPreviewHit(cellX, cellY,
 					cellX + cellWidth, cellY + 22, value));
 			}
@@ -952,6 +965,19 @@ public final class SafariSettingsScreen extends Screen {
 		choiceOwner = null;
 		choiceDropdown = null;
 		if (search != null) search.visible = true;
+	}
+
+	private float soundPreviewSetting(String suffix, float fallback) {
+		if (choiceField == null || choiceOwner == null) return fallback;
+		String name = choiceField.getName();
+		if (!name.endsWith("SoundChoice")) return fallback;
+		try {
+			Field setting = choiceOwner.getClass().getField(
+				name.substring(0, name.length() - "Choice".length()) + suffix);
+			return ((Number) setting.get(choiceOwner)).floatValue();
+		} catch (NoSuchFieldException | IllegalAccessException | ClassCastException ignored) {
+			return fallback;
+		}
 	}
 
 	private void openCustomThemePanel() {
@@ -1054,6 +1080,13 @@ public final class SafariSettingsScreen extends Screen {
 		inlineEditorTop = y;
 		inlineEditorRight = x + width;
 		inlineEditorBottom = y + height;
+	}
+
+	private void setEditingSliderBounds(int x, int y, int width, int height) {
+		editingSliderLeft = x;
+		editingSliderTop = y;
+		editingSliderRight = x + width;
+		editingSliderBottom = y + height;
 	}
 
 	private void drawButton(GuiGraphicsExtractor graphics, int x, int y, int width, String label,
@@ -1314,8 +1347,9 @@ public final class SafariSettingsScreen extends Screen {
 
 	private boolean editingAllowsAlpha() {
 		return editingField != null
-			&& editingField.getDeclaringClass() == SafariConfig.DisplayConfig.class
-			&& editingField.getName().startsWith("customTheme");
+			&& ((editingField.getDeclaringClass() == SafariConfig.DisplayConfig.class
+				&& editingField.getName().startsWith("customTheme"))
+				|| editingField.getName().equals("bannerBackgroundColour"));
 	}
 
 	private static void drawChecker(GuiGraphicsExtractor graphics, int x, int y, int w, int h) {
@@ -1435,6 +1469,7 @@ public final class SafariSettingsScreen extends Screen {
 		editingInlineText = false;
 		editingNumberOriginal = null;
 		inlineEditorLeft = inlineEditorTop = inlineEditorRight = inlineEditorBottom = 0;
+		editingSliderLeft = editingSliderTop = editingSliderRight = editingSliderBottom = 0;
 		if (search != null) search.visible = !customThemePanel;
 	}
 
@@ -1577,15 +1612,19 @@ public final class SafariSettingsScreen extends Screen {
 		if (choiceField != null && isSoundChoice(choiceField) && event.button() == 1) {
 			for (SoundPreviewHit hit : soundPreviewHits) {
 				if (!hit.contains(event.x(), event.y())) continue;
-				AlertSounds.preview(Minecraft.getInstance(), hit.soundId);
+				AlertSounds.preview(Minecraft.getInstance(), hit.soundId,
+					soundPreviewSetting("Volume", 1f), soundPreviewSetting("Pitch", 1f));
 				return true;
 			}
 		}
 		if (editingInlineText && editor != null
 			&& !inside(event.x(), event.y(), inlineEditorLeft, inlineEditorTop,
 				inlineEditorRight, inlineEditorBottom)) {
+			boolean sameSlider = editingNumber
+				&& inside(event.x(), event.y(), editingSliderLeft, editingSliderTop,
+					editingSliderRight, editingSliderBottom);
 			applyEditor();
-			return true;
+			if (sameSlider) return true;
 		}
 		if (editingInlineText && editor != null
 			&& inside(event.x(), event.y(), inlineEditorLeft, inlineEditorTop,

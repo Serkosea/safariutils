@@ -193,9 +193,8 @@ public class SafariConfig {
 		public boolean showPerPlayer = true;
 
 		@SettingInfo(
-			name = "Count Unique Only",
-			desc = "Treat a specific critter as finished after first unique catch\n" +
-				"§7Ex. Gazer Complete at 1 instead of 4, etc.")
+			name = "Unique Only",
+			desc = "Counts a species as complete after its first unique catch")
 		@SettingToggle
 		@SettingGroup(id = PROGRESS_HUD_OPTIONS)
 		@Expose
@@ -246,10 +245,25 @@ public class SafariConfig {
 		public boolean countSpawns = true;
 
 		@SettingInfo(
+			name = "Unique Only",
+			desc = "Removes a critter from the Missing HUD after its first unique catch")
+		@SettingToggle
+		@SettingGroup(id = MISSING_HUD_OPTIONS)
+		@Expose
+		public boolean missingUniqueOnly = false;
+
+		private static final int MISSING_HUD_OBJECTIVES = 26;
+
+		@SettingInfo(name = "Objectives", desc = "")
+		@SettingSection(id = MISSING_HUD_OBJECTIVES)
+		@SettingGroup(id = MISSING_HUD_OPTIONS)
+		public boolean missingHudObjectivesAccordion = false;
+
+		@SettingInfo(
 			name = "Floor Drops",
 			desc = "Lists the floor drops you haven't collected yet per biome")
 		@SettingToggle
-		@SettingGroup(id = MISSING_HUD_OPTIONS)
+		@SettingGroup(id = MISSING_HUD_OBJECTIVES)
 		@Expose
 		public boolean showFloorDropCount = true;
 
@@ -257,7 +271,7 @@ public class SafariConfig {
 			name = "Rockmite Mounds",
 			desc = "Lists count of unbroken rockmite mounds near you in the Cavern biome")
 		@SettingToggle
-		@SettingGroup(id = MISSING_HUD_OPTIONS)
+		@SettingGroup(id = MISSING_HUD_OBJECTIVES)
 		@Expose
 		public boolean showMoundCount = true;
 
@@ -265,7 +279,7 @@ public class SafariConfig {
 			name = "Snoozle Walls",
 			desc = "Lists unbroken Snoozle walls in the Cavern biome")
 		@SettingToggle
-		@SettingGroup(id = MISSING_HUD_OPTIONS)
+		@SettingGroup(id = MISSING_HUD_OBJECTIVES)
 		@Expose
 		public boolean showSnooperWalls = true;
 
@@ -273,7 +287,7 @@ public class SafariConfig {
 			name = "Troodon Walls",
 			desc = "Lists unbroken Troodon walls in the Icy biome")
 		@SettingToggle
-		@SettingGroup(id = MISSING_HUD_OPTIONS)
+		@SettingGroup(id = MISSING_HUD_OBJECTIVES)
 		@Expose
 		public boolean showTroodonWalls = true;
 
@@ -281,7 +295,7 @@ public class SafariConfig {
 			name = "Bee Nests",
 			desc = "Lists the bee nests you haven't punched yet in the Forest biome")
 		@SettingToggle
-		@SettingGroup(id = MISSING_HUD_OPTIONS)
+		@SettingGroup(id = MISSING_HUD_OBJECTIVES)
 		@Expose
 		public boolean showNests = true;
 
@@ -289,7 +303,7 @@ public class SafariConfig {
 			name = "Bird Feed",
 			desc = "Lists the bird feed you've found that hasn't spawned a bird yet in the Forest biome")
 		@SettingToggle
-		@SettingGroup(id = MISSING_HUD_OPTIONS)
+		@SettingGroup(id = MISSING_HUD_OBJECTIVES)
 		@Expose
 		public boolean showBirdFeedCount = true;
 
@@ -752,6 +766,13 @@ public class SafariConfig {
 		@SettingGroup(id = HITBOX_COLOURS)
 		@Expose
 		public boolean hitboxEntityColorOverride = false;
+
+		@SettingInfo(
+			name = "Remove Cold Overlay",
+			desc = "Removes the cold overlay that appears in the Icy Biome")
+		@SettingToggle
+		@Expose
+		public boolean removeColdOverlay = true;
 
 		@SettingInfo(
 			name = "Remove Warden Darkness",
@@ -1279,6 +1300,87 @@ public class SafariConfig {
 		private static final int ALL_UNIQUES_DONE = 108, APPEAR_ALL_UNIQUES_DONE = 109;
 		private static final int SOUND_SETTINGS_ALL_UNIQUES_DONE = 110;
 		private static final int UNIQUE_COMPLETIONS = 111;
+		private static final int BANNER_APPEARANCE = 112;
+		private static final int BANNER_BACKGROUND = 113;
+		private static final int BANNER_BORDER = 114;
+		private static final int BANNER_FONT = 115;
+		private static final int BANNER_TIMER_BARS = 116;
+
+		@SettingInfo(name = "Banner Appearance", desc = "Shared appearance settings for every banner alert")
+		@SettingSection(id = BANNER_APPEARANCE)
+		public boolean bannerAppearanceAccordion = false;
+
+		@SettingInfo(name = "Test Alert", desc = "Preview the shared banner appearance")
+		@SettingAction(buttonText = "Alert")
+		@SettingGroup(id = BANNER_APPEARANCE)
+		public Runnable testBannerAppearance = EncounterAlerts::fireTestAlert;
+
+		@SettingInfo(name = "Background", desc = "Shared banner background appearance")
+		@SettingSection(id = BANNER_BACKGROUND)
+		@SettingGroup(id = BANNER_APPEARANCE)
+		public boolean bannerBackgroundAccordion = false;
+
+		@SettingInfo(name = "Show Background", desc = "Draws a panel behind banner text")
+		@SettingToggle @SettingGroup(id = BANNER_BACKGROUND) @Expose
+		public boolean bannerBackground = true;
+
+		@SettingInfo(name = "Style", desc = "Controls the shading across the banner background")
+		@SettingChoice(values = {"Solid", "Subtle Gradient", "Deep Gradient"})
+		@SettingGroup(id = BANNER_BACKGROUND) @Expose
+		public int bannerBackgroundStyle = 2;
+
+		@SettingInfo(name = "Color", desc = "Base color and opacity of the banner background")
+		@SettingColor
+		@SettingGroup(id = BANNER_BACKGROUND) @Expose
+		public String bannerBackgroundColour = "0:155:18:25:37";
+
+		@SettingInfo(name = "Match Alert Color",
+			desc = "Uses a dark tint of each alert's text and border color instead of the selected color")
+		@SettingToggle @SettingGroup(id = BANNER_BACKGROUND) @Expose
+		public boolean bannerBackgroundMatchAlertColour = true;
+
+		@SettingInfo(name = "Border", desc = "Shared banner border appearance")
+		@SettingSection(id = BANNER_BORDER)
+		@SettingGroup(id = BANNER_APPEARANCE)
+		public boolean bannerBorderAccordion = false;
+
+		@SettingInfo(name = "Show Border", desc = "Draws an alert-colored border around banners")
+		@SettingToggle @SettingGroup(id = BANNER_BORDER) @Expose
+		public boolean bannerBorder = true;
+
+		@SettingInfo(name = "Thickness", desc = "Thickness of the banner border, in pixels")
+		@SettingRange(minValue = 1f, maxValue = 4f, minStep = 1f)
+		@SettingGroup(id = BANNER_BORDER) @Expose
+		public float bannerBorderThickness = 1f;
+
+		@SettingInfo(name = "Font", desc = "Shared banner text appearance")
+		@SettingSection(id = BANNER_FONT)
+		@SettingGroup(id = BANNER_APPEARANCE)
+		public boolean bannerFontAccordion = false;
+
+		@SettingInfo(name = "Style", desc = "Text style used by every banner alert")
+		@SettingChoice(values = {"Normal", "Bold", "Italic"})
+		@SettingGroup(id = BANNER_FONT) @Expose
+		public int bannerFont = 0;
+
+		@SettingInfo(name = "Text Shadow", desc = "Draws a subtle shadow behind banner text")
+		@SettingToggle @SettingGroup(id = BANNER_FONT) @Expose
+		public boolean bannerTextShadow = false;
+
+		@SettingInfo(name = "Timer Bars", desc = "Shared banner duration bar appearance")
+		@SettingSection(id = BANNER_TIMER_BARS)
+		@SettingGroup(id = BANNER_APPEARANCE)
+		public boolean bannerTimerBarsAccordion = false;
+
+		@SettingInfo(name = "Top", desc = "Direction the top bar moves as time runs out")
+		@SettingChoice(values = {"Off", "Left", "Right"})
+		@SettingGroup(id = BANNER_TIMER_BARS) @Expose
+		public int bannerTopBar = 0;
+
+		@SettingInfo(name = "Bottom", desc = "Direction the bottom bar moves as time runs out")
+		@SettingChoice(values = {"Off", "Left", "Right"})
+		@SettingGroup(id = BANNER_TIMER_BARS) @Expose
+		public int bannerBottomBar = 1;
 
 		public boolean alertSettingsAccordion = false;
 

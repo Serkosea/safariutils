@@ -283,6 +283,7 @@ public final class WaypointRenderer {
 
 			// Diagnostic, Sparkling, unique-status, and configured colors apply in that order.
 			boolean sparkling = sighting.sparkling();
+			if (SparklingMode.hideOrdinaryHitbox(sighting.critter(), sparkling)) continue;
 			boolean diagnostic = BuildVersion.DEVELOPER && AdvancedUnlock.isUnlocked()
 				&& ConfigManager.get().advanced.showAllCritterHitboxes;
 			int uniqueColour = SparklingMode.uniqueHitboxColour(sighting.critter(),
@@ -471,6 +472,7 @@ public final class WaypointRenderer {
 				// drawing whichever the scan happened to reach first that frame.
 				for (CritterEntities.Sighting sighting : CritterEntities.all()) {
 					if (!tracked.critterName().equals(sighting.critter().name())) continue;
+					if (SparklingMode.hideOrdinaryHitbox(critter, sighting.sparkling())) continue;
 					Entity entity = sighting.mob();
 					if (entity == null) continue;
 					if (StillCritters.isResolved(entity.getUUID())) continue;
@@ -512,7 +514,8 @@ public final class WaypointRenderer {
 				// above — the ones out of range right now but seen recently enough to
 				// still trust, per StillCritters.
 				for (StillCritters.Sighted remembered : StillCritters.entriesFor(critter)) {
-					if (hideOrdinary && !remembered.sparkling()) continue;
+					if (hideOrdinary && !remembered.sparkling()
+						|| SparklingMode.hideOrdinaryHitbox(critter, remembered.sparkling())) continue;
 					if (SafeMode.hiddenCritter(critter, remembered.sparkling())
 						&& !StillCritters.isVisiblyConfirmed(remembered.id())) continue;
 					if (liveIds.contains(remembered.id())) continue;
@@ -562,7 +565,8 @@ public final class WaypointRenderer {
 					Markers.Style.WAYPOINT, true), box.getCenter().distanceTo(camera), true));
 			}
 			BlockPos hideyho = HideyhoSolver.position();
-			if (display.enableHitboxes && hideyho != null) {
+			if (display.enableHitboxes && hideyho != null
+				&& !SparklingMode.hideOrdinaryHitbox(hideyhoCritter, HideyhoSolver.sparkling())) {
 				// Two blocks tall, shifted down so the top lands where a single-block
 				// box would have sat — Hideyho is player-sized, and one block only ever
 				// covered its lower half.

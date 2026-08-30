@@ -66,6 +66,8 @@ public final class MissingHud implements HudElement {
 		// here" the moment the first one is caught.
 		List<Critter> shown = session == null ? Critters.inBiome(biome)
 			: Critters.inBiome(biome).stream()
+				.filter(c -> !ConfigManager.get().display.missingUniqueOnly
+					|| !session.caughtByParty(c))
 				.filter(c -> !c.hasQuota() || !session.isComplete(c))
 				.toList();
 
@@ -163,6 +165,7 @@ public final class MissingHud implements HudElement {
 		for (Critter critter : Critters.inBiome(biome)) {
 			if (SparklingMode.isShared(critter)) continue;
 			boolean caught = session != null && session.caughtByParty(critter);
+			if (ConfigManager.get().display.missingUniqueOnly && caught) continue;
 			boolean complete = session != null && session.isComplete(critter);
 			String note = sparklingModeNear(session, critter);
 			panel.statusPair(complete, critter.name(), note, ProgressHud.rarityColour(critter), DIM);

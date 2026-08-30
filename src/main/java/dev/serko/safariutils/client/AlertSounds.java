@@ -100,21 +100,31 @@ public final class AlertSounds {
 	}
 
 	public static void play(Minecraft client, int id, float volume, float pitch) {
-		if (client.player == null) return;
+		if (client.player == null || volume <= 0f) return;
+		// Minecraft gives a single sound little additional audible gain above 1.
+		// Split larger configured values into full-volume layers plus a remainder so
+		// alerts and picker previews use the same perceptible volume scale.
+		int layers = Math.max(1, (int) Math.ceil(volume));
 		List<Note> melody = melody(id);
 		if (melody.isEmpty()) {
-			client.player.playSound(sound(id), volume, pitch);
+			for (int layer = 0; layer < layers; layer++) {
+				float layerVolume = Math.min(1f, volume - layer);
+				client.player.playSound(sound(id), layerVolume, pitch);
+			}
 			return;
 		}
 		for (Note note : melody) {
-			PENDING.add(new Pending(note.sound, tick + note.delay, volume, pitch * note.pitch));
+			for (int layer = 0; layer < layers; layer++) {
+				float layerVolume = Math.min(1f, volume - layer);
+				PENDING.add(new Pending(note.sound, tick + note.delay, layerVolume, pitch * note.pitch));
+			}
 		}
 	}
 
 	/** Stops an earlier preview so rapidly auditioning melodies stays intelligible. */
-	public static void preview(Minecraft client, int id) {
+	public static void preview(Minecraft client, int id, float volume, float pitch) {
 		PENDING.clear();
-		play(client, id, 1f, 1f);
+		play(client, id, volume, pitch);
 	}
 
 	/** Dedicated five-second catch melody; intentionally absent from normal sound choices. */

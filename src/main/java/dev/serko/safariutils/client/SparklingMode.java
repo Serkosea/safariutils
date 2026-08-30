@@ -94,6 +94,11 @@ public final class SparklingMode {
 		return shared.contains(critter);
 	}
 
+	/** Ignore Uniques hides ordinary shared critters, never a Sparkling duplicate. */
+	public static boolean hideOrdinaryHitbox(Critter critter, boolean sparkling) {
+		return !sparkling && ignoreUniques() && isShared(critter);
+	}
+
 	/** Ordinary recatch markers disappear after the run unique; live hitboxes remain. */
 	public static boolean hideOrdinarySpecies(Critter critter, SafariSession session) {
 		return enabled() && isShared(critter)

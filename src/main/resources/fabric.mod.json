@@ -1,0 +1,25 @@
+{
+    "schemaVersion": 1,
+    "id": "safariutils",
+    "version": "${version}",
+    "name": "Safari Utils",
+    "description": "Client-Side Hypixel Skyblock mod for the Critter Safari that provides run tracking and QOL features to help with the Safari",
+    "authors": ["Serkosea"],
+    "icon": "assets/safariutils/icon.png",
+    "license": "MIT",
+    "environment": "client",
+    "accessWidener": "safariutils.accesswidener",
+    "entrypoints": {
+       "client": ["dev.serko.safariutils.SafariUtils"],
+       "modmenu": ["dev.serko.safariutils.client.ModMenuIntegration"]
+    },
+    "depends": {
+       "fabricloader": ">=0.19.0",
+       "minecraft": "${minecraft_depends}",
+       "java": ">=25",
+       "fabric-api": "*"
+    },
+    "recommends": {
+       "modmenu": "*"
+    }
+}

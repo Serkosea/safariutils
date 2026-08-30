@@ -1,0 +1,6 @@
+# Keep repository text stable across Windows and Unix checkouts.
+* text=auto eol=lf
+
+# These formats are always binary.
+*.jar binary
+*.png binary

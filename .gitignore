@@ -1,0 +1,58 @@
+# gradle
+.gradle/
+.gradle-user/
+.gradle-verify/
+build/
+release-artifacts/
+out/
+classes/
+
+# loom
+remappedSrc/
+.fabric/
+run/
+
+# ide
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.settings/
+.classpath
+.project
+bin/
+particles.html
+
+# operating-system metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# machine-local settings and runtime output
+local.properties
+gradle-local.properties
+*.log
+*.tmp
+*.bak
+hs_err_pid*.log
+replay_pid*.log
+
+# private Hypixel API extension and credentials
+/private-api/
+api-key.txt
+**/api-key.txt
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# accidental copies from a Minecraft instance
+/config/
+/mods/
+/logs/
+/safariutils/
+/safariutils*.json
+/static-entities.json
+/static-waypoints.json

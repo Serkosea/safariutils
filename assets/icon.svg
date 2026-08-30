@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#151B24"/>
+      <stop offset="1" stop-color="#0B0F15"/>
+    </linearGradient>
+    <linearGradient id="forest" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7DD6B2"/>
+      <stop offset="1" stop-color="#276B67"/>
+    </linearGradient>
+    <linearGradient id="cavern" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E58B68"/>
+      <stop offset="1" stop-color="#773C4B"/>
+    </linearGradient>
+    <linearGradient id="icy" x1="1" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#A8E6EF"/>
+      <stop offset="1" stop-color="#53669F"/>
+    </linearGradient>
+    <linearGradient id="haunted" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#554B9B"/>
+      <stop offset="1" stop-color="#B9799F"/>
+    </linearGradient>
+    <filter id="tileShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.48"/>
+    </filter>
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <radialGradient id="sheen" cx="38%" cy="30%" r="72%">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0.03"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.10"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Empty outer frame keeps the design readable at small sizes. -->
+  <rect width="512" height="512" fill="url(#background)"/>
+  <rect x="16" y="16" width="480" height="480" fill="none"
+        stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="3"/>
+
+  <!-- The four quadrants follow their general positions around the Safari. -->
+  <g filter="url(#tileShadow)">
+    <!-- Icy: top left. -->
+    <path d="M256 256L54 256A202 202 0 0 1 256 54Z" fill="url(#icy)"/>
+    <!-- Haunted: top right. -->
+    <path d="M256 256L256 54A202 202 0 0 1 458 256Z" fill="url(#haunted)"/>
+    <!-- Forest: bottom right. -->
+    <path d="M256 256L458 256A202 202 0 0 1 256 458Z" fill="url(#forest)"/>
+    <!-- Cavern: bottom left. -->
+    <path d="M256 256L256 458A202 202 0 0 1 54 256Z" fill="url(#cavern)"/>
+    <circle cx="256" cy="256" r="202" fill="url(#sheen)"/>
+    <circle cx="256" cy="256" r="202" fill="none"
+            stroke="#EAF1F7" stroke-opacity="0.52" stroke-width="5"/>
+    <circle cx="256" cy="256" r="196" fill="none"
+            stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="2"/>
+  </g>
+
+  <!-- Thin biome arcs give the silhouette a little color at launcher-icon size. -->
+  <g fill="none" stroke-width="5" stroke-linecap="round" opacity="0.78"
+     filter="url(#softGlow)">
+    <path d="M47 248A210 210 0 0 1 248 47" stroke="#A8E6EF"/>
+    <path d="M264 47A210 210 0 0 1 465 248" stroke="#B979C5"/>
+    <path d="M465 264A210 210 0 0 1 264 465" stroke="#7DD6B2"/>
+    <path d="M248 465A210 210 0 0 1 47 264" stroke="#E58B68"/>
+  </g>
+
+  <!-- A quiet center point ties the four regions together. -->
+  <circle cx="256" cy="256" r="27" fill="#0D141D" stroke="#F4F7FA"
+          stroke-opacity="0.82" stroke-width="5"/>
+  <circle cx="256" cy="256" r="20" fill="none" stroke="#FFFFFF"
+          stroke-opacity="0.12" stroke-width="2"/>
+</svg>

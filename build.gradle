@@ -1,0 +1,148 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+}
+
+// Machine-specific deploy defaults live in this ignored file. Command-line -P
+// properties still win, so release and CI builds remain reproducible.
+def localDeployProperties = new Properties()
+def localDeployFile = file('gradle-local.properties')
+if (localDeployFile.isFile()) {
+	localDeployFile.withInputStream { localDeployProperties.load(it) }
+	localDeployProperties.each { key, value ->
+		if (!project.hasProperty(key.toString())) {
+			project.ext.set(key.toString(), value.toString())
+		}
+	}
+}
+
+def deployRequested = gradle.startParameter.taskNames.any {
+	it == 'deployToInstance' || it == 'deployToInstanceAndLaunch'
+}
+def minecraftProfile = project.findProperty('minecraftProfile')
+	?: (deployRequested ? project.findProperty('deployMinecraftProfile') : null)
+	?: project.default_minecraft_profile
+def privateApiBuild = project.findProperty('includePrivateApi')?.toString()?.toBoolean()
+	|| (deployRequested && project.findProperty('deployPrivateApi')?.toString()?.toBoolean())
+def extraBuild = privateApiBuild
+	|| project.findProperty('extraBuild')?.toString()?.toBoolean()
+	|| (deployRequested && project.findProperty('deployExtraBuild')?.toString()?.toBoolean())
+def safeBuild = !extraBuild
+def profileFile = file("gradle/versions/${minecraftProfile}.properties")
+if (!profileFile.isFile()) {
+	throw new GradleException("Unknown Minecraft profile '${minecraftProfile}' (${profileFile} not found)")
+}
+def profile = new Properties()
+profileFile.withInputStream { profile.load(it) }
+profile.each { key, value -> project.ext.set(key.toString(), value.toString()) }
+
+sourceSets.main.java.srcDir("src/${minecraftProfile}/java")
+
+version = "${project.release_version}${extraBuild ? '-extra' : ''}+mc${project.minecraft_version}"
+group = project.maven_group
+
+base {
+	archivesName = privateApiBuild
+		? "${project.archives_base_name}-private"
+		: project.archives_base_name
+}
+
+loom {
+	accessWidenerPath = file("src/main/resources/safariutils.accesswidener")
+}
+
+// Private API sources are opt-in and ignored by Git. Public builds never include
+// them, even when they exist in the developer's working copy.
+if (privateApiBuild) {
+	def privateSource = file('private-api/src/main/java')
+	if (!privateSource.isDirectory()) {
+		throw new GradleException("Private API sources requested but ${privateSource} does not exist")
+	}
+	sourceSets.main.java.srcDir(privateSource)
+	sourceSets.main.resources.srcDir('private-api/src/main/resources')
+}
+
+repositories {
+	maven { name = 'TerraformersMC'; url = 'https://maven.terraformersmc.com/' }
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	implementation("com.terraformersmc:modmenu:${project.modmenu_version}")
+}
+
+processResources {
+	def expandProps = [
+		version: project.version,
+		minecraft_depends: project.minecraft_depends,
+		safe_build: safeBuild,
+		developer_build: privateApiBuild
+	]
+	inputs.properties expandProps
+
+	filesMatching(["fabric.mod.json", "safariutils-build.properties"]) {
+		expand expandProps
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
+
+// --- Explicit deployment to the selected Prism test instance ---------------
+def deployDirValue = project.findProperty('deployDir')
+	?: project.findProperty("deployDir.${minecraftProfile}")
+def deployDir = deployDirValue ? file(deployDirValue) : layout.buildDirectory.dir('undeployed').get().asFile
+
+tasks.register('deployToInstance', Copy) {
+	description = 'Copy the built mod jar into the Prism Launcher SkyBlock instance.'
+	group = 'fabric'
+	dependsOn tasks.named('jar')
+	onlyIf {
+		if (deployDirValue && deployDir.isDirectory()) return true
+		logger.lifecycle('deployToInstance skipped: set -PdeployDir=<mods folder> or define it in local Gradle properties')
+		return false
+	}
+	doFirst { delete fileTree(deployDir) { include 'safariutils-*.jar' } }
+	from tasks.named('jar')
+	into deployDir
+	doLast { logger.lifecycle("deployToInstance -> ${deployDir}") }
+}
+
+tasks.register('deployPrivateApiKey', Copy) {
+	description = 'Copy the ignored API key into the selected instance config.'
+	group = 'fabric'
+	onlyIf {
+		privateApiBuild
+			&& deployDirValue
+			&& file('private-api/api-key.txt').isFile()
+	}
+	from file('private-api/api-key.txt')
+	into new File(deployDir.parentFile, 'config/safariutils/private')
+}
+
+tasks.named('deployToInstance') {
+	finalizedBy tasks.named('deployPrivateApiKey')
+}
+
+// --- Build, deploy, and launch Prism in one go ------------------------------
+// The instance ID is its folder name under PrismLauncher/instances/. Override
+// either default with -PprismExecutable=... or -PprismInstance=... if these
+// don't match your setup.
+def prismExecutable = project.findProperty('prismExecutable') ?: 'prismlauncher'
+def prismInstance = project.findProperty('prismInstance') ?: project.profile_prism_instance
+
+tasks.register('deployToInstanceAndLaunch', Exec) {
+	description = 'Build, deploy the jar, then launch the Prism instance.'
+	group = 'fabric'
+	dependsOn tasks.named('deployToInstance')
+	commandLine prismExecutable, '--launch', prismInstance
+}

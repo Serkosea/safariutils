@@ -92,6 +92,8 @@ public final class MoundSpotter {
 	private static final Set<BlockPos> confirmedVisible = new HashSet<>();
 	/** Completed positions cannot be re-added by a stale interaction entity. */
 	private static final Set<BlockPos> completed = new HashSet<>();
+	/** Local breaks stay suppressed while their server-side interaction finishes despawning. */
+	private static final Map<BlockPos, Long> breakSuppressedUntil = new java.util.HashMap<>();
 	private static final Map<BlockPos, Long> absentSince = new java.util.HashMap<>();
 	/** Most recent mound struck locally; its coordinate-free chat line confirms this position. */
 	private static BlockPos pendingLocalBreak;
@@ -146,6 +148,7 @@ public final class MoundSpotter {
 		}
 
 		List<BlockPos> liveNow = scan();
+		breakSuppressedUntil.values().removeIf(until -> now > until);
 		// Water props can use the same centred interaction hitbox as a mound. A real
 		// mound is dry, so discard a remembered candidate once its loaded block proves
 		// otherwise instead of retaining that false waypoint for the rest of the run.
@@ -172,7 +175,10 @@ public final class MoundSpotter {
 		// completed itself for why this check exists at all.
 		int beforeSize = everSeen.size();
 		for (BlockPos pos : liveNow) {
-			if (completed.contains(pos)) continue;
+			if (breakSuppressedUntil.containsKey(pos)) continue;
+			// Entity loading can trail the terrain by a few scans. A genuine live mound
+			// overrides an earlier visible-empty decision once its interaction arrives.
+			completed.remove(pos);
 			detectedLive.add(pos);
 			if (VisibilityCheck.canInspectCandidate(pos)) confirmedVisible.add(pos);
 			if (everSeen.add(pos)) StaticWaypointCatalog.learnMound(pos);
@@ -227,6 +233,7 @@ public final class MoundSpotter {
 		detectedLive.clear();
 		confirmedVisible.clear();
 		completed.clear();
+		breakSuppressedUntil.clear();
 		absentSince.clear();
 		pendingLocalBreak = null;
 		pendingLocalBreakAt = 0;
@@ -259,6 +266,7 @@ public final class MoundSpotter {
 			detectedLive.remove(broken);
 			confirmedVisible.remove(broken);
 			absentSince.remove(broken);
+			breakSuppressedUntil.put(broken, System.currentTimeMillis() + 3_000L);
 			cached = cached.stream().filter(pos -> !pos.equals(broken)).toList();
 		}
 		pendingLocalBreak = null;
@@ -309,8 +317,11 @@ public final class MoundSpotter {
 		Set<BlockPos> claimedCatalogPositions = new HashSet<>();
 		for (Entity candidate : candidates) {
 			// Fish and other creatures can carry a mound-sized interaction box. A
-			// learned position strengthens the location match, not the entity match.
-			if (wrapsACreature(candidate, creatures)) continue;
+			// learned position normally strengthens only the location match. An exact,
+			// dry bundled position is authoritative, though: a Flavor Packed Fish can
+			// overlap a real mound briefly and must not make that mound disappear.
+			boolean exactBundledPosition = catalog.contains(candidate.blockPosition());
+			if (!exactBundledPosition && wrapsACreature(candidate, creatures)) continue;
 			BlockPos catalogPos = nearestCatalog(candidate.blockPosition(), catalog,
 				claimedCatalogPositions);
 			if (catalogPos != null) claimedCatalogPositions.add(catalogPos);

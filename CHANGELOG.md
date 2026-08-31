@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2] - 2026-08-30
+
+### Fixes
+
+- Known Rockmite mound positions remain detectable when a Flavor Packed Fish overlaps their interaction box.
+- Live Rockmite mounds now recover after a temporary interaction-entity loading gap in either mode.
+
 ## [1.1.1] - 2026-08-30
 
 ### Fixes

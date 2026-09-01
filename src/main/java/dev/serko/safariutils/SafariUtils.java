@@ -33,6 +33,7 @@ import dev.serko.safariutils.client.StaticEntityCatalog;
 import dev.serko.safariutils.client.FullScreenAlert;
 import dev.serko.safariutils.client.SparklingWatch;
 import dev.serko.safariutils.client.SparklingMode;
+import dev.serko.safariutils.client.ParticleDiagnostics;
 import dev.serko.safariutils.client.SafariObjectives;
 import dev.serko.safariutils.client.WaypointRenderer;
 import dev.serko.safariutils.client.EncounterAlerts;
@@ -122,6 +123,7 @@ public class SafariUtils implements ClientModInitializer {
 			ContestTracker.tick();
 			// One sweep of the world's critters, for everything below that wants them.
 			CritterEntities.tick();
+			ParticleDiagnostics.tick();
 			if (BuildVersion.DEVELOPER) CritterCountLog.tick();
 			HideyhoSolver.tick();
 			StillCritters.tick();

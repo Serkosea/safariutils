@@ -3,7 +3,8 @@
   "package": "dev.serko.safariutils.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
-    "GuiMixin"
+    "GuiMixin",
+    "ClientPacketListenerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

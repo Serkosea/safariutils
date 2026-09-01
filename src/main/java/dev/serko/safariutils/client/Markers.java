@@ -70,8 +70,10 @@ public final class Markers {
 				if (!nest.unpunched()) continue;
 				// Safe Mode deliberately shows every learned candidate. It removes an
 				// empty one only after that block is visibly checked by NestTracker.
+				boolean possible = SafeMode.nests() && !NestTracker.isConfirmedVisible(nest.pos());
+				if (possible && display.hidePossibleWaypoints) continue;
 				boolean seeThrough = true;
-				String label = SafeMode.nests() && !NestTracker.isConfirmedVisible(nest.pos())
+				String label = possible
 					? "Nest (Possible)" : "Nest";
 				markers.add(new Marker(new AABB(nest.pos()), label,
 					Colours.argb(display.nestColour, 0xFF55FF55), Style.WAYPOINT, seeThrough));
@@ -83,7 +85,9 @@ public final class Markers {
 		if (display.highlightMounds && biome == SafariBiome.CAVERN
 			&& !SparklingMode.hideMounds(session)) {
 			for (BlockPos pos : MoundSpotter.mounds()) {
-				String label = SafeMode.mounds() && !MoundSpotter.isConfirmedVisible(pos)
+				boolean possible = SafeMode.mounds() && !MoundSpotter.isConfirmedVisible(pos);
+				if (possible && display.hidePossibleWaypoints) continue;
+				String label = possible
 					? "Mound (Possible)" : "Mound";
 				markers.add(block(pos, label, Colours.argb(display.moundColour, 0xFFCC7744)));
 			}
@@ -98,7 +102,7 @@ public final class Markers {
 				int colour = display.recatchRarityColour
 					? WaypointRenderer.critterHitboxColour(pin.critter(), pin.sparkling())
 					: Colours.argb(display.recatchColour, 0xFFFFFF55);
-				String label = pin.critter().name()
+				String label = (pin.sparkling() ? "SPARKLING " : "") + pin.critter().name()
 					+ (display.recatchPityTitle ? pityLabel(pin.critter(), pin.entityId()) : "");
 				markers.add(new Marker(pin.box(), label, colour, Style.WAYPOINT));
 			}
@@ -116,8 +120,10 @@ public final class Markers {
 			for (BlockPos pos : drops) {
 				// Candidate locations are safe to reveal; whether this run actually
 				// spawned one remains unknown until the player can see the block.
+				boolean possible = SafeMode.floorDrops() && !FloorDrops.isConfirmedVisible(pos);
+				if (possible && display.hidePossibleWaypoints) continue;
 				boolean seeThrough = true;
-				String label = SafeMode.floorDrops() && !FloorDrops.isConfirmedVisible(pos)
+				String label = possible
 					? "Floor Drop (Possible)" : "Floor Drop";
 				markers.add(new Marker(new AABB(pos), label,
 					Colours.argb(display.floorDropColour, 0xFF55FFAA), Style.WAYPOINT, seeThrough));
@@ -185,7 +191,9 @@ public final class Markers {
 			boolean possible = wall.state() == WallTracker.State.UNKNOWN
 				&& (walls == WallTracker.SNOOPER ? SafeMode.snoozleWalls() : SafeMode.troodonWalls());
 			if (wall.state() != WallTracker.State.INTACT && !possible) continue;
-			markers.add(block(wall.pos(), walls.name() + " wall", colour));
+			if (possible && ConfigManager.get().display.hidePossibleWaypoints) continue;
+			BlockPos markerPos = walls == WallTracker.SNOOPER ? wall.pos().above() : wall.pos();
+			markers.add(block(markerPos, walls.name() + " wall", colour));
 		}
 	}
 }

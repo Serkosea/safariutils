@@ -11,6 +11,7 @@ import net.minecraft.network.chat.Component;
 public final class FullScreenAlert implements HudElement {
 
 	private static final long DISPLAY_MILLIS = 5000;
+	private static final long EXTREME_DISPLAY_MILLIS = 7000;
 	private static final long FADE_MILLIS = 1200;
 	private static final float TITLE_SCALE = 4.7f;
 	private static final float SUBTITLE_SCALE = 1.92f;
@@ -28,6 +29,7 @@ public final class FullScreenAlert implements HudElement {
 	private static String where;
 	private static int tint = SPARKLING;
 	private static long shownAtMillis;
+	private static boolean extremeSparkling;
 
 	/**
 	 * Puts one on screen.
@@ -43,7 +45,12 @@ public final class FullScreenAlert implements HudElement {
 		where = detail;
 		tint = colour;
 		shownAtMillis = System.currentTimeMillis();
-		if (colour == SPARKLING) AlertSounds.playSparklingCall(Minecraft.getInstance());
+		extremeSparkling = colour == SPARKLING
+			&& ConfigManager.get().sparkling.specialSparklingCatch;
+		if (colour == SPARKLING) {
+			if (extremeSparkling) AlertSounds.playExtremeSparklingCall(Minecraft.getInstance());
+			else AlertSounds.playSparklingCall(Minecraft.getInstance());
+		}
 	}
 
 	public static void clear() {
@@ -55,7 +62,8 @@ public final class FullScreenAlert implements HudElement {
 		if (headline == null) return;
 
 		long age = System.currentTimeMillis() - shownAtMillis;
-		if (age > DISPLAY_MILLIS) {
+		long displayMillis = extremeSparkling ? EXTREME_DISPLAY_MILLIS : DISPLAY_MILLIS;
+		if (age > displayMillis) {
 			headline = null;
 			return;
 		}
@@ -64,8 +72,8 @@ public final class FullScreenAlert implements HudElement {
 		if (client.player == null || ClientCompat.hudHidden()) return;
 
 		int alpha = 0xFF;
-		long fadeStart = DISPLAY_MILLIS - FADE_MILLIS;
-		if (age > fadeStart) alpha = (int) (0xFF * (DISPLAY_MILLIS - age) / (double) FADE_MILLIS);
+		long fadeStart = displayMillis - FADE_MILLIS;
+		if (age > fadeStart) alpha = (int) (0xFF * (displayMillis - age) / (double) FADE_MILLIS);
 
 		int width = graphics.guiWidth();
 		int height = graphics.guiHeight();
@@ -73,11 +81,18 @@ public final class FullScreenAlert implements HudElement {
 
 		// Keep the wash light enough that the game remains visible underneath it.
 		int wash = (alpha / (sparkling ? 8 : 10)) << 24 | tint;
+		if (sparkling && extremeSparkling) {
+			float hue = (age % 900L) / 900f;
+			int pulse = (int) (32 + 38 * (0.5 + 0.5 * Math.sin(age * Math.PI / 90.0)));
+			wash = (Math.min(alpha, pulse) << 24)
+				| (java.awt.Color.HSBtoRGB(hue, 0.72f, 1f) & 0xFFFFFF);
+		}
 		graphics.fill(0, 0, width, height, wash);
 		int band = Math.max(2, height / 90);
 		if (sparkling) {
 			drawRainbowFrame(graphics, width, height, band, alpha, age);
-			drawSparkles(graphics, width, height, alpha, age);
+			if (extremeSparkling) drawExtremeLayer(graphics, width, height, alpha, age, band);
+			else drawSparkles(graphics, width, height, alpha, age);
 		} else {
 			graphics.fill(0, 0, width, band, (alpha << 24) | tint);
 			graphics.fill(0, height - band, width, height, (alpha << 24) | tint);
@@ -85,15 +100,20 @@ public final class FullScreenAlert implements HudElement {
 
 		Font font = client.font;
 		graphics.pose().pushMatrix();
-		graphics.pose().scale(TITLE_SCALE, TITLE_SCALE);
-		int headlineX = (int) (width / (2.0 * TITLE_SCALE));
-		int headlineY = (int) (height * 0.396 / TITLE_SCALE);
+		float titleScale = extremeSparkling
+			? TITLE_SCALE + 0.65f + 0.28f * (float) Math.sin(age * Math.PI / 180.0)
+			: TITLE_SCALE;
+		graphics.pose().scale(titleScale, titleScale);
+		int headlineX = (int) (width / (2.0 * titleScale));
+		int headlineY = (int) (height * 0.396 / titleScale);
 		if (sparkling) rainbowCenteredText(graphics, font, headline, headlineX, headlineY, alpha, age);
 		else graphics.centeredText(font, Component.literal(headline), headlineX, headlineY,
 			(alpha << 24) | tint);
 		graphics.pose().popMatrix();
 
 		float subjectScale = sparkling ? SPARKLING_SUBJECT_SCALE : SUBTITLE_SCALE;
+		if (extremeSparkling) subjectScale += 0.42f
+			+ 0.18f * (float) Math.sin(age * Math.PI / 210.0);
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(subjectScale, subjectScale);
 		int subtitleY = (int) (height * 0.517 / subjectScale);
@@ -106,6 +126,57 @@ public final class FullScreenAlert implements HudElement {
 				(int) (width / (2.0 * subjectScale)), subtitleY + 12, (alpha << 24) | WHITE);
 		}
 		graphics.pose().popMatrix();
+
+		if (sparkling && extremeSparkling) {
+			String callout = "✦  SPARKLING CAPTURE  ✦";
+			int calloutY = Math.max(12, height / 7);
+			rainbowCenteredText(graphics, font, callout, width / 2, calloutY, alpha, age * 2);
+			rainbowCenteredText(graphics, font, "✦  SPARKLING CAPTURE  ✦",
+				width / 2, height - calloutY - font.lineHeight, alpha, age * 2 + 700);
+		}
+	}
+
+	/** Dense but bounded geometry for the explicitly opted-in celebration. */
+	private static void drawExtremeLayer(GuiGraphicsExtractor graphics, int width, int height,
+			int alpha, long age, int band) {
+		float phase = (age % 1_500L) / 1_500f;
+		for (int ring = 1; ring <= 4; ring++) {
+			int inset = ring * (band + 3);
+			if (inset * 2 >= width || inset * 2 >= height) break;
+			int colour = rainbow(Math.min(alpha, 210), phase + ring * 0.13f);
+			graphics.fill(inset, inset, width - inset, inset + 1, colour);
+			graphics.fill(inset, height - inset - 1, width - inset, height - inset, colour);
+			graphics.fill(inset, inset + 1, inset + 1, height - inset - 1, colour);
+			graphics.fill(width - inset - 1, inset + 1, width - inset, height - inset - 1, colour);
+		}
+
+		int safeWidth = Math.max(1, width);
+		int safeHeight = Math.max(1, height);
+		int stars = 88;
+		for (int i = 0; i < stars; i++) {
+			long life = 180L + Math.floorMod(mix(i * 0x45D9F3B), 420);
+			long shifted = age + i * 37L;
+			int cycle = (int) (shifted / life);
+			double progress = (shifted % life) / (double) life;
+			int hx = mix(i * 0x27D4EB2D + cycle * 0x165667B1);
+			int hy = mix(i * 0x119DE1F3 + cycle * 0x632BE5AB);
+			int x = Math.floorMod(hx, safeWidth);
+			int y = Math.floorMod(hy, safeHeight);
+			int sparkleAlpha = (int) (alpha * Math.sin(Math.PI * progress));
+			int size = 1 + Math.floorMod(mix(hx ^ hy), 5);
+			int colour = rainbow(sparkleAlpha, phase + i / (float) stars);
+			drawStar(graphics, x, y, size, Math.floorMod(hx, 3), colour);
+		}
+
+		int streaks = 36;
+		for (int i = 0; i < streaks; i++) {
+			int hash = mix(i * 0x6A09E667 + (int) (age / 55L));
+			int x = Math.floorMod(hash, safeWidth);
+			int y = Math.floorMod(mix(hash), safeHeight);
+			int length = 2 + Math.floorMod(hash >>> 8, 8);
+			int colour = rainbow(Math.min(alpha, 225), phase + i / (float) streaks);
+			graphics.fill(x, y, Math.min(width, x + length), Math.min(height, y + 2), colour);
+		}
 	}
 
 	private static void drawRainbowFrame(GuiGraphicsExtractor graphics, int width, int height,

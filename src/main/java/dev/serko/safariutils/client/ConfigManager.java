@@ -53,6 +53,8 @@ public final class ConfigManager {
 
 	/** Output categories are diagnostic session state, not lasting preferences. */
 	private static void resetSessionDebugOptions(SafariConfig.AdvancedConfig advanced) {
+		advanced.debugLog = false;
+		advanced.outputLogPreset = 1; // Custom: every individual option starts disabled below.
 		for (var field : SafariConfig.AdvancedConfig.class.getFields()) {
 			if (field.getType() != boolean.class || !field.getName().startsWith("log")) continue;
 			try {
@@ -64,7 +66,7 @@ public final class ConfigManager {
 
 	/** Writes atomically so an interrupted save cannot destroy a working config. */
 	public static synchronized void save() {
-		if (config == null) return;
+		if (config == null || TestingMode.savingSuspended()) return;
 		Path path = SafariPaths.settings();
 		try {
 			AtomicFiles.writeString(path, GSON.toJson(config));

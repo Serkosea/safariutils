@@ -45,17 +45,38 @@ public final class StaticWaypointCatalog {
 	}
 
 	public static void learnFloorDrop(SafariBiome biome, BlockPos pos) {
-		// The bundled catalog is now the fixed baseline. FloorDrops still keeps an
-		// unknown position for the current run when it encounters one; it is simply not
-		// carried into later runs automatically.
+		if (!canLearn(pos) || SafariAreaMap.biomeAt(pos.getX(), pos.getY(), pos.getZ()) != biome) return;
+		String encoded = encode(pos);
+		if (getBundled().floorDrops.getOrDefault(biome.name(), Set.of()).contains(encoded)) return;
+		Set<String> positions = get().floorDrops.computeIfAbsent(biome.name(), ignored -> new LinkedHashSet<>());
+		if (!positions.add(encoded)) return;
+		learned("FloorDrop/" + biome.displayName(), encoded);
 	}
 
 	public static void learnNest(BlockPos pos) {
-		// Runtime-only discovery remains in NestTracker; persistent learning is frozen.
+		if (!canLearn(pos) || SafariAreaMap.biomeAt(pos.getX(), pos.getY(), pos.getZ()) != SafariBiome.FOREST) return;
+		String encoded = encode(pos);
+		if (getBundled().nests.contains(encoded) || !get().nests.add(encoded)) return;
+		learned("Nest", encoded);
 	}
 
 	public static void learnMound(BlockPos pos) {
-		// Runtime-only discovery remains in MoundSpotter; persistent learning is frozen.
+		if (!canLearn(pos)
+			|| SafariAreaMap.biomeAt(pos.getX(), pos.getY(), pos.getZ()) != SafariBiome.CAVERN) return;
+		String encoded = encode(pos);
+		if (getBundled().mounds.contains(encoded) || !get().mounds.add(encoded)) return;
+		learned("Mound", encoded);
+	}
+
+	private static boolean canLearn(BlockPos pos) {
+		return pos != null && TestingMode.saveLearnedLocations()
+			&& SafariLocation.inside() && SafariPartyWatch.confirmedSoloForLearning();
+	}
+
+	private static void learned(String type, String encoded) {
+		DebugLog.line("WAYPOINT", "learned objective/" + type + " at " + encoded);
+		dirty = true;
+		dirtyAt = System.currentTimeMillis();
 	}
 
 	/** Coalesces a whole scan's discoveries into one small disk write. */
@@ -147,7 +168,8 @@ public final class StaticWaypointCatalog {
 	private static void save() {
 		var path = SafariPaths.staticWaypoints();
 		try {
-			AtomicFiles.writeString(path, GSON.toJson(get(), DATA_TYPE));
+			AtomicFiles.writeString(path, GSON.toJson(get(), DATA_TYPE),
+				TestingMode.saveLearnedLocations());
 			dirty = false;
 		} catch (IOException ignored) {
 		}

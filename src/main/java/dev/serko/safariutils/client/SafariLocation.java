@@ -354,7 +354,7 @@ public final class SafariLocation {
 	 *
 	 * <p>Hypixel labels every critter with an entity whose custom name is exactly the
 	 * species name, and those exist nowhere else. Any entity type counts: most are
-	 * armour stands but a Hideyho arrives as a player.
+	 * armor stands but a Hideyho arrives as a player.
 	 */
 	public static boolean critterLabelsNearby() {
 		Minecraft client = Minecraft.getInstance();

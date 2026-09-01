@@ -23,6 +23,7 @@ import dev.serko.safariutils.client.DetectedCritters;
 import dev.serko.safariutils.client.HeadStartWatch;
 import dev.serko.safariutils.client.WallTracker;
 import dev.serko.safariutils.client.SafeMode;
+import dev.serko.safariutils.client.TestingMode;
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.parse.ChatParser;
 import dev.serko.safariutils.data.Critters;
@@ -220,7 +221,7 @@ public final class SessionManager {
 			if (current == null && SafariLocation.inside()) startSession("Rainbow Feather");
 			if (current != null) {
 				current.recordBonusRainbowFeather(now);
-				SparklingStats.recordRainbowFeather();
+				if (!TestingMode.enabled()) SparklingStats.recordRainbowFeather();
 			}
 			else if (SafariLocation.inside()) {
 				pendingEvents.add(PendingEvent.bonusFeather(now));
@@ -277,7 +278,7 @@ public final class SessionManager {
 			SparklingWatch.onCaptureInteraction(event.critter());
 		}
 		current.record(event, now);
-		if (event.sparkling()) SparklingStats.recordRainbowFeather();
+		if (event.sparkling() && !TestingMode.enabled()) SparklingStats.recordRainbowFeather();
 		if (!event.isCatch()) return;
 		EncounterAlerts.onCatch(event.critter().name());
 		announceNewlyCompleteBiomes();
@@ -380,15 +381,15 @@ public final class SessionManager {
 				recordLifetimeSparkling(pending.sparkling().critter());
 			} else {
 				current.recordBonusRainbowFeather(pending.atMillis());
-				SparklingStats.recordRainbowFeather();
+				if (!TestingMode.enabled()) SparklingStats.recordRainbowFeather();
 			}
 		}
 		pendingEvents.clear();
 	}
 
 	private static void recordLifetimeSparkling(Critter critter) {
-		SparklingStats.recordSparkling(critter);
-		int total = SparklingStats.count(critter);
+		if (!TestingMode.enabled()) SparklingStats.recordSparkling(critter);
+		int total = SparklingStats.count(critter) + (TestingMode.enabled() ? 1 : 0);
 		var sparklingConfig = ConfigManager.get().sparkling;
 		String message = AlertText.format(total == 1
 				? sparklingConfig.sparklingFirstCaughtChatText
@@ -415,6 +416,13 @@ public final class SessionManager {
 		SparklingWatch.reset();
 		if (finished == null || finished.isEmpty()) return;
 		finished.finish(System.currentTimeMillis());
+		if (TestingMode.enabled()) {
+			// Keep the completed session available to the live Run panel, but never add
+			// an Alpha/test run to history or lifetime totals.
+			lastSession = finished;
+			DebugLog.line("RUN", "testing session finished without archiving");
+			return;
+		}
 		try {
 			archive(finished);
 		} catch (RuntimeException failed) {
@@ -454,6 +462,17 @@ public final class SessionManager {
 
 	public static SafariSession lastSession() {
 		return lastSession;
+	}
+
+	/** Drops transient run state when an isolated test begins, without archiving it. */
+	public static void discardForTesting() {
+		current = null;
+		runLobbyId = null;
+		waitingLobbyId = null;
+		waitingEssenceBalance = null;
+		pendingEvents.clear();
+		rewardSummaryOpen = false;
+		SparklingWatch.reset();
 	}
 
 	public static List<SafariSession> history() {

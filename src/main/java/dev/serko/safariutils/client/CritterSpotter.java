@@ -32,7 +32,7 @@ public final class CritterSpotter {
 
 		Map<Critter, Integer> present = new HashMap<>();
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-			if (sighting.sparkling()) continue;
+			if (SparklingWatch.isSparkling(sighting)) continue;
 			present.merge(sighting.critter(), 1, Integer::sum);
 		}
 

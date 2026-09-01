@@ -469,7 +469,8 @@ public final class SafariCommands {
 			boolean visible = body != null && VisibilityCheck.canSee(body);
 			boolean persistent = body != null && StillCritters.persistentThroughWalls(body.getUUID());
 			report(source, record, "  %s%s label=%s @ %d %d %d -> %s · visible=%s persistent=%s"
-				.formatted(sighting.critter().name(), sighting.sparkling() ? " [SPARKLING]" : "",
+				.formatted(sighting.critter().name(), SparklingWatch.isSparkling(sighting)
+					? " [SPARKLING:" + ParticleDiagnostics.source(sighting) + "]" : "",
 					shortId(label), label.blockPosition().getX(), label.blockPosition().getY(),
 					label.blockPosition().getZ(), bodyText, visible, persistent),
 				body == null ? ChatFormatting.RED : ChatFormatting.WHITE);
@@ -660,11 +661,12 @@ public final class SafariCommands {
 					|| sighting.mob() != null && sighting.mob().getUUID().equals(hit.getUUID()))
 				.findFirst().ifPresent(sighting -> report(source, record,
 					"  pairing %s%s  label=%s  body=%s".formatted(sighting.critter().name(),
-						sighting.sparkling() ? " [SPARKLING]" : "", shortId(sighting.label()),
+						SparklingWatch.isSparkling(sighting)
+							? " [SPARKLING:" + ParticleDiagnostics.source(sighting) + "]" : "",
 						sighting.mob() == null ? "unpaired" : shortId(sighting.mob())),
 					ChatFormatting.YELLOW));
 
-			// A mound may well be a head on an armour stand, and they come in different
+			// A mound may well be a head on an armor stand, and they come in different
 			// sizes — so the small flag, the scale attribute and what is worn on the
 			// head are the three things that would identify one.
 			if (hit instanceof LivingEntity living) {

@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.2.0] - 2026-09-01
+
+### Sparkling critters
+
+- Added particle-backed Sparkling detection.
+- Added a rainbow beacon, labels, hitboxes, and waypoint styling for a detected Sparkling.
+- Added `Only Show Sparkling` to hide ordinary stationary-critter waypoints while Sparkling Mode is active.
+- Added an optional high-intensity Sparkling catch celebration with a prominent photosensitivity warning and confirmation.
+- Fixed duplicate detection alerts, transformed-entity tracking, stale Missing HUD entries, and leftover recatch markers after a Sparkling catch.
+- Safe Mode now accepts a genuinely visible critter nametag while continuing to withhold hidden internal entity information.
+
+### Waypoints and reliability
+
+- Added `Hide Possible` for players who know the objective routes and do not want candidate waypoints displayed.
+- Expanded the bundled stationary-critter and objective-location catalogs from verified solo runs.
+- Improved Rockmite mound detection, close-position matching, party-break cleanup, entity-range persistence, and shared scan performance.
+- Updated the Sparkling beacon to use a continuous translucent Minecraft-style beam.
+- Moved Snoozle wall waypoints up to eye level and reorganized recatch settings with the critter waypoint options.
+
+### Interface and polish
+
+- Reorganized Safe Mode settings with clearer, alphabetized descriptions.
+- Standardized `armor` spelling throughout the project.
+
 ## [1.1.2] - 2026-08-30
 
 ### Fixes

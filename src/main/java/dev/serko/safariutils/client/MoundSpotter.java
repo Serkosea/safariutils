@@ -55,6 +55,10 @@ public final class MoundSpotter {
 	/** How close a creature has to be to count as being inside a box rather than near it. */
 	private static final double INSIDE_RADIUS = 0.35;
 	private static final double INSIDE_HEIGHT = 1.0;
+	/** Inside this radius, a missing interaction entity reliably means the mound is gone. */
+	private static final double RELIABLE_DETECTION_RANGE = 48.0;
+	/** Ignores a single short entity-loading gap without delaying genuine removals noticeably. */
+	private static final long ABSENCE_CONFIRM_MILLIS = 250L;
 
 	private MoundSpotter() {
 	}
@@ -77,12 +81,7 @@ public final class MoundSpotter {
 			&& z >= bounds[2] - MARGIN && z <= bounds[5] + MARGIN;
 	}
 
-	/** Both the HUD and the waypoints ask every frame; the answer changes far slower. */
-	private static final long CACHE_MILLIS = 150;
-	/** Two cached scans reject a one-frame unload without leaving cleared marks behind. */
-	private static final long ABSENCE_CONFIRM_MILLIS = 300;
 	private static List<BlockPos> cached = List.of();
-	private static long cachedAt;
 
 	/** Static mound positions remain known until their disappearance is confirmed. */
 	private static final Set<BlockPos> everSeen = new HashSet<>();
@@ -94,6 +93,7 @@ public final class MoundSpotter {
 	private static final Set<BlockPos> completed = new HashSet<>();
 	/** Local breaks stay suppressed while their server-side interaction finishes despawning. */
 	private static final Map<BlockPos, Long> breakSuppressedUntil = new java.util.HashMap<>();
+	/** First reliable scan on which a previously detected mound was absent. */
 	private static final Map<BlockPos, Long> absentSince = new java.util.HashMap<>();
 	/** Most recent mound struck locally; its coordinate-free chat line confirms this position. */
 	private static BlockPos pendingLocalBreak;
@@ -119,26 +119,30 @@ public final class MoundSpotter {
 			preparedLobby = lobby;
 			reset();
 		}
-		if (++ticks < 20) return;
+		// One shared refresh feeds both the Missing HUD and waypoint renderer. Neither
+		// render path should launch an entity scan while a biome boundary is changing.
+		if (++ticks < 5) return;
 		ticks = 0;
-		mounds();
+		refresh();
 	}
 	/** Every currently known, unbroken mound position. */
 	public static List<BlockPos> mounds() {
+		return cached;
+	}
+
+	/** Refreshes mound state once per scheduled tick for every display consumer. */
+	private static void refresh() {
 		long now = System.currentTimeMillis();
 		boolean safeMode = SafeMode.mounds();
 		boolean playerInCavern = SafariLocation.biome() == SafariBiome.CAVERN;
 		if (safeMode != lastSafeMode) {
 			lastSafeMode = safeMode;
-			cachedAt = 0;
 			if (safeMode) {
 				for (BlockPos pos : StaticWaypointCatalog.mounds()) {
 					if (!completed.contains(pos)) everSeen.add(pos);
 				}
 			}
 		}
-		if (now - cachedAt < CACHE_MILLIS) return cached;
-		cachedAt = now;
 		// Mode switches only change presentation. Restore unresolved catalog candidates
 		// when Safe Mode is enabled instead of requiring a lobby reset.
 		if (safeMode) {
@@ -179,34 +183,38 @@ public final class MoundSpotter {
 			// Entity loading can trail the terrain by a few scans. A genuine live mound
 			// overrides an earlier visible-empty decision once its interaction arrives.
 			completed.remove(pos);
+			absentSince.remove(pos);
 			detectedLive.add(pos);
 			if (VisibilityCheck.canInspectCandidate(pos)) confirmedVisible.add(pos);
 			if (everSeen.add(pos)) StaticWaypointCatalog.learnMound(pos);
 		}
 		Set<BlockPos> liveSet = new HashSet<>(liveNow);
 		for (BlockPos pos : List.copyOf(everSeen)) {
-			if (liveSet.contains(pos)) {
-				absentSince.remove(pos);
-				continue;
-			}
+			if (liveSet.contains(pos)) continue;
 			// A scan from another biome can discover a loaded mound, but it cannot
 			// reliably prove a Cavern location is empty or broken.
 			if (!playerInCavern) continue;
 			if (client.level == null || !client.level.isLoaded(pos)) continue;
-			if (safeMode && VisibilityCheck.canInspectCandidate(pos)) {
-				completed.add(pos);
-				everSeen.remove(pos);
-				absentSince.remove(pos);
-				continue;
+			if (safeMode) {
+				// Safe Mode only uses information the player has directly confirmed.
+				if (!VisibilityCheck.canInspectCandidate(pos)) continue;
+			} else {
+				// Extra mode already discovered this mound from its live entity. Once the
+				// player is back within reliable entity range, absence proves a party
+				// member broke it; walking over to inspect the empty spot is unnecessary.
+				if (!detectedLive.contains(pos) || client.player == null
+					|| client.player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5)
+						> RELIABLE_DETECTION_RANGE * RELIABLE_DETECTION_RANGE) {
+					absentSince.remove(pos);
+					continue;
+				}
+				long firstAbsent = absentSince.computeIfAbsent(pos, ignored -> now);
+				if (now - firstAbsent < ABSENCE_CONFIRM_MILLIS) continue;
 			}
-			long missingAt = absentSince.computeIfAbsent(pos, ignored -> now);
-			if (now - missingAt < ABSENCE_CONFIRM_MILLIS) continue;
-			// A catalog-only position may be ruled out only by a visible Safe Mode
-			// inspection. Normal Mode can complete only a mound confirmed live first.
-			if (!detectedLive.contains(pos) && !safeMode) continue;
-			if (safeMode) continue;
 			completed.add(pos);
 			everSeen.remove(pos);
+			detectedLive.remove(pos);
+			confirmedVisible.remove(pos);
 			absentSince.remove(pos);
 		}
 		// A live scan or newly remembered mound proves this run contained one.
@@ -215,7 +223,6 @@ public final class MoundSpotter {
 		cached = everSeen.stream()
 			.filter(pos -> safeMode || detectedLive.contains(pos))
 			.toList();
-		return cached;
 	}
 
 	/** Whether any mound at all has been detected this run, even if all are now broken. */
@@ -239,7 +246,6 @@ public final class MoundSpotter {
 		pendingLocalBreakAt = 0;
 		everDetectedAny = false;
 		cached = List.of();
-		cachedAt = 0;
 		ticks = 0;
 		lastSafeMode = SafeMode.mounds();
 	}
@@ -273,7 +279,7 @@ public final class MoundSpotter {
 		pendingLocalBreakAt = 0;
 		// If no recent local hit was available, the disappearance scan still resolves
 		// party-member breaks without guessing among nearby mounds.
-		cachedAt = 0;
+		// The next scheduled refresh resolves party-member breaks.
 	}
 
 	private static List<BlockPos> scan() {

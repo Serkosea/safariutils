@@ -25,15 +25,16 @@ public final class DetectedCritters {
 		boolean safeMode = SafeMode.critterDetection();
 		Map<Critter, Integer> concurrent = new HashMap<>();
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-			boolean labelVisible = VisibilityCheck.onScreen(sighting.label());
+			boolean sparkling = SparklingWatch.isSparkling(sighting);
+			boolean labelVisible = VisibilityCheck.canSeeVisibleName(sighting.label());
 			boolean mobVisible = sighting.mob() != null && VisibilityCheck.canSee(sighting.mob());
-			boolean hiddenSafe = SafeMode.hiddenCritter(sighting.critter(), sighting.sparkling());
+			boolean hiddenSafe = SafeMode.hiddenCritter(sighting.critter(), sparkling);
 			// Dormant hidden species do not visibly expose their label. In Safe Mode,
 			// only seeing their actual body can reveal them; an internal label entity is
 			// not information the player has. Ordinary critters may still use either a
 			// visible label or body because pairing can legitimately fail for them.
 			if (hiddenSafe ? !mobVisible : safeMode && !labelVisible && !mobVisible) continue;
-			if (sighting.sparkling()) continue;
+			if (sparkling) continue;
 			everSeen.add(sighting.critter());
 			concurrent.merge(sighting.critter(), 1, Integer::sum);
 		}

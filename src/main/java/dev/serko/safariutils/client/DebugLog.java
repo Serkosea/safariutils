@@ -105,6 +105,8 @@ public final class DebugLog {
 			case "NEST" -> advanced.logNest;
 			case "COUNT" -> advanced.logCritterCounts;
 			case "WAYPOINT" -> advanced.logStaticWaypoints;
+			case "PARTICLE" -> advanced.logParticles;
+			case "SPARKLING" -> advanced.logSparkling;
 			default -> true;
 		};
 	}

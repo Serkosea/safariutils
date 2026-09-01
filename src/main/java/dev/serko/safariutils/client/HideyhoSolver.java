@@ -260,9 +260,10 @@ public final class HideyhoSolver {
 			// explains why the entity is loaded well before it is ever seen; this is
 			// what stops that gap from being used to find it before it is genuinely
 			// visible on the player's own screen.
-			if (SafeMode.hiddenCritter(sighting.critter(), sighting.sparkling())
+			boolean sparkling = SparklingWatch.isSparkling(sighting);
+			if (SafeMode.hiddenCritter(sighting.critter(), sparkling)
 				&& !VisibilityCheck.canSee(target)) continue;
-			seenSparkling = sighting.sparkling();
+			seenSparkling = sparkling;
 			return target.blockPosition();
 		}
 		return null;

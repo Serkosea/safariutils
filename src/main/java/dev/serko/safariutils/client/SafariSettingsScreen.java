@@ -95,6 +95,7 @@ public final class SafariSettingsScreen extends Screen {
 	private int unlockProgress;
 	private boolean unlockPanel;
 	private boolean customThemePanel;
+	private boolean specialSparklingConfirmation;
 	private long signalCompletedAt;
 	private int modalHitStart = -1;
 	private long resetArmedUntil;
@@ -236,7 +237,7 @@ public final class SafariSettingsScreen extends Screen {
 		boolean editingSameSlider = editingInlineText && editingNumber && editor != null
 			&& inside(mouseX, mouseY, editingSliderLeft, editingSliderTop,
 				editingSliderRight, editingSliderBottom);
-		boolean modalOpen = unlockPanel || customThemePanel
+		boolean modalOpen = unlockPanel || customThemePanel || specialSparklingConfirmation
 			|| editor != null && !editingInlineText || choiceField != null || editingSameSlider;
 		int backgroundMouseX = modalOpen ? Integer.MIN_VALUE : mouseX;
 		int backgroundMouseY = modalOpen ? Integer.MIN_VALUE : mouseY;
@@ -261,6 +262,10 @@ public final class SafariSettingsScreen extends Screen {
 		if (customThemePanel) {
 			modalHitStart = hits.size();
 			drawCustomThemePanel(graphics, mouseX, mouseY);
+		}
+		if (specialSparklingConfirmation) {
+			modalHitStart = hits.size();
+			drawSpecialSparklingConfirmation(graphics, mouseX, mouseY);
 		}
 		if (editor != null && !editingInlineText) {
 			modalHitStart = hits.size();
@@ -506,7 +511,15 @@ public final class SafariSettingsScreen extends Screen {
 			Integer parentId, String path, int left, int right, int y, int depth,
 			int mouseX, int mouseY) {
 		List<Field> groups = new ArrayList<>();
-		for (Field field : publicFields(type)) {
+		List<Field> fields = new ArrayList<>(java.util.Arrays.asList(publicFields(type)));
+		if (path.startsWith("advanced.testingAccordion.")
+			|| path.startsWith("advanced.safeModeAccordion")) {
+			fields.sort(java.util.Comparator.comparing(field -> {
+				SettingInfo info = field.getAnnotation(SettingInfo.class);
+				return info == null ? "" : clean(info.name()).toLowerCase(Locale.ROOT);
+			}));
+		}
+		for (Field field : fields) {
 			SettingInfo option = field.getAnnotation(SettingInfo.class);
 			if (option == null || isHeaderOnly(field) || !belongsTo(field, parentId)) continue;
 			SettingSection accordion = field.getAnnotation(SettingSection.class);
@@ -953,6 +966,7 @@ public final class SafariSettingsScreen extends Screen {
 		boolean customTheme = isThemeChoice(choiceField) && value == 34;
 		try {
 			choiceField.setInt(choiceOwner, value);
+			applyChoiceSideEffect(choiceField, value);
 			ConfigManager.save();
 		} catch (IllegalAccessException ignored) {
 		}
@@ -1095,6 +1109,34 @@ public final class SafariSettingsScreen extends Screen {
 		graphics.fill(x, y, x + width, y + 22, hovered ? SELECTED : shade(BLUE, 0.34f));
 		outline(graphics, x, y, width, 22, hovered ? CYAN : BLUE);
 		graphics.centeredText(font, label, x + width / 2, y + 7, TEXT);
+	}
+
+	private void drawSpecialSparklingConfirmation(GuiGraphicsExtractor graphics,
+			int mouseX, int mouseY) {
+		int w = Math.min(500, width - 40);
+		int h = 132;
+		int x = (width - w) / 2;
+		int y = (height - h) / 2;
+		graphics.fill(0, 0, width, height, 0xBB000000);
+		graphics.fill(x, y, x + w, y + h, SURFACE);
+		outline(graphics, x, y, w, h, RED);
+		graphics.centeredText(font, "EPILEPSY WARNING", x + w / 2, y + 15, RED);
+		graphics.centeredText(font, "This option may affect photosensitive players.",
+			x + w / 2, y + 40, RED);
+		graphics.centeredText(font, "Please confirm that you want to enable it.",
+			x + w / 2, y + 54, RED);
+		graphics.centeredText(font, "Enable Special Sparkling Catch?", x + w / 2, y + 72, GOLD);
+		int cancelX = x + w / 2 - 112;
+		int enableX = x + w / 2 + 8;
+		drawButton(graphics, cancelX, y + 96, 104, "Cancel", mouseX, mouseY);
+		drawButton(graphics, enableX, y + 96, 104, "Enable", mouseX, mouseY);
+		hits.add(new Hit(cancelX, y + 96, cancelX + 104, y + 118,
+			() -> specialSparklingConfirmation = false));
+		hits.add(new Hit(enableX, y + 96, enableX + 104, y + 118, () -> {
+			ConfigManager.get().sparkling.specialSparklingCatch = true;
+			specialSparklingConfirmation = false;
+			ConfigManager.save();
+		}));
 	}
 
 	private void drawFooter(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
@@ -1686,6 +1728,10 @@ public final class SafariSettingsScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(KeyEvent event) {
+		if (specialSparklingConfirmation && event.key() == 256) {
+			specialSparklingConfirmation = false;
+			return true;
+		}
 		if (choiceField != null && event.key() == 256) {
 			closeChoicePicker();
 			return true;
@@ -1711,6 +1757,10 @@ public final class SafariSettingsScreen extends Screen {
 
 	private void setBoolean(Object owner, Field field, boolean value) {
 		try {
+			if (field.getName().equals("specialSparklingCatch") && value) {
+				specialSparklingConfirmation = true;
+				return;
+			}
 			field.setBoolean(owner, value);
 			SettingToggle toggle = field.getAnnotation(SettingToggle.class);
 			if (toggle.runnableId() >= 0) ConfigManager.get().executeRunnable(toggle.runnableId());
@@ -1734,13 +1784,25 @@ public final class SafariSettingsScreen extends Screen {
 			} else {
 				field.setInt(owner, Math.floorMod(current + direction, dropdown.values().length));
 			}
+			applyChoiceSideEffect(field, field.getInt(owner));
 			ConfigManager.save();
 		} catch (IllegalAccessException ignored) {
 		}
 	}
 
+	private static void applyChoiceSideEffect(Field field, int value) {
+		if (field != null && field.getName().equals("outputLogPreset")) {
+			OutputLogPresets.apply(value);
+		}
+	}
+
 	private String dropdownLabel(Field field, SettingChoice dropdown, int value) {
 		if (isSoundChoice(field)) return AlertSounds.label(value);
+		if (field.getName().equals("outputLogPreset")) {
+			int matchedPreset = OutputLogPresets.syncSelection();
+			return matchedPreset >= 0 && matchedPreset < dropdown.values().length
+				? dropdown.values()[matchedPreset] : dropdown.values()[0];
+		}
 		if (isThemeChoice(field)) return THEMES.stream().filter(theme -> theme.id == value)
 			.findFirst().map(ThemeChoice::label).orElse("Default");
 		return value >= 0 && value < dropdown.values().length ? dropdown.values()[value] : dropdown.values()[0];

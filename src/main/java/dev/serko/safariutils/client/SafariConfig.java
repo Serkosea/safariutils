@@ -37,16 +37,18 @@ public class SafariConfig {
 
 	/** Runnable id for the "Edit Hud Positions" button in the Display category. */
 	private static final int EDIT_POSITIONS = 1;
+	private static final int TESTING_SESSION = 2;
 
 	public void executeRunnable(int runnableId) {
 		if (runnableId == EDIT_POSITIONS) {
 			HudEditorScreen.open();
 			return;
 		}
+		if (runnableId == TESTING_SESSION) TestingMode.settingChanged();
 	}
 
 	public boolean isValidRunnable(int runnableId) {
-		return runnableId == EDIT_POSITIONS;
+		return runnableId == EDIT_POSITIONS || runnableId == TESTING_SESSION;
 	}
 
 	@SettingCategory(name = "Display", desc = "HUDs, waypoints, colors, and interface appearance")
@@ -389,10 +391,17 @@ public class SafariConfig {
 		@Expose
 		public boolean waypointDistance = false;
 
+		@SettingInfo(name = "Hide Possible",
+			desc = "Hides unchecked Safe Mode locations until the critter or objective is visually confirmed")
+		@SettingToggle
+		@SettingGroup(id = HIGHLIGHTS)
+		@Expose
+		public boolean hidePossibleWaypoints = false;
+
 		/** Accordion id for marks on fixed world features rather than living critters. */
 		private static final int MARKERS = 7;
 
-		@SettingInfo(name = "Markers", desc = "")
+		@SettingInfo(name = "Objectives", desc = "")
 		@SettingSection(id = MARKERS)
 		@SettingGroup(id = HIGHLIGHTS)
 		public boolean markersAccordion = false;
@@ -405,12 +414,12 @@ public class SafariConfig {
 		@Expose
 		public boolean floorDrops = true;
 
-		/** Accordion id for the Recatch-specific settings, nested inside Markers. */
+		/** Accordion id for the Recatch-specific settings, nested inside Critters. */
 		private static final int RECATCH = 11;
 
 		@SettingInfo(name = "Recatch", desc = "")
 		@SettingSection(id = RECATCH)
-		@SettingGroup(id = MARKERS)
+		@SettingGroup(id = ENTITIES)
 		public boolean recatchAccordion = false;
 
 		@SettingInfo(
@@ -520,10 +529,10 @@ public class SafariConfig {
 
 		/** Accordion id for the colours of marks on fixed world features. */
 		private static final int MARKERS_COLOUR = 9;
-		/** Accordion id for Floor Drops' own two colours, nested under Markers. */
+		/** Accordion id for Floor Drops' own two colours, nested under Objectives. */
 		private static final int FLOOR_DROPS_COLOUR = 12;
 
-		@SettingInfo(name = "Markers", desc = "")
+		@SettingInfo(name = "Objectives", desc = "")
 		@SettingSection(id = MARKERS_COLOUR)
 		@SettingGroup(id = COLOURS)
 		public boolean markersColourAccordion = false;
@@ -845,6 +854,7 @@ public class SafariConfig {
 	}
 
 	public static class AdvancedConfig {
+		private static final int TESTING = 24;
 		private static final int SAFE_MODE = 18;
 		private static final int SAFE_MODE_OPTIONS = 19;
 		private static final int SAFE_DETECTION_HUD = 20;
@@ -858,129 +868,146 @@ public class SafariConfig {
 		@Expose
 		public int specialTheme = 0;
 
-		@SettingInfo(name = "Safe Mode", desc = "Visibility-aware tracking and conservative information")
+		@SettingInfo(name = "Safe Mode", desc = "Limits tracking to information the player has visibly confirmed")
 		@SettingSection(id = SAFE_MODE)
 		public boolean safeModeAccordion = false;
 
 		@SettingInfo(name = "Safe Mode",
-			desc = "Master switch for every Safe Mode option below")
+			desc = "Uses the visibility-based behavior selected below")
 		@SettingToggle
 		@SettingGroup(id = SAFE_MODE)
 		@Expose
 		public boolean safeMode = true;
 
-		@SettingInfo(name = "Safe Mode Options", desc = "Choose which features use Safe Mode behavior")
+		@SettingInfo(name = "Safe Mode Options", desc = "Choose which features require visible confirmation")
 		@SettingSection(id = SAFE_MODE_OPTIONS)
 		@SettingGroup(id = SAFE_MODE)
 		public boolean safeModeOptionsAccordion = false;
 
-		@SettingInfo(name = "Detection And HUD", desc = "Critter information and completion conclusions")
+		@SettingInfo(name = "Detection And HUD", desc = "Controls when critters and completion information become known")
 		@SettingSection(id = SAFE_DETECTION_HUD)
 		@SettingGroup(id = SAFE_MODE_OPTIONS)
 		public boolean safeDetectionHudAccordion = false;
 
 		@SettingInfo(name = "Visible Critter Detection",
-			desc = "§6Safe: Counts only visibly detected critters\n§7Normal: Counts every loaded critter")
+			desc = "§6Safe: Detects a critter after its body or visible name tag is seen\n§7Normal: Detects every loaded critter")
 		@SettingToggle
 		@SettingGroup(id = SAFE_DETECTION_HUD)
 		@Expose
 		public boolean safeVisibleCritterDetection = true;
 
-		@SettingInfo(name = "Hide Nearby Counts",
-			desc = "§6Safe: Hides unconfirmed nearby counts\n§7Normal: Shows counts for all loaded critters")
+		@SettingInfo(name = "Nearby Counts",
+			desc = "§6Safe: Counts only critters whose body or visible name tag is seen\n§7Normal: Counts every loaded critter")
 		@SettingToggle
 		@SettingGroup(id = SAFE_DETECTION_HUD)
 		@Expose
 		public boolean safeHideNearbyCounts = true;
 
-		@SettingInfo(name = "Conservative Availability",
-			desc = "§6Safe: Keeps unseen species possible\n§7Normal: Marks species unavailable from completed objectives")
+		@SettingInfo(name = "Species Availability",
+			desc = "§6Safe: Keeps an unseen species listed until its absence is visibly confirmed\n§7Normal: Uses every detected objective state")
 		@SettingToggle
 		@SettingGroup(id = SAFE_DETECTION_HUD)
 		@Expose
 		public boolean safeConservativeAvailability = true;
 
-		@SettingInfo(name = "Conservative Completion",
-			desc = "§6Safe: Avoids unverified full-clear claims\n§7Normal: Uses all detected objective states")
+		@SettingInfo(name = "Completion Checks",
+			desc = "§6Safe: Completes objectives only from catches and visible evidence\n§7Normal: Uses every detected objective state")
 		@SettingToggle
 		@SettingGroup(id = SAFE_DETECTION_HUD)
 		@Expose
 		public boolean safeConservativeCompletion = true;
 
-		@SettingInfo(name = "Critter Overlays", desc = "Visibility rules for critter hitboxes and waypoints")
+		@SettingInfo(name = "Critter Overlays", desc = "Controls when critter hitboxes and waypoints are shown")
 		@SettingSection(id = SAFE_CRITTER_OVERLAYS)
 		@SettingGroup(id = SAFE_MODE_OPTIONS)
 		public boolean safeCritterOverlaysAccordion = false;
 
 		@SettingInfo(name = "Critter Hitboxes",
-			desc = "§6Safe: Hitboxes respect visibility\n§7Normal: Hitboxes show through terrain")
+			desc = "§6Safe: Shows a hitbox only while its critter or visible name tag is seen\n§7Normal: Shows loaded hitboxes through terrain")
 		@SettingToggle
 		@SettingGroup(id = SAFE_CRITTER_OVERLAYS)
 		@Expose
 		public boolean safeCritterHitboxes = true;
 
 		@SettingInfo(name = "Sparkling Critters",
-			desc = "§6Safe: Sparklings follow Safe Mode visibility\n§7Normal: Always shows rare Sparkling information")
+			desc = "§6Safe: Reveals a Sparkling after its body or visible name tag is seen\n§7Normal: Reveals loaded Sparkling information immediately")
 		@SettingToggle
 		@SettingGroup(id = SAFE_CRITTER_OVERLAYS)
 		@Expose
 		public boolean safeSparklingCritters = true;
 
-		@SettingInfo(name = "Initially Hidden Critters", desc = "Possible-location and live-waypoint behavior by species")
+		@SettingInfo(name = "Initially Hidden Critters", desc = "Controls possible locations for critters hidden at spawn")
 		@SettingSection(id = SAFE_HIDDEN_CRITTERS)
 		@SettingGroup(id = SAFE_CRITTER_OVERLAYS)
 		public boolean safeHiddenCrittersAccordion = false;
 
-		@SettingInfo(name = "Hideyho", desc = "§6Safe: Checks learned possible locations\n§7Normal: Reveals its detected location")
+		@SettingInfo(name = "Hideyho", desc = "§6Safe: Shows learned locations until each is checked\n§7Normal: Reveals its detected location immediately")
 		@SettingToggle @SettingGroup(id = SAFE_HIDDEN_CRITTERS) @Expose
 		public boolean safeHideyho = true;
 
-		@SettingInfo(name = "Hideonwall", desc = "§6Safe: Checks learned possible locations\n§7Normal: Reveals its detected location")
+		@SettingInfo(name = "Hideonwall", desc = "§6Safe: Shows learned locations until each is checked\n§7Normal: Reveals its detected location immediately")
 		@SettingToggle @SettingGroup(id = SAFE_HIDDEN_CRITTERS) @Expose
 		public boolean safeHideonwall = true;
 
-		@SettingInfo(name = "Duplico", desc = "§6Safe: Checks learned possible locations\n§7Normal: Reveals its detected location")
+		@SettingInfo(name = "Duplico", desc = "§6Safe: Shows learned locations until each is checked\n§7Normal: Reveals its detected location immediately")
 		@SettingToggle @SettingGroup(id = SAFE_HIDDEN_CRITTERS) @Expose
 		public boolean safeDuplico = true;
 
-		@SettingInfo(name = "Bloodbat", desc = "§6Safe: Checks learned possible locations\n§7Normal: Reveals its detected location")
+		@SettingInfo(name = "Bloodbat", desc = "§6Safe: Shows learned locations until each is checked\n§7Normal: Reveals its detected location immediately")
 		@SettingToggle @SettingGroup(id = SAFE_HIDDEN_CRITTERS) @Expose
 		public boolean safeBloodbat = true;
 
-		@SettingInfo(name = "Hideonfloor", desc = "§6Safe: Checks learned possible locations\n§7Normal: Reveals its detected location")
+		@SettingInfo(name = "Hideonfloor", desc = "§6Safe: Shows learned locations until each is checked\n§7Normal: Reveals its detected location immediately")
 		@SettingToggle @SettingGroup(id = SAFE_HIDDEN_CRITTERS) @Expose
 		public boolean safeHideonfloor = true;
 
-		@SettingInfo(name = "Static Objectives", desc = "Safe Mode behavior for fixed Safari objectives")
+		@SettingInfo(name = "Static Objectives", desc = "Controls learned locations for fixed Safari objectives")
 		@SettingSection(id = SAFE_STATIC_OBJECTIVES)
 		@SettingGroup(id = SAFE_MODE_OPTIONS)
 		public boolean safeStaticObjectivesAccordion = false;
 
-		@SettingInfo(name = "Floor Drops", desc = "§6Safe: Checks every learned candidate\n§7Normal: Shows only detected active drops")
+		@SettingInfo(name = "Floor Drops", desc = "§6Safe: Shows learned locations until checked\n§7Normal: Shows detected active drops")
 		@SettingToggle @SettingGroup(id = SAFE_STATIC_OBJECTIVES) @Expose
 		public boolean safeFloorDrops = true;
 
-		@SettingInfo(name = "Bee Nests", desc = "§6Safe: Checks every learned candidate\n§7Normal: Shows currently detected nests")
+		@SettingInfo(name = "Bee Nests", desc = "§6Safe: Shows learned locations until checked\n§7Normal: Shows detected active nests")
 		@SettingToggle @SettingGroup(id = SAFE_STATIC_OBJECTIVES) @Expose
 		public boolean safeBeeNests = true;
 
-		@SettingInfo(name = "Rockmite Mounds", desc = "§6Safe: Checks every learned candidate\n§7Normal: Shows currently detected mounds")
+		@SettingInfo(name = "Rockmite Mounds", desc = "§6Safe: Shows learned locations until checked\n§7Normal: Shows detected active mounds")
 		@SettingToggle @SettingGroup(id = SAFE_STATIC_OBJECTIVES) @Expose
 		public boolean safeRockmiteMounds = true;
 
-		@SettingInfo(name = "Snoozle Walls", desc = "§6Safe: Keeps visibly confirmed wall states\n§7Normal: Reads every loaded wall state")
+		@SettingInfo(name = "Snoozle Walls", desc = "§6Safe: Changes a wall only after it is visibly checked\n§7Normal: Reads every loaded wall state")
 		@SettingToggle @SettingGroup(id = SAFE_STATIC_OBJECTIVES) @Expose
 		public boolean safeSnoozleWalls = true;
 
-		@SettingInfo(name = "Troodon Walls", desc = "§6Safe: Keeps visibly confirmed wall states\n§7Normal: Reads every loaded wall state")
+		@SettingInfo(name = "Troodon Walls", desc = "§6Safe: Changes a wall only after it is visibly checked\n§7Normal: Reads every loaded wall state")
 		@SettingToggle @SettingGroup(id = SAFE_STATIC_OBJECTIVES) @Expose
 		public boolean safeTroodonWalls = true;
+
+		@SettingInfo(name = "Testing", desc = "Temporary logging and visualization tools")
+		@SettingSection(id = TESTING)
+		public boolean testingAccordion = false;
+
+		@SettingInfo(name = "Testing Session",
+			desc = "Runs normally without saving run history, totals, settings, or other progress until Minecraft restarts")
+		@SettingToggle(runnableId = TESTING_SESSION)
+		@SettingGroup(id = TESTING)
+		public transient boolean testingSession = false;
+
+		@SettingInfo(name = "Save Learned Locations",
+			desc = "Saves newly confirmed objective and initially stationary critter locations during solo runs")
+		@SettingToggle
+		@SettingGroup(id = TESTING)
+		public transient boolean testingSaveLearnedLocations = false;
 
 		/** Accordion id for the debug-logging toggles. */
 		private static final int DEBUG_LOGGING = 1;
 
-		@SettingInfo(name = "Debug Logging", desc = "")
+		@SettingInfo(name = "Debug Logging", desc = "Records selected game and Safari activity for troubleshooting")
 		@SettingSection(id = DEBUG_LOGGING)
+		@SettingGroup(id = TESTING)
 		public boolean debugLoggingAccordion = false;
 
 		@SettingInfo(
@@ -992,6 +1019,13 @@ public class SafariConfig {
 		@Expose
 		public boolean debugLog = false;
 
+		@SettingInfo(name = "Output Log Preset",
+			desc = "Applies a ready-made set of testing and logging options")
+		@SettingChoice(values = {"All", "Custom", "Party And Server", "Run Lifecycle",
+			"Sparkling Research", "Static Locations", "World Tracking"})
+		@SettingGroup(id = DEBUG_LOGGING)
+		public transient int outputLogPreset = 1;
+
 		/** Accordion id for which categories the Output Log actually writes. */
 		private static final int OUTPUT_LOG_OPTIONS = 13;
 		private static final int OUTPUT_SESSION_DATA = 15;
@@ -999,7 +1033,7 @@ public class SafariConfig {
 		private static final int OUTPUT_WORLD_TRACKING = 17;
 
 		@SettingInfo(name = "Output Log Options",
-			desc = "Which categories of line the Output Log above actually writes, once it is on")
+			desc = "Choose which information is written while Output Log is enabled")
 		@SettingSection(id = OUTPUT_LOG_OPTIONS)
 		@SettingGroup(id = DEBUG_LOGGING)
 		public boolean outputLogOptionsAccordion = false;
@@ -1168,13 +1202,27 @@ public class SafariConfig {
 		@Expose
 		public boolean logStaticWaypoints = false;
 
+		@SettingInfo(name = "Critter Particles",
+			desc = "Aggregates server particle packets and associates them with nearby critters")
+		@SettingToggle
+		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
+		@Expose
+		public boolean logParticles = false;
+
+		@SettingInfo(name = "Sparkling Detection",
+			desc = "Records Sparkling discovery, visibility, entity replacement, and catch decisions")
+		@SettingToggle
+		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
+		@Expose
+		public boolean logSparkling = false;
+
 		/** Accordion id for hitboxes on entity types outside the normal critter set. */
 		private static final int DIAGNOSTIC_HITBOXES = 14;
 
 		@SettingInfo(name = "Diagnostic Hitboxes",
-			desc = "Wireframes for entity types this mod does not normally show one for, by type rather " +
-				"than by species — useful for working out what an unidentified critter's real body is")
+			desc = "Shows entity wireframes for identifying critter bodies and nearby objects")
 		@SettingSection(id = DIAGNOSTIC_HITBOXES)
+		@SettingGroup(id = TESTING)
 		public boolean diagnosticHitboxesAccordion = false;
 
 		@SettingInfo(name = "Critters",
@@ -1185,8 +1233,8 @@ public class SafariConfig {
 		@Expose
 		public boolean showAllCritterHitboxes = false;
 
-		@SettingInfo(name = "Armour Stands",
-			desc = "Every armour stand nearby, named or not — this is how Gazer's real body, an unnamed " +
+		@SettingInfo(name = "Armor Stands",
+			desc = "Every armor stand nearby, named or not — this is how Gazer's real body, an unnamed " +
 				"one otherwise excluded from normal pairing entirely, was actually found")
 		@SettingToggle
 		@SettingGroup(id = DIAGNOSTIC_HITBOXES)
@@ -3229,6 +3277,8 @@ public class SafariConfig {
 		private static final int BANNER_SOUND = 4;
 		private static final int CHAT_ALERTS = 5;
 		private static final int CHAT_DETECTED = 6, CHAT_CAUGHT = 7, CHAT_SHARED = 8;
+		private static final int SPARKLING_MODE_OPTIONS = 9;
+		private static final int CATCH_ALERT = 10;
 
 		@SettingInfo(name = "Sparkling Mode",
 			desc = "Enables sparkling mode to remove extra information for party's mutual Sparkling critters\n" +
@@ -3237,11 +3287,21 @@ public class SafariConfig {
 		@Expose
 		public boolean sparklingMode = false;
 
+		@SettingInfo(name = "Sparkling Mode Options", desc = "")
+		@SettingSection(id = SPARKLING_MODE_OPTIONS)
+		public boolean sparklingModeOptionsAccordion = false;
+
 		@SettingInfo(name = "Ignore Uniques",
 			desc = "Ignore unique catches in Sparkling Mode to prioritize faster Sparkling checks, completely ignoring already shared Sparkling critters")
-		@SettingToggle
+		@SettingToggle @SettingGroup(id = SPARKLING_MODE_OPTIONS)
 		@Expose
 		public boolean sparklingIgnoreUniques = false;
+
+		@SettingInfo(name = "Only Show Sparkling",
+			desc = "Hides ordinary critter hitboxes and critter waypoints while Sparkling Mode is enabled")
+		@SettingToggle @SettingGroup(id = SPARKLING_MODE_OPTIONS)
+		@Expose
+		public boolean sparklingOnlyShowSparkling = false;
 
 		// Kept only so older settings files can migrate this value to Display.
 		@Expose
@@ -3312,6 +3372,18 @@ public class SafariConfig {
 		@SettingRange(minValue = 0.5f, maxValue = 2f, minStep = 0.1f)
 		@SettingGroup(id = BANNER_SOUND) @Expose
 		public float sparklingBannerSoundPitch = 1.4f;
+
+		@SettingInfo(name = "Catch Alert", desc = "")
+		@SettingSection(id = CATCH_ALERT)
+		@SettingGroup(id = SPARKLING_ALERTS)
+		public boolean sparklingCatchAlertAccordion = false;
+
+		@SettingInfo(name = "Special Sparkling Catch",
+			desc = "Uses a special celebration when a Sparkling critter is caught\n§cEPILEPSY WARNING: This option may affect photosensitive players")
+		@SettingToggle
+		@SettingGroup(id = CATCH_ALERT)
+		@Expose
+		public boolean specialSparklingCatch = false;
 
 		@SettingInfo(name = "Chat Alerts", desc = "")
 		@SettingSection(id = CHAT_ALERTS)

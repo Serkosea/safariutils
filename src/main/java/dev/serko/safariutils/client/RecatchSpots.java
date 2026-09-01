@@ -163,7 +163,8 @@ public final class RecatchSpots {
 				if (sighting.mob() == null) continue;
 				AABB box = sighting.body().getBoundingBox();
 				UUID id = sighting.mob().getUUID();
-				byEntity.put(id, new Seen(sighting.critter(), box, sighting.sparkling(), now));
+				byEntity.put(id, new Seen(sighting.critter(), box,
+					SparklingWatch.isSparkling(sighting), now));
 
 				if (!pity.containsKey(id)) claimOrphanedPity(sighting.critter(), id, box);
 			}
@@ -220,12 +221,17 @@ public final class RecatchSpots {
 
 	/** Feeds one cleaned chat line. */
 	public static void onChatMessage(String line) {
-		if (!ConfigManager.get().display.recatchHelper) return;
-
 		// selfName only matters for the entry banner, which is not one of the events
 		// this cares about.
 		CritterEvent event = ChatParser.parse(line, null);
 		if (event == null || event.critter() == null) return;
+		// Capture animations may replace a critter's body and label before the
+		// result arrives. Tell the Sparkling tracker even when recatch markers are
+		// disabled so that replacement cannot become a second detection.
+		if (event.type() == CritterEvent.Type.ATTEMPT) {
+			SparklingWatch.onCaptureInteraction(event.critter());
+		}
+		if (!ConfigManager.get().display.recatchHelper) return;
 
 		DebugLog.line("CHAT", event.type() + " " + event.critter().name() + " raw=\"" + line + "\"");
 
@@ -253,10 +259,23 @@ public final class RecatchSpots {
 				DebugLog.line("RECATCH", "CLEAR " + event.critter().name() + " id=" + shortId(id) + " (caught)");
 				pins.remove(id);
 				pity.remove(id);
+				clearCaughtPity(event.critter(), pinEntry.box());
 			});
 			default -> {
 			}
 		}
+	}
+
+	/** Clears replacement IDs belonging to the caught individual, not nearby peers. */
+	private static void clearCaughtPity(Critter critter, AABB caughtBox) {
+		double limit = PITY_CARRY_DISTANCE * PITY_CARRY_DISTANCE;
+		orphanedPity.entrySet().removeIf(entry -> entry.getValue().critter().equals(critter)
+			&& entry.getValue().lastBox().getCenter().distanceToSqr(caughtBox.getCenter()) <= limit);
+		pity.keySet().removeIf(id -> {
+			Seen seen = byEntity.get(id);
+			return seen != null && seen.critter().equals(critter)
+				&& seen.box().getCenter().distanceToSqr(caughtBox.getCenter()) <= limit;
+		});
 	}
 
 	/**

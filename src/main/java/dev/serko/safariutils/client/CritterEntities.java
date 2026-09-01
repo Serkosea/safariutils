@@ -237,11 +237,11 @@ public final class CritterEntities {
 		List<Label> labels = new ArrayList<>();
 		List<Entity> candidates = new ArrayList<>();
 		List<Entity> interactions = new ArrayList<>();
-		// Gazer is the only critter whose body is an unnamed armour stand.
+		// Gazer is the only critter whose body is an unnamed armor stand.
 		List<Entity> unnamedArmorStands = new ArrayList<>();
 
 		for (Entity entity : client.level.entitiesForRendering()) {
-			// The name identifies a label, not the entity type: most are armour stands
+			// The name identifies a label, not the entity type: most are armor stands
 			// but a Hideyho arrives as a player.
 			String name = entity.hasCustomName()
 				? SafariLocation.strip(entity.getCustomName().getString()) : null;
@@ -249,7 +249,7 @@ public final class CritterEntities {
 			boolean rare = false;
 
 			// A sparkling one is assumed to be named for it. Only this one prefix is
-			// tolerated, rather than searching the label for any species name: an armour
+			// tolerated, rather than searching the label for any species name: an armor
 			// stand reading "Tepid Shard" must not count as a Tepid.
 			if (named == null && name != null && startsWithSparkling(name)) {
 				named = Critters.byName(name.substring(SPARKLING.length()).trim());
@@ -317,7 +317,7 @@ public final class CritterEntities {
 	/** How often the same still-unpaired label is worth logging again. */
 	private static final long PAIR_FAILURE_LOG_INTERVAL_MILLIS = 5_000;
 
-	/** How close Gazer's own body (an unnamed armour stand) sits to its label — confirmed consistently ~2 blocks. */
+	/** How close Gazer's own body (an unnamed armor stand) sits to its label — confirmed consistently ~2 blocks. */
 	private static final double GAZER_BODY_RADIUS = 3.0;
 
 	/** Returns the nearest qualifying body and logs throttled pairing diagnostics. */
@@ -357,8 +357,8 @@ public final class CritterEntities {
 			best = candidate;
 		}
 
-		// Gazer's body is an unnamed armour stand about two blocks from its label.
-		// Keep this fallback narrow because other armour stands are usually labels.
+		// Gazer's body is an unnamed armor stand about two blocks from its label.
+		// Keep this fallback narrow because other armor stands are usually labels.
 		if (best == null && "Gazer".equals(critter.name())) {
 			double gazerBestSq = GAZER_BODY_RADIUS * GAZER_BODY_RADIUS;
 			for (Entity candidate : unnamedArmorStands) {

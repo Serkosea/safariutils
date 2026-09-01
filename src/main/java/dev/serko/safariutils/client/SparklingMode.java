@@ -27,6 +27,10 @@ public final class SparklingMode {
 		return enabled() && ConfigManager.get().sparkling.sparklingIgnoreUniques;
 	}
 
+	public static boolean onlyShowSparkling() {
+		return enabled() && ConfigManager.get().sparkling.sparklingOnlyShowSparkling;
+	}
+
 	/** Optional ordinary-hitbox color for whether this run has its unique catch. */
 	public static int uniqueHitboxColour(Critter critter, SafariSession session) {
 		if (!ConfigManager.get().display.uniqueHitboxColours) return 0;
@@ -96,18 +100,18 @@ public final class SparklingMode {
 
 	/** Ignore Uniques hides ordinary shared critters, never a Sparkling duplicate. */
 	public static boolean hideOrdinaryHitbox(Critter critter, boolean sparkling) {
-		return !sparkling && ignoreUniques() && isShared(critter);
+		return !sparkling && (onlyShowSparkling() || ignoreUniques() && isShared(critter));
 	}
 
 	/** Ordinary recatch markers disappear after the run unique; live hitboxes remain. */
 	public static boolean hideOrdinarySpecies(Critter critter, SafariSession session) {
-		return enabled() && isShared(critter)
+		return onlyShowSparkling() || enabled() && isShared(critter)
 			&& (ignoreUniques() || session != null && session.caughtByParty(critter));
 	}
 
 	/** Tracked ordinary waypoints stop helping after the run unique is secured. */
 	public static boolean hideOrdinaryWaypoint(Critter critter, SafariSession session) {
-		return enabled() && (ignoreUniques() && isShared(critter)
+		return onlyShowSparkling() || enabled() && (ignoreUniques() && isShared(critter)
 			|| session != null && session.caughtByParty(critter));
 	}
 

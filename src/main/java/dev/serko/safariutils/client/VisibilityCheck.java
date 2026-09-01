@@ -47,6 +47,11 @@ public final class VisibilityCheck {
 		return inFieldOfView(eye, client.player.getViewVector(1.0f), target);
 	}
 
+	/** A name the game deliberately renders counts as visible even through terrain. */
+	public static boolean canSeeVisibleName(Entity entity) {
+		return entity != null && entity.isCustomNameVisible() && onScreen(entity);
+	}
+
 	/** Same as {@link #canSee(Vec3)}, for the centre of a block position. */
 	public static boolean canSee(BlockPos pos) {
 		return canSee(Vec3.atCenterOf(pos));

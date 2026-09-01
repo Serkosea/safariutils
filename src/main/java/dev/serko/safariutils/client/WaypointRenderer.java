@@ -15,11 +15,13 @@ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.blockentity.BeaconRenderer;
 import net.minecraft.client.renderer.rendertype.LayeringTransform;
 import net.minecraft.client.renderer.rendertype.OutputTarget;
 import net.minecraft.client.renderer.rendertype.RenderSetup;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -131,13 +133,20 @@ public final class WaypointRenderer {
 		}
 
 		renderHitboxes(context, camera);
+		renderSparklingMarkers(context, camera);
 		renderTrackedWaypoints(context, camera);
 		renderFloorDropFaces(context, camera);
 		renderDiagnosticHitboxes(context, camera);
 	}
 
-	/** A sparkling critter's hitbox and title, whatever the rarity/fixed color settings say. */
-	static final int SPARKLING_COLOUR = 0xFFFFD700;
+	/** Animated colour shared by every Sparkling world-space element. */
+	private static int sparklingColour() {
+		float phase = (System.currentTimeMillis() % 4_000L) / 4_000f;
+		return 0xFF000000 | (java.awt.Color.HSBtoRGB(phase, 0.55f, 1f) & 0xFFFFFF);
+	}
+	private static final double SPARKLING_BEAM_WIDTH = 0.56;
+	private static final double SPARKLING_BEAM_CORE_WIDTH = 0.22;
+	private static final double SPARKLING_BEAM_TOP = 320.0;
 
 	/** Species with their own dedicated waypoint further down. */
 	private static final Set<String> EXCLUDED_FROM_HITBOXES =
@@ -282,14 +291,14 @@ public final class WaypointRenderer {
 			if (isRecatchPinned(entity.getUUID())) continue;
 
 			// Diagnostic, Sparkling, unique-status, and configured colors apply in that order.
-			boolean sparkling = sighting.sparkling();
+			boolean sparkling = SparklingWatch.isSparkling(sighting);
 			if (SparklingMode.hideOrdinaryHitbox(sighting.critter(), sparkling)) continue;
 			boolean diagnostic = BuildVersion.DEVELOPER && AdvancedUnlock.isUnlocked()
 				&& ConfigManager.get().advanced.showAllCritterHitboxes;
 			int uniqueColour = SparklingMode.uniqueHitboxColour(sighting.critter(),
 				SessionManager.current());
 			int colour = diagnostic ? 0xFFFF00FF
-				: sparkling ? SPARKLING_COLOUR
+				: sparkling ? sparklingColour()
 				: uniqueColour != 0 ? uniqueColour
 				: display.hitboxRarityColour ? 0xFF000000 | sighting.critter().rarity().colour() : fixedColour;
 
@@ -305,7 +314,7 @@ public final class WaypointRenderer {
 				anyDrawn = true;
 			}
 
-			String label = sighting.critter().name()
+			String label = (sparkling ? "SPARKLING " : "") + sighting.critter().name()
 				+ (display.hitboxPityTitle ? Markers.pityLabel(sighting.critter(), entity.getUUID()) : "");
 			drawn.add(new Found(new Markers.Marker(box, label, colour, Markers.Style.HIGHLIGHT),
 				box.getCenter().distanceTo(camera), seeThrough));
@@ -348,6 +357,56 @@ public final class WaypointRenderer {
 		for (Found found : drawn) {
 			label(poses, backend, found.marker(), camera, found.distance(), found.seeThrough());
 		}
+	}
+
+	/** Marks every detected Sparkling independently of the ordinary hitbox setting. */
+	private static void renderSparklingMarkers(LevelRenderContext context, Vec3 camera) {
+		PoseStack poses = context.poseStack();
+		WaypointRenderBackend backend = new WaypointRenderBackend(context);
+		boolean drawn = false;
+		RenderType beamCore = RenderTypes.beaconBeam(BeaconRenderer.BEAM_LOCATION, false);
+		RenderType beamGlow = RenderTypes.beaconBeam(BeaconRenderer.BEAM_LOCATION, true);
+
+		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
+			if (!SparklingWatch.isOutstanding(sighting) || sighting.mob() == null) continue;
+			// Extra mode may remember a Sparkling before it is in view. Safe Mode
+			// must not turn that retained knowledge into a beam through terrain.
+			if (SafeMode.sparklingCritters()
+				&& !VisibilityCheck.canSee(sighting.mob())
+				&& !VisibilityCheck.canSeeVisibleName(sighting.label())) continue;
+			AABB body = hitboxFor(sighting.mob());
+			if (body.getCenter().distanceToSqr(camera) > MAX_DISTANCE * MAX_DISTANCE) continue;
+
+			double centreX = (body.minX + body.maxX) * 0.5;
+			double centreZ = (body.minZ + body.maxZ) * 0.5;
+			double half = SPARKLING_BEAM_WIDTH * 0.5;
+			double top = Math.max(SPARKLING_BEAM_TOP, body.maxY + 64.0);
+			AABB beam = new AABB(centreX - half, body.maxY, centreZ - half,
+				centreX + half, top, centreZ + half);
+			int colour = sparklingColour();
+			drawBeaconBeam(poses, backend, beamGlow, beam, camera,
+				(0x4C << 24) | (colour & 0xFFFFFF));
+			double coreHalf = SPARKLING_BEAM_CORE_WIDTH * 0.5;
+			AABB core = new AABB(centreX - coreHalf, body.maxY, centreZ - coreHalf,
+				centreX + coreHalf, top, centreZ + coreHalf);
+			drawBeaconBeam(poses, backend, beamCore, core, camera,
+				(0xD0 << 24) | (colour & 0xFFFFFF));
+			drawn = true;
+		}
+
+		if (!drawn) return;
+		backend.flush(beamCore);
+		backend.flush(beamGlow);
+	}
+
+	/** Uses Minecraft's own beacon texture and pipelines for a continuous animated beam. */
+	private static void drawBeaconBeam(PoseStack poses, WaypointRenderBackend backend,
+			RenderType type, AABB beam, Vec3 camera, int colour) {
+		poses.pushPose();
+		poses.translate(beam.minX - camera.x, beam.minY - camera.y, beam.minZ - camera.z);
+		backend.geometry(type, (pose, quads) -> beaconSides(pose, quads,
+			(float) beam.getXsize(), (float) beam.getYsize(), (float) beam.getZsize(), colour));
+		poses.popPose();
 	}
 
 	private static Entity nearestInteraction(List<Entity> interactions, Entity near) {
@@ -451,7 +510,7 @@ public final class WaypointRenderer {
 						? 0xFF000000 | critter.rarity().colour()
 						: Colours.argb(display.hitboxColour, 0xFFFFFFFF))
 					: Colours.argb(tracked.colour().apply(display), 0xFFAA55FF);
-				if (waypointEnabled && !hideOrdinary) {
+				if (waypointEnabled && !hideOrdinary && !display.hidePossibleWaypoints) {
 					for (BlockPos candidate : StillCritters.candidatesFor(critter)) {
 						AABB box = "Bloodbat".equals(critter.name())
 							? approximateHitbox(candidate) : new AABB(candidate);
@@ -472,11 +531,12 @@ public final class WaypointRenderer {
 				// drawing whichever the scan happened to reach first that frame.
 				for (CritterEntities.Sighting sighting : CritterEntities.all()) {
 					if (!tracked.critterName().equals(sighting.critter().name())) continue;
-					if (SparklingMode.hideOrdinaryHitbox(critter, sighting.sparkling())) continue;
+					boolean sparkling = SparklingWatch.isSparkling(sighting);
+					if (SparklingMode.hideOrdinaryHitbox(critter, sparkling)) continue;
 					Entity entity = sighting.mob();
 					if (entity == null) continue;
 					if (StillCritters.isResolved(entity.getUUID())) continue;
-					if (SafeMode.hiddenCritter(critter, sighting.sparkling())
+					if (SafeMode.hiddenCritter(critter, sparkling)
 						&& !StillCritters.isVisiblyConfirmed(entity.getUUID())) continue;
 					liveIds.add(entity.getUUID());
 
@@ -494,18 +554,19 @@ public final class WaypointRenderer {
 					int uniqueColour = display.hitboxEntityColorOverride
 						? SparklingMode.uniqueHitboxColour(critter, SessionManager.current()) : 0;
 					int colour = diagnostic ? 0xFFFF00FF
-						: sighting.sparkling() ? SPARKLING_COLOUR
+						: sparkling ? sparklingColour()
 						: uniqueColour != 0 ? uniqueColour : baseColour;
 
 					AABB box = tracked.useRealHitbox() ? hitboxFor(entity) : new AABB(entity.blockPosition());
 					boolean seeThrough = StillCritters.persistentThroughWalls(entity.getUUID())
-						|| !SafeMode.hiddenCritter(critter, sighting.sparkling());
+						|| !SafeMode.hiddenCritter(critter, sparkling);
 					drawBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES, box, camera, colour);
 					anyDrawn = true;
 					if (seeThrough) anyThroughWalls = true;
 					else anyDepthTested = true;
 
-					String label = tracked.label() + Markers.pityLabel(critter, entity.getUUID());
+					String label = (sparkling ? "SPARKLING " : "") + tracked.label()
+						+ Markers.pityLabel(critter, entity.getUUID());
 					drawn.add(new Found(new Markers.Marker(box, label, colour, Markers.Style.WAYPOINT),
 						box.getCenter().distanceTo(camera), seeThrough));
 				}
@@ -530,7 +591,7 @@ public final class WaypointRenderer {
 					int uniqueColour = display.hitboxEntityColorOverride
 						? SparklingMode.uniqueHitboxColour(critter, SessionManager.current()) : 0;
 					int colour = diagnostic ? 0xFFFF00FF
-						: remembered.sparkling() ? SPARKLING_COLOUR
+						: remembered.sparkling() ? sparklingColour()
 						: uniqueColour != 0 ? uniqueColour : baseColour;
 					boolean seeThrough = remembered.persistentThroughWalls()
 						|| !SafeMode.hiddenCritter(critter, remembered.sparkling());
@@ -538,7 +599,8 @@ public final class WaypointRenderer {
 					anyDrawn = true;
 					if (seeThrough) anyThroughWalls = true;
 					else anyDepthTested = true;
-					String label = tracked.label() + Markers.pityLabel(critter, remembered.id());
+					String label = (remembered.sparkling() ? "SPARKLING " : "") + tracked.label()
+						+ Markers.pityLabel(critter, remembered.id());
 					drawn.add(new Found(new Markers.Marker(box, label, colour, Markers.Style.WAYPOINT),
 						box.getCenter().distanceTo(camera), seeThrough));
 				}
@@ -553,7 +615,8 @@ public final class WaypointRenderer {
 					? 0xFF000000 | hideyhoCritter.rarity().colour()
 					: Colours.argb(display.hitboxColour, 0xFFFFFFFF)
 				: configuredColour;
-			for (BlockPos possible : display.hideyhoSolver
+			for (BlockPos possible : display.hideyhoSolver && !display.hidePossibleWaypoints
+				&& !SparklingMode.onlyShowSparkling()
 				? HideyhoSolver.candidates() : java.util.Set.<BlockPos>of()) {
 				AABB box = new AABB(
 					possible.getX(), possible.getY() - 2, possible.getZ(),
@@ -578,15 +641,16 @@ public final class WaypointRenderer {
 				boolean seeThrough = true;
 				int uniqueColour = display.hitboxEntityColorOverride
 					? SparklingMode.uniqueHitboxColour(hideyhoCritter, SessionManager.current()) : 0;
-				int liveColour = HideyhoSolver.sparkling() ? SPARKLING_COLOUR
+				int liveColour = HideyhoSolver.sparkling() ? sparklingColour()
 					: uniqueColour != 0 ? uniqueColour : colour;
 				drawBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES, box, camera, liveColour);
 				anyDrawn = true;
 				if (seeThrough) anyThroughWalls = true;
 				else anyDepthTested = true;
 
-				String hideyhoLabel = HideyhoSolver.phase() == HideyhoSolver.Phase.END
-					? "Hideyho (END)" : "Hideyho (START)";
+				String hideyhoLabel = (HideyhoSolver.sparkling() ? "SPARKLING " : "")
+					+ (HideyhoSolver.phase() == HideyhoSolver.Phase.END
+					? "Hideyho (END)" : "Hideyho (START)");
 				drawn.add(new Found(new Markers.Marker(box, hideyhoLabel, liveColour, Markers.Style.WAYPOINT),
 					box.getCenter().distanceTo(camera), seeThrough));
 			}
@@ -640,6 +704,31 @@ public final class WaypointRenderer {
 		quad.addVertex(pose, xSize, y, 0).setColor(red, green, blue, alpha);
 		quad.addVertex(pose, xSize, y, zSize).setColor(red, green, blue, alpha);
 		quad.addVertex(pose, 0, y, zSize).setColor(red, green, blue, alpha);
+	}
+
+	/** Four textured vertical faces, matching the structure of vanilla's beacon beam. */
+	private static void beaconSides(PoseStack.Pose stackPose, VertexConsumer quad,
+			float xSize, float ySize, float zSize, int colour) {
+		var pose = stackPose.pose();
+		float scroll = -(System.currentTimeMillis() % 2_000L) / 2_000f;
+		float vBottom = scroll;
+		float vTop = scroll + ySize / 4f;
+		float[][] faces = {
+			{0, 0, 0, xSize, 0, 0, xSize, ySize, 0, 0, ySize, 0},
+			{xSize, 0, 0, xSize, 0, zSize, xSize, ySize, zSize, xSize, ySize, 0},
+			{xSize, 0, zSize, 0, 0, zSize, 0, ySize, zSize, xSize, ySize, zSize},
+			{0, 0, zSize, 0, 0, 0, 0, ySize, 0, 0, ySize, zSize}
+		};
+		for (float[] face : faces) {
+			for (int i = 0; i < 4; i++) {
+				int offset = i * 3;
+				float u = i == 1 || i == 2 ? 1f : 0f;
+				float v = i >= 2 ? vTop : vBottom;
+				quad.addVertex(pose, face[offset], face[offset + 1], face[offset + 2])
+					.setColor(colour).setUv(u, v).setOverlay(OverlayTexture.NO_OVERLAY)
+					.setLight(LightCoordsUtil.FULL_BRIGHT).setNormal(stackPose, 0, 1, 0);
+			}
+		}
 	}
 
 	private static void box(PoseStack.Pose pose, VertexConsumer lines,
@@ -704,7 +793,8 @@ public final class WaypointRenderer {
 		Minecraft client = Minecraft.getInstance();
 		Font font = client.font;
 		AABB box = marker.box();
-		Component text = Component.literal(marker.label());
+		Component text = marker.label().startsWith("SPARKLING ")
+			? rainbowLabel(marker.label()) : Component.literal(marker.label());
 		if (ConfigManager.get().display.waypointDistance) {
 			text = text.copy().append(Component.literal(" " + Math.round(distance) + "m")
 				.withStyle(net.minecraft.ChatFormatting.GRAY));
@@ -730,6 +820,20 @@ public final class WaypointRenderer {
 		poses.popPose();
 	}
 
+	/** Builds a per-character rainbow component for Sparkling waypoint labels. */
+	private static Component rainbowLabel(String value) {
+		var result = Component.empty();
+		float phase = (System.currentTimeMillis() % 4_000L) / 4_000f;
+		for (int i = 0; i < value.length(); i++) {
+			int colour = java.awt.Color.HSBtoRGB(
+				(phase + i / (float) Math.max(1, value.length()) * 0.55f) % 1f,
+				0.55f, 1f) & 0xFFFFFF;
+			result.append(Component.literal(String.valueOf(value.charAt(i)))
+				.withStyle(style -> style.withColor(colour)));
+		}
+		return result;
+	}
+
 	/** The same priority chain used by ordinary critter hitboxes and recatch markers. */
 	public static int critterHitboxColour(Critter critter, boolean sparkling) {
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
@@ -752,7 +856,7 @@ public final class WaypointRenderer {
 		} : display.hitboxRarityColour ? 0xFF000000 | critter.rarity().colour()
 			: Colours.argb(display.hitboxColour, 0xFFFFFFFF);
 		return diagnostic ? 0xFFFF00FF
-			: sparkling ? SPARKLING_COLOUR
+			: sparkling ? sparklingColour()
 				: uniqueColour != 0 ? uniqueColour
 					: configured;
 	}

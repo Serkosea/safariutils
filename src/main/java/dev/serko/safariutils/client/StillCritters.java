@@ -97,7 +97,7 @@ public final class StillCritters {
 						unchecked.getOrDefault(sighting.critter(), Set.of())
 							.removeIf(candidate -> sameSpawn(candidate, pos));
 						remembered.put(sighting.label().getUUID(), new Entry(sighting.critter(), pos,
-							sighting.sparkling(), now, true, true));
+								SparklingWatch.isSparkling(sighting), now, true, true));
 					}
 				}
 				continue;
@@ -109,7 +109,8 @@ public final class StillCritters {
 			boolean directlyVisible = duplico
 				? stableDuplicoPair && VisibilityCheck.canSeeDecoratedEntity(entity)
 				: VisibilityCheck.canSee(entity);
-			boolean visible = !SafeMode.hiddenCritter(sighting.critter(), sighting.sparkling())
+			boolean sparkling = SparklingWatch.isSparkling(sighting);
+			boolean visible = !SafeMode.hiddenCritter(sighting.critter(), sparkling)
 				|| directlyVisible;
 			if (visible) unchecked.computeIfAbsent(sighting.critter(),
 				ignored -> new java.util.LinkedHashSet<>())
@@ -124,7 +125,7 @@ public final class StillCritters {
 			boolean stationary = entity.getDeltaMovement().lengthSqr() < 1.0e-4;
 			boolean persistent = stationary && (directlyVisible
 				|| previous != null && previous.persistentThroughWalls() && previous.pos().equals(pos));
-			remembered.put(id, new Entry(sighting.critter(), pos, sighting.sparkling(), now,
+			remembered.put(id, new Entry(sighting.critter(), pos, sparkling, now,
 				visible || previous != null && previous.visiblyConfirmed(), persistent));
 		}
 		pruneVisibleEmptyCandidates();
@@ -325,8 +326,9 @@ public final class StillCritters {
 		// Persistent spawn catalogs are curated from confirmed solo runs only. Party
 		// members may wake or move these critters before the local client encounters
 		// them, which would make a moved position look like an initial spawn.
-		if (dev.serko.safariutils.session.SessionManager.current() == null
-			|| !SafariPartyWatch.confirmedSoloForLearning()) return;
+		boolean activeLearningContext = dev.serko.safariutils.session.SessionManager.current() != null
+			|| TestingMode.saveLearnedLocations() && SafariLocation.inside();
+		if (!activeLearningContext || !SafariPartyWatch.confirmedSoloForLearning()) return;
 		if (catalogClosed.contains(sighting.critter())) return;
 		if (!"Hideonfloor".equals(sighting.critter().name())) {
 			if (entity != null && cataloguedIds.add(entity.getUUID())

@@ -149,6 +149,28 @@ public final class AlertSounds {
 		}
 	}
 
+	/** Loud, layered seven-second score reserved for the warned extreme catch effect. */
+	public static void playExtremeSparklingCall(Minecraft client) {
+		if (client.player == null) return;
+		SPARKLING_PENDING.clear();
+		SoundEvent chime = SoundEvents.NOTE_BLOCK_CHIME.value();
+		SoundEvent bell = SoundEvents.NOTE_BLOCK_BELL.value();
+		SoundEvent pling = SoundEvents.NOTE_BLOCK_PLING.value();
+		float[] scale = {0.63f, 0.75f, 0.84f, 0.94f, 1.12f, 1.26f, 1.50f, 1.68f, 1.88f, 2.00f};
+		for (int step = 0; step < 34; step++) {
+			SoundEvent sound = step % 5 == 0 ? bell : step % 3 == 0 ? pling : chime;
+			float pitch = scale[Math.floorMod(step * 3 + step / 6, scale.length)];
+			long due = tick + step * 4L;
+			for (int layer = 0; layer < 4; layer++) {
+				SPARKLING_PENDING.add(new Pending(sound, due, 1f, pitch));
+			}
+			if (step == 0 || step == 12 || step == 24 || step == 33) {
+				SPARKLING_PENDING.add(new Pending(SoundEvents.FIREWORK_ROCKET_BLAST, due, 1f, 1.25f));
+				SPARKLING_PENDING.add(new Pending(SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, due, 1f, 1.35f));
+			}
+		}
+	}
+
 	/** Advances multi-note alert sounds without creating timers or worker threads. */
 	public static void tick() {
 		tick++;

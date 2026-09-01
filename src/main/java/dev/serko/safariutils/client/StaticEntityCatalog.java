@@ -39,10 +39,9 @@ public final class StaticEntityCatalog {
 	}
 
 	public static void learn(String critter, BlockPos pos) {
-		// Hideonfloor is the only catalog still being expanded. Other stationary
-		// critters remain fully trackable for the current run, but new positions are
-		// intentionally not persisted beyond it.
-		if (!"Hideonfloor".equals(critter)) return;
+		if (!TestingMode.saveLearnedLocations()
+			|| !SafariLocation.inside()
+			|| !SafariPartyWatch.confirmedSoloForLearning()) return;
 		var species = dev.serko.safariutils.data.Critters.byName(critter);
 		if (species == null || SafariAreaMap.biomeAt(pos.getX(), pos.getY(), pos.getZ()) != species.biome()) return;
 		String encoded = encode(pos);
@@ -116,7 +115,8 @@ public final class StaticEntityCatalog {
 	private static void save() {
 		var path = SafariPaths.staticEntities();
 		try {
-			AtomicFiles.writeString(path, GSON.toJson(getLocal(), DATA_TYPE));
+			AtomicFiles.writeString(path, GSON.toJson(getLocal(), DATA_TYPE),
+				TestingMode.saveLearnedLocations());
 			dirty = false;
 		} catch (IOException ignored) {
 		}

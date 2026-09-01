@@ -1,6 +1,6 @@
 # Safari Utils developer handoff
 
-This document covers the current v1.0.0 codebase. Installation, features, and commands are in [README.md](README.md).
+This document covers the current v1.2.0 codebase. Installation, features, and commands are in [README.md](README.md).
 
 ## Project identity
 
@@ -21,11 +21,11 @@ The repository uses one shared source set plus small version-specific source dir
 
 | Profile | Version | Output |
 |---|---|---|
-| `26.1.2` | Safe Mode public | `safariutils-1.0.0+mc26.1.2.jar` |
-| `26.1.2` | Extra public | `safariutils-1.0.0-extra+mc26.1.2.jar` |
-| `26.2` | Safe Mode public | `safariutils-1.0.0+mc26.2.jar` |
-| `26.2` | Extra public | `safariutils-1.0.0-extra+mc26.2.jar` |
-| Configured deploy profile | Private developer build | `safariutils-private-1.0.0-extra+mc<version>.jar` |
+| `26.1.2` | Safe Mode public | `safariutils-1.2.0+mc26.1.2.jar` |
+| `26.1.2` | Extra public | `safariutils-1.2.0-extra+mc26.1.2.jar` |
+| `26.2` | Safe Mode public | `safariutils-1.2.0+mc26.2.jar` |
+| `26.2` | Extra public | `safariutils-1.2.0-extra+mc26.2.jar` |
+| Configured deploy profile | Private developer build | `safariutils-private-1.2.0-extra+mc<version>.jar` |
 
 The version-specific `WaypointRenderer` and `ClientCompat` implementations isolate rendering/API differences. Do not create version branches for normal compatibility work.
 
@@ -76,7 +76,9 @@ Keep matching exact and anchored. Location substrings, player-quoted messages, a
 config/safariutils/
 ├── safariutils.json
 ├── safariutils-runs.json
-└── safariutils-sparkling.json
+├── safariutils-sparkling.json
+├── safariutils-static-waypoints.json
+└── safariutils-static-entities.json
 ```
 
 The private developer build may also create timestamped files under `config/safariutils/logs/` while its output log is enabled.
@@ -99,7 +101,7 @@ Persisted fields must remain exposed to Gson. Renaming one without migration res
 | Chat parsing | `ChatParser`, `CritterEvent` | Reject player-typed quotations unless a feature deliberately reads shared mod output. |
 | Entity detection | `CritterEntities`, `CritterSpotter`, `DetectedCritters`, `StillCritters` | One shared sweep; preserve entity identity rules around captures and multi-part mobs. |
 | Missing HUD/objectives | `MissingHud`, `SafariObjectives`, `FloorDrops`, `MoundSpotter`, `WallTracker`, `NestTracker` | Normal and Sparkling Mode have different completion and presentation rules. |
-| Sparkling | `SparklingWatch`, `SparklingMode`, `SparklingStats`, `FullScreenAlert` | A live Sparkling remains tracked until caught, and Sparkling Mode presentation must not interrupt catch tracking. |
+| Sparkling | `SparklingWatch`, `ParticleDiagnostics`, `SparklingMode`, `SparklingStats`, `FullScreenAlert` | Name tags and the validated repeated particle signature complement each other. A live Sparkling remains tracked until caught. |
 | Profit | `BazaarPrices`, session/history models | Uses `ESSENCE_SAFARI`, `RAINBOW_FEATHER`, and shard product IDs. Network/cache failures must fail without corrupting run totals. |
 | Contest | `ContestTracker`, `ProgressHud` | Real-time cycle is 20 minutes; contest duration is 19:33. Score and bracket come from tab list. |
 | Alerts/chat | `EncounterAlerts`, `ChatQueue`, watcher classes | Alert processing cannot depend on a HUD being visible. Each alert owns text, duration, color, and sound; placement and scale are shared. |

@@ -45,14 +45,13 @@ public final class SparklingWatch {
 		lastScan = scan;
 		Set<UUID> visibleKeys = new HashSet<>();
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-			if (sighting.sparkling()) visibleKeys.add(keyOf(sighting));
+			if (isSparkling(sighting)) visibleKeys.add(keyOf(sighting));
 		}
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-			if (!sighting.sparkling()) continue;
+			if (!isSparkling(sighting)) continue;
 			if (SafeMode.sparklingCritters()) {
 				boolean mobVisible = sighting.mob() != null && VisibilityCheck.canSee(sighting.mob());
-				boolean labelVisible = sighting.label().isCustomNameVisible()
-					&& VisibilityCheck.canSee(sighting.label());
+				boolean labelVisible = VisibilityCheck.canSeeVisibleName(sighting.label());
 				boolean hiddenSafe = SafeMode.hiddenCritter(sighting.critter(), true);
 				// A dormant hidden species has no player-visible name tag. Its internal
 				// label must not reveal a Sparkling through terrain before the body itself
@@ -86,18 +85,30 @@ public final class SparklingWatch {
 				outstanding.put(key, new Outstanding(sighting.critter(), pos));
 				if (chatWasSent) chatAnnounced.add(key);
 				replacementExpectedUntil.remove(sighting.critter());
+				DebugLog.line("SPARKLING", "replacement " + sighting.critter().name()
+					+ " old=" + shortId(replacement) + " new=" + shortId(key)
+					+ " pos=" + pos(pos));
 				postVisibleChat(sighting, key);
 				continue;
 			}
 			if (knownId) continue;
 			outstanding.put(key, new Outstanding(sighting.critter(), pos));
+			DebugLog.line("SPARKLING", "found " + sighting.critter().name()
+				+ " label=" + shortId(labelId) + " body=" + shortId(bodyId)
+				+ " key=" + shortId(key) + " pos=" + pos(pos)
+				+ " source=" + ParticleDiagnostics.source(sighting));
 			EncounterAlerts.fireSparklingDetected(sighting.critter().name());
 			postVisibleChat(sighting, key);
 		}
 	}
 
-	private static UUID keyOf(CritterEntities.Sighting sighting) {
+	static UUID keyOf(CritterEntities.Sighting sighting) {
 		return sighting.mob() == null ? sighting.label().getUUID() : sighting.mob().getUUID();
+	}
+
+	/** Sparkling status from the name tag, or from repeated matching particle packets. */
+	static boolean isSparkling(CritterEntities.Sighting sighting) {
+		return sighting != null && (sighting.sparkling() || ParticleDiagnostics.confirms(sighting));
 	}
 
 	/** Finds the same nearby individual after Hypixel replaces its IDs during a throw. */
@@ -128,12 +139,13 @@ public final class SparklingWatch {
 	/** Sends public chat only after the named critter itself is visible on screen. */
 	private static void postVisibleChat(CritterEntities.Sighting sighting, UUID key) {
 		if (chatAnnounced.contains(key) || sighting.critter().biome() != SafariLocation.biome()) return;
-		boolean visible = sighting.label().isCustomNameVisible()
-			&& VisibilityCheck.canSee(sighting.label())
+		boolean visible = VisibilityCheck.canSeeVisibleName(sighting.label())
 			|| sighting.mob() != null && VisibilityCheck.canSee(sighting.mob());
 		if (!visible) return;
 		SafariConfig config = ConfigManager.get();
 		chatAnnounced.add(key);
+		DebugLog.line("SPARKLING", "visible chat " + sighting.critter().name()
+			+ " key=" + shortId(key) + " biome=" + SafariLocation.biome());
 		EncounterAlerts.post(config.sparkling.detected(),
 			AlertText.format(config.sparkling.sparklingDetectedChatText,
 				"<CRITTER>", sighting.critter().name()));
@@ -146,11 +158,14 @@ public final class SparklingWatch {
 
 	/** Keeps the special HUD frame briefly after the detected critter is caught. */
 	public static void onCaught(Critter critter) {
-		outstanding.entrySet().stream()
+		UUID removed = outstanding.entrySet().stream()
 			.filter(entry -> entry.getValue().critter() == critter)
 			.map(Map.Entry::getKey)
 			.findFirst()
-			.ifPresent(outstanding::remove);
+			.orElse(null);
+		if (removed != null) outstanding.remove(removed);
+		DebugLog.line("SPARKLING", "caught " + critter.name() + " removed=" + shortId(removed)
+			+ " remaining=" + outstanding.size());
 		justCaught.put(critter, System.currentTimeMillis());
 		replacementExpectedUntil.remove(critter);
 		caughtThemeUntil = System.currentTimeMillis() + CAUGHT_THEME_MILLIS;
@@ -175,6 +190,11 @@ public final class SparklingWatch {
 		return counts;
 	}
 
+	/** Whether this live sighting belongs to a Sparkling that has been announced but not caught. */
+	static boolean isOutstanding(CritterEntities.Sighting sighting) {
+		return isSparkling(sighting) && outstanding.containsKey(keyOf(sighting));
+	}
+
 	/** How far the alerted critter is, for the player's own line. Unused when none. */
 	public static double distanceTo(BlockPos pos) {
 		Minecraft client = Minecraft.getInstance();
@@ -191,8 +211,17 @@ public final class SparklingWatch {
 		outstanding.clear();
 		justCaught.clear();
 		replacementExpectedUntil.clear();
+		ParticleDiagnostics.reset();
 		caughtThemeUntil = 0;
 		lastScan = Long.MIN_VALUE;
 		FullScreenAlert.clear();
+	}
+
+	private static String shortId(UUID id) {
+		return id == null ? "none" : id.toString().substring(0, 8);
+	}
+
+	private static String pos(BlockPos pos) {
+		return pos.getX() + "," + pos.getY() + "," + pos.getZ();
 	}
 }

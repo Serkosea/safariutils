@@ -2484,7 +2484,7 @@ public class SafariConfig {
 
 		public boolean macawSoundAccordion = false;
 
-		@SettingInfo(name = "Macaw Spawned", desc = "")
+		@SettingInfo(name = "Macaw", desc = "")
 		@SettingSection(id = SOUND_MACAW) @SettingGroup(id = BIRD_ALERTS)
 		public boolean macawAlertAccordion = false;
 		@SettingInfo(name = "Test Alert", desc = "Preview this alert with its current settings")

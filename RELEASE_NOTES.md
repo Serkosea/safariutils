@@ -21,14 +21,12 @@
 - Reduced repeated text parsing and ticket-menu field lookups without changing gameplay timing
 
 ## Downloads
+
 Choose one jar for your Minecraft version:
+
 - `safariutils-1.3.0+mc26.1.2.jar`
 - `safariutils-1.3.0-extra+mc26.1.2.jar`
 - `safariutils-1.3.0+mc26.2.jar`
 - `safariutils-1.3.0-extra+mc26.2.jar`
 
-The regular jars use Safe Mode. Extra includes features that may provide information the player cannot directly see and may not be safe to use
-
-Minecraft 26.2 builds have received limited testing compared with 26.1.2. Requires Java 25, Fabric Loader 0.19+, and Fabric API
-
-GitHub's source zip and tar.gz downloads are provided automatically
+The regular jars use Safe Mode. Extra includes features that may provide information the player cannot directly see and may not be safe to use; Minecraft 26.2 builds have received limited testing compared with 26.1.2

@@ -1,28 +1,34 @@
-# Safari Utils v1.2.0
+# Safari Utils v1.3.0
 
-## Highlights
+## Gameplay
 
-- Added particle-backed Sparkling detection.
-- Added a rainbow Minecraft-style beacon and matching labels, hitboxes, and waypoints for detected Sparklings.
-- Added `Only Show Sparkling` and `Hide Possible` display options.
-- Added an optional high-intensity Sparkling catch celebration with a photosensitivity warning and confirmation.
-- Expanded the bundled objective and stationary-critter location catalogs from verified solo runs.
+- Added ticket protection while party members are still missing from the Safari, including ticket-menu number-key selections.
+- Added automatic Hideyho Hide 'N Seek acceptance.
+- Improved party-ready alerts for the current party size and automatic roster verification.
 
-## Fixes and improvements
+## Birds and alerts
 
-- Fixed repeat Sparkling alerts, transformed critter identity changes, stale Missing HUD entries, and leftover pity markers after catches.
-- Improved Rockmite mound detection, persistence, party-break removal, and shared scan performance.
-- Safe Mode can recognize genuinely visible critter nametags without exposing hidden internal labels.
-- Improved Sparkling waypoint visibility and moved Snoozle wall markers to eye level.
-- Reorganized related waypoint and Safe Mode settings with clearer wording.
+- Grouped bird alerts together and added feed totals, Feed Type Used, All Feed Used, and Birdfeeder Empty alerts.
+- Feed-used alerts track inventory deposits rather than bird-spawn messages.
+- Added compact feed-list text with correct plurals.
+- Combined banner playback into Off, Banner, Sound, or Banner + Sound, preserving existing preferences.
+
+## Commands and polish
+
+- Moved Sparkling commands to `/sparkling` and removed the run-reset command.
+- Added missing-list entry/display and clipboard imports for shared lists, missing lists, and complete Sparkling chat messages.
+- Unified client-message styling and trimmed unnecessary message clutter.
+- Reduced repeated text parsing and ticket-menu field lookups without changing gameplay timing.
 
 ## Downloads
+Choose one jar for your Minecraft version:
+- `safariutils-1.3.0+mc26.1.2.jar`
+- `safariutils-1.3.0-extra+mc26.1.2.jar`
+- `safariutils-1.3.0+mc26.2.jar`
+- `safariutils-1.3.0-extra+mc26.2.jar`
 
-Choose the jar matching both your Minecraft version and preferred edition:
+The regular jars use Safe Mode. Extra includes features that may provide information the player cannot directly see and may not be safe to use.
 
-- `safariutils-1.2.0+mc26.1.2.jar`
-- `safariutils-1.2.0-extra+mc26.1.2.jar`
-- `safariutils-1.2.0+mc26.2.jar`
-- `safariutils-1.2.0-extra+mc26.2.jar`
+Minecraft 26.2 builds have received limited testing compared with 26.1.2. Requires Java 25, Fabric Loader 0.19+, and Fabric API.
 
-The standard Safe Mode edition is recommended. Extra includes features that may provide information the player cannot directly see and may not be safe to use. Minecraft 26.2 has received less in-game testing than 26.1.2.
+GitHub's source zip and tar.gz downloads are provided automatically.

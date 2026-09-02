@@ -63,8 +63,9 @@ public final class ProgressHud implements HudElement {
 		HudPanel panel = new HudPanel();
 		if (waiting && SafariLocation.inside()) {
 			int joined = SafariPartyWatch.joinedPlayers();
-			panel.titleSuffix("Critter Safari ", "(%d/4)".formatted(joined),
-				HudBorderStyle.progressTitle(), joined >= 4 ? 0xFF55FF55 : 0xFFFF5555);
+			int expected = PartyRosterWatch.known() ? PartyRosterWatch.expectedPlayers() : 4;
+			panel.titleSuffix("Critter Safari ", "(%d/%d)".formatted(joined, expected),
+				HudBorderStyle.progressTitle(), joined >= expected ? 0xFF55FF55 : 0xFFFF5555);
 		} else {
 			panel.title(waiting ? "Critter Safari"
 				: live ? "Critter Safari  " + formatDuration(session.elapsedMillis(System.currentTimeMillis()))

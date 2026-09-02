@@ -14,6 +14,8 @@ import java.util.Set;
 /** Public/manual shared-Sparkling state and the decisions derived from it. */
 public final class SparklingMode {
 	private static final Set<Critter> shared = new LinkedHashSet<>();
+	/** Distinguishes an intentionally empty list from one that was never supplied. */
+	private static boolean sharedConfigured;
 	private static int expectedPlayers = 1;
 
 	private SparklingMode() {
@@ -41,13 +43,19 @@ public final class SparklingMode {
 		return Set.copyOf(shared);
 	}
 
+	public static boolean sharedConfigured() {
+		return sharedConfigured;
+	}
+
 	public static void replaceShared(Set<Critter> species) {
 		shared.clear();
 		Critters.all().stream().filter(species::contains).forEach(shared::add);
+		sharedConfigured = true;
 	}
 
 	public static void clearShared() {
 		shared.clear();
+		sharedConfigured = false;
 	}
 
 	public static void onRunStarted() {

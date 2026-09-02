@@ -8,6 +8,9 @@ public interface SharedSparklingProvider {
 	/** Forces a new lookup for every member of the current stable Safari roster. */
 	CompletableFuture<Set<String>> refreshCurrentParty();
 
+	/** Fetches one player's Sparkling species without changing the active shared list. */
+	CompletableFuture<Set<String>> lookupPlayer(String username);
+
 	/** Observes roster changes; public builds have no provider and never call an API. */
 	default void tick() {
 	}

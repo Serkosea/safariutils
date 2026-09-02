@@ -17,6 +17,7 @@ public final class SafariPartyWatch {
 	private static long candidateSince;
 	private static boolean fullPartyAnnounced;
 	private static boolean otherPlayerSeenThisInstance;
+	private static boolean graceLogged;
 
 	private SafariPartyWatch() {
 	}
@@ -44,26 +45,50 @@ public final class SafariPartyWatch {
 		// transition window passes, then require Players (N) to stop changing before
 		// exposing it or announcing 4/4.
 		if (now - instanceObservedAt < INSTANCE_GRACE_MILLIS) return;
+		if (!graceLogged) {
+			graceLogged = true;
+			DebugLog.line("PARTYTIME", "grace complete after " + (now - instanceObservedAt)
+				+ "ms lobby=" + lobbyId);
+		}
 		int observed = tabListPlayerCount();
 		if (observed != candidatePlayers) {
+			DebugLog.line("PARTYTIME", "candidate " + candidatePlayers + " -> " + observed
+				+ " at +" + (now - instanceObservedAt) + "ms source=" + playerCountLine());
 			candidatePlayers = observed;
 			candidateSince = now;
 			return;
 		}
 		if (now - candidateSince < ROSTER_STABLE_MILLIS) return;
 
-		joinedPlayers = observed;
+		if (joinedPlayers != observed) {
+			DebugLog.line("PARTYTIME", "accepted " + observed + "/4 after "
+				+ (now - candidateSince) + "ms stable at +" + (now - instanceObservedAt) + "ms");
+			joinedPlayers = observed;
+		}
 		if (observed > 1) otherPlayerSeenThisInstance = true;
 		// Manager activation must not suppress this: a player can turn in their ticket
 		// before the tab-list roster has remained stable long enough to announce it.
-		if (joinedPlayers == 4 && !fullPartyAnnounced) {
+		int expected = PartyRosterWatch.expectedPlayers();
+		if (PartyRosterWatch.known() && expected > 1 && joinedPlayers >= expected && !fullPartyAnnounced) {
 			fullPartyAnnounced = true;
-			EncounterAlerts.fireFullPartyJoined();
+			DebugLog.line("PARTYTIME", "announced " + expected + "/" + expected + " at +"
+				+ (now - instanceObservedAt) + "ms");
+			EncounterAlerts.fireFullPartyJoined(expected);
 		}
 	}
 
 	public static int joinedPlayers() {
 		return Math.clamp(joinedPlayers, 0, 4);
+	}
+
+	/** Records the attendance state used by the Manager click guard. */
+	public static void onEntityUse(net.minecraft.world.entity.Entity entity) {
+		if (!SafariLocation.inside() || entity == null) return;
+		DebugLog.line("PARTYTIME", "use entity type=" + EntityTypeIds.key(entity)
+			+ " name=\"" + entity.getName().getString() + "\" at="
+			+ entity.blockPosition().toShortString() + " accepted=" + joinedPlayers
+			+ " candidate=" + candidatePlayers + " stableFor="
+			+ (candidateSince == 0 ? -1 : System.currentTimeMillis() - candidateSince) + "ms");
 	}
 
 	/**
@@ -89,6 +114,13 @@ public final class SafariPartyWatch {
 		return 1;
 	}
 
+	private static String playerCountLine() {
+		for (String entry : SafariLocation.tabListEntries()) {
+			if (PLAYER_COUNT.matcher(entry.trim()).matches()) return '"' + entry.trim() + '"';
+		}
+		return "missing";
+	}
+
 	private static void beginInstance(long now) {
 		// Lobby entry, not Manager activation, is the lifetime boundary for detected
 		// Sparklings. This preserves anything found during the pre-run ticket window.
@@ -99,6 +131,8 @@ public final class SafariPartyWatch {
 		instanceObservedAt = now;
 		fullPartyAnnounced = false;
 		otherPlayerSeenThisInstance = false;
+		graceLogged = false;
+		DebugLog.line("PARTYTIME", "instance begin lobby=" + lobbyId);
 	}
 
 	private static void reset() {
@@ -109,5 +143,6 @@ public final class SafariPartyWatch {
 		instanceObservedAt = 0;
 		fullPartyAnnounced = false;
 		otherPlayerSeenThisInstance = false;
+		graceLogged = false;
 	}
 }

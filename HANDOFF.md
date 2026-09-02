@@ -1,6 +1,6 @@
 # Safari Utils developer handoff
 
-This document covers the current v1.2.0 codebase. Installation, features, and commands are in [README.md](README.md).
+This document covers the current v1.3.0 codebase. Installation, features, and commands are in [README.md](README.md).
 
 ## Project identity
 
@@ -21,11 +21,11 @@ The repository uses one shared source set plus small version-specific source dir
 
 | Profile | Version | Output |
 |---|---|---|
-| `26.1.2` | Safe Mode public | `safariutils-1.2.0+mc26.1.2.jar` |
-| `26.1.2` | Extra public | `safariutils-1.2.0-extra+mc26.1.2.jar` |
-| `26.2` | Safe Mode public | `safariutils-1.2.0+mc26.2.jar` |
-| `26.2` | Extra public | `safariutils-1.2.0-extra+mc26.2.jar` |
-| Configured deploy profile | Private developer build | `safariutils-private-1.2.0-extra+mc<version>.jar` |
+| `26.1.2` | Safe Mode public | `safariutils-1.3.0+mc26.1.2.jar` |
+| `26.1.2` | Extra public | `safariutils-1.3.0-extra+mc26.1.2.jar` |
+| `26.2` | Safe Mode public | `safariutils-1.3.0+mc26.2.jar` |
+| `26.2` | Extra public | `safariutils-1.3.0-extra+mc26.2.jar` |
+| Configured deploy profile | Private developer build | `safariutils-private-1.3.0-extra+mc<version>.jar` |
 
 The version-specific `WaypointRenderer` and `ClientCompat` implementations isolate rendering/API differences. Do not create version branches for normal compatibility work.
 
@@ -112,7 +112,7 @@ Banner text, duration, color, and sound remain alert-specific. Position and scal
 
 ## Sparkling Mode invariants
 
-- Public builds use `/safari stats sparkling shared <comma-separated species>`; no-argument `shared` displays the alphabetized list.
+- Public builds use `/sparkling shared <comma-separated species>`; no-argument `shared` displays the alphabetized list. `/sparkling missing` accepts the inverse list.
 - Before a species' unique catch, Missing HUD shows `Near` only—never `N+ Left`.
 - After its unique catch, a still-relevant species remains available for Sparkling hunting without a cumulative Seen counter.
 - Shared species disappear after their unique catch; unshared species remain available for Sparkling hunting.
@@ -133,6 +133,17 @@ Public jars do not register diagnostic commands, run debug collection, or show d
 
 Bundled static locations seed Safe Mode. Unknown positions can still be used during the current run; persistent learning is limited to clean solo Hideonfloor observations. Neither edition performs a full-biome discovery sweep.
 
+## Gameplay and alert behavior
+
+- `PartyRosterWatch` quietly verifies the party through `/party list`; only joining a party produces its client confirmation.
+- `TicketProtection` blocks the leader's Manager interaction or a member's ticket selection while attendance is incomplete. Unknown roster data fails open. Keep the tested grace and stability timings unchanged.
+- `HideyhoAutoAccept` consumes the current choice line and accepts it before it reaches chat.
+- Feed-used alerts use inventory deposits, not spawn messages, which may be delivered only to the last person who added feed.
+- `BirdfeederWatch.tickMenu` watches slot 22 for a loaded-to-empty transition in the open Birdfeeder menu. Opening an empty menu does not alert.
+- Banner playback indices are 0 Off, 1 Banner, 2 Sound, 3 Banner + Sound. `ConfigManager` migrates old toggles; sound-only events must not replace a visible banner.
+- All clipboard commands live under `/sparkling import`. The optional `shared` and `missing` branches accept plain lists; the bare command parses the formatted message. They all replace the same shared collection.
+- Private refresh/lookup implementation and credentials remain ignored and are never release assets.
+
 ## Optional custom sounds
 
 A future user-sound library should read `.ogg` files from `config/safariutils/sounds/` and expose them through a generated runtime resource pack plus Minecraft's normal sound manager. Refresh the pack only when files change or the player requests it; do not scan the folder every tick. This preserves Minecraft's device handling and volume categories. Direct OpenAL playback would offer independent gain but is intentionally avoided because it can conflict with Minecraft's mixer and audio-device lifecycle. Source audio can be normalized before loading to provide stronger volume without layering the same event repeatedly.
@@ -142,7 +153,7 @@ A future user-sound library should read `.ogg` files from `config/safariutils/so
 - Use exact or anchored server-text patterns. Never let `Entry To Critter Safari` match `Safari`, or a player quotation impersonate a server event.
 - The `entered Critter Safari!` line contains the party leader's name, not necessarily the local player's name.
 - Player levels in tab list are optional. Parse names both with and without `[level]` prefixes.
-- The scoreboard and tab list update asynchronously during lobby joins. Discard residual `Players` values above four and require the stabilized exact `Players (4)` line before the full-party alert.
+- The scoreboard and tab list update asynchronously during lobby joins. Discard residual `Players` values above four and compare the stabilized `Players (N)` line with the verified party size before the full-party alert.
 - Contest transitions are wall-clock driven; scoreboard seconds are display context, not the timer source. Reset score, bracket, and ticket state at the contest boundary.
 - Safe Mode is unconditional in the default edition and configurable in Extra.
 - Renderer line vertices require a width. For 26.2 block faces, test falling and slope movement; culling based on vertical motion previously hid top faces.

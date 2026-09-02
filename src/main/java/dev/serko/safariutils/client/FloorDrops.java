@@ -105,6 +105,9 @@ public final class FloorDrops {
 		if (!allCollected && !objectiveDone) return;
 		doneAlerted.add(biome);
 		EncounterAlerts.fireFloorDropsDone(biome);
+		if (biome == dev.serko.safariutils.data.SafariBiome.FOREST) {
+			BirdfeederWatch.onForestFloorDropsDone();
+		}
 	}
 
 	private static void scan() {

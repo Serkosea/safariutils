@@ -95,6 +95,9 @@ final class OutputLogPresets {
 		config.logRaw = true;
 		config.logLocation = true;
 		config.logPartyRoster = true;
+		config.logPartyTiming = true;
+		config.logInterfaces = true;
+		config.logInventory = true;
 		config.logTabList = true;
 		config.logScoreboard = true;
 		config.outputSessionDataAccordion = true;

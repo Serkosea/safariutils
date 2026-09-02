@@ -2,6 +2,7 @@
 .gradle/
 .gradle-user/
 .gradle-verify/
+.grad-user/
 build/
 release-artifacts/
 out/

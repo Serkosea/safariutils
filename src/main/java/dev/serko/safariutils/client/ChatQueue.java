@@ -64,6 +64,7 @@ public final class ChatQueue {
 
 		String line = pending.pollFirst().line();
 		if (line.startsWith("/")) {
+			if (line.regionMatches(true, 1, "pc ", 0, 3)) PartyErrorSuppressor.expectResponse();
 			client.player.connection.sendCommand(line.substring(1));
 		} else {
 			client.player.connection.sendChat(line);

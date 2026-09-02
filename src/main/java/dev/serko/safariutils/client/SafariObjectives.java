@@ -42,12 +42,13 @@ public final class SafariObjectives {
 		}
 		if (reconcileDeathAt > 0 && System.currentTimeMillis() >= reconcileDeathAt) {
 			reconcileDeathAt = 0;
-			BirdfeederWatch.reconcileInventory(birdFeedHeld());
+			BirdfeederWatch.reconcileInventory(bagOfSeedsHeld(), wrigglewormsHeld(), yogiBerriesHeld());
 			var session = dev.serko.safariutils.session.SessionManager.current();
 			var gimmiegold = dev.serko.safariutils.data.Critters.byName("Gimmiegold");
 			int caught = session == null || gimmiegold == null ? 0 : session.ownCatches(gimmiegold);
 			ShiningCoinWatch.reconcileInventory(shiningCoinsHeld(), caught);
 		}
+		BirdfeederWatch.onInventoryUpdated(bagOfSeedsHeld(), wrigglewormsHeld(), yogiBerriesHeld());
 	}
 
 	public static boolean allGemsFound() {
@@ -65,6 +66,18 @@ public final class SafariObjectives {
 
 	public static int birdFeedHeld() {
 		return currentInventory[5] + currentInventory[6] + currentInventory[7];
+	}
+
+	public static int bagOfSeedsHeld() {
+		return currentInventory[5];
+	}
+
+	public static int wrigglewormsHeld() {
+		return currentInventory[6];
+	}
+
+	public static int yogiBerriesHeld() {
+		return currentInventory[7];
 	}
 
 	public static int shiningCoinsHeld() {

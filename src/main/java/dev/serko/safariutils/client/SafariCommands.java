@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeMap;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /** Registers Safari Utils commands and their short aliases. */
 public final class SafariCommands {
@@ -42,6 +43,8 @@ public final class SafariCommands {
 	private static final double ENTITY_SCAN_RADIUS = 50.0;
 	/** Close enough that whatever you are stood on is at the top of the list. */
 	private static final double NEARBY_SCAN_RADIUS = 8.0;
+	private static final Pattern SPARKLING_LIST_MESSAGE = Pattern.compile(
+		"(?i)(shared|missing)\\s+sparklings?(?:\\s+critters?)?\\s*(?:\\(\\d+\\s*/\\s*\\d+\\))?\\s*:\\s*(.*)$");
 
 	private SafariCommands() {
 	}
@@ -128,6 +131,7 @@ public final class SafariCommands {
 
 			dispatcher.register(settingsRoot);
 		}
+		dispatcher.register(sparklingRoot());
 	}
 
 	/** Builds the statistics branch shared by all three command names. */
@@ -137,14 +141,14 @@ public final class SafariCommands {
 			.executes(ctx -> {
 				openScreen();
 				return 1;
-			})
-			.then(ClientCommands.literal("reset").executes(ctx -> {
-				SessionManager.reset();
-				ctx.getSource().sendFeedback(prefixed("Session reset", ChatFormatting.YELLOW));
-				return 1;
-			}))
-			.then(ClientCommands.literal("sparkling")
-				.executes(ctx -> {
+			});
+	}
+
+	/** Sparkling collection commands are short enough to share directly in party chat. */
+	private static com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource>
+			sparklingRoot() {
+		var root = ClientCommands.literal("sparkling")
+			.executes(ctx -> {
 					int since = RunHistory.runsSinceLastSparkling();
 					ctx.getSource().sendFeedback(prefixed(
 						"Sparkling Totals: %d/%d Unique, %d Total, %d Duplicates, %d Rainbow Feathers, %s Since Last"
@@ -154,11 +158,46 @@ public final class SafariCommands {
 						ChatFormatting.GOLD));
 					return 1;
 				})
-				.then(ClientCommands.literal("shared")
-					.executes(ctx -> showSharedSparklings(ctx.getSource()))
-					.then(ClientCommands.literal("refresh")
-						.requires(source -> SharedSparklingProviders.available())
-						.executes(ctx -> refreshSharedSparklings(ctx.getSource())))
+			.then(sharedSparklingCommand())
+			.then(ClientCommands.literal("missing")
+				.executes(ctx -> showMissingSparklings(ctx.getSource()))
+				.then(ClientCommands.argument("comma-separated species", StringArgumentType.greedyString())
+					.executes(ctx -> setMissingSparklings(ctx.getSource(),
+						StringArgumentType.getString(ctx, "comma-separated species")))))
+			.then(sparklingImportCommand())
+			.then(sparklingSetCommand())
+			.then(ClientCommands.literal("feathers")
+					.then(ClientCommands.argument("count", IntegerArgumentType.integer(0))
+						.executes(ctx -> setSparklingFeathers(ctx.getSource(),
+							IntegerArgumentType.getInteger(ctx, "count")))));
+		if (SharedSparklingProviders.available()) root.then(sparklingLookupCommand());
+		return root;
+	}
+
+	private static com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource>
+			sparklingLookupCommand() {
+		var username = ClientCommands.argument("IGN", StringArgumentType.word())
+			.executes(ctx -> lookupSparklings(
+				ctx.getSource(), StringArgumentType.getString(ctx, "IGN"), false));
+		username.then(ClientCommands.literal("missing").executes(ctx -> lookupSparklings(
+			ctx.getSource(), StringArgumentType.getString(ctx, "IGN"), true)));
+		return ClientCommands.literal("lookup").then(username);
+	}
+
+	private static com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource>
+			sparklingImportCommand() {
+		return ClientCommands.literal("import")
+			.executes(ctx -> importSparklingMessage(ctx.getSource()))
+			.then(ClientCommands.literal("shared")
+				.executes(ctx -> importClipboardList(ctx.getSource(), true)))
+			.then(ClientCommands.literal("missing")
+				.executes(ctx -> importClipboardList(ctx.getSource(), false)));
+	}
+
+	private static com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource>
+			sharedSparklingCommand() {
+		var shared = ClientCommands.literal("shared")
+			.executes(ctx -> showSharedSparklings(ctx.getSource()))
 					.then(ClientCommands.literal("reset").executes(ctx -> {
 						SparklingMode.clearShared();
 						ctx.getSource().sendFeedback(prefixed("Shared Sparkling list cleared", ChatFormatting.YELLOW));
@@ -166,12 +205,13 @@ public final class SafariCommands {
 					}))
 					.then(ClientCommands.argument("comma-separated species", StringArgumentType.greedyString())
 						.executes(ctx -> setSharedSparklings(ctx.getSource(),
-							StringArgumentType.getString(ctx, "comma-separated species")))))
-				.then(sparklingSetCommand())
-				.then(ClientCommands.literal("feathers")
-					.then(ClientCommands.argument("count", IntegerArgumentType.integer(0))
-						.executes(ctx -> setSparklingFeathers(ctx.getSource(),
-							IntegerArgumentType.getInteger(ctx, "count"))))));
+							StringArgumentType.getString(ctx, "comma-separated species"))));
+		// The public command tree does not expose an unusable refresh branch.
+		if (SharedSparklingProviders.available()) {
+			shared.then(ClientCommands.literal("refresh")
+				.executes(ctx -> refreshSharedSparklings(ctx.getSource())));
+		}
+		return shared;
 	}
 
 	private static com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource>
@@ -202,36 +242,150 @@ public final class SafariCommands {
 	}
 
 	private static int showSharedSparklings(FabricClientCommandSource source) {
+		if (!SparklingMode.sharedConfigured() && SparklingMode.shared().isEmpty()) {
+			source.sendFeedback(prefixed(
+				"No shared Sparkling list is set. Enter one with /sparkling shared <species, ...> "
+					+ "or /sparkling missing <species, ...>",
+				ChatFormatting.YELLOW));
+			return 1;
+		}
 		source.sendFeedback(prefixed("Shared Sparklings: " + SparklingMode.describeShared(),
 			ChatFormatting.AQUA));
 		return 1;
 	}
 
-	private static int refreshSharedSparklings(FabricClientCommandSource source) {
-		var provider = SharedSparklingProviders.provider().orElse(null);
-		if (provider == null) {
-			source.sendError(prefixed("Private shared-Sparkling provider is not installed",
-				ChatFormatting.RED));
-			return 0;
+	private static int showMissingSparklings(FabricClientCommandSource source) {
+		if (!SparklingMode.sharedConfigured() && SparklingMode.shared().isEmpty()) {
+			source.sendFeedback(prefixed(
+				"No shared Sparkling list is set. Enter one with /sparkling shared <species, ...> "
+					+ "or /sparkling missing <species, ...>",
+				ChatFormatting.YELLOW));
+			return 1;
 		}
+		java.util.Set<Critter> shared = SparklingMode.shared();
+		String missing = Critters.all().stream()
+			.filter(critter -> !shared.contains(critter))
+			.map(Critter::name)
+			.sorted(String.CASE_INSENSITIVE_ORDER)
+			.collect(java.util.stream.Collectors.joining(", "));
+		source.sendFeedback(prefixed("Missing Sparklings: " + (missing.isEmpty() ? "None" : missing),
+			ChatFormatting.AQUA));
+		return 1;
+	}
+
+	private static int refreshSharedSparklings(FabricClientCommandSource source) {
+		var provider = SharedSparklingProviders.provider().orElseThrow();
 		source.sendFeedback(prefixed("Refreshing the current Safari party…", ChatFormatting.GRAY));
-		provider.refreshCurrentParty().whenComplete((shared, error) ->
+		// The provider reports its own completion or failure once; avoid a second
+		// command-level result that repeats the same information.
+		provider.refreshCurrentParty();
+		return 1;
+	}
+
+	private static int lookupSparklings(FabricClientCommandSource source, String username,
+			boolean showMissing) {
+		var provider = SharedSparklingProviders.provider().orElseThrow();
+		source.sendFeedback(prefixed("Looking up " + username + "…", ChatFormatting.GRAY));
+		provider.lookupPlayer(username).whenComplete((species, error) ->
 			Minecraft.getInstance().execute(() -> {
 				if (error != null) {
 					Throwable cause = error;
 					while (cause.getCause() != null) cause = cause.getCause();
-					source.sendError(prefixed("Shared Sparkling refresh failed: " + cause.getMessage(),
+					source.sendError(prefixed("Sparkling lookup failed: " + cause.getMessage(),
 						ChatFormatting.RED));
 					return;
 				}
-				source.sendFeedback(prefixed(
-					"Shared Sparklings refreshed: " + SparklingMode.describeShared(),
-					ChatFormatting.AQUA));
+				java.util.List<String> names = Critters.all().stream()
+					.filter(critter -> showMissing != species.contains(speciesId(critter.name())))
+					.map(Critter::name).sorted(String.CASE_INSENSITIVE_ORDER).toList();
+				String label = showMissing ? " — Missing Sparklings" : " — Sparklings";
+				source.sendFeedback(prefixed(username + label + " ("
+					+ names.size() + "/" + Critters.total() + "): "
+					+ (names.isEmpty() ? "None" : String.join(", ", names)), ChatFormatting.AQUA));
 			}));
 		return 1;
 	}
 
+	private static String speciesId(String name) {
+		return name.trim().toUpperCase(java.util.Locale.ROOT).replace(' ', '_');
+	}
+
 	private static int setSharedSparklings(FabricClientCommandSource source, String input) {
+		java.util.Set<Critter> parsed = parseCritterList(source, input);
+		if (parsed == null) return 0;
+		SparklingMode.replaceShared(parsed);
+		source.sendFeedback(prefixed("Shared Sparkling list updated", ChatFormatting.AQUA));
+		return 1;
+	}
+
+	private static int setMissingSparklings(FabricClientCommandSource source, String input) {
+		java.util.Set<Critter> missing = parseCritterList(source, input);
+		if (missing == null) return 0;
+		java.util.Set<Critter> shared = new java.util.LinkedHashSet<>(Critters.all());
+		shared.removeAll(missing);
+		SparklingMode.replaceShared(shared);
+		source.sendFeedback(prefixed("Shared Sparkling list updated from missing critters",
+			ChatFormatting.AQUA));
+		return 1;
+	}
+
+	private static int importClipboardList(FabricClientCommandSource source, boolean sharedList) {
+		String clipboard = Minecraft.getInstance().keyboardHandler.getClipboard().trim();
+		if (clipboard.isEmpty()) {
+			source.sendError(prefixed("Clipboard is empty", ChatFormatting.RED));
+			return 0;
+		}
+		if (SPARKLING_LIST_MESSAGE.matcher(clipboard.replaceAll("§.", "")).find()) {
+			source.sendError(prefixed(
+				"Clipboard contains a formatted Sparkling message. Use /sparkling import",
+				ChatFormatting.RED));
+			return 0;
+		}
+		return sharedList
+			? setSharedSparklings(source, clipboard)
+			: setMissingSparklings(source, clipboard);
+	}
+
+	/** Imports the formatted list sent by Safari Utils, including a full party-chat line. */
+	private static int importSparklingMessage(FabricClientCommandSource source) {
+		String clipboard = Minecraft.getInstance().keyboardHandler.getClipboard()
+			.replaceAll("§.", "").trim();
+		var matcher = SPARKLING_LIST_MESSAGE.matcher(clipboard);
+		if (!matcher.find()) {
+			if (looksLikePlainCritterList(clipboard)) {
+				source.sendError(prefixed(
+					"Clipboard contains only a critter list. Use /sparkling import shared "
+						+ "or /sparkling import missing",
+					ChatFormatting.RED));
+				return 0;
+			}
+			source.sendError(prefixed(
+				"Invalid Sparkling message. Expected Shared Sparklings (N/37): <species, ...> "
+					+ "or Missing Sparklings (N/37): <species, ...>",
+				ChatFormatting.RED));
+			return 0;
+		}
+		String list = matcher.group(2).trim();
+		if (list.equalsIgnoreCase("none")) list = "";
+		if (list.isEmpty()) {
+			SparklingMode.replaceShared(matcher.group(1).equalsIgnoreCase("shared")
+				? java.util.Set.of() : new java.util.LinkedHashSet<>(Critters.all()));
+			source.sendFeedback(prefixed("Shared Sparkling list imported", ChatFormatting.AQUA));
+			return 1;
+		}
+		return matcher.group(1).equalsIgnoreCase("shared")
+			? setSharedSparklings(source, list)
+			: setMissingSparklings(source, list);
+	}
+
+	private static boolean looksLikePlainCritterList(String clipboard) {
+		if (clipboard.contains(",")) return true;
+		return Critters.all().stream()
+			.anyMatch(critter -> critter.name().equalsIgnoreCase(clipboard.trim()));
+	}
+
+	private static java.util.Set<Critter> parseCritterList(
+			FabricClientCommandSource source, String input) {
 		java.util.Set<Critter> parsed = new java.util.LinkedHashSet<>();
 		java.util.List<String> unknown = new java.util.ArrayList<>();
 		for (String part : input.split(",", -1)) {
@@ -249,10 +403,9 @@ public final class SafariCommands {
 		if (!unknown.isEmpty()) {
 			source.sendError(prefixed("Unknown critter" + (unknown.size() == 1 ? "" : "s")
 				+ ": " + String.join(", ", unknown), ChatFormatting.RED));
-			return 0;
+			return null;
 		}
-		SparklingMode.replaceShared(parsed);
-		return showSharedSparklings(source);
+		return parsed;
 	}
 
 	private static int setSparklingFeathers(FabricClientCommandSource source, int count) {
@@ -725,8 +878,7 @@ public final class SafariCommands {
 	}
 
 	private static Component header(String text) {
-		return Component.literal("[SafariUtils] ").withStyle(ChatFormatting.GOLD)
-			.append(Component.literal(text).withStyle(ChatFormatting.YELLOW));
+		return ClientMessages.header(text);
 	}
 
 	/**
@@ -754,7 +906,6 @@ public final class SafariCommands {
 	}
 
 	private static Component prefixed(String text, ChatFormatting colour) {
-		return Component.literal("[SafariUtils] ").withStyle(ChatFormatting.GOLD)
-			.append(Component.literal(text).withStyle(colour));
+		return ClientMessages.prefixed(text, colour);
 	}
 }

@@ -16,7 +16,12 @@ import dev.serko.safariutils.client.FloorDrops;
 import dev.serko.safariutils.client.CritterCountLog;
 import dev.serko.safariutils.client.DebugLog;
 import dev.serko.safariutils.client.DebugStateLog;
+import dev.serko.safariutils.client.InteractionDebugLog;
 import dev.serko.safariutils.client.HideyhoSolver;
+import dev.serko.safariutils.client.HideyhoAutoAccept;
+import dev.serko.safariutils.client.PartyErrorSuppressor;
+import dev.serko.safariutils.client.PartyRosterWatch;
+import dev.serko.safariutils.client.TicketProtection;
 import dev.serko.safariutils.client.StillCritters;
 import dev.serko.safariutils.client.HotspotWatch;
 import dev.serko.safariutils.client.BirdfeederWatch;
@@ -47,12 +52,14 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
+import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
+import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.InteractionResult;
 import org.slf4j.Logger;
@@ -73,6 +80,17 @@ public class SafariUtils implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		SafariPaths.migrateLegacyFiles();
+		ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
+			InteractionDebugLog.onScreenInit(client, screen, width, height);
+			TicketProtection.onScreenInit(screen);
+		});
+		ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> {
+			// Log before optional automation hides a clickable server prompt.
+			InteractionDebugLog.onGameMessage(message, overlay);
+			return PartyRosterWatch.allow(message, overlay)
+				&& PartyErrorSuppressor.allow(message, overlay)
+				&& HideyhoAutoAccept.allow(message, overlay);
+		});
 		// Hypixel sends catch messages as system chat, which is what GAME covers.
 		// This fires upstream of chat-compacting mods, so the duplicate counters
 		// they append never reach the parser.
@@ -116,10 +134,13 @@ public class SafariUtils implements ClientModInitializer {
 			if (BuildVersion.DEVELOPER) DebugLog.tick();
 			// Next, and only here: everything below asks it where the player is.
 			SafariLocation.tick();
+			BirdfeederWatch.tickMenu();
+			PartyRosterWatch.tick();
 			SafariPartyWatch.tick();
 			SparklingMode.tick();
 			SharedSparklingProviders.tick();
 			if (BuildVersion.DEVELOPER) DebugStateLog.tick();
+			if (BuildVersion.DEVELOPER) InteractionDebugLog.tick();
 			ContestTracker.tick();
 			// One sweep of the world's critters, for everything below that wants them.
 			CritterEntities.tick();
@@ -178,11 +199,20 @@ public class SafariUtils implements ClientModInitializer {
 		});
 		AttackEntityCallback.EVENT.register((player, level, hand, entity, hitResult) -> {
 			MoundSpotter.onAttack(entity);
-			return InteractionResult.PASS;
+			InteractionDebugLog.onEntityInteraction("attack", entity, hand.toString());
+			return TicketProtection.blockManagerInteraction(entity)
+				? InteractionResult.FAIL : InteractionResult.PASS;
 		});
 		UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
 			FloorDrops.onInteract(hit.getBlockPos());
 			return InteractionResult.PASS;
+		});
+		UseEntityCallback.EVENT.register((player, level, hand, entity, hitResult) -> {
+			SafariPartyWatch.onEntityUse(entity);
+			BirdfeederWatch.onEntityUse(entity);
+			InteractionDebugLog.onEntityInteraction("use", entity, hand.toString());
+			return TicketProtection.blockManagerInteraction(entity)
+				? InteractionResult.FAIL : InteractionResult.PASS;
 		});
 
 		ClientCommandRegistrationCallback.EVENT.register(

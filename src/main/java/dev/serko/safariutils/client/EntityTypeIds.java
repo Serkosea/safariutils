@@ -16,4 +16,8 @@ final class EntityTypeIds {
 	static boolean is(EntityType<?> type, String path) {
 		return BuiltInRegistries.ENTITY_TYPE.getKey(type).getPath().equals(path);
 	}
+
+	static String key(Entity entity) {
+		return BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
+	}
 }

@@ -21,7 +21,7 @@ public final class HeadStartWatch {
 
 	private static long scanAtMillis;
 	/** The inventory counts as of the last scan, so a second one only credits what changed. */
-	private static int lastScannedFeed;
+	private static final int[] lastScannedFeed = new int[3];
 	private static int lastScannedCoins;
 
 	private HeadStartWatch() {
@@ -53,31 +53,39 @@ public final class HeadStartWatch {
 		if (player == null) return;
 		Inventory inventory = player.getInventory();
 
-		int feedFound = 0;
+		int[] feedFound = new int[3];
 		int coinsFound = 0;
 		for (int i = 0; i < inventory.getContainerSize(); i++) {
 			ItemStack stack = inventory.getItem(i);
 			if (stack.isEmpty()) continue;
 			String name = stack.getHoverName().getString();
-			if (FEED_ITEMS.contains(name)) feedFound += stack.getCount();
+			if ("Bag of Seeds".equals(name)) feedFound[0] += stack.getCount();
+			else if ("Wriggleworm".equals(name)) feedFound[1] += stack.getCount();
+			else if ("Yogi Berry".equals(name)) feedFound[2] += stack.getCount();
 			else if (COIN_ITEM.equals(name)) coinsFound += stack.getCount();
 		}
 
-		int newFeed = Math.max(0, feedFound - lastScannedFeed);
+		int[] newFeed = new int[3];
+		for (int i = 0; i < newFeed.length; i++) {
+			newFeed[i] = Math.max(0, feedFound[i] - lastScannedFeed[i]);
+			lastScannedFeed[i] = feedFound[i];
+		}
 		int newCoins = Math.max(0, coinsFound - lastScannedCoins);
-		lastScannedFeed = feedFound;
 		lastScannedCoins = coinsFound;
 
-		if (newFeed > 0) BirdfeederWatch.creditFeedFound(newFeed);
+		if (newFeed[0] + newFeed[1] + newFeed[2] > 0) {
+			BirdfeederWatch.creditFeedFound(newFeed[0], newFeed[1], newFeed[2]);
+		}
 		if (newCoins > 0) ShiningCoinWatch.creditFound(newCoins);
-		DebugLog.line("HEADSTART", "scan found feed=" + feedFound + " coins=" + coinsFound
-			+ " (credited feed=" + newFeed + " coins=" + newCoins + ")");
+		DebugLog.line("HEADSTART", "scan found feed=" + java.util.Arrays.toString(feedFound)
+			+ " coins=" + coinsFound + " (credited feed=" + java.util.Arrays.toString(newFeed)
+			+ " coins=" + newCoins + ")");
 	}
 
 	/** Clears the old baseline and scans every starting item after activation. */
 	public static void reset() {
 		scanAtMillis = System.currentTimeMillis() + POST_MESSAGE_DELAY_MILLIS;
-		lastScannedFeed = 0;
+		java.util.Arrays.fill(lastScannedFeed, 0);
 		lastScannedCoins = 0;
 	}
 }

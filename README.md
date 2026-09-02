@@ -8,9 +8,11 @@ Safari Utils is a Fabric mod made for Hypixel SkyBlock's Critter Safari. It keep
 - Run history, lifetime totals, Safari Essence, Rainbow Feathers, and Bazaar profit.
 - A dedicated Sparkling collection page, Sparkling Mode, shared-party lists, and special catch effects.
 - Helpful markers for Safari objectives and encounters.
-- Party-ready alerts before a run starts.
+- Party-ready alerts and ticket protection while waiting for everyone to arrive.
+- Automatic Hideyho acceptance and Birdfeeder inventory/empty alerts.
 - A real-time Miria's Contest timer with bracket, score, and ticket tracking.
 - A custom settings screen with search, themes, sounds, colors, and editable alert text.
+- Banner-only, sound-only, or combined playback for each banner alert.
 - A Safe Mode edition for ordinary use and an Extra edition with additional information features.
 
 ## Downloads
@@ -19,8 +21,8 @@ Choose the jar that matches your Minecraft version.
 
 | Minecraft | Safe Mode | Extra |
 |---|---|---|
-| 26.1.2 | `safariutils-1.2.0+mc26.1.2.jar` | `safariutils-1.2.0-extra+mc26.1.2.jar` |
-| 26.2 | `safariutils-1.2.0+mc26.2.jar` | `safariutils-1.2.0-extra+mc26.2.jar` |
+| 26.1.2 | `safariutils-1.3.0+mc26.1.2.jar` | `safariutils-1.3.0-extra+mc26.1.2.jar` |
+| 26.2 | `safariutils-1.3.0+mc26.2.jar` | `safariutils-1.3.0-extra+mc26.2.jar` |
 
 The Safe Mode edition is the recommended download. Extra includes features that may provide information the player cannot directly see and may not be safe to use.
 
@@ -43,13 +45,17 @@ Existing Safari Utils settings and history are moved into `config/safariutils/` 
 | `/su`, `/safari`, `/safariutils` | Opens Safari Utils settings. |
 | `/su gui` | Opens the HUD editor. |
 | `/safari stats` | Opens run, history, statistics, and Sparkling pages. |
-| `/safari stats reset` | Resets the current tracked run. |
-| `/safari stats sparkling` | Shows saved Sparkling totals. |
-| `/safari stats sparkling set <species> <count>` | Corrects a Sparkling species total. |
-| `/safari stats sparkling feathers <count>` | Corrects the Rainbow Feather total. |
-| `/safari stats sparkling shared` | Shows the saved shared-party list. |
-| `/safari stats sparkling shared <species, ...>` | Replaces the shared list. |
-| `/safari stats sparkling shared reset` | Clears the shared list. |
+| `/sparkling` | Shows saved Sparkling totals. |
+| `/sparkling set <species> <count>` | Corrects a Sparkling species total. |
+| `/sparkling feathers <count>` | Corrects the Rainbow Feather total. |
+| `/sparkling shared` | Shows the saved shared-party list. |
+| `/sparkling shared <species, ...>` | Replaces the shared list. |
+| `/sparkling missing` | Shows the species missing from the shared list. |
+| `/sparkling import` | Imports a copied Shared or Missing Sparklings chat message. |
+| `/sparkling import shared` | Imports a comma-separated shared list from the clipboard. |
+| `/sparkling import missing` | Imports a comma-separated missing list from the clipboard. |
+| `/sparkling missing <species, ...>` | Builds the shared list from the species your party is missing. |
+| `/sparkling shared reset` | Clears the shared list. |
 
 The `/su` and `/safariutils` aliases support the same subcommands.
 

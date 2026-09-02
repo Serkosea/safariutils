@@ -88,6 +88,8 @@ public final class DebugLog {
 			case "ACTIVATE" -> advanced.logActivation;
 			case "LOCATION" -> advanced.logLocation;
 			case "PARTY" -> advanced.logPartyRoster;
+			case "PARTYTIME" -> advanced.logPartyTiming;
+			case "INTERACT" -> advanced.logInterfaces;
 			case "TABLIST" -> advanced.logTabList;
 			case "SCORE" -> advanced.logScoreboard;
 			case "INVENTORY" -> advanced.logInventory;

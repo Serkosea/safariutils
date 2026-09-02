@@ -55,6 +55,10 @@ public class SafariConfig {
 	@Expose
 	public DisplayConfig display = new DisplayConfig();
 
+	@SettingCategory(name = "Gameplay", desc = "QOL gameplay features for the Safari")
+	@Expose
+	public GameplayConfig gameplay = new GameplayConfig();
+
 	@SettingCategory(name = "Alerts", desc = "On-screen banner alerts for Safari Events, Encounters, and Contests")
 	@Expose
 	public AlertConfig alerts = new AlertConfig();
@@ -74,6 +78,20 @@ public class SafariConfig {
 	@SettingCategory(name = "Advanced", desc = "Extra themes and tools")
 	@Expose
 	public AdvancedConfig advanced = new AdvancedConfig();
+
+	public static class GameplayConfig {
+		@SettingInfo(name = "Auto Accept Hideyho",
+			desc = "Automatically accepts Hideyho's Hide N' Seek game")
+		@SettingToggle
+		@Expose
+		public boolean autoAcceptHideyho = true;
+
+		@SettingInfo(name = "Protect Safari Ticket",
+			desc = "Blocks ticket use until every party member has joined the Safari")
+		@SettingToggle
+		@Expose
+		public boolean protectSafariTicket = true;
+	}
 
 	public static class DisplayConfig {
 		@SettingInfo(name = "Settings Theme", desc = "Changes the colors and style of this settings menu")
@@ -1061,6 +1079,19 @@ public class SafariConfig {
 		@Expose
 		public boolean logPartyRoster = false;
 
+		@SettingInfo(name = "Full Party Timing", desc = "Raw and stabilized Safari player counts with alert timing")
+		@SettingToggle
+		@SettingGroup(id = OUTPUT_SESSION_DATA)
+		@Expose
+		public boolean logPartyTiming = false;
+
+		@SettingInfo(name = "GUI And NPC Interactions",
+			desc = "Safari NPC uses, GUI openings, clicks, slots, and container changes")
+		@SettingToggle
+		@SettingGroup(id = OUTPUT_SESSION_DATA)
+		@Expose
+		public boolean logInterfaces = false;
+
 		@SettingInfo(name = "Tab List Changes", desc = "A snapshot whenever the stripped tab list changes")
 		@SettingToggle
 		@SettingGroup(id = OUTPUT_SESSION_DATA)
@@ -1353,6 +1384,16 @@ public class SafariConfig {
 		private static final int BANNER_BORDER = 114;
 		private static final int BANNER_FONT = 115;
 		private static final int BANNER_TIMER_BARS = 116;
+		private static final int BIRD_ALERTS = 117;
+		private static final int FEED_GONE = 118;
+		private static final int APPEAR_FEED_GONE = 119;
+		private static final int SOUND_SETTINGS_FEED_GONE = 120;
+		private static final int FEED_TYPE_GONE = 121;
+		private static final int APPEAR_FEED_TYPE_GONE = 122;
+		private static final int SOUND_SETTINGS_FEED_TYPE_GONE = 123;
+		private static final int BIRDFEEDER_EMPTY = 124;
+		private static final int APPEAR_BIRDFEEDER_EMPTY = 125;
+		private static final int SOUND_SETTINGS_BIRDFEEDER_EMPTY = 126;
 
 		@SettingInfo(name = "Banner Appearance", desc = "Shared appearance settings for every banner alert")
 		@SettingSection(id = BANNER_APPEARANCE)
@@ -1481,8 +1522,8 @@ public class SafariConfig {
 			EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.FULL_PARTY);
 
 		@SettingInfo(name = "Play Alert", desc = "Plays alert when all 4 members of your party have joined the Safari")
-		@SettingToggle @SettingGroup(id = FULL_PARTY_JOINED) @Expose
-		public boolean fullPartyJoinedAlert = true;
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = FULL_PARTY_JOINED) @Expose
+		public int fullPartyJoinedSoundMode = 3;
 
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_FULL_PARTY_JOINED)
@@ -1517,10 +1558,6 @@ public class SafariConfig {
 		@SettingGroup(id = FULL_PARTY_JOINED)
 		public boolean fullPartyJoinedSoundSettingsAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle @SettingGroup(id = SOUND_SETTINGS_FULL_PARTY_JOINED) @Expose
-		public boolean fullPartyJoinedSound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_FULL_PARTY_JOINED) @Expose
@@ -1547,10 +1584,10 @@ public class SafariConfig {
 		public Runnable testHotspotAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.HOTSPOT);
 
 		@SettingInfo(name = "Play Alert", desc = "Plays alert when your Hotspot is chosen for a run")
-		@SettingToggle
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"})
 		@SettingGroup(id = SOUND_HOTSPOT)
 		@Expose
-		public boolean hotspotAlert = true;
+		public int hotspotSoundMode = 3;
 
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_HOTSPOT) @SettingGroup(id = SOUND_HOTSPOT)
@@ -1583,12 +1620,6 @@ public class SafariConfig {
 		@SettingSection(id = SOUND_SETTINGS_HOTSPOT) @SettingGroup(id = SOUND_HOTSPOT)
 		public boolean hotspotSoundSettingsAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_HOTSPOT)
-		@Expose
-		public boolean hotspotSound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_HOTSPOT)
@@ -1620,10 +1651,10 @@ public class SafariConfig {
 		public Runnable testFloorDropsDoneAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.FLOOR_DROPS);
 
 		@SettingInfo(name = "Play Alert", desc = "Plays alert once every floor drop in a biome has been collected")
-		@SettingToggle
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"})
 		@SettingGroup(id = SOUND_FLOOR_DROPS)
 		@Expose
-		public boolean floorDropsDoneAlert = true;
+		public int floorDropsDoneSoundMode = 3;
 
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_FLOOR_DROPS) @SettingGroup(id = SOUND_FLOOR_DROPS)
@@ -1660,12 +1691,6 @@ public class SafariConfig {
 
 		public boolean durationGemzieAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_FLOOR_DROPS)
-		@Expose
-		public boolean floorDropsDoneSound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_FLOOR_DROPS)
@@ -1699,10 +1724,10 @@ public class SafariConfig {
 		public Runnable testBiomeUniquesDoneAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.BIOME_UNIQUES);
 
 		@SettingInfo(name = "Play Alert", desc = "Plays alert when every unique species in a biome has been caught")
-		@SettingToggle
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"})
 		@SettingGroup(id = BIOME_UNIQUES_DONE)
 		@Expose
-		public boolean biomeUniquesDoneAlert = true;
+		public int biomeUniquesDoneSoundMode = 3;
 
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_BIOME_UNIQUES_DONE)
@@ -1743,11 +1768,6 @@ public class SafariConfig {
 		@SettingGroup(id = BIOME_UNIQUES_DONE)
 		public boolean biomeUniquesDoneSoundSettingsAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_BIOME_UNIQUES_DONE) @Expose
-		public boolean biomeUniquesDoneSound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_BIOME_UNIQUES_DONE) @Expose
@@ -1773,8 +1793,8 @@ public class SafariConfig {
 			EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.ALL_BUT_MACAW);
 
 		@SettingInfo(name = "Play Alert", desc = "Plays alert when every unique species except Macaw has been caught")
-		@SettingToggle @SettingGroup(id = ALL_BUT_MACAW_DONE) @Expose
-		public boolean allButMacawDoneAlert = true;
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = ALL_BUT_MACAW_DONE) @Expose
+		public int allButMacawDoneSoundMode = 3;
 
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_ALL_BUT_MACAW_DONE) @SettingGroup(id = ALL_BUT_MACAW_DONE)
@@ -1802,9 +1822,7 @@ public class SafariConfig {
 		@SettingInfo(name = "Sound Settings", desc = "")
 		@SettingSection(id = SOUND_SETTINGS_ALL_BUT_MACAW_DONE) @SettingGroup(id = ALL_BUT_MACAW_DONE)
 		public boolean allButMacawDoneSoundSettingsAccordion = false;
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle @SettingGroup(id = SOUND_SETTINGS_ALL_BUT_MACAW_DONE) @Expose
-		public boolean allButMacawDoneSound = true;
+
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_ALL_BUT_MACAW_DONE) @Expose
@@ -1828,8 +1846,8 @@ public class SafariConfig {
 			EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.ALL_DONE);
 
 		@SettingInfo(name = "Play Alert", desc = "Plays alert when all 37 unique species have been caught")
-		@SettingToggle @SettingGroup(id = ALL_UNIQUES_DONE) @Expose
-		public boolean allUniquesDoneAlert = true;
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = ALL_UNIQUES_DONE) @Expose
+		public int allUniquesDoneSoundMode = 3;
 
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_ALL_UNIQUES_DONE) @SettingGroup(id = ALL_UNIQUES_DONE)
@@ -1856,9 +1874,7 @@ public class SafariConfig {
 		@SettingInfo(name = "Sound Settings", desc = "")
 		@SettingSection(id = SOUND_SETTINGS_ALL_UNIQUES_DONE) @SettingGroup(id = ALL_UNIQUES_DONE)
 		public boolean allUniquesDoneSoundSettingsAccordion = false;
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle @SettingGroup(id = SOUND_SETTINGS_ALL_UNIQUES_DONE) @Expose
-		public boolean allUniquesDoneSound = true;
+
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_ALL_UNIQUES_DONE) @Expose
@@ -1886,7 +1902,6 @@ public class SafariConfig {
 		@SettingSection(id = SOUND_GEMZIE)
 		@SettingGroup(id = ENCOUNTER_ALERTS)
 		public boolean gemzieAlertAccordion = false;
-		@Expose public boolean gemzieAlert = true;
 
 		@SettingInfo(name = "Ready", desc = "")
 		@SettingSection(id = SOUND_GEMZIE_READY) @SettingGroup(id = SOUND_GEMZIE)
@@ -1895,8 +1910,8 @@ public class SafariConfig {
 		@SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_GEMZIE_READY)
 		public Runnable testGemzieReadyAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.GEMZIE_READY);
 		@SettingInfo(name = "Play Alert", desc = "Plays alert for this encounter stage")
-		@SettingToggle @SettingGroup(id = SOUND_GEMZIE_READY) @Expose
-		public boolean gemzieReadyAlert = true;
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = SOUND_GEMZIE_READY) @Expose
+		public int gemzieReadySoundMode = 3;
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_GEMZIE_READY) @SettingGroup(id = SOUND_GEMZIE_READY)
 		public boolean gemzieReadyAppearanceAccordion = false;
@@ -1928,12 +1943,6 @@ public class SafariConfig {
 		@SettingSection(id = SOUND_SETTINGS_GEMZIE_READY) @SettingGroup(id = SOUND_GEMZIE_READY)
 		public boolean gemzieReadySoundSettingsAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_GEMZIE_READY)
-		@Expose
-		public boolean gemzieReadySound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_GEMZIE_READY)
@@ -1961,8 +1970,8 @@ public class SafariConfig {
 		@SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_GEMZIE_DONE)
 		public Runnable testGemzieDoneAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.GEMZIE_DONE);
 		@SettingInfo(name = "Play Alert", desc = "Plays alert for this encounter stage")
-		@SettingToggle @SettingGroup(id = SOUND_GEMZIE_DONE) @Expose
-		public boolean gemzieDoneAlert = true;
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = SOUND_GEMZIE_DONE) @Expose
+		public int gemzieDoneSoundMode = 3;
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_GEMZIE_DONE) @SettingGroup(id = SOUND_GEMZIE_DONE)
 		public boolean gemzieDoneAppearanceAccordion = false;
@@ -1998,12 +2007,6 @@ public class SafariConfig {
 
 		public boolean durationWumpaAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_GEMZIE_DONE)
-		@Expose
-		public boolean gemzieDoneSound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_GEMZIE_DONE)
@@ -2030,7 +2033,6 @@ public class SafariConfig {
 		@SettingSection(id = SOUND_WUMPA)
 		@SettingGroup(id = ENCOUNTER_ALERTS)
 		public boolean wumpaAlertAccordion = false;
-		@Expose public boolean wumpaAlert = true;
 
 		@SettingInfo(name = "Ready", desc = "")
 		@SettingSection(id = SOUND_WUMPA_READY) @SettingGroup(id = SOUND_WUMPA)
@@ -2039,8 +2041,8 @@ public class SafariConfig {
 		@SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_WUMPA_READY)
 		public Runnable testWumpaReadyAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.WUMPA_READY);
 		@SettingInfo(name = "Play Alert", desc = "Plays alert for this encounter stage")
-		@SettingToggle @SettingGroup(id = SOUND_WUMPA_READY) @Expose
-		public boolean wumpaReadyAlert = true;
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = SOUND_WUMPA_READY) @Expose
+		public int wumpaReadySoundMode = 3;
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_WUMPA_READY) @SettingGroup(id = SOUND_WUMPA_READY)
 		public boolean wumpaReadyAppearanceAccordion = false;
@@ -2072,12 +2074,6 @@ public class SafariConfig {
 		@SettingSection(id = SOUND_SETTINGS_WUMPA_READY) @SettingGroup(id = SOUND_WUMPA_READY)
 		public boolean wumpaReadySoundSettingsAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_WUMPA_READY)
-		@Expose
-		public boolean wumpaReadySound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_WUMPA_READY)
@@ -2105,8 +2101,8 @@ public class SafariConfig {
 		@SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_WUMPA_STARTED)
 		public Runnable testWumpaStartedAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.WUMPA_STARTED);
 		@SettingInfo(name = "Play Alert", desc = "Plays alert for this encounter stage")
-		@SettingToggle @SettingGroup(id = SOUND_WUMPA_STARTED) @Expose
-		public boolean wumpaStartedAlert = true;
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = SOUND_WUMPA_STARTED) @Expose
+		public int wumpaStartedSoundMode = 3;
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_WUMPA_STARTED) @SettingGroup(id = SOUND_WUMPA_STARTED)
 		public boolean wumpaStartedAppearanceAccordion = false;
@@ -2138,12 +2134,6 @@ public class SafariConfig {
 		@SettingSection(id = SOUND_SETTINGS_WUMPA_STARTED) @SettingGroup(id = SOUND_WUMPA_STARTED)
 		public boolean wumpaStartedSoundSettingsAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_WUMPA_STARTED)
-		@Expose
-		public boolean wumpaStartedSound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_WUMPA_STARTED)
@@ -2171,8 +2161,8 @@ public class SafariConfig {
 		@SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_WUMPA_DONE)
 		public Runnable testWumpaDoneAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.WUMPA_DONE);
 		@SettingInfo(name = "Play Alert", desc = "Plays alert for this encounter stage")
-		@SettingToggle @SettingGroup(id = SOUND_WUMPA_DONE) @Expose
-		public boolean wumpaDoneAlert = true;
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = SOUND_WUMPA_DONE) @Expose
+		public int wumpaDoneSoundMode = 3;
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_WUMPA_DONE) @SettingGroup(id = SOUND_WUMPA_DONE)
 		public boolean wumpaDoneAppearanceAccordion = false;
@@ -2208,12 +2198,6 @@ public class SafariConfig {
 
 		public boolean durationDoomspiralAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_WUMPA_DONE)
-		@Expose
-		public boolean wumpaDoneSound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_WUMPA_DONE)
@@ -2240,7 +2224,6 @@ public class SafariConfig {
 		@SettingSection(id = SOUND_DOOMSPIRAL)
 		@SettingGroup(id = ENCOUNTER_ALERTS)
 		public boolean doomspiralAlertAccordion = false;
-		@Expose public boolean doomspiralAlert = true;
 
 		@SettingInfo(name = "Ready", desc = "")
 		@SettingSection(id = SOUND_DOOMSPIRAL_READY) @SettingGroup(id = SOUND_DOOMSPIRAL)
@@ -2249,8 +2232,8 @@ public class SafariConfig {
 		@SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_DOOMSPIRAL_READY)
 		public Runnable testDoomspiralReadyAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.DOOM_READY);
 		@SettingInfo(name = "Play Alert", desc = "Plays alert for this encounter stage")
-		@SettingToggle @SettingGroup(id = SOUND_DOOMSPIRAL_READY) @Expose
-		public boolean doomspiralReadyAlert = true;
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = SOUND_DOOMSPIRAL_READY) @Expose
+		public int doomspiralReadySoundMode = 3;
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_DOOM_READY) @SettingGroup(id = SOUND_DOOMSPIRAL_READY)
 		public boolean doomspiralReadyAppearanceAccordion = false;
@@ -2282,12 +2265,6 @@ public class SafariConfig {
 		@SettingSection(id = SOUND_SETTINGS_DOOM_READY) @SettingGroup(id = SOUND_DOOMSPIRAL_READY)
 		public boolean doomspiralReadySoundSettingsAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_DOOM_READY)
-		@Expose
-		public boolean doomspiralReadySound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_DOOM_READY)
@@ -2315,8 +2292,8 @@ public class SafariConfig {
 		@SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_DOOMSPIRAL_STARTED)
 		public Runnable testDoomspiralStartedAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.DOOM_STARTED);
 		@SettingInfo(name = "Play Alert", desc = "Plays alert for this encounter stage")
-		@SettingToggle @SettingGroup(id = SOUND_DOOMSPIRAL_STARTED) @Expose
-		public boolean doomspiralStartedAlert = true;
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = SOUND_DOOMSPIRAL_STARTED) @Expose
+		public int doomspiralStartedSoundMode = 3;
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_DOOM_STARTED) @SettingGroup(id = SOUND_DOOMSPIRAL_STARTED)
 		public boolean doomspiralStartedAppearanceAccordion = false;
@@ -2348,12 +2325,6 @@ public class SafariConfig {
 		@SettingSection(id = SOUND_SETTINGS_DOOM_STARTED) @SettingGroup(id = SOUND_DOOMSPIRAL_STARTED)
 		public boolean doomspiralStartedSoundSettingsAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_DOOM_STARTED)
-		@Expose
-		public boolean doomspiralStartedSound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_DOOM_STARTED)
@@ -2381,8 +2352,8 @@ public class SafariConfig {
 		@SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_DOOMSPIRAL_DONE)
 		public Runnable testDoomspiralDoneAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.DOOM_DONE);
 		@SettingInfo(name = "Play Alert", desc = "Plays alert for this encounter stage")
-		@SettingToggle @SettingGroup(id = SOUND_DOOMSPIRAL_DONE) @Expose
-		public boolean doomspiralDoneAlert = true;
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = SOUND_DOOMSPIRAL_DONE) @Expose
+		public int doomspiralDoneSoundMode = 3;
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_DOOM_DONE) @SettingGroup(id = SOUND_DOOMSPIRAL_DONE)
 		public boolean doomspiralDoneAppearanceAccordion = false;
@@ -2413,12 +2384,6 @@ public class SafariConfig {
 		@SettingInfo(name = "Sound Settings", desc = "")
 		@SettingSection(id = SOUND_SETTINGS_DOOM_DONE) @SettingGroup(id = SOUND_DOOMSPIRAL_DONE)
 		public boolean doomspiralDoneSoundSettingsAccordion = false;
-
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_DOOM_DONE)
-		@Expose
-		public boolean doomspiralDoneSound = true;
 
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
@@ -2457,10 +2422,10 @@ public class SafariConfig {
 		@SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_HIDEYHO)
 		public Runnable testHideyhoAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.HIDEYHO);
 		@SettingInfo(name = "Play Alert", desc = "Plays alert when start/end Hideyho location detected")
-		@SettingToggle
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"})
 		@SettingGroup(id = SOUND_HIDEYHO)
 		@Expose
-		public boolean hideyhoAlert = true;
+		public int hideyhoSoundMode = 3;
 
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_HIDEYHO) @SettingGroup(id = SOUND_HIDEYHO)
@@ -2495,12 +2460,6 @@ public class SafariConfig {
 		@SettingSection(id = SOUND_SETTINGS_HIDEYHO) @SettingGroup(id = SOUND_HIDEYHO)
 		public boolean hideyhoSoundSettingsAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_HIDEYHO)
-		@Expose
-		public boolean hideyhoSound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_HIDEYHO)
@@ -2519,19 +2478,23 @@ public class SafariConfig {
 		@Expose
 		public float hideyhoSoundPitch = 1.6f;
 
+		@SettingInfo(name = "Birds", desc = "")
+		@SettingSection(id = BIRD_ALERTS) @SettingGroup(id = ENCOUNTER_ALERTS)
+		public boolean birdAlertsAccordion = false;
+
 		public boolean macawSoundAccordion = false;
 
 		@SettingInfo(name = "Macaw Spawned", desc = "")
-		@SettingSection(id = SOUND_MACAW) @SettingGroup(id = ENCOUNTER_ALERTS)
+		@SettingSection(id = SOUND_MACAW) @SettingGroup(id = BIRD_ALERTS)
 		public boolean macawAlertAccordion = false;
 		@SettingInfo(name = "Test Alert", desc = "Preview this alert with its current settings")
 		@SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_MACAW)
 		public Runnable testMacawAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.MACAW);
 		@SettingInfo(name = "Play Alert", desc = "Plays alert when a Macaw appears")
-		@SettingToggle
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"})
 		@SettingGroup(id = SOUND_MACAW)
 		@Expose
-		public boolean macawAlert = true;
+		public int macawSoundMode = 3;
 
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_MACAW) @SettingGroup(id = SOUND_MACAW)
@@ -2564,12 +2527,6 @@ public class SafariConfig {
 		@SettingSection(id = SOUND_SETTINGS_MACAW) @SettingGroup(id = SOUND_MACAW)
 		public boolean macawSoundSettingsAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_MACAW)
-		@Expose
-		public boolean macawSound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_MACAW)
@@ -2590,17 +2547,17 @@ public class SafariConfig {
 
 		public boolean birdfeederSoundAccordion = false;
 
-		@SettingInfo(name = "All Bird Spawns", desc = "")
-		@SettingSection(id = SOUND_BIRDS) @SettingGroup(id = ENCOUNTER_ALERTS)
+		@SettingInfo(name = "All Birds", desc = "")
+		@SettingSection(id = SOUND_BIRDS) @SettingGroup(id = BIRD_ALERTS)
 		public boolean birdfeederAlertAccordion = false;
 		@SettingInfo(name = "Test Alert", desc = "Preview this alert with its current settings")
 		@SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_BIRDS)
 		public Runnable testBirdAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.BIRDS);
-		@SettingInfo(name = "Play Alert", desc = "Plays alert when Bluebirds or Parakeets appear too")
-		@SettingToggle
+		@SettingInfo(name = "Play Alert", desc = "Plays alert when a Bluebird or Parakeet appears")
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"})
 		@SettingGroup(id = SOUND_BIRDS)
 		@Expose
-		public boolean birdfeederAlert = true;
+		public int birdfeederSoundMode = 1;
 
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_BIRDS) @SettingGroup(id = SOUND_BIRDS)
@@ -2638,12 +2595,6 @@ public class SafariConfig {
 
 		public boolean durationContestAlertsAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_BIRDS)
-		@Expose
-		public boolean birdfeederSound = false;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_BIRDS)
@@ -2662,6 +2613,157 @@ public class SafariConfig {
 		@Expose
 		public float birdfeederSoundPitch = 1.4f;
 
+		@SettingInfo(name = "Feed Type Used", desc = "")
+		@SettingSection(id = FEED_TYPE_GONE) @SettingGroup(id = BIRD_ALERTS)
+		public boolean feedTypeGoneAlertAccordion = false;
+		@SettingInfo(name = "Test Alert", desc = "Preview this alert with its current settings")
+		@SettingAction(buttonText = "Alert") @SettingGroup(id = FEED_TYPE_GONE)
+		public Runnable testFeedTypeGoneAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.FEED_TYPE_GONE);
+		@SettingInfo(name = "Play Alert", desc = "Plays alert when all held feed of one type is placed in the Birdfeeder")
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = FEED_TYPE_GONE) @Expose
+		public int feedTypeGoneSoundMode = 3;
+
+		@SettingInfo(name = "Appearance Settings", desc = "")
+		@SettingSection(id = APPEAR_FEED_TYPE_GONE) @SettingGroup(id = FEED_TYPE_GONE)
+		public boolean feedTypeGoneAppearanceAccordion = false;
+		@SettingInfo(name = "Text", desc = "Custom banner text\n§bTags: <FEED>")
+		@SettingText @SettingGroup(id = APPEAR_FEED_TYPE_GONE) @Expose
+		public String feedTypeGoneText = "<FEED> Used";
+		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
+		@SettingRange(minValue = 0.1f, maxValue = 10f, minStep = 0.1f)
+		@SettingGroup(id = APPEAR_FEED_TYPE_GONE) @Expose
+		public float feedTypeGoneScale = 4f;
+		@SettingInfo(name = "Vertical Position", desc = "How far down the screen this banner alert sits\n§7Always centered horizontally")
+		@SettingRange(minValue = 0f, maxValue = 1f, minStep = 0.01f)
+		@SettingGroup(id = APPEAR_FEED_TYPE_GONE) @Expose
+		public float feedTypeGoneVerticalPosition = 0.4f;
+		@SettingInfo(name = "Duration", desc = "How long this banner stays on screen, in seconds")
+		@SettingRange(minValue = 0.5f, maxValue = 30f, minStep = 0.5f)
+		@SettingGroup(id = APPEAR_FEED_TYPE_GONE) @Expose
+		public float feedTypeGoneDuration = 3f;
+		@SettingInfo(name = "Color", desc = "")
+		@SettingColor @SettingGroup(id = APPEAR_FEED_TYPE_GONE) @Expose
+		public String feedTypeGoneColour = DisplayConfig.colour(0xFF, 0xAA, 0x00);
+		@SettingInfo(name = "Use Feed Color",
+			desc = "Uses a different color for Seeds, Worms, and Berries instead of the color picker")
+		@SettingToggle @SettingGroup(id = APPEAR_FEED_TYPE_GONE) @Expose
+		public boolean feedTypeGoneUseFeedColour = true;
+
+		@SettingInfo(name = "Sound Settings", desc = "")
+		@SettingSection(id = SOUND_SETTINGS_FEED_TYPE_GONE) @SettingGroup(id = FEED_TYPE_GONE)
+		public boolean feedTypeGoneSoundSettingsAccordion = false;
+
+		@SettingInfo(name = "Sound Choice", desc = "")
+		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
+		@SettingGroup(id = SOUND_SETTINGS_FEED_TYPE_GONE) @Expose
+		public int feedTypeGoneSoundChoice = 0;
+		@SettingInfo(name = "Volume", desc = "")
+		@SettingRange(minValue = 0f, maxValue = 20f, minStep = 0.1f)
+		@SettingGroup(id = SOUND_SETTINGS_FEED_TYPE_GONE) @Expose
+		public float feedTypeGoneSoundVolume = 1f;
+		@SettingInfo(name = "Pitch", desc = "")
+		@SettingRange(minValue = 0.5f, maxValue = 2f, minStep = 0.1f)
+		@SettingGroup(id = SOUND_SETTINGS_FEED_TYPE_GONE) @Expose
+		public float feedTypeGoneSoundPitch = 1.35f;
+
+		@SettingInfo(name = "All Feed Used", desc = "")
+		@SettingSection(id = FEED_GONE) @SettingGroup(id = BIRD_ALERTS)
+		public boolean feedGoneAlertAccordion = false;
+		@SettingInfo(name = "Test Alert", desc = "Preview this alert with its current settings")
+		@SettingAction(buttonText = "Alert") @SettingGroup(id = FEED_GONE)
+		public Runnable testFeedGoneAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.FEED_GONE);
+		@SettingInfo(name = "Play Alert", desc = "Plays alert when all collected Bird Feed is placed in the Birdfeeder")
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = FEED_GONE) @Expose
+		public int feedGoneSoundMode = 3;
+
+		@SettingInfo(name = "Appearance Settings", desc = "")
+		@SettingSection(id = APPEAR_FEED_GONE) @SettingGroup(id = FEED_GONE)
+		public boolean feedGoneAppearanceAccordion = false;
+		@SettingInfo(name = "Text", desc = "")
+		@SettingText @SettingGroup(id = APPEAR_FEED_GONE) @Expose
+		public String feedGoneText = "All Feed Used";
+		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
+		@SettingRange(minValue = 0.1f, maxValue = 10f, minStep = 0.1f)
+		@SettingGroup(id = APPEAR_FEED_GONE) @Expose
+		public float feedGoneScale = 4f;
+		@SettingInfo(name = "Vertical Position", desc = "How far down the screen this banner alert sits\n§7Always centered horizontally")
+		@SettingRange(minValue = 0f, maxValue = 1f, minStep = 0.01f)
+		@SettingGroup(id = APPEAR_FEED_GONE) @Expose
+		public float feedGoneVerticalPosition = 0.4f;
+		@SettingInfo(name = "Duration", desc = "How long this banner stays on screen, in seconds")
+		@SettingRange(minValue = 0.5f, maxValue = 30f, minStep = 0.5f)
+		@SettingGroup(id = APPEAR_FEED_GONE) @Expose
+		public float feedGoneDuration = 3f;
+		@SettingInfo(name = "Color", desc = "")
+		@SettingColor @SettingGroup(id = APPEAR_FEED_GONE) @Expose
+		public String feedGoneColour = DisplayConfig.colour(0xFF, 0x55, 0x55);
+
+		@SettingInfo(name = "Sound Settings", desc = "")
+		@SettingSection(id = SOUND_SETTINGS_FEED_GONE) @SettingGroup(id = FEED_GONE)
+		public boolean feedGoneSoundSettingsAccordion = false;
+
+		@SettingInfo(name = "Sound Choice", desc = "")
+		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
+		@SettingGroup(id = SOUND_SETTINGS_FEED_GONE) @Expose
+		public int feedGoneSoundChoice = 0;
+		@SettingInfo(name = "Volume", desc = "")
+		@SettingRange(minValue = 0f, maxValue = 20f, minStep = 0.1f)
+		@SettingGroup(id = SOUND_SETTINGS_FEED_GONE) @Expose
+		public float feedGoneSoundVolume = 1f;
+		@SettingInfo(name = "Pitch", desc = "")
+		@SettingRange(minValue = 0.5f, maxValue = 2f, minStep = 0.1f)
+		@SettingGroup(id = SOUND_SETTINGS_FEED_GONE) @Expose
+		public float feedGoneSoundPitch = 1.2f;
+
+		@SettingInfo(name = "Birdfeeder Empty", desc = "")
+		@SettingSection(id = BIRDFEEDER_EMPTY) @SettingGroup(id = BIRD_ALERTS)
+		public boolean birdfeederEmptyAlertAccordion = false;
+		@SettingInfo(name = "Test Alert", desc = "Preview this alert with its current settings")
+		@SettingAction(buttonText = "Alert") @SettingGroup(id = BIRDFEEDER_EMPTY)
+		public Runnable testBirdfeederEmptyAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.BIRDFEEDER_EMPTY);
+		@SettingInfo(name = "Play Alert", desc = "Plays alert when feed runs out while the Birdfeeder menu is open")
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = BIRDFEEDER_EMPTY) @Expose
+		public int birdfeederEmptySoundMode = 3;
+
+		@SettingInfo(name = "Appearance Settings", desc = "")
+		@SettingSection(id = APPEAR_BIRDFEEDER_EMPTY) @SettingGroup(id = BIRDFEEDER_EMPTY)
+		public boolean birdfeederEmptyAppearanceAccordion = false;
+		@SettingInfo(name = "Text", desc = "")
+		@SettingText @SettingGroup(id = APPEAR_BIRDFEEDER_EMPTY) @Expose
+		public String birdfeederEmptyText = "Birdfeeder Empty";
+		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
+		@SettingRange(minValue = 0.1f, maxValue = 10f, minStep = 0.1f)
+		@SettingGroup(id = APPEAR_BIRDFEEDER_EMPTY) @Expose
+		public float birdfeederEmptyScale = 4f;
+		@SettingInfo(name = "Vertical Position", desc = "How far down the screen this banner alert sits\n§7Always centered horizontally")
+		@SettingRange(minValue = 0f, maxValue = 1f, minStep = 0.01f)
+		@SettingGroup(id = APPEAR_BIRDFEEDER_EMPTY) @Expose
+		public float birdfeederEmptyVerticalPosition = 0.4f;
+		@SettingInfo(name = "Duration", desc = "How long this banner stays on screen, in seconds")
+		@SettingRange(minValue = 0.5f, maxValue = 30f, minStep = 0.5f)
+		@SettingGroup(id = APPEAR_BIRDFEEDER_EMPTY) @Expose
+		public float birdfeederEmptyDuration = 3f;
+		@SettingInfo(name = "Color", desc = "")
+		@SettingColor @SettingGroup(id = APPEAR_BIRDFEEDER_EMPTY) @Expose
+		public String birdfeederEmptyColour = DisplayConfig.colour(0xFF, 0x55, 0x55);
+
+		@SettingInfo(name = "Sound Settings", desc = "")
+		@SettingSection(id = SOUND_SETTINGS_BIRDFEEDER_EMPTY) @SettingGroup(id = BIRDFEEDER_EMPTY)
+		public boolean birdfeederEmptySoundSettingsAccordion = false;
+
+		@SettingInfo(name = "Sound Choice", desc = "")
+		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
+		@SettingGroup(id = SOUND_SETTINGS_BIRDFEEDER_EMPTY) @Expose
+		public int birdfeederEmptySoundChoice = 0;
+		@SettingInfo(name = "Volume", desc = "")
+		@SettingRange(minValue = 0f, maxValue = 20f, minStep = 0.1f)
+		@SettingGroup(id = SOUND_SETTINGS_BIRDFEEDER_EMPTY) @Expose
+		public float birdfeederEmptySoundVolume = 1f;
+		@SettingInfo(name = "Pitch", desc = "")
+		@SettingRange(minValue = 0.5f, maxValue = 2f, minStep = 0.1f)
+		@SettingGroup(id = SOUND_SETTINGS_BIRDFEEDER_EMPTY) @Expose
+		public float birdfeederEmptySoundPitch = 1.2f;
+
 		public boolean soundContestAlertsAccordion = false;
 
 		public boolean contestStartSoundAccordion = false;
@@ -2678,10 +2780,10 @@ public class SafariConfig {
 		@SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_CONTEST_START)
 		public Runnable testContestStartAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.START);
 		@SettingInfo(name = "Play Alert", desc = "Plays alert when a new Miria's Contest starts")
-		@SettingToggle
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"})
 		@SettingGroup(id = SOUND_CONTEST_START)
 		@Expose
-		public boolean contestStartAlert = true;
+		public int contestStartSoundMode = 3;
 
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_CONTEST_START) @SettingGroup(id = SOUND_CONTEST_START)
@@ -2714,12 +2816,6 @@ public class SafariConfig {
 		@SettingSection(id = SOUND_SETTINGS_CONTEST_START) @SettingGroup(id = SOUND_CONTEST_START)
 		public boolean contestStartSoundSettingsAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_CONTEST_START)
-		@Expose
-		public boolean contestStartSound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_CONTEST_START)
@@ -2748,10 +2844,10 @@ public class SafariConfig {
 		@SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_CONTEST_FIVE)
 		public Runnable testContestFiveMinuteAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.FIVE_MINUTES);
 		@SettingInfo(name = "Play Alert", desc = "Plays alert when a Contest has 5 minutes left")
-		@SettingToggle
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"})
 		@SettingGroup(id = SOUND_CONTEST_FIVE)
 		@Expose
-		public boolean contestFiveMinuteAlert = true;
+		public int contestFiveMinuteSoundMode = 3;
 
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_CONTEST_FIVE) @SettingGroup(id = SOUND_CONTEST_FIVE)
@@ -2784,12 +2880,6 @@ public class SafariConfig {
 		@SettingSection(id = SOUND_SETTINGS_CONTEST_FIVE) @SettingGroup(id = SOUND_CONTEST_FIVE)
 		public boolean contestFiveMinuteSoundSettingsAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_CONTEST_FIVE)
-		@Expose
-		public boolean contestFiveMinuteSound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_CONTEST_FIVE)
@@ -2818,10 +2908,10 @@ public class SafariConfig {
 		@SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_CONTEST_ONE)
 		public Runnable testContestOneMinuteAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.ONE_MINUTE);
 		@SettingInfo(name = "Play Alert", desc = "Plays alert when a Contest has 1 minute left")
-		@SettingToggle
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"})
 		@SettingGroup(id = SOUND_CONTEST_ONE)
 		@Expose
-		public boolean contestOneMinuteAlert = true;
+		public int contestOneMinuteSoundMode = 3;
 
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_CONTEST_ONE) @SettingGroup(id = SOUND_CONTEST_ONE)
@@ -2854,12 +2944,6 @@ public class SafariConfig {
 		@SettingSection(id = SOUND_SETTINGS_CONTEST_ONE) @SettingGroup(id = SOUND_CONTEST_ONE)
 		public boolean contestOneMinuteSoundSettingsAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_CONTEST_ONE)
-		@Expose
-		public boolean contestOneMinuteSound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_CONTEST_ONE)
@@ -2888,10 +2972,10 @@ public class SafariConfig {
 		@SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_CONTEST_ENDED)
 		public Runnable testContestEndedAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.ENDED);
 		@SettingInfo(name = "Play Alert", desc = "Plays alert when a Miria's Contest ends")
-		@SettingToggle
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"})
 		@SettingGroup(id = SOUND_CONTEST_ENDED)
 		@Expose
-		public boolean contestEndedAlert = true;
+		public int contestEndedSoundMode = 3;
 
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_CONTEST_ENDED) @SettingGroup(id = SOUND_CONTEST_ENDED)
@@ -2924,12 +3008,6 @@ public class SafariConfig {
 		@SettingSection(id = SOUND_SETTINGS_CONTEST_ENDED) @SettingGroup(id = SOUND_CONTEST_ENDED)
 		public boolean contestEndedSoundSettingsAccordion = false;
 
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_CONTEST_ENDED)
-		@Expose
-		public boolean contestEndedSound = true;
-
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
 		@SettingGroup(id = SOUND_SETTINGS_CONTEST_ENDED)
@@ -2958,10 +3036,10 @@ public class SafariConfig {
 		@SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_TICKET)
 		public Runnable testContestTicketEarnedAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.TICKET);
 		@SettingInfo(name = "Play Alert", desc = "Plays alert when a Safari Ticket has been earned in the ongoing Miria's Contest")
-		@SettingToggle
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"})
 		@SettingGroup(id = SOUND_TICKET)
 		@Expose
-		public boolean contestTicketEarnedAlert = true;
+		public int contestTicketEarnedSoundMode = 3;
 
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_TICKET) @SettingGroup(id = SOUND_TICKET)
@@ -2999,12 +3077,6 @@ public class SafariConfig {
 		public boolean soundSafariAlertsAccordion = false;
 
 		public boolean hotspotSoundAccordion = false;
-
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle
-		@SettingGroup(id = SOUND_SETTINGS_TICKET)
-		@Expose
-		public boolean contestTicketEarnedSound = true;
 
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
@@ -3055,6 +3127,10 @@ public class SafariConfig {
 		private static final int CHAT_CONTEST_ENDED = 14, CHAT_TICKET = 15;
 		private static final int CHAT_ALL_BUT_MACAW = 16, CHAT_ALL_DONE = 17;
 		private static final int CHAT_UNIQUE_COMPLETIONS = 18;
+		private static final int CHAT_BIRDS = 19;
+		private static final int CHAT_ALL_BIRDS = 20;
+		private static final int CHAT_TOTAL_FEED = 21;
+		private static final int CHAT_FEED_GONE = 22;
 
 		@SettingInfo(name = "Safari Chat Alerts", desc = "")
 		@SettingSection(id = SAFARI_CHAT_ALERTS)
@@ -3162,14 +3238,47 @@ public class SafariConfig {
 		@Expose
 		public boolean encountersInBiomeOnly = true;
 
+		@SettingInfo(name = "Birds", desc = "") @SettingSection(id = CHAT_BIRDS)
+		@SettingGroup(id = ENCOUNTER_CHAT_ALERTS) public boolean birdsChatAccordion = false;
+
 		@SettingInfo(name = "Macaw", desc = "") @SettingSection(id = CHAT_MACAW)
-		@SettingGroup(id = ENCOUNTER_CHAT_ALERTS) public boolean macawChatAccordion = false;
+		@SettingGroup(id = CHAT_BIRDS) public boolean macawChatAccordion = false;
 		@SettingInfo(name = "Send To", desc = "Sends when a Macaw spawns")
 		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
 		@SettingGroup(id = CHAT_MACAW)
 		@Expose
 		public int macawBroadcast = 1;
 		@SettingInfo(name = "Text", desc = "") @SettingText @SettingGroup(id = CHAT_MACAW) @Expose public String macawChatText = "Macaw Spawned!";
+
+		@SettingInfo(name = "All Birds", desc = "") @SettingSection(id = CHAT_ALL_BIRDS)
+		@SettingGroup(id = CHAT_BIRDS) public boolean allBirdsChatAccordion = false;
+		@SettingInfo(name = "Send To", desc = "Sends when a Bluebird or Parakeet spawns")
+		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
+		@SettingGroup(id = CHAT_ALL_BIRDS) @Expose
+		public int allBirdsBroadcast = 0;
+		@SettingInfo(name = "Text", desc = "Custom chat text\n§bTags: <CRITTER>")
+		@SettingText @SettingGroup(id = CHAT_ALL_BIRDS) @Expose
+		public String allBirdsChatText = "<CRITTER> Spawned!";
+
+		@SettingInfo(name = "Total Feed", desc = "") @SettingSection(id = CHAT_TOTAL_FEED)
+		@SettingGroup(id = CHAT_BIRDS) public boolean totalFeedChatAccordion = false;
+		@SettingInfo(name = "Send To", desc = "Sends your Bird Feed inventory when Forest floor drops are done")
+		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
+		@SettingGroup(id = CHAT_TOTAL_FEED) @Expose
+		public int totalFeedBroadcast = 1;
+		@SettingInfo(name = "Text", desc = "Custom chat text\n§bTags: <ALL_FEED>, <TOTAL>, <SEEDS>, <WORMS>, <BERRIES>")
+		@SettingText @SettingGroup(id = CHAT_TOTAL_FEED) @Expose
+		public String totalFeedChatText = "FEED: <ALL_FEED>";
+
+		@SettingInfo(name = "All Feed Used", desc = "") @SettingSection(id = CHAT_FEED_GONE)
+		@SettingGroup(id = CHAT_BIRDS) public boolean feedGoneChatAccordion = false;
+		@SettingInfo(name = "Send To", desc = "Sends when all collected Bird Feed is placed in the Birdfeeder")
+		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
+		@SettingGroup(id = CHAT_FEED_GONE) @Expose
+		public int feedGoneBroadcast = 1;
+		@SettingInfo(name = "Text", desc = "")
+		@SettingText @SettingGroup(id = CHAT_FEED_GONE) @Expose
+		public String feedGoneChatText = "All Feed Used!";
 
 		@SettingInfo(name = "Contest Chat Alerts", desc = "")
 		@SettingSection(id = CONTEST_CHAT_ALERTS)
@@ -3239,6 +3348,18 @@ public class SafariConfig {
 			return broadcast(macawBroadcast);
 		}
 
+		public Broadcast allBirds() {
+			return broadcast(allBirdsBroadcast);
+		}
+
+		public Broadcast totalFeed() {
+			return broadcast(totalFeedBroadcast);
+		}
+
+		public Broadcast feedGone() {
+			return broadcast(feedGoneBroadcast);
+		}
+
 		public Broadcast hotspot() {
 			return broadcast(hotspotBroadcast);
 		}
@@ -3282,7 +3403,7 @@ public class SafariConfig {
 
 		@SettingInfo(name = "Sparkling Mode",
 			desc = "Enables sparkling mode to remove extra information for party's mutual Sparkling critters\n" +
-				"§b/safari stats sparkling shared §7sets your party's shared Sparkling list")
+				"§b/sparkling shared §7sets your party's shared Sparkling list")
 		@SettingToggle
 		@Expose
 		public boolean sparklingMode = false;
@@ -3322,8 +3443,8 @@ public class SafariConfig {
 		public Runnable testSparklingBanner = EncounterAlerts::fireTestSparklingDetected;
 
 		@SettingInfo(name = "Play Alert", desc = "Plays alert when a Sparkling critter is detected")
-		@SettingToggle @SettingGroup(id = BANNER_ALERT) @Expose
-		public boolean sparklingBannerAlert = true;
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = BANNER_ALERT) @Expose
+		public int sparklingBannerSoundMode = 3;
 
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = BANNER_APPEARANCE)
@@ -3353,10 +3474,6 @@ public class SafariConfig {
 		@SettingSection(id = BANNER_SOUND)
 		@SettingGroup(id = BANNER_ALERT)
 		public boolean sparklingBannerSoundAccordion = false;
-
-		@SettingInfo(name = "Play Sound", desc = "Plays a sound with this banner")
-		@SettingToggle @SettingGroup(id = BANNER_SOUND) @Expose
-		public boolean sparklingBannerSound = true;
 
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
@@ -3422,8 +3539,12 @@ public class SafariConfig {
 		@SettingGroup(id = CHAT_SHARED)
 		@Expose
 		public int sparklingSharedBroadcast = 1;
-		@SettingInfo(name = "Text", desc = "Custom chat text\n§bTags: <COUNT>, <TOTAL>, <CRITTERS>") @SettingText @SettingGroup(id = CHAT_SHARED) @Expose
-		public String sparklingSharedChatText = "Shared Sparklings (<COUNT>/<TOTAL>): <CRITTERS>";
+		@SettingInfo(name = "List Format",
+			desc = "Chooses whether updates list shared or missing Sparkling critters")
+		@SettingChoice(values = {"Shared", "Missing"})
+		@SettingGroup(id = CHAT_SHARED)
+		@Expose
+		public int sparklingSharedListFormat = 0;
 
 		public Broadcast detected() {
 			return broadcast(sparklingBroadcast);

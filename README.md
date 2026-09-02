@@ -51,10 +51,10 @@ Existing Safari Utils settings and history are moved into `config/safariutils/` 
 | `/sparkling shared` | Shows the saved shared-party list. |
 | `/sparkling shared <species, ...>` | Replaces the shared list. |
 | `/sparkling missing` | Shows the species missing from the shared list. |
+| `/sparkling missing <species, ...>` | Builds the shared list from the species your party is missing. |
 | `/sparkling import` | Imports a copied Shared or Missing Sparklings chat message. |
 | `/sparkling import shared` | Imports a comma-separated shared list from the clipboard. |
 | `/sparkling import missing` | Imports a comma-separated missing list from the clipboard. |
-| `/sparkling missing <species, ...>` | Builds the shared list from the species your party is missing. |
 | `/sparkling shared reset` | Clears the shared list. |
 
 The `/su` and `/safariutils` aliases support the same subcommands.

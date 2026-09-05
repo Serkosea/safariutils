@@ -91,14 +91,10 @@ public final class ContestTracker implements HudElement {
 	}
 
 	private static void fireThresholdAlerts(long previous, long remaining) {
-		boolean warningsSuppressed = ticket
-			&& ConfigManager.get().alerts.contestNoWarningsAfterTicket;
-		if (!warningsSuppressed
-			&& previous > FIVE_MINUTES_MILLIS && remaining <= FIVE_MINUTES_MILLIS) {
+		if (previous > FIVE_MINUTES_MILLIS && remaining <= FIVE_MINUTES_MILLIS) {
 			EncounterAlerts.fireContestAlert(Alert.FIVE_MINUTES);
 		}
-		if (!warningsSuppressed
-			&& previous > ONE_MINUTE_MILLIS && remaining <= ONE_MINUTE_MILLIS) {
+		if (previous > ONE_MINUTE_MILLIS && remaining <= ONE_MINUTE_MILLIS) {
 			EncounterAlerts.fireContestAlert(Alert.ONE_MINUTE);
 		}
 		if (previous >= 0 && remaining < 0) {
@@ -107,6 +103,11 @@ public final class ContestTracker implements HudElement {
 			persist(true);
 			EncounterAlerts.fireContestAlert(Alert.ENDED);
 		}
+	}
+
+	/** Whether the current contest has already awarded a ticket. */
+	public static boolean ticketEarned() {
+		return ticket;
 	}
 
 	private static void readTabList(List<String> entries) {
@@ -255,10 +256,11 @@ public final class ContestTracker implements HudElement {
 
 		HudPanel panel = panelCache.get(ContestTracker::buildPanel);
 		HudBox box = HudBox.CONTEST;
-		int x = box.pixelX(graphics.guiWidth(), panel, client.font);
-		int y = box.pixelY(graphics.guiHeight(), panel, client.font);
-		if (SparklingWatch.hudThemeActive()) panel.renderRainbow(graphics, client.font, x, y, box.scale());
-		else panel.render(graphics, client.font, x, y, box.scale(),
+		float scale = box.scale() * ResponsiveUI.scale(graphics.guiWidth(), graphics.guiHeight());
+		int x = box.pixelX(graphics.guiWidth(), panel, client.font, scale);
+		int y = box.pixelY(graphics.guiHeight(), panel, scale);
+		if (SparklingWatch.hudThemeActive()) panel.renderRainbow(graphics, client.font, x, y, scale);
+		else panel.render(graphics, client.font, x, y, scale,
 			HudBorderStyle.contest(bracket, ticket, remainingMillis(System.currentTimeMillis()) < 0));
 	}
 

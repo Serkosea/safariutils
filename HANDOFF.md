@@ -1,6 +1,6 @@
 # Safari Utils developer handoff
 
-This document covers the current v1.3.0 codebase. Installation, features, and commands are in [README.md](README.md).
+This document covers the current v1.3.1 codebase. Installation, features, and commands are in [README.md](README.md).
 
 ## Project identity
 
@@ -21,11 +21,11 @@ The repository uses one shared source set plus small version-specific source dir
 
 | Profile | Version | Output |
 |---|---|---|
-| `26.1.2` | Safe Mode public | `safariutils-1.3.0+mc26.1.2.jar` |
-| `26.1.2` | Extra public | `safariutils-1.3.0-extra+mc26.1.2.jar` |
-| `26.2` | Safe Mode public | `safariutils-1.3.0+mc26.2.jar` |
-| `26.2` | Extra public | `safariutils-1.3.0-extra+mc26.2.jar` |
-| Configured deploy profile | Private developer build | `safariutils-private-1.3.0-extra+mc<version>.jar` |
+| `26.1.2` | Safe Mode public | `safariutils-1.3.1+mc26.1.2.jar` |
+| `26.1.2` | Extra public | `safariutils-1.3.1-extra+mc26.1.2.jar` |
+| `26.2` | Safe Mode public | `safariutils-1.3.1+mc26.2.jar` |
+| `26.2` | Extra public | `safariutils-1.3.1-extra+mc26.2.jar` |
+| Configured deploy profile | Private developer build | `safariutils-private-1.3.1-extra+mc<version>.jar` |
 
 The version-specific `WaypointRenderer` and `ClientCompat` implementations isolate rendering/API differences. Do not create version branches for normal compatibility work.
 
@@ -135,14 +135,19 @@ Bundled static locations seed Safe Mode. Unknown positions can still be used dur
 
 ## Gameplay and alert behavior
 
-- `PartyRosterWatch` quietly verifies the party through `/party list`; only joining a party produces its client confirmation.
+- Alerts has a global, default-off Mute Other Sounds toggle. Playback is identified by its Safari Utils call path, not a sound ID, so identical vanilla sounds remain muted. Existing non-alert channels have their gain refreshed only when the toggle changes; Minecraft's volume settings are not modified.
+
+- `PartyRosterWatch` quietly verifies the party through `/party list`, including after reconnecting; only joining a party produces its client confirmation. A verified solo state prevents queued `/pc` alerts while unknown state still fails open.
 - `TicketProtection` blocks the leader's Manager interaction or a member's ticket selection while attendance is incomplete. Unknown roster data fails open. Keep the tested grace and stability timings unchanged.
 - `HideyhoAutoAccept` consumes the current choice line and accepts it before it reaches chat.
-- Feed-used alerts use inventory deposits, not spawn messages, which may be delivered only to the last person who added feed.
+- All Feed Used waits for a stable inventory deposit. Cursor-held stacks still count as held, and a server-rejected deposit cancels the pending alert.
 - `BirdfeederWatch.tickMenu` watches slot 22 for a loaded-to-empty transition in the open Birdfeeder menu. Opening an empty menu does not alert.
+- Contest warning suppression and the encounter biome gate are independent for banners and chat. The biome gate also covers Forest bird events.
 - Banner playback indices are 0 Off, 1 Banner, 2 Sound, 3 Banner + Sound. `ConfigManager` migrates old toggles; sound-only events must not replace a visible banner.
+- Settings Reset Page copies defaults only into exposed settings rendered by the current tab/expanded sections. The category rail scrolls independently without drawing a scrollbar.
 - All clipboard commands live under `/sparkling import`. The optional `shared` and `missing` branches accept plain lists; the bare command parses the formatted message. They all replace the same shared collection.
 - Private refresh/lookup implementation and credentials remain ignored and are never release assets.
+- Private `/sparkling lookup <IGN> ticket` reads the selected profile's `safari.tickets` balances and lists Basic, Economy, Premium, and First Class on separate lines without changing shared lists.
 
 ## Optional custom sounds
 

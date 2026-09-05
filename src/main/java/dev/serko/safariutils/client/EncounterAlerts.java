@@ -52,7 +52,7 @@ public final class EncounterAlerts implements HudElement {
 	public enum Preview {FULL_PARTY, HOTSPOT, FLOOR_DROPS, BIOME_UNIQUES, ALL_BUT_MACAW, ALL_DONE,
 		GEMZIE_READY, GEMZIE_DONE,
 		WUMPA_READY, WUMPA_STARTED, WUMPA_DONE, DOOM_READY, DOOM_STARTED, DOOM_DONE,
-		HIDEYHO, MACAW, BIRDS, FEED_TYPE_GONE, FEED_GONE, BIRDFEEDER_EMPTY,
+		HIDEYHO, MACAW, BIRDS, FEED_GONE, BIRDFEEDER_EMPTY,
 		START, FIVE_MINUTES, ONE_MINUTE, ENDED, TICKET}
 
 	/**
@@ -157,7 +157,6 @@ public final class EncounterAlerts implements HudElement {
 		if (config.party.biomeDone() != SafariConfig.Broadcast.NONE) {
 			String chatText = AlertText.format(config.party.biomeDoneChatText,
 				"<BIOME>", biome.displayName());
-			chat(chatText, ChatFormatting.GREEN);
 			post(config.party.biomeDone(), chatText);
 		}
 	}
@@ -186,7 +185,7 @@ public final class EncounterAlerts implements HudElement {
 	 */
 	public static void onMacawSpawn() {
 		SafariConfig config = ConfigManager.get();
-		if ((config.alerts.macawSoundMode != 0)) {
+		if (birdBannerAllowed() && config.alerts.macawSoundMode != 0) {
 			Critter macaw = Critters.byName("Macaw");
 			int rarityColour = 0xFF000000 | (macaw == null ? 0xFFAA00 : macaw.rarity().colour());
 			banner(config.alerts.macawText,
@@ -198,7 +197,7 @@ public final class EncounterAlerts implements HudElement {
 				config.alerts.macawScale, config.alerts.macawVerticalPosition);
 		}
 
-		post(config.party.macaw(), config.party.macawChatText);
+		if (birdChatAllowed()) post(config.party.macaw(), config.party.macawChatText);
 	}
 
 	/** All 37 caught by someone. */
@@ -284,6 +283,8 @@ public final class EncounterAlerts implements HudElement {
 	static void fireContestAlert(ContestTracker.Alert alert) {
 		SafariConfig settings = ConfigManager.get();
 		SafariConfig.AlertConfig config = settings.alerts;
+		boolean bannerWarnings = ContestTracker.ticketEarned() && config.contestNoWarningsAfterTicket;
+		boolean chatWarnings = ContestTracker.ticketEarned() && settings.party.contestNoWarningsAfterTicket;
 		switch (alert) {
 			case START -> {
 				if ((config.contestStartSoundMode != 0)) banner(config.contestStartText,
@@ -294,15 +295,15 @@ public final class EncounterAlerts implements HudElement {
 				post(settings.party.contestStart(), settings.party.contestStartChatText);
 			}
 			case FIVE_MINUTES -> {
-				if ((config.contestFiveMinuteSoundMode != 0)) banner(config.contestFiveMinuteText,
+				if (!bannerWarnings && config.contestFiveMinuteSoundMode != 0) banner(config.contestFiveMinuteText,
 					Colours.argb(config.contestFiveMinuteColour, 0xFFFFFF55), config.contestFiveMinuteSoundPitch,
 					config.contestFiveMinuteDuration, config.contestFiveMinuteSoundMode,
 					config.contestFiveMinuteSoundChoice, config.contestFiveMinuteSoundVolume,
 					config.contestFiveMinuteScale, config.contestFiveMinuteVerticalPosition);
-				post(settings.party.contestFiveMinute(), settings.party.contestFiveMinuteChatText);
+				if (!chatWarnings) post(settings.party.contestFiveMinute(), settings.party.contestFiveMinuteChatText);
 			}
 			case ONE_MINUTE -> {
-				if ((config.contestOneMinuteSoundMode != 0)) banner(config.contestOneMinuteText,
+				if (!bannerWarnings && config.contestOneMinuteSoundMode != 0) banner(config.contestOneMinuteText,
 					Colours.argb(config.contestOneMinuteColour, 0xFFFFAA00), config.contestOneMinuteSoundPitch,
 					config.contestOneMinuteDuration, config.contestOneMinuteSoundMode,
 					config.contestOneMinuteSoundChoice, config.contestOneMinuteSoundVolume,
@@ -337,7 +338,7 @@ public final class EncounterAlerts implements HudElement {
 	static void fireAllBirdSpawn(Critter bird) {
 		SafariConfig config = ConfigManager.get();
 		SafariConfig.AlertConfig alerts = config.alerts;
-		if ((alerts.birdfeederSoundMode != 0)) {
+		if (birdBannerAllowed() && alerts.birdfeederSoundMode != 0) {
 			int rarityColour = 0xFF000000 | bird.rarity().colour();
 			String chosen = bird.name().equals("Parakeet")
 				? alerts.parakeetAlertColour : alerts.bluebirdAlertColour;
@@ -348,14 +349,14 @@ public final class EncounterAlerts implements HudElement {
 				alerts.birdfeederSoundChoice, alerts.birdfeederSoundVolume,
 				alerts.birdfeederScale, alerts.birdfeederVerticalPosition);
 		}
-		post(config.party.allBirds(), AlertText.format(config.party.allBirdsChatText,
+		if (birdChatAllowed()) post(config.party.allBirds(), AlertText.format(config.party.allBirdsChatText,
 			"<CRITTER>", bird.name()));
 	}
 
 	/** Reports the completed Forest's live feed inventory through its selected chat. */
 	static void onTotalFeed(int seeds, int worms, int berries) {
 		SafariConfig.PartyConfig party = ConfigManager.get().party;
-		post(party.totalFeed(), AlertText.format(party.totalFeedChatText,
+		if (birdChatAllowed()) post(party.totalFeed(), AlertText.format(party.totalFeedChatText,
 			"<ALL_FEED>", formatFeedList(seeds, worms, berries),
 			"<TOTAL>", String.valueOf(seeds + worms + berries),
 			"<SEEDS>", String.valueOf(seeds),
@@ -368,50 +369,30 @@ public final class EncounterAlerts implements HudElement {
 		if (seeds > 0) feed.add(seeds + (seeds == 1 ? " Seed" : " Seeds"));
 		if (worms > 0) feed.add(worms + (worms == 1 ? " Worm" : " Worms"));
 		if (berries > 0) feed.add(berries + (berries == 1 ? " Berry" : " Berries"));
-		return feed.isEmpty() ? "None" : String.join(", ", feed);
+		return feed.isEmpty() ? "No Feed" : String.join(", ", feed);
 	}
 
 	/** Announces that every collected feed item has been placed in the Birdfeeder. */
 	static void onFeedGone() {
 		SafariConfig config = ConfigManager.get();
 		SafariConfig.AlertConfig alerts = config.alerts;
-		if ((alerts.feedGoneSoundMode != 0)) {
+		if (birdBannerAllowed() && alerts.feedGoneSoundMode != 0) {
 			banner(alerts.feedGoneText, Colours.argb(alerts.feedGoneColour, 0xFFFF5555),
 				alerts.feedGoneSoundPitch, alerts.feedGoneDuration, alerts.feedGoneSoundMode,
 				alerts.feedGoneSoundChoice, alerts.feedGoneSoundVolume,
 				alerts.feedGoneScale, alerts.feedGoneVerticalPosition);
 		}
-		post(config.party.feedGone(), config.party.feedGoneChatText);
+		if (birdChatAllowed()) post(config.party.feedGone(), config.party.feedGoneChatText);
 	}
 
 	/** Called only after the open feeder changes from containing feed to empty. */
 	static void onBirdfeederEmpty() {
 		SafariConfig.AlertConfig a = ConfigManager.get().alerts;
+		if (!birdBannerAllowed()) return;
 		banner(a.birdfeederEmptyText, Colours.argb(a.birdfeederEmptyColour, 0xFFFF5555),
 			a.birdfeederEmptySoundPitch, a.birdfeederEmptyDuration, a.birdfeederEmptySoundMode,
 			a.birdfeederEmptySoundChoice, a.birdfeederEmptySoundVolume,
 			a.birdfeederEmptyScale, a.birdfeederEmptyVerticalPosition);
-	}
-
-	/** Announces that every held item of one feed type has entered the Birdfeeder. */
-	static boolean onFeedTypeGone(String feed) {
-		SafariConfig.AlertConfig alerts = ConfigManager.get().alerts;
-		if (alerts.feedTypeGoneSoundMode == 0) return false;
-		int colour = alerts.feedTypeGoneUseFeedColour
-			? switch (feed) {
-				case "Seeds" -> 0xFFD2B48C;
-				case "Worms" -> 0xFFFF77B7;
-				case "Berries" -> 0xFF55AAFF;
-				default -> Colours.argb(alerts.feedTypeGoneColour, 0xFFFFAA00);
-			}
-			: Colours.argb(alerts.feedTypeGoneColour, 0xFFFFAA00);
-		banner(AlertText.format(alerts.feedTypeGoneText, "<FEED>", feed),
-			colour,
-			alerts.feedTypeGoneSoundPitch, alerts.feedTypeGoneDuration,
-			alerts.feedTypeGoneSoundMode, alerts.feedTypeGoneSoundChoice,
-			alerts.feedTypeGoneSoundVolume, alerts.feedTypeGoneScale,
-			alerts.feedTypeGoneVerticalPosition);
-		return (alerts.feedTypeGoneSoundMode & 1) != 0;
 	}
 
 	private static void fire(String boss, Stage stage, String detail, float pitch) {
@@ -620,6 +601,16 @@ public final class EncounterAlerts implements HudElement {
 		return isInEncounterBiome(boss);
 	}
 
+	private static boolean birdBannerAllowed() {
+		return testing || !ConfigManager.get().alerts.encountersInBiomeOnly
+			|| SafariLocation.biome() == SafariBiome.FOREST;
+	}
+
+	private static boolean birdChatAllowed() {
+		return testing || !ConfigManager.get().party.encountersInBiomeOnly
+			|| SafariLocation.biome() == SafariBiome.FOREST;
+	}
+
 	private static boolean isInEncounterBiome(String boss) {
 		Critter critter = Critters.byName(boss);
 		SafariBiome here = SafariLocation.biome();
@@ -659,6 +650,7 @@ public final class EncounterAlerts implements HudElement {
 		if (message == null || message.isBlank()) return;
 		String command = to.command();
 		if (command == null) return;
+		if (command.equals("pc") && !PartyRosterWatch.canSendPartyChat()) return;
 		ChatQueue.enqueue(command + " " + message, true);
 	}
 
@@ -666,6 +658,7 @@ public final class EncounterAlerts implements HudElement {
 		if (message == null || message.isBlank()) return;
 		String command = to.command();
 		if (command == null) return;
+		if (command.equals("pc") && !PartyRosterWatch.canSendPartyChat()) return;
 		ChatQueue.enqueueDelayed(command + " " + message, true, delayMillis);
 	}
 
@@ -802,12 +795,6 @@ public final class EncounterAlerts implements HudElement {
 					? 0xFF55FF55 : Colours.argb(a.bluebirdAlertColour, 0xFF55FF55), a.birdfeederSoundPitch,
 				a.birdfeederDuration, a.birdfeederSoundMode, a.birdfeederSoundChoice,
 				a.birdfeederSoundVolume, a.birdfeederScale, a.birdfeederVerticalPosition);
-			case FEED_TYPE_GONE -> banner(AlertText.format(a.feedTypeGoneText, "<FEED>", "Seeds"),
-				a.feedTypeGoneUseFeedColour ? 0xFFD2B48C
-					: Colours.argb(a.feedTypeGoneColour, 0xFFFFAA00),
-				a.feedTypeGoneSoundPitch, a.feedTypeGoneDuration, a.feedTypeGoneSoundMode,
-				a.feedTypeGoneSoundChoice, a.feedTypeGoneSoundVolume,
-				a.feedTypeGoneScale, a.feedTypeGoneVerticalPosition);
 			case FEED_GONE -> banner(a.feedGoneText, Colours.argb(a.feedGoneColour, 0xFFFF5555),
 				a.feedGoneSoundPitch, a.feedGoneDuration, a.feedGoneSoundMode,
 				a.feedGoneSoundChoice, a.feedGoneSoundVolume,
@@ -854,12 +841,6 @@ public final class EncounterAlerts implements HudElement {
 		if (client.player != null) AlertSounds.play(client, choice, volume, pitch);
 	}
 
-	private static void chat(String text, ChatFormatting style) {
-		Minecraft client = Minecraft.getInstance();
-		if (client.gui == null) return;
-		ClientCompat.addSystemMessage(ClientMessages.prefixed(text, style));
-	}
-
 	/** Clears per-stage cooldowns; called when a new run starts. */
 	public static void reset() {
 		lastFired.clear();
@@ -895,7 +876,9 @@ public final class EncounterAlerts implements HudElement {
 		int frameWidth = font.width(styledMessage) + 16;
 		int edgeMargin = 5;
 		int availableWidth = Math.max(1, graphics.guiWidth() - edgeMargin * 2);
-		float scale = Math.min(displayedScale, availableWidth / (float) frameWidth);
+		float scale = Math.min(displayedScale
+			* ResponsiveUI.scale(graphics.guiWidth(), graphics.guiHeight()),
+			availableWidth / (float) frameWidth);
 		// Expand around the configured anchor, shift away from either edge only as
 		// needed, then shrink as a last resort when the full banner cannot fit.
 		float scaledWidth = frameWidth * scale;

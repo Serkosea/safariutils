@@ -143,6 +143,9 @@ public final class SafariDashboardScreen extends Screen {
 	private int panelTop;
 	private int panelWidth;
 	private int panelHeight;
+	private float responsiveScale = 1f;
+	private int layoutWidth;
+	private int layoutHeight;
 
 	public SafariDashboardScreen() {
 		super(Component.literal("Critter Safari"));
@@ -163,14 +166,17 @@ public final class SafariDashboardScreen extends Screen {
 	@Override
 	protected void init() {
 		controls.clear();
+		responsiveScale = ResponsiveUI.scale(width, height);
+		layoutWidth = ResponsiveUI.logicalWidth(width, responsiveScale);
+		layoutHeight = ResponsiveUI.logicalHeight(height, responsiveScale);
 		int columns = SafariBiome.values().length;
-		int available = width - PANEL_PADDING * 2 - 8;
+		int available = layoutWidth - PANEL_PADDING * 2 - 8;
 		// Measured from the longest species name rather than guessed at: "Mantis Shrimp"
 		// and "Shuddersquid" ran into their own counts at a fixed width.
 		columnWidth = Math.max(MIN_COLUMN_WIDTH, Math.min(measureColumnWidth(), available / columns));
 		int columnsWidth = columnWidth * columns + PANEL_PADDING * 2;
 		int textWidth = measureTabTextWidth() + PANEL_PADDING * 2;
-		panelWidth = Math.min(width - 8, Math.max(columnsWidth, textWidth));
+		panelWidth = Math.min(layoutWidth - 8, Math.max(columnsWidth, textWidth));
 		// Price totals add one row to the header and Stats summary.
 		int valueRows = showValue() ? 1 : 0;
 		int statsValueRows = valueRows;
@@ -184,8 +190,8 @@ public final class SafariDashboardScreen extends Screen {
 			case STATS -> 46 + (4 + statsValueRows + 10) * LINE_HEIGHT;
 			case SPARKLING -> 46 + (6 + 10) * LINE_HEIGHT;
 		};
-		panelLeft = Math.max(4, (width - panelWidth) / 2);
-		panelTop = Math.max(10, (height - panelHeight) / 2);
+		panelLeft = Math.max(4, (layoutWidth - panelWidth) / 2);
+		panelTop = Math.max(10, (layoutHeight - panelHeight) / 2);
 
 		addTabButtons();
 
@@ -391,6 +397,10 @@ public final class SafariDashboardScreen extends Screen {
 
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+		int logicalMouseX = Math.round(mouseX / responsiveScale);
+		int logicalMouseY = Math.round(mouseY / responsiveScale);
+		graphics.pose().pushMatrix();
+		graphics.pose().scale(responsiveScale, responsiveScale);
 		graphics.fillGradient(panelLeft, panelTop, panelLeft + panelWidth, panelTop + panelHeight,
 			0xE0121922, PANEL_BACKGROUND);
 		if (SpecialTheme.rainbow()) {
@@ -416,14 +426,15 @@ public final class SafariDashboardScreen extends Screen {
 					drawPlayers(graphics, font, y + 6);
 				}
 			}
-			case HISTORY -> drawHistory(graphics, font, y, mouseX, mouseY);
+			case HISTORY -> drawHistory(graphics, font, y, logicalMouseX, logicalMouseY);
 			case STATS -> drawStats(graphics, font, y);
 			case SPARKLING -> drawSparkling(graphics, font, y);
 		}
 
 		// Screen children first, then the themed controls above the panel.
-		super.extractRenderState(graphics, mouseX, mouseY, partialTick);
-		drawControls(graphics, mouseX, mouseY);
+		super.extractRenderState(graphics, logicalMouseX, logicalMouseY, partialTick);
+		drawControls(graphics, logicalMouseX, logicalMouseY);
+		graphics.pose().popMatrix();
 	}
 
 	private int drawHeader(GuiGraphicsExtractor graphics, Font font, int y) {
@@ -1121,8 +1132,10 @@ public final class SafariDashboardScreen extends Screen {
 
 	@Override
 	public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
+		double mouseX = event.x() / responsiveScale;
+		double mouseY = event.y() / responsiveScale;
 		for (Control control : controls) {
-			if (!control.contains(event.x(), event.y())) continue;
+			if (!control.contains(mouseX, mouseY)) continue;
 			if (control.style == ControlStyle.TAB && control.selected) return true;
 			control.action.run();
 			return true;
@@ -1132,6 +1145,8 @@ public final class SafariDashboardScreen extends Screen {
 
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+		mouseX /= responsiveScale;
+		mouseY /= responsiveScale;
 		if (tab != Tab.HISTORY || mouseX < panelLeft || mouseX >= panelLeft + panelWidth
 			|| mouseY < panelTop || mouseY >= panelTop + panelHeight) {
 			return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);

@@ -1,32 +1,33 @@
-# Safari Utils v1.3.0
+# Safari Utils v1.3.1
 
-## Gameplay
+## Alerts and birds
 
-- Added ticket protection while party members are still missing from the Safari, including ticket-menu number-key selections
-- Added automatic Hideyho Hide 'N Seek acceptance
-- Improved party-ready alerts for the current party size and automatic roster verification
+- Added Mute Other Sounds to keep Safari Utils alerts audible while muting other Minecraft audio
+- Split Contest warning suppression into separate banner and chat settings
+- Applied Only In That Biome to Forest bird banners and chat alerts
+- Removed Feed Type Used and moved Birdfeeder Empty above All Feed Used
+- Prevented rejected or cursor-held Bird Feed clicks from firing All Feed Used early
+- Changed an empty `<ALL_FEED>` value to `No Feed`
 
-## Birds and alerts
+## Defaults and polish
 
-- Grouped bird alerts together and added feed totals, Feed Type Used, All Feed Used, and Birdfeeder Empty alerts
-- Feed-used alerts track inventory deposits rather than bird-spawn messages
-- Added compact feed-list text with correct plurals
-- Combined banner playback into Off, Banner, Sound, or Banner + Sound, preserving existing preferences
-
-## Commands and polish
-
-- Moved Sparkling commands to `/sparkling` and removed the run-reset command
-- Added missing-list entry/display and clipboard imports for shared lists, missing lists, and complete Sparkling chat messages
-- Unified client-message styling and trimmed unnecessary message clutter
-- Reduced repeated text parsing and ticket-menu field lookups without changing gameplay timing
+- Updated fresh-install defaults to the maintained configuration
+- Kept Safe Mode enabled and the high-intensity Sparkling catch disabled by default
+- Removed the unintended client-message copy of Biome Uniques Done chat alerts
+- Prevented verified solo players from sending configured party alerts
+- Made Reset Page affect only settings visible in the current expanded view
+- Added confirmation before resetting the HUD layout
+- Added category scrolling for small windows
+- Kept HUDs, banner alerts, the HUD editor, and Safari stats proportionally sized on smaller screens
+- Kept the settings search prompt inside its field at narrow widths
 
 ## Downloads
 
 Choose one jar for your Minecraft version:
 
-- `safariutils-1.3.0+mc26.1.2.jar`
-- `safariutils-1.3.0-extra+mc26.1.2.jar`
-- `safariutils-1.3.0+mc26.2.jar`
-- `safariutils-1.3.0-extra+mc26.2.jar`
+- `safariutils-1.3.1+mc26.1.2.jar`
+- `safariutils-1.3.1-extra+mc26.1.2.jar`
+- `safariutils-1.3.1+mc26.2.jar`
+- `safariutils-1.3.1-extra+mc26.2.jar`
 
 The regular jars use Safe Mode. Extra includes features that may provide information the player cannot directly see and may not be safe to use; Minecraft 26.2 builds have received limited testing compared with 26.1.2

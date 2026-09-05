@@ -181,6 +181,8 @@ public final class SafariCommands {
 				ctx.getSource(), StringArgumentType.getString(ctx, "IGN"), false));
 		username.then(ClientCommands.literal("missing").executes(ctx -> lookupSparklings(
 			ctx.getSource(), StringArgumentType.getString(ctx, "IGN"), true)));
+		username.then(ClientCommands.literal("ticket").executes(ctx -> lookupTickets(
+			ctx.getSource(), StringArgumentType.getString(ctx, "IGN"))));
 		return ClientCommands.literal("lookup").then(username);
 	}
 
@@ -302,6 +304,27 @@ public final class SafariCommands {
 				source.sendFeedback(prefixed(username + label + " ("
 					+ names.size() + "/" + Critters.total() + "): "
 					+ (names.isEmpty() ? "None" : String.join(", ", names)), ChatFormatting.AQUA));
+			}));
+		return 1;
+	}
+
+	private static int lookupTickets(FabricClientCommandSource source, String username) {
+		source.sendFeedback(prefixed("Looking up " + username + "’s Safari tickets…", ChatFormatting.GRAY));
+		SharedSparklingProviders.provider().orElseThrow().lookupTickets(username)
+			.whenComplete((tickets, error) -> Minecraft.getInstance().execute(() -> {
+				if (error != null) {
+					Throwable cause = error;
+					while (cause.getCause() != null) cause = cause.getCause();
+					source.sendError(prefixed("Ticket lookup failed: " + cause.getMessage(), ChatFormatting.RED));
+					return;
+				}
+				var message = prefixed(username + " — Safari Tickets", ChatFormatting.AQUA).copy();
+				tickets.forEach((type, count) -> message.append(
+					net.minecraft.network.chat.Component.literal("\n  " + type + ": ")
+						.withStyle(ChatFormatting.GRAY).append(
+							net.minecraft.network.chat.Component.literal(Long.toString(count))
+								.withStyle(ChatFormatting.YELLOW))));
+				source.sendFeedback(message);
 			}));
 		return 1;
 	}

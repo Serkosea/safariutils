@@ -41,10 +41,11 @@ public final class ProgressHud implements HudElement {
 		if (panel == null) return;
 
 		HudBox box = HudBox.PROGRESS;
-		int x = box.pixelX(graphics.guiWidth(), panel, client.font);
-		int y = box.pixelY(graphics.guiHeight(), panel, client.font);
-		if (SparklingWatch.hudThemeActive()) panel.renderRainbow(graphics, client.font, x, y, box.scale());
-		else panel.render(graphics, client.font, x, y, box.scale(), HudBorderStyle.progress());
+		float scale = box.scale() * ResponsiveUI.scale(graphics.guiWidth(), graphics.guiHeight());
+		int x = box.pixelX(graphics.guiWidth(), panel, client.font, scale);
+		int y = box.pixelY(graphics.guiHeight(), panel, scale);
+		if (SparklingWatch.hudThemeActive()) panel.renderRainbow(graphics, client.font, x, y, scale);
+		else panel.render(graphics, client.font, x, y, scale, HudBorderStyle.progress());
 	}
 
 	/** Builds the panel for the current run, or {@code null} when there is nothing to show. */

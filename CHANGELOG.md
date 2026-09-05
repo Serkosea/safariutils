@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.3.1] - 2026-09-04
+
+### Alerts and birds
+
+- Added Mute Other Sounds to keep Safari Utils alerts and sound previews audible while muting other Minecraft audio
+- Changed an empty `<ALL_FEED>` value to `No Feed`
+- Removed the unintended local client-message copy of Biome Uniques Done chat alerts
+- Split Contest warning suppression into separate banner and chat settings
+- Applied Only In That Biome separately to Forest bird banners and chat alerts
+- Removed the unreliable Feed Type Used alert and placed Birdfeeder Empty before All Feed Used
+- Prevented rejected or cursor-held Bird Feed clicks from firing All Feed Used early
+
+### Defaults and polish
+
+- Updated fresh-install defaults to match the maintained configuration, with Safe Mode enabled and the high-intensity Sparkling catch disabled
+- Prevented verified solo players from sending configured party alerts and refreshed party status quietly after reconnecting
+- Made Reset Page affect only settings visible in the current expanded view
+- Added confirmation before resetting the HUD layout
+- Added scrollbar-free navigation scrolling for small windows
+- Made on-screen HUDs, banner alerts, the HUD editor, and Safari stats scale consistently on smaller screens
+- Kept the settings search prompt inside its field at narrow widths
+
 ## [1.3.0] - 2026-09-02
 
 ### Gameplay

@@ -60,6 +60,7 @@ public final class SafariSettingsScreen extends Screen {
 	private final List<SettingCategoryView> categories = new ArrayList<>();
 	private final List<Hit> hits = new ArrayList<>();
 	private final List<SoundPreviewHit> soundPreviewHits = new ArrayList<>();
+	private final Set<VisibleSetting> visibleSettings = new java.util.LinkedHashSet<>();
 	private final Map<String, String> selectedGroups = new HashMap<>();
 	private final Set<String> openGroups = new HashSet<>();
 	private SettingCategoryView selected;
@@ -87,6 +88,8 @@ public final class SafariSettingsScreen extends Screen {
 	private SettingChoice choiceDropdown;
 	private int scroll;
 	private int contentHeight;
+	private int navigationScroll;
+	private int navigationContentHeight;
 	private Field draggingSlider;
 	private Object draggingOwner;
 	private SettingRange draggingRange;
@@ -101,6 +104,7 @@ public final class SafariSettingsScreen extends Screen {
 	private long resetArmedUntil;
 
 	private record SettingCategoryView(String key, Field field, Object value, SettingCategory info) { }
+	private record VisibleSetting(Object owner, Field field) { }
 	private record ThemeChoice(int id, String label) { }
 	private record CustomThemeRole(String label, String field) { }
 	private static final List<ThemeChoice> THEMES = List.of(
@@ -197,9 +201,13 @@ public final class SafariSettingsScreen extends Screen {
 		clearWidgets();
 		int searchX = NAV_WIDTH + 24;
 		int themeLeft = width - 20 - THEME_BUTTON_WIDTH;
-		search = new EditBox(font, searchX, 18, Math.max(80, themeLeft - 8 - searchX), 20,
+		int searchWidth = Math.max(24, themeLeft - 8 - searchX);
+		search = new EditBox(font, searchX, 18, searchWidth, 20,
 			Component.literal("Search Settings"));
-		search.setHint(Component.literal("Search settings, descriptions, and tags..."));
+		String hint = font.width("Search settings, descriptions, and tags...") <= searchWidth - 10
+			? "Search settings, descriptions, and tags..."
+			: font.width("Search settings...") <= searchWidth - 10 ? "Search settings..." : "Search";
+		search.setHint(Component.literal(hint));
 		search.setMaxLength(80);
 		search.setResponder(value -> {
 			scroll = 0;
@@ -439,7 +447,10 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private void drawNavigation(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-		int y = 66;
+		int top = HEADER_HEIGHT;
+		int bottom = height - FOOTER_HEIGHT;
+		int y = 66 - navigationScroll;
+		graphics.enableScissor(0, top, NAV_WIDTH, bottom);
 		for (SettingCategoryView category : categories) {
 			boolean active = category == selected;
 			boolean hovered = mouseX >= 8 && mouseX < NAV_WIDTH - 8 && mouseY >= y && mouseY < y + 30;
@@ -450,17 +461,26 @@ public final class SafariSettingsScreen extends Screen {
 			drawScaledText(graphics, category.info.name(), 18,
 				y + (30f - font.lineHeight) / 2f, 1.0f, active ? TEXT : MUTED);
 			int rowY = y;
-			hits.add(new Hit(8, rowY, NAV_WIDTH - 8, rowY + 30, () -> select(category)));
+			if (rowY + 30 > top && rowY < bottom) {
+				hits.add(new Hit(8, Math.max(rowY, top), NAV_WIDTH - 8,
+					Math.min(rowY + 30, bottom), () -> select(category)));
+			}
 			y += 34;
 		}
 
 		if (!AdvancedUnlock.isUnlocked()) {
-			int lockY = Math.min(height - 70, y + 8);
+			int lockY = y + 8;
 			boolean hovered = mouseX >= 8 && mouseX < NAV_WIDTH - 8 && mouseY >= lockY && mouseY < lockY + 30;
 			if (hovered) graphics.fill(8, lockY, NAV_WIDTH - 8, lockY + 30, CARD_HOVER);
 			graphics.text(font, "◇  Locked", 18, lockY + 10, hovered ? GOLD : DIM);
-			hits.add(new Hit(8, lockY, NAV_WIDTH - 8, lockY + 30, this::openUnlockPanel));
+			if (lockY + 30 > top && lockY < bottom) {
+				hits.add(new Hit(8, Math.max(lockY, top), NAV_WIDTH - 8,
+					Math.min(lockY + 30, bottom), this::openUnlockPanel));
+			}
+			y = lockY + 30;
 		}
+		navigationContentHeight = Math.max(0, y + navigationScroll - 66);
+		graphics.disableScissor();
 	}
 
 	private void openUnlockPanel() {
@@ -489,6 +509,7 @@ public final class SafariSettingsScreen extends Screen {
 
 	private void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
 		if (selected == null) return;
+		visibleSettings.clear();
 		int left = NAV_WIDTH + 20;
 		int right = width - 20;
 		int top = HEADER_HEIGHT + 14;
@@ -758,6 +779,9 @@ public final class SafariSettingsScreen extends Screen {
 		int height = Math.max(42, lineCount == 0 ? 42 : 32 + lineCount * 11);
 		int controlX = right - controlWidth - 10;
 		int controlY = y + (height - 22) / 2;
+		if (field.isAnnotationPresent(com.google.gson.annotations.Expose.class)) {
+			visibleSettings.add(new VisibleSetting(owner, field));
+		}
 		boolean rowHovered = inside(mouseX, mouseY, left, y, right, y + height);
 		boolean controlHovered = inside(mouseX, mouseY, controlX, controlY,
 			controlX + controlWidth, controlY + 22);
@@ -1177,14 +1201,22 @@ public final class SafariSettingsScreen extends Screen {
 			resetArmedUntil = System.currentTimeMillis() + 3_000L;
 			return;
 		}
-		String key = selected.key;
-		ConfigManager.resetSettingCategory(key);
-		selected = null;
-		loadCategories();
-		selected = categories.stream().filter(category -> category.key.equals(key)).findFirst()
-			.orElse(categories.isEmpty() ? null : categories.getFirst());
+		Map<Class<?>, Object> defaults = new HashMap<>();
+		for (VisibleSetting setting : visibleSettings) {
+			try {
+				Object defaultOwner = defaults.computeIfAbsent(setting.owner.getClass(), type -> {
+					try {
+						return type.getDeclaredConstructor().newInstance();
+					} catch (ReflectiveOperationException ignored) {
+						return null;
+					}
+				});
+				if (defaultOwner != null) setting.field.set(setting.owner, setting.field.get(defaultOwner));
+			} catch (IllegalAccessException ignored) {
+			}
+		}
+		ConfigManager.save();
 		resetArmedUntil = 0;
-		scroll = 0;
 	}
 
 	private void drawEditorModal(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
@@ -1717,6 +1749,13 @@ public final class SafariSettingsScreen extends Screen {
 
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+		if (mouseX < NAV_WIDTH && mouseY >= HEADER_HEIGHT && mouseY < height - FOOTER_HEIGHT) {
+			int viewport = height - HEADER_HEIGHT - FOOTER_HEIGHT - 8;
+			int max = Math.max(0, navigationContentHeight - viewport);
+			navigationScroll = Math.clamp(navigationScroll
+				+ (scrollY > 0 ? -34 : scrollY < 0 ? 34 : 0), 0, max);
+			return true;
+		}
 		if (mouseX < NAV_WIDTH || mouseY < HEADER_HEIGHT || mouseY >= height - FOOTER_HEIGHT) {
 			return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
 		}

@@ -11,6 +11,9 @@ public interface SharedSparklingProvider {
 	/** Fetches one player's Sparkling species without changing the active shared list. */
 	CompletableFuture<Set<String>> lookupPlayer(String username);
 
+	/** Fetches ticket balances on the player's selected profile. */
+	CompletableFuture<java.util.Map<String, Long>> lookupTickets(String username);
+
 	/** Observes roster changes; public builds have no provider and never call an API. */
 	default void tick() {
 	}

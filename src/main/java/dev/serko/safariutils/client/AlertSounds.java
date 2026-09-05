@@ -79,6 +79,22 @@ public final class AlertSounds {
 	private static final List<Pending> PENDING = new ArrayList<>();
 	private static final List<Pending> SPARKLING_PENDING = new ArrayList<>();
 	private static long tick;
+	private static final ThreadLocal<Boolean> PLAYING_ALERT = ThreadLocal.withInitial(() -> false);
+
+	/** Identifies our playback call, not the vanilla sound ID another source might use. */
+	public static boolean playingAlert() {
+		return PLAYING_ALERT.get();
+	}
+
+	private static void playNote(Minecraft client, SoundEvent sound, float volume, float pitch) {
+		boolean previous = PLAYING_ALERT.get();
+		PLAYING_ALERT.set(true);
+		try {
+			client.player.playSound(sound, volume, pitch);
+		} finally {
+			PLAYING_ALERT.set(previous);
+		}
+	}
 
 	private AlertSounds() {
 	}
@@ -109,7 +125,7 @@ public final class AlertSounds {
 		if (melody.isEmpty()) {
 			for (int layer = 0; layer < layers; layer++) {
 				float layerVolume = Math.min(1f, volume - layer);
-				client.player.playSound(sound(id), layerVolume, pitch);
+				playNote(client, sound(id), layerVolume, pitch);
 			}
 			return;
 		}
@@ -188,7 +204,7 @@ public final class AlertSounds {
 		for (Iterator<Pending> iterator = sounds.iterator(); iterator.hasNext();) {
 			Pending pending = iterator.next();
 			if (pending.dueTick > tick) continue;
-			client.player.playSound(pending.sound, pending.volume, pending.pitch);
+			playNote(client, pending.sound, pending.volume, pending.pitch);
 			iterator.remove();
 		}
 	}

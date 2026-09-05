@@ -233,7 +233,11 @@ public enum HudBox {
 	}
 
 	public int pixelX(int screenWidth, HudPanel panel, Font font) {
-		int width = Math.round(panel.width(font) * scale());
+		return pixelX(screenWidth, panel, font, scale());
+	}
+
+	public int pixelX(int screenWidth, HudPanel panel, Font font, float renderedScale) {
+		int width = Math.round(panel.width(font) * renderedScale);
 		int anchor = Math.round(x() * screenWidth);
 		int left = switch (Math.clamp(expansion(), 0, 2)) {
 			case 0 -> anchor - width;
@@ -244,14 +248,23 @@ public enum HudBox {
 	}
 
 	public int pixelY(int screenHeight, HudPanel panel, Font font) {
-		int max = Math.max(0, screenHeight - Math.round(panel.height() * scale()));
+		return pixelY(screenHeight, panel, scale());
+	}
+
+	public int pixelY(int screenHeight, HudPanel panel, float renderedScale) {
+		int max = Math.max(0, screenHeight - Math.round(panel.height() * renderedScale));
 		return Math.min(max, Math.round(y() * screenHeight));
 	}
 
 	/** Saves a dragged top-left pixel as this box's configured expansion anchor. */
 	public void setPixelPosition(int left, int top, int screenWidth, int screenHeight,
 							 HudPanel panel, Font font) {
-		int width = Math.round(panel.width(font) * scale());
+		setPixelPosition(left, top, screenWidth, screenHeight, panel, font, scale());
+	}
+
+	public void setPixelPosition(int left, int top, int screenWidth, int screenHeight,
+							 HudPanel panel, Font font, float renderedScale) {
+		int width = Math.round(panel.width(font) * renderedScale);
 		int anchor = switch (Math.clamp(expansion(), 0, 2)) {
 			case 0 -> left + width;
 			case 1 -> left + width / 2;

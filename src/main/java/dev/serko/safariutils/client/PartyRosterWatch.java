@@ -22,11 +22,29 @@ public final class PartyRosterWatch {
 	private static boolean announceScheduledRefresh;
 	private static boolean announceCurrentRefresh;
 	private static boolean wasInsideSafari;
+	private static boolean wasConnected;
+	private static long suppressRosterTailUntil;
 
 	private PartyRosterWatch() {}
 
 	public static void tick() {
 		long now = System.currentTimeMillis();
+		boolean connected = Minecraft.getInstance().getConnection() != null;
+		if (connected && !wasConnected) {
+			known = false;
+			sawLeader = false;
+			schedule(false);
+		} else if (!connected && wasConnected) {
+			known = false;
+			sawLeader = false;
+			capturing = false;
+			requestAt = 0;
+			announceScheduledRefresh = false;
+			announceCurrentRefresh = false;
+			captureUntil = 0;
+			suppressRosterTailUntil = 0;
+		}
+		wasConnected = connected;
 		boolean inside = SafariLocation.inside();
 		if (inside && !wasInsideSafari) schedule(false);
 		wasInsideSafari = inside;
@@ -39,8 +57,13 @@ public final class PartyRosterWatch {
 		String line = LEGACY_COLOURS.matcher(message.getString()).replaceAll("").trim();
 		String lower = line.toLowerCase(Locale.ROOT);
 		if (membershipChanged(lower)) schedule(joinedParty(lower));
-		if (!capturing) return true;
 		var count = COUNT.matcher(line);
+		if (!capturing) {
+			return System.currentTimeMillis() > suppressRosterTailUntil
+				|| !(count.matches() || isRosterLine(lower) || isDivider(line)
+				|| lower.equals("you are not in a party right now.")
+				|| lower.equals("you are not currently in a party."));
+		}
 		if (count.matches()) {
 			expectedPlayers = Math.clamp(Integer.parseInt(count.group(1)), 1, 4);
 			known = true;
@@ -81,6 +104,11 @@ public final class PartyRosterWatch {
 		return known;
 	}
 
+	/** Unknown status fails open; a confirmed solo player does not send party chat. */
+	public static boolean canSendPartyChat() {
+		return !known || expectedPlayers > 1;
+	}
+
 	/** The Manager itself is guarded only for the party leader; members may open its ticket menu. */
 	public static boolean localPlayerIsLeader() {
 		return known && sawLeader && localLeader;
@@ -102,6 +130,7 @@ public final class PartyRosterWatch {
 		sawCount = false;
 		leaderSeenThisCapture = false;
 		captureUntil = System.currentTimeMillis() + 3_000L;
+		suppressRosterTailUntil = captureUntil + 300L;
 		client.getConnection().sendCommand("party list");
 		DebugLog.line("PARTYTIME", "automatic /party list requested");
 	}

@@ -40,14 +40,15 @@ public final class MissingHud implements HudElement {
 
 		HudPanel panel = panelCache.get(() -> buildPanel(biome, SessionManager.currentOrLast()));
 		HudBox box = HudBox.MISSING;
-		int x = box.pixelX(graphics.guiWidth(), panel, client.font);
-		int y = box.pixelY(graphics.guiHeight(), panel, client.font);
+		float scale = box.scale() * ResponsiveUI.scale(graphics.guiWidth(), graphics.guiHeight());
+		int x = box.pixelX(graphics.guiWidth(), panel, client.font, scale);
+		int y = box.pixelY(graphics.guiHeight(), panel, scale);
 		if (SparklingWatch.missingHudThemeActive()) {
-			panel.renderRainbow(graphics, client.font, x, y, box.scale());
+			panel.renderRainbow(graphics, client.font, x, y, scale);
 		} else if (SparklingMode.enabled()) {
-			panel.renderRainbowBorder(graphics, client.font, x, y, box.scale());
+			panel.renderRainbowBorder(graphics, client.font, x, y, scale);
 		} else {
-			panel.render(graphics, client.font, x, y, box.scale(),
+			panel.render(graphics, client.font, x, y, scale,
 				HudBorderStyle.missing(biome, SessionManager.currentOrLast()));
 		}
 	}

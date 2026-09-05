@@ -36,6 +36,7 @@ public final class HudEditorScreen extends Screen {
 	private Rect resetButton;
 	private Rect snapButton;
 	private Rect doneButton;
+	private long resetArmedUntil;
 	private boolean snappedHorizontal;
 	private boolean snappedVertical;
 	private final Screen parent;
@@ -79,9 +80,9 @@ public final class HudEditorScreen extends Screen {
 			HudPanel panel = box.panel();
 			if (panel == null || panel.isEmpty()) panel = box.placeholderPanel();
 
-			float scale = box.scale();
-			int x = box.pixelX(width, panel, font);
-			int y = box.pixelY(height, panel, font);
+			float scale = box.scale() * ResponsiveUI.scale(width, height);
+			int x = box.pixelX(width, panel, font, scale);
+			int y = box.pixelY(height, panel, scale);
 			int w = Math.round(panel.width(font) * scale);
 			int h = Math.round(panel.height() * scale);
 
@@ -92,7 +93,7 @@ public final class HudEditorScreen extends Screen {
 					x = snapX(x, w);
 					y = snapY(y, h);
 				}
-				box.setPixelPosition(x, y, width, height, panel, font);
+				box.setPixelPosition(x, y, width, height, panel, font, scale);
 			}
 
 			bounds.put(box, new Rect(x, y, w, h));
@@ -105,7 +106,7 @@ public final class HudEditorScreen extends Screen {
 			outline(graphics, x, y, w, h, over ? outline : outlineIdle);
 
 			if (over) {
-				String tag = "%s  ·  %.0f%%".formatted(box.label(), scale * 100);
+				String tag = "%s  ·  %.0f%%".formatted(box.label(), box.scale() * 100);
 				int tagY = Math.max(2, y - 14);
 				int tagW = font.width(tag) + 8;
 				graphics.fill(x - 1, tagY - 2, x + tagW, tagY + 11, cardHover);
@@ -125,7 +126,9 @@ public final class HudEditorScreen extends Screen {
 		String hint2 = "Drag to move  ·  Scroll to resize  ·  Snapping "
 			+ (ConfigManager.get().display.hudSnapping ? "on" : "off");
 		graphics.text(font, Component.literal(hint2), (width - font.width(hint2)) / 2, 24, dim);
-		drawButton(graphics, resetButton, "Reset Layout", mouseX, mouseY, false);
+		boolean resetArmed = System.currentTimeMillis() < resetArmedUntil;
+		drawButton(graphics, resetButton, resetArmed ? "Confirm Reset" : "Reset Layout",
+			mouseX, mouseY, resetArmed);
 		drawButton(graphics, snapButton,
 			"Snap: " + (ConfigManager.get().display.hudSnapping ? "On" : "Off"),
 			mouseX, mouseY, ConfigManager.get().display.hudSnapping);
@@ -195,7 +198,12 @@ public final class HudEditorScreen extends Screen {
 		int mouseX = (int) event.x();
 		int mouseY = (int) event.y();
 		if (resetButton != null && resetButton.contains(mouseX, mouseY)) {
+			if (System.currentTimeMillis() >= resetArmedUntil) {
+				resetArmedUntil = System.currentTimeMillis() + 3_000L;
+				return true;
+			}
 			resetAll();
+			resetArmedUntil = 0;
 			return true;
 		}
 		if (doneButton != null && doneButton.contains(mouseX, mouseY)) {
@@ -245,11 +253,11 @@ public final class HudEditorScreen extends Screen {
 		HudBox.PROGRESS.setScale(1.0f);
 		HudBox.MISSING.setScale(1.0f);
 		HudBox.CONTEST.setScale(1.0f);
-		HudBox.ALERTS.setScale(4.0f);
+		HudBox.ALERTS.setScale(3.5f);
 		HudBox.PROGRESS.setPosition(0.0035128805f, 0.00625f);
 		HudBox.MISSING.setPosition(0.0035128805f, 0.29375f);
 		HudBox.CONTEST.setPosition(0.99531615f, 0.00625f);
-		HudBox.ALERTS.setPosition(0.5f, 0.4f);
+		HudBox.ALERTS.setPosition(0.49882904f, 0.33125f);
 		ConfigManager.save();
 	}
 

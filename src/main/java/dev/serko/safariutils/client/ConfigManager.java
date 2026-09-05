@@ -72,7 +72,6 @@ public final class ConfigManager {
 			{"alerts", "hideyhoAlert", "hideyhoSound", "hideyhoSoundMode", "3"},
 			{"alerts", "macawAlert", "macawSound", "macawSoundMode", "3"},
 			{"alerts", "birdfeederAlert", "birdfeederSound", "birdfeederSoundMode", "1"},
-			{"alerts", "feedTypeGoneAlert", "feedTypeGoneSound", "feedTypeGoneSoundMode", "3"},
 			{"alerts", "feedGoneAlert", "feedGoneSound", "feedGoneSoundMode", "3"},
 			{"alerts", "contestStartAlert", "contestStartSound", "contestStartSoundMode", "3"},
 			{"alerts", "contestFiveMinuteAlert", "contestFiveMinuteSound", "contestFiveMinuteSoundMode", "3"},

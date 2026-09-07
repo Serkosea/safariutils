@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.2] - 2026-09-06
+
+### Fixes
+
+- Fixed Safe Mode Hideonwall detection and waypoint resolution issues
+- Improved Birdfeeder completion tracking by reconciling personal deposits with bird spawns
+- Prevented a new contest from completing from the previous contest's lingering result
+- Kept HUD editor labels centered and visible near screen edges
+
 ## [1.3.1] - 2026-09-04
 
 ### Alerts and birds

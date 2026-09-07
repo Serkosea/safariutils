@@ -19,6 +19,8 @@ public final class ContestTracker implements HudElement {
 	private static final long START_OFFSET_MILLIS = 15 * 60_000L + 4_000L;
 	private static final long FIVE_MINUTES_MILLIS = 5 * 60_000L;
 	private static final long ONE_MINUTE_MILLIS = 60_000L;
+	/** Lets the previous contest's tab-list result clear before accepting a new one. */
+	private static final long RESULT_START_GUARD_MILLIS = 3_000L;
 
 	private static final int TITLE = 0xFFFFFF55;
 	private static final int LABEL = 0xFFBBBBBB;
@@ -78,7 +80,9 @@ public final class ContestTracker implements HudElement {
 		}
 		firePendingStartAlert();
 
-		if (remaining >= 0 && "Torrhus Canyon".equals(SafariLocation.tabListArea())) {
+		boolean resultGuardElapsed = remaining <= ACTIVE_MILLIS - RESULT_START_GUARD_MILLIS;
+		if (remaining >= 0 && resultGuardElapsed
+			&& "Torrhus Canyon".equals(SafariLocation.tabListArea())) {
 			List<String> entries = SafariLocation.tabListEntries();
 			if (!entries.equals(lastParsedTabList)) {
 				lastParsedTabList = List.copyOf(entries);

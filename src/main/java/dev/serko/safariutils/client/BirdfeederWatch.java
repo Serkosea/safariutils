@@ -22,6 +22,13 @@ public final class BirdfeederWatch {
 	private static final int[] lastHeld = new int[3];
 	/** Every Birdfeeder spawn event observed this run, whatever species it produced. */
 	private static int spawnEventsObserved;
+	/** Feed this player has stably transferred into the feeder this run. */
+	private static int personalFeedDeposited;
+	/** Spawn count when the first personal deposit was confirmed. */
+	private static int personalSpawnBaseline = -1;
+	/** Inventory decreases waiting out the same rejection/cursor buffer as the final stack. */
+	private static int pendingPersonalDeposit;
+	private static long pendingPersonalDepositAt;
 	/** Bird species produced by observed feed uses this run. */
 	private static final java.util.Set<dev.serko.safariutils.data.Critter> spawnedBirds =
 		new java.util.HashSet<>();
@@ -82,6 +89,9 @@ public final class BirdfeederWatch {
 			&& normalized.contains("feed")) {
 			pendingAllFeedDepositAt = 0;
 			allFeedDeposited = false;
+			pendingPersonalDeposit = 0;
+			pendingPersonalDepositAt = 0;
+			if (personalFeedDeposited == 0) personalSpawnBaseline = -1;
 			DebugLog.line("INVENTORY", "Birdfeeder rejected deposit; pending all-feed alert cancelled");
 			return;
 		}
@@ -133,7 +143,17 @@ public final class BirdfeederWatch {
 
 	/** Whether every feed found this run has produced a spawn event. */
 	public static boolean allFeedUsed() {
-		return feedFound > 0 && spawnEventsObserved >= feedFound;
+		boolean foundFeedResolved = feedFound > 0 && spawnEventsObserved >= feedFound;
+		// When this player is the only feeder user, accepted personal deposits and the
+		// later spawn lines form a second complete account even if pickup tracking missed
+		// a starting item. In a shared stack this remains only a fallback, never a reason
+		// to override the feeder GUI or an item still held by the player.
+		boolean personalDepositsResolved = allFeedDeposited
+			&& feedAcquired > 0
+			&& personalFeedDeposited >= feedAcquired
+			&& personalSpawnBaseline >= 0
+			&& spawnEventsObserved - personalSpawnBaseline >= personalFeedDeposited;
+		return foundFeedResolved || personalDepositsResolved;
 	}
 
 	/** Only a full nine-feed Forest clear can prove that an unspawned bird is absent. */
@@ -189,10 +209,37 @@ public final class BirdfeederWatch {
 		boolean birdfeederDeposit = isBirdfeederOpen()
 			|| now <= birdfeederInteractionUntil;
 		boolean depositedThisScan = false;
+		int depositedAmount = 0;
+		int returnedAmount = 0;
 		for (int type = 0; type < held.length; type++) {
 			int previous = lastHeld[type];
 			lastHeld[type] = held[type];
-			if (birdfeederDeposit && held[type] < previous) depositedThisScan = true;
+			if (birdfeederDeposit && held[type] < previous) {
+				depositedThisScan = true;
+				depositedAmount += previous - held[type];
+			} else if (held[type] > previous) {
+				returnedAmount += held[type] - previous;
+			}
+		}
+		if (returnedAmount > 0 && pendingPersonalDeposit > 0) {
+			pendingPersonalDeposit = Math.max(0, pendingPersonalDeposit - returnedAmount);
+			if (pendingPersonalDeposit == 0) {
+				pendingPersonalDepositAt = 0;
+				if (personalFeedDeposited == 0) personalSpawnBaseline = -1;
+			}
+		}
+		if (depositedAmount > 0) {
+			if (personalSpawnBaseline < 0) personalSpawnBaseline = spawnEventsObserved;
+			pendingPersonalDeposit += depositedAmount;
+			pendingPersonalDepositAt = now + 300L;
+			DebugLog.line("INVENTORY", "Birdfeeder personal deposit awaiting confirmation: +"
+				+ depositedAmount);
+		} else if (pendingPersonalDeposit > 0 && now >= pendingPersonalDepositAt) {
+			personalFeedDeposited += pendingPersonalDeposit;
+			DebugLog.line("INVENTORY", "Birdfeeder personal deposit confirmed: +"
+				+ pendingPersonalDeposit + " (total " + personalFeedDeposited + ")");
+			pendingPersonalDeposit = 0;
+			pendingPersonalDepositAt = 0;
 		}
 		int totalHeld = held[0] + held[1] + held[2];
 		if (totalHeld > 0) {
@@ -258,6 +305,10 @@ public final class BirdfeederWatch {
 		floorFeedFound = 0;
 		java.util.Arrays.fill(lastHeld, 0);
 		spawnEventsObserved = 0;
+		personalFeedDeposited = 0;
+		personalSpawnBaseline = -1;
+		pendingPersonalDeposit = 0;
+		pendingPersonalDepositAt = 0;
 		spawnedBirds.clear();
 		feedAlertsReady = false;
 		totalFeedAnnounced = false;

@@ -8,6 +8,9 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Safe Mode visibility checks: the target must be inside the camera's field of view
  * and unobstructed. Stationary features may remember a successful check; moving
@@ -18,6 +21,10 @@ public final class VisibilityCheck {
 	/** A generous half-angle that mainly rejects targets behind the player. */
 	private static final double FOV_HALF_ANGLE_DEGREES = 60.0;
 	private static final double FOV_COSINE = Math.cos(Math.toRadians(FOV_HALF_ANGLE_DEGREES));
+	private static final long PAINTING_CACHE_MILLIS = 1_000;
+	private static final List<net.minecraft.world.phys.AABB> paintingBoxes = new ArrayList<>();
+	private static long paintingsCachedAt = Long.MIN_VALUE;
+	private static Object paintingLevel;
 
 	private VisibilityCheck() {
 	}
@@ -35,7 +42,7 @@ public final class VisibilityCheck {
 		ClipContext clip = new ClipContext(eye, target,
 			ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, client.player);
 		HitResult hit = client.level.clip(clip);
-		return hit.getType() == HitResult.Type.MISS;
+		return hit.getType() == HitResult.Type.MISS && !paintingBlocks(eye, target);
 	}
 
 	/** Whether an entity is on screen, even when its rendered nametag is visible through terrain. */
@@ -98,16 +105,16 @@ public final class VisibilityCheck {
 			&& inFieldOfView(eye, client.player.getViewVector(1.0f), target);
 	}
 
-	/** A Hideonwall's painting is its visible cover, so inspecting that cover counts. */
+	/** Paintings conceal Hideonwalls, so only the actual perch area counts as inspected. */
 	public static boolean canInspectPaintingCandidate(BlockPos pos) {
-		if (canInspectCandidate(pos)) return true;
+		if (canInspect(pos)) return true;
 		Minecraft client = Minecraft.getInstance();
-		if (client.level == null) return false;
-		for (Entity entity : client.level.entitiesForRendering()) {
-			if (!EntityTypeIds.is(entity, "painting") || entity.blockPosition().distSqr(pos) > 9.0) continue;
-			if (onScreen(entity)) return true;
-		}
-		return false;
+		if (client.player == null || client.level == null) return false;
+		Vec3 eye = client.player.getEyePosition();
+		Vec3 target = Vec3.atCenterOf(pos);
+		return eye.distanceToSqr(target) <= 36.0
+			&& inFieldOfView(eye, client.player.getViewVector(1.0f), target)
+			&& !paintingBlocks(eye, target);
 	}
 
 	/** Same as {@link #canSee(Vec3)}, for wherever an entity currently is. */
@@ -146,5 +153,24 @@ public final class VisibilityCheck {
 		// Comparing cosines avoids normalizing two vectors and calling acos for every target.
 		double denominator = Math.sqrt(lookDirection.lengthSqr() * distanceSq);
 		return denominator > 0.0 && lookDirection.dot(toTarget) / denominator >= FOV_COSINE;
+	}
+
+	/** Block raycasts ignore paintings because they are entities; Safe Mode must not. */
+	private static boolean paintingBlocks(Vec3 from, Vec3 to) {
+		Minecraft client = Minecraft.getInstance();
+		if (client.level == null) return false;
+		long now = System.currentTimeMillis();
+		if (paintingLevel != client.level || now - paintingsCachedAt >= PAINTING_CACHE_MILLIS) {
+			paintingLevel = client.level;
+			paintingsCachedAt = now;
+			paintingBoxes.clear();
+			for (Entity entity : client.level.entitiesForRendering()) {
+				if (EntityTypeIds.is(entity, "painting")) paintingBoxes.add(entity.getBoundingBox());
+			}
+		}
+		for (net.minecraft.world.phys.AABB box : paintingBoxes) {
+			if (box.inflate(0.01).clip(from, to).isPresent()) return true;
+		}
+		return false;
 	}
 }

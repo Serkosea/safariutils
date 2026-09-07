@@ -109,9 +109,10 @@ public final class HudEditorScreen extends Screen {
 				String tag = "%s  ·  %.0f%%".formatted(box.label(), box.scale() * 100);
 				int tagY = Math.max(2, y - 14);
 				int tagW = font.width(tag) + 8;
-				graphics.fill(x - 1, tagY - 2, x + tagW, tagY + 11, cardHover);
-				outline(graphics, x - 1, tagY - 2, tagW + 1, 13, accent);
-				graphics.text(font, Component.literal(tag), x + 3, tagY, hint);
+				int tagX = clamp(x + (w - tagW) / 2, 2, Math.max(2, width - tagW - 2));
+				graphics.fill(tagX, tagY - 2, tagX + tagW, tagY + 11, cardHover);
+				outline(graphics, tagX, tagY - 2, tagW, 13, accent);
+				graphics.text(font, Component.literal(tag), tagX + 4, tagY, hint);
 			}
 		}
 		if (dragging != null && snappedHorizontal) {

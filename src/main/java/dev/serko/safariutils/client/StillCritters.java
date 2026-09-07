@@ -5,6 +5,10 @@ import dev.serko.safariutils.parse.ChatParser;
 import dev.serko.safariutils.parse.CritterEvent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.Display;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -65,6 +69,7 @@ public final class StillCritters {
 		prepareLobby();
 		if (!SafariLocation.inSafari()) return;
 		long now = System.currentTimeMillis();
+		resolveHideonwallCapsules(now);
 		remembered.values().removeIf(entry -> {
 			boolean stale = !entry.visiblyConfirmed() && now - entry.millis() > STALE_MILLIS;
 			if (stale) DebugLog.line("STILL", "EXPIRE " + entry.critter().name() + " (unconfirmed " + STALE_MILLIS + "ms)");
@@ -131,6 +136,65 @@ public final class StillCritters {
 		pruneVisibleEmptyCandidates();
 	}
 
+	/**
+	 * A capsule crossing a concealed perch is direct interaction evidence. Checking
+	 * its swept path prevents a fast projectile from skipping the small perch between
+	 * client ticks; existing critter pairings still decide whether that perch is occupied.
+	 */
+	private static void resolveHideonwallCapsules(long now) {
+		Critter hideonwall = dev.serko.safariutils.data.Critters.byName("Hideonwall");
+		if (hideonwall == null || !SafeMode.hiddenCritterCandidates(hideonwall)) return;
+		Set<BlockPos> candidates = unchecked.get(hideonwall);
+		if (candidates == null || candidates.isEmpty()) return;
+		var client = net.minecraft.client.Minecraft.getInstance();
+		if (client.level == null) return;
+
+		for (Entity entity : client.level.entitiesForRendering()) {
+			if (!(entity instanceof Display.ItemDisplay display) || !isCritterCapsule(display)) continue;
+			Vec3 previous = new Vec3(entity.xOld, entity.yOld, entity.zOld);
+			Vec3 current = entity.position();
+			if (previous.distanceToSqr(current) < 1.0e-6) continue;
+			for (BlockPos candidate : List.copyOf(candidates)) {
+				AABB target = new AABB(candidate).inflate(0.5);
+				if (!target.contains(previous) && !target.contains(current)
+					&& target.clip(previous, current).isEmpty()) continue;
+				resolveHideonwallPerch(hideonwall, candidate, now);
+			}
+		}
+	}
+
+	private static void resolveHideonwallPerch(Critter hideonwall, BlockPos candidate, long now) {
+		unchecked.getOrDefault(hideonwall, Set.of()).remove(candidate);
+		// A throw already assigned to this species is resolving a catch, so it should
+		// clear the candidate without reviving the body that the attempt just suppressed.
+		if (resolving.containsKey(hideonwall)) {
+			remembered.entrySet().removeIf(entry -> hideonwall.equals(entry.getValue().critter())
+				&& sameSpawn(candidate, entry.getValue().pos()));
+			DebugLog.line("STILL", "CAPSULE cleared Hideonwall perch pos=" + pos(candidate));
+			return;
+		}
+		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
+			if (!hideonwall.equals(sighting.critter())) continue;
+			Entity body = sighting.mob();
+			BlockPos actual = body != null ? body.blockPosition() : sighting.label().blockPosition();
+			if (!sameSpawn(candidate, actual) || body != null && suppressedBodies.contains(body.getUUID())) continue;
+			UUID id = body != null ? body.getUUID() : sighting.label().getUUID();
+			remembered.put(id, new Entry(hideonwall, actual, SparklingWatch.isSparkling(sighting),
+				now, true, body == null || body.getDeltaMovement().lengthSqr() < 1.0e-4));
+			DebugLog.line("STILL", "CAPSULE confirmed Hideonwall id=" + shortId(id)
+				+ " pos=" + pos(actual));
+			return;
+		}
+		DebugLog.line("STILL", "CAPSULE resolved empty Hideonwall perch pos=" + pos(candidate));
+	}
+
+	private static boolean isCritterCapsule(Display.ItemDisplay display) {
+		Display.ItemDisplay.ItemRenderState state = display.itemRenderState();
+		if (state == null) return false;
+		ItemStack stack = state.itemStack();
+		return !stack.isEmpty() && stack.getHoverName().getString().endsWith("Critter Capsule");
+	}
+
 	private static void prepareLobby() {
 		if (!SafariLocation.inSafari()) {
 			preparedLobby = null;
@@ -156,7 +220,9 @@ public final class StillCritters {
 				.filter(java.util.Objects::nonNull)
 				.toList();
 			candidates.removeIf(pos -> client.level.isLoaded(pos)
-				&& VisibilityCheck.canInspectCandidate(pos)
+				&& ("Hideonwall".equals(critter.name())
+					? VisibilityCheck.canInspectPaintingCandidate(pos)
+					: VisibilityCheck.canInspectCandidate(pos))
 				&& live.stream().noneMatch(actual -> sameSpawn(pos, actual)));
 		}
 

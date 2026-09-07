@@ -38,6 +38,22 @@ public final class ClientMessages {
 				style.withColor(WARNING).withBold(true)));
 	}
 
+	/** Turns common API outages into a useful message while preserving specific errors. */
+	public static String apiFailure(String operation, Throwable error) {
+		Throwable cause = error;
+		while (cause != null && cause.getCause() != null) cause = cause.getCause();
+		String detail = cause == null || cause.getMessage() == null
+			? "" : cause.getMessage().strip();
+		String lower = detail.toLowerCase(java.util.Locale.ROOT);
+		boolean unavailable = cause instanceof java.net.http.HttpTimeoutException
+			|| cause instanceof java.net.ConnectException
+			|| cause instanceof java.net.UnknownHostException
+			|| lower.contains("timed out")
+			|| lower.matches(".*http 5\\d\\d.*");
+		if (unavailable) return "Failed to " + operation + "; Hypixel API may be unavailable";
+		return "Failed to " + operation + (detail.isEmpty() ? "" : ": " + detail);
+	}
+
 	/** Keep client notices consistent, including messages supplied by the private provider. */
 	private static String withoutTrailingPeriod(String text) {
 		String result = text.stripTrailing();

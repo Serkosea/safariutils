@@ -36,10 +36,9 @@ public final class BazaarPrices {
 	private static final String SAFARI_ESSENCE = "ESSENCE_SAFARI";
 	private static final String RAINBOW_FEATHER = "RAINBOW_FEATHER";
 
-	/** The endpoint updates slowly enough that refreshing more often adds no value. */
-	private static final long REFRESH_MILLIS = 120_000;
-	/** Failed requests retry sooner than the normal refresh without rapid polling. */
-	private static final long RETRY_MILLIS = 60_000;
+	/** Successful and failed automatic requests both wait five minutes before retrying. */
+	private static final long REFRESH_MILLIS = 300_000;
+	private static final long RETRY_MILLIS = REFRESH_MILLIS;
 	private static final int QUIET_FAILURES = 3;
 
 	/** Bazaar tax on the sell side, which both price modes are. */
@@ -128,6 +127,9 @@ public final class BazaarPrices {
 			lastError = failed.getClass().getSimpleName()
 				+ (failed.getMessage() == null ? "" : ": " + failed.getMessage());
 			nextFetchAt = System.currentTimeMillis() + RETRY_MILLIS;
+			String message = ClientMessages.apiFailure("load Bazaar price data", failed);
+			net.minecraft.client.Minecraft.getInstance().execute(() ->
+				ClientMessages.send(message, ClientMessages.Tone.ERROR));
 			// Quiet at first — a dropped request during a server hop is not news. Said once
 			// when it stops looking like a blip, and not repeated every retry after that.
 			if (failures == QUIET_FAILURES + 1) {

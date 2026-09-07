@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.3] - 2026-09-07
+
+### Fixes
+
+- Added clear client messages when Hypixel API requests fail and limited Bazaar refreshes to once every five minutes
+
 ## [1.3.2] - 2026-09-06
 
 ### Fixes

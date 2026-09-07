@@ -291,9 +291,7 @@ public final class SafariCommands {
 		provider.lookupPlayer(username).whenComplete((species, error) ->
 			Minecraft.getInstance().execute(() -> {
 				if (error != null) {
-					Throwable cause = error;
-					while (cause.getCause() != null) cause = cause.getCause();
-					source.sendError(prefixed("Sparkling lookup failed: " + cause.getMessage(),
+					source.sendError(prefixed(ClientMessages.apiFailure("look up Sparklings", error),
 						ChatFormatting.RED));
 					return;
 				}
@@ -313,9 +311,8 @@ public final class SafariCommands {
 		SharedSparklingProviders.provider().orElseThrow().lookupTickets(username)
 			.whenComplete((tickets, error) -> Minecraft.getInstance().execute(() -> {
 				if (error != null) {
-					Throwable cause = error;
-					while (cause.getCause() != null) cause = cause.getCause();
-					source.sendError(prefixed("Ticket lookup failed: " + cause.getMessage(), ChatFormatting.RED));
+					source.sendError(prefixed(ClientMessages.apiFailure("look up Safari tickets", error),
+						ChatFormatting.RED));
 					return;
 				}
 				var message = prefixed(username + " — Safari Tickets", ChatFormatting.AQUA).copy();

@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.4.0] - 2026-09-08
+
+### Fixes
+
+- Fixed All Feed Used detection when closing the Birdfeeder immediately after depositing
+- Allowed Total Feed messages to report No Feed after Forest objectives are complete
+- Fixed Hideonfloor waypoints disappearing from ambiguous catch messages
+- Fixed a crash when a Hideonfloor label loaded before its entity body
+- Smoothed moving Duplico and Hideon waypoint rendering
+
 ## [1.3.3] - 2026-09-07
 
 ### Fixes

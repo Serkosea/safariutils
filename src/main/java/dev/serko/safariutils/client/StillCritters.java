@@ -29,6 +29,8 @@ public final class StillCritters {
 	private static final Set<String> TRACKED = Set.of("Duplico", "Hideonwall", "Hideonfloor", "Bloodbat");
 	/** How long an entry can go unconfirmed before it is dropped as likely orphaned. */
 	private static final long STALE_MILLIS = 20_000;
+	/** Two entity sweeps must miss a loaded Hideonfloor before its marker is retired. */
+	private static final long HIDEONFLOOR_ABSENCE_MILLIS = 500;
 	/**
 	 * How close a fresh sighting has to land to an existing entry of the same species
 	 * to be treated as that same individual under a new id, not a genuinely different
@@ -133,7 +135,35 @@ public final class StillCritters {
 			remembered.put(id, new Entry(sighting.critter(), pos, sparkling, now,
 				visible || previous != null && previous.visiblyConfirmed(), persistent));
 		}
+		pruneMissingHideonfloors(now);
 		pruneVisibleEmptyCandidates();
+	}
+
+	/**
+	 * Hideonfloor chat does not identify which individual was caught. Resolve markers
+	 * from the world instead: Extra Mode trusts a loaded, absent body while Safe Mode
+	 * additionally requires the old location to be inspected.
+	 */
+	private static void pruneMissingHideonfloors(long now) {
+		var client = net.minecraft.client.Minecraft.getInstance();
+		if (client.level == null) return;
+		Critter hideonfloor = dev.serko.safariutils.data.Critters.byName("Hideonfloor");
+		if (hideonfloor == null) return;
+		Set<UUID> live = CritterEntities.all().stream()
+			.filter(sighting -> hideonfloor.equals(sighting.critter()) && sighting.mob() != null)
+			.map(sighting -> sighting.mob().getUUID())
+			.collect(java.util.stream.Collectors.toSet());
+		boolean requiresSight = SafeMode.hiddenCritter(hideonfloor, false);
+		remembered.entrySet().removeIf(entry -> {
+			Entry value = entry.getValue();
+			if (!hideonfloor.equals(value.critter()) || live.contains(entry.getKey())) return false;
+			if (now - value.millis() < HIDEONFLOOR_ABSENCE_MILLIS
+				|| !client.level.isLoaded(value.pos())) return false;
+			if (requiresSight && !VisibilityCheck.canInspectCandidate(value.pos())) return false;
+			DebugLog.line("STILL", "REMOVE absent Hideonfloor id=" + shortId(entry.getKey())
+				+ " pos=" + pos(value.pos()));
+			return true;
+		});
 	}
 
 	/**
@@ -321,6 +351,9 @@ public final class StillCritters {
 			return;
 		}
 		catalogClosed.add(event.critter());
+		// Hideonfloor messages do not identify an individual. Its loaded body disappearing
+		// is the only reliable evidence that a particular marker should be removed.
+		if ("Hideonfloor".equals(event.critter().name())) return;
 		if (event.type() == CritterEvent.Type.ATTEMPT) {
 			UUID id = RecatchSpots.pendingCatchEntity(event.critter());
 			if (id == null) id = nearestRemembered(event.critter());
@@ -396,8 +429,11 @@ public final class StillCritters {
 			|| TestingMode.saveLearnedLocations() && SafariLocation.inside();
 		if (!activeLearningContext || !SafariPartyWatch.confirmedSoloForLearning()) return;
 		if (catalogClosed.contains(sighting.critter())) return;
+		// Labels and bodies can arrive on different entity scans. A label by itself is
+		// not enough to learn a physical spawn location, especially for Hideonfloor.
+		if (entity == null) return;
 		if (!"Hideonfloor".equals(sighting.critter().name())) {
-			if (entity != null && cataloguedIds.add(entity.getUUID())
+			if (cataloguedIds.add(entity.getUUID())
 				&& entity.getDeltaMovement().lengthSqr() < 1.0e-4) {
 				StaticEntityCatalog.learn(sighting.critter().name(), entity.blockPosition());
 			}

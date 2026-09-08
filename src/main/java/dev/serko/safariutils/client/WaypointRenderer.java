@@ -448,6 +448,21 @@ public final class WaypointRenderer {
 			pos.x + halfWidth, pos.y + height, pos.z + halfWidth);
 	}
 
+	/**
+	 * Keeps the configured marker size while following its rendered anchor. Duplico's
+	 * interaction body trails its label while moving, so the label is smoother.
+	 */
+	private static AABB trackedHitboxFor(TrackedWaypoint tracked,
+			CritterEntities.Sighting sighting) {
+		Entity body = sighting.mob();
+		if (tracked.useRealHitbox()) return hitboxFor(body);
+		Vec3 pos = "Duplico".equals(tracked.critterName())
+			? renderPosition(sighting.label()).add(0.0, -1.25, 0.0)
+			: renderPosition(body);
+		return new AABB(pos.x - 0.5, pos.y, pos.z - 0.5,
+			pos.x + 0.5, pos.y + 1.0, pos.z + 0.5);
+	}
+
 	/** Matches vanilla entity rendering instead of stepping between 20 tick positions. */
 	private static Vec3 renderPosition(Entity entity) {
 		return entity.getPosition(framePartialTick);
@@ -557,7 +572,7 @@ public final class WaypointRenderer {
 						: sparkling ? sparklingColour()
 						: uniqueColour != 0 ? uniqueColour : baseColour;
 
-					AABB box = tracked.useRealHitbox() ? hitboxFor(entity) : new AABB(entity.blockPosition());
+					AABB box = trackedHitboxFor(tracked, sighting);
 					boolean seeThrough = StillCritters.persistentThroughWalls(entity.getUUID())
 						|| !SafeMode.hiddenCritter(critter, sparkling);
 					drawBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES, box, camera, colour);

@@ -61,6 +61,10 @@ public final class BirdfeederWatch {
 			return;
 		}
 		var menu = container.getMenu();
+		// Keep the transaction window alive while the menu is open. If the player
+		// closes it immediately after depositing, the next inventory scan can still
+		// attribute the accepted decrease to the feeder instead of an unrelated loss.
+		birdfeederInteractionUntil = System.currentTimeMillis() + 500L;
 		if (menu != observedFeeder) {
 			observedFeeder = menu;
 			feederHadFeed = false;
@@ -179,7 +183,7 @@ public final class BirdfeederWatch {
 	/** Marks the short transaction window opened by using the Birdfeeder NPC. */
 	public static void onEntityUse(net.minecraft.world.entity.Entity entity) {
 		if (entity == null || !entity.getName().getString().contains("Birdfeeder")) return;
-		birdfeederInteractionUntil = System.currentTimeMillis() + 1_000L;
+		birdfeederInteractionUntil = System.currentTimeMillis() + 500L;
 	}
 
 	/** Replaces unspent feed after death with the inventory's authoritative balance. */
@@ -231,7 +235,7 @@ public final class BirdfeederWatch {
 		if (depositedAmount > 0) {
 			if (personalSpawnBaseline < 0) personalSpawnBaseline = spawnEventsObserved;
 			pendingPersonalDeposit += depositedAmount;
-			pendingPersonalDepositAt = now + 300L;
+			pendingPersonalDepositAt = now + 150L;
 			DebugLog.line("INVENTORY", "Birdfeeder personal deposit awaiting confirmation: +"
 				+ depositedAmount);
 		} else if (pendingPersonalDeposit > 0 && now >= pendingPersonalDepositAt) {
@@ -248,7 +252,7 @@ public final class BirdfeederWatch {
 		} else if (depositedThisScan) {
 			// A rejected click briefly moves the stack onto the cursor. Wait for the
 			// server to accept the transfer instead of trusting that transient frame.
-			pendingAllFeedDepositAt = now + 300L;
+			pendingAllFeedDepositAt = now + 150L;
 			DebugLog.line("INVENTORY", "Birdfeeder final-feed deposit awaiting confirmation");
 		} else if (pendingAllFeedDepositAt > 0 && now >= pendingAllFeedDepositAt) {
 			pendingAllFeedDepositAt = 0;
@@ -258,11 +262,9 @@ public final class BirdfeederWatch {
 		if (!feedAlertsReady) return;
 		if (!totalFeedAnnounced) {
 			totalFeedAnnounced = true;
-			// Zero feed is represented by the more useful All Feed Used alert.
-			if (SafariObjectives.birdFeedHeld() > 0) {
-				EncounterAlerts.onTotalFeed(SafariObjectives.bagOfSeedsHeld(),
-					SafariObjectives.wrigglewormsHeld(), SafariObjectives.yogiBerriesHeld());
-			}
+			// The formatter deliberately reports an empty inventory as "No Feed".
+			EncounterAlerts.onTotalFeed(SafariObjectives.bagOfSeedsHeld(),
+				SafariObjectives.wrigglewormsHeld(), SafariObjectives.yogiBerriesHeld());
 		}
 		if (feedGoneAnnounced || !allFeedDeposited || totalHeld > 0) return;
 		feedGoneAnnounced = true;

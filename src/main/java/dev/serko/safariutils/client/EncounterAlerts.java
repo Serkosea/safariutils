@@ -588,8 +588,8 @@ public final class EncounterAlerts implements HudElement {
 	}
 
 	/**
-	 * Applies the optional biome gate for encounter alerts. Unknown locations fail open
-	 * so a brief location delay does not silently lose an alert.
+	 * Applies the optional biome gate for encounter alerts. Unknown locations fail
+	 * closed because the Safari center and connecting paths are not a named biome.
 	 */
 	private static boolean inItsBiome(String boss) {
 		if (testing || !ConfigManager.get().alerts.encountersInBiomeOnly) return true;
@@ -614,8 +614,7 @@ public final class EncounterAlerts implements HudElement {
 	private static boolean isInEncounterBiome(String boss) {
 		Critter critter = Critters.byName(boss);
 		SafariBiome here = SafariLocation.biome();
-		if (critter == null || here == null) return true;
-		return critter.biome() == here;
+		return critter != null && here != null && critter.biome() == here;
 	}
 
 	/** Whether this encounter's banners are wanted. Each is settable on its own. */

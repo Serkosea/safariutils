@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1] - 2026-09-08
+
+### Fixes
+
+- Prevented No Feed and All Feed Used from both sending after Forest objectives are complete
+- Prevented Only In That Biome encounter alerts from firing in the Safari center or connecting paths
+
 ## [1.4.0] - 2026-09-08
 
 ### Fixes

@@ -261,10 +261,17 @@ public final class BirdfeederWatch {
 		}
 		if (!feedAlertsReady) return;
 		if (!totalFeedAnnounced) {
+			// At zero feed, wait for an in-flight feeder click to settle before choosing
+			// between the mutually exclusive No Feed and All Feed Used outcomes.
+			if (totalHeld == 0 && (pendingPersonalDeposit > 0 || pendingAllFeedDepositAt > 0)) return;
 			totalFeedAnnounced = true;
-			// The formatter deliberately reports an empty inventory as "No Feed".
-			EncounterAlerts.onTotalFeed(SafariObjectives.bagOfSeedsHeld(),
-				SafariObjectives.wrigglewormsHeld(), SafariObjectives.yogiBerriesHeld());
+			boolean feedWasUsed = personalFeedDeposited > 0 || allFeedDeposited;
+			if (totalHeld > 0 || !feedWasUsed) {
+				EncounterAlerts.onTotalFeed(SafariObjectives.bagOfSeedsHeld(),
+					SafariObjectives.wrigglewormsHeld(), SafariObjectives.yogiBerriesHeld());
+				// Choosing No Feed locks out a later All Feed Used message for this run.
+				if (totalHeld == 0) feedGoneAnnounced = true;
+			}
 		}
 		if (feedGoneAnnounced || !allFeedDeposited || totalHeld > 0) return;
 		feedGoneAnnounced = true;

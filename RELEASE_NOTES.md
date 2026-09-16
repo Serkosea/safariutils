@@ -2,6 +2,7 @@
 
 ## Fixes
 
+- Fixed Player Lookup and inline number fields using unscaled click positions on smaller screens
 - Made Starting Items wait for a stable, capsule-populated inventory so slower items are included
 - Prevented Starting Items party messages from being discarded while party-list data is briefly stale
 - Kept imported Sparkling duplicate totals and comparison data synchronized after tracked catches

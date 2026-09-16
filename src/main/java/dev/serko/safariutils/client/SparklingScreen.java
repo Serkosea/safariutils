@@ -762,6 +762,8 @@ public final class SparklingScreen extends Screen {
 	public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
 		double mouseX = event.x() / scale;
 		double mouseY = event.y() / scale;
+		MouseButtonEvent scaledEvent = scale == 1f ? event
+			: new MouseButtonEvent(mouseX, mouseY, event.buttonInfo());
 		if (pendingImport != null) {
 			for (int i = hits.size() - 1; i >= 0; i--) {
 				Hit hit = hits.get(i);
@@ -786,7 +788,7 @@ public final class SparklingScreen extends Screen {
 			return true;
 		}
 		if (editor != null && editor.isMouseOver(mouseX, mouseY)) {
-			return super.mouseClicked(event, doubled);
+			return super.mouseClicked(scaledEvent, doubled);
 		}
 		commitEditor();
 		for (NumberHit hit : numberHits) {
@@ -802,7 +804,7 @@ public final class SparklingScreen extends Screen {
 				return true;
 			}
 		}
-		return super.mouseClicked(event, doubled);
+		return super.mouseClicked(scaledEvent, doubled);
 	}
 
 	@Override

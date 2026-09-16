@@ -8,8 +8,6 @@
 - Kept imported Sparkling duplicate totals and comparison data synchronized after tracked catches
 - Updated automatic Hideyho acceptance to use the current server-provided action instead of a fixed command
 - Kept manual Hideyho choices visible when no valid automatic action can be found or sent
-- Prevented No Feed and All Feed Used from both sending after Forest objectives are complete
-- Prevented Only In That Biome encounter alerts from firing outside their detected biome
 
 ## Changes & Additions
 

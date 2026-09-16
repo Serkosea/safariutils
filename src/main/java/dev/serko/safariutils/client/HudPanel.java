@@ -336,13 +336,13 @@ public final class HudPanel {
 						valueRight - font.width(value), rowY);
 				}
 				case STATUS_PAIR -> {
+					String mark = row.label().substring(0, 1);
+					String name = row.label().substring(1);
 					if (rainbowAll) {
 						rainbowText(graphics, font, row.label(), textLeft, rowY);
 						rainbowText(graphics, font, row.value(),
 							valueRight - font.width(row.value()), rowY);
 					} else {
-						String mark = row.label().substring(0, 1);
-						String name = row.label().substring(1);
 						graphics.text(font, Component.literal(mark), textLeft, rowY,
 							row.current() == 1 ? 0xFF55FF55 : 0xFFFF5555);
 						graphics.text(font, Component.literal(name), textLeft + font.width(mark),

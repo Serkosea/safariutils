@@ -86,6 +86,7 @@ public final class SafariSettingsScreen extends Screen {
 	private Field choiceField;
 	private Object choiceOwner;
 	private SettingChoice choiceDropdown;
+	private SettingMultiChoice multiChoiceDropdown;
 	private int scroll;
 	private int contentHeight;
 	private int navigationScroll;
@@ -812,6 +813,7 @@ public final class SafariSettingsScreen extends Screen {
 		int controlY = y + (height - 22) / 2;
 		try {
 			SettingChoice dropdown = field.getAnnotation(SettingChoice.class);
+			SettingMultiChoice multiChoice = field.getAnnotation(SettingMultiChoice.class);
 			SettingRange slider = field.getAnnotation(SettingRange.class);
 			SettingAction button = field.getAnnotation(SettingAction.class);
 			if (field.isAnnotationPresent(SettingToggle.class)) {
@@ -824,6 +826,14 @@ public final class SafariSettingsScreen extends Screen {
 				drawChoice(graphics, x, controlY, controlWidth, label);
 				hits.add(new Hit(x, controlY, x + controlWidth, controlY + 22,
 					() -> openChoicePicker(owner, field, dropdown)));
+			} else if (multiChoice != null) {
+				int selected = Integer.bitCount(field.getInt(owner));
+				String label = selected == multiChoice.values().length ? "All selected"
+					: selected == 0 ? "None selected"
+					: selected + " of " + multiChoice.values().length + " selected";
+				drawChoice(graphics, x, controlY, controlWidth, label);
+				hits.add(new Hit(x, controlY, x + controlWidth, controlY + 22,
+					() -> openMultiChoicePicker(owner, field, multiChoice)));
 			} else if (slider != null) {
 				float value = ((Number) field.get(owner)).floatValue();
 				if (editingInlineText && editingNumber
@@ -919,7 +929,20 @@ public final class SafariSettingsScreen extends Screen {
 		if (search != null) search.visible = false;
 	}
 
+	private void openMultiChoicePicker(Object owner, Field field, SettingMultiChoice dropdown) {
+		choiceOwner = owner;
+		choiceField = field;
+		choiceDropdown = null;
+		multiChoiceDropdown = dropdown;
+		setFocused(null);
+		if (search != null) search.visible = false;
+	}
+
 	private void drawChoiceModal(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+		if (multiChoiceDropdown != null) {
+			drawMultiChoiceModal(graphics, mouseX, mouseY);
+			return;
+		}
 		List<String> labels = choiceLabels();
 		boolean soundChoice = isSoundChoice(choiceField);
 		int hintHeight = soundChoice ? 12 : 0;
@@ -966,6 +989,67 @@ public final class SafariSettingsScreen extends Screen {
 			this::closeChoicePicker));
 	}
 
+	private void drawMultiChoiceModal(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+		String[] labels = multiChoiceDropdown.values();
+		String[] groups = multiChoiceDropdown.groups();
+		int[] starts = multiChoiceDropdown.groupStarts();
+		int columns = width >= 560 ? 2 : 1;
+		int rows = (labels.length + columns - 1) / columns;
+		int w = Math.min(620, width - 30);
+		int h = Math.min(height - 30, 76 + rows * 31);
+		int x = (width - w) / 2;
+		int y = (height - h) / 2;
+		graphics.fill(0, 0, width, height, 0xAA000000);
+		graphics.fill(x, y, x + w, y + h, SURFACE);
+		outline(graphics, x, y, w, h, CYAN);
+		SettingInfo option = choiceField.getAnnotation(SettingInfo.class);
+		graphics.text(font, "Choose " + displayName(option.name()), x + 14, y + 14, TEXT);
+		graphics.text(font, "Select every item type that may be sent", x + 14, y + 27, MUTED);
+		int cellWidth = (w - 28 - (columns - 1) * 8) / columns;
+		int selected = choiceValue();
+		for (int index = 0; index < labels.length; index++) {
+			int column = index % columns;
+			int row = index / columns;
+			int cellX = x + 14 + column * (cellWidth + 8);
+			int cellY = y + 44 + row * 31;
+			if (cellY + 26 > y + h - 30) continue;
+			String group = groupFor(index, groups, starts);
+			boolean active = (selected & 1 << index) != 0;
+			boolean hovered = inside(mouseX, mouseY, cellX, cellY, cellX + cellWidth, cellY + 26);
+			graphics.fill(cellX, cellY, cellX + cellWidth, cellY + 26,
+				active ? SELECTED : hovered ? CARD_HOVER : CARD);
+			outline(graphics, cellX, cellY, cellWidth, 26, active ? CYAN : BORDER);
+			Component mark = Component.literal(active ? "✓" : "○")
+				.withStyle(style -> style.withBold(true));
+			graphics.text(font, mark, cellX + 8, cellY + 9, active ? GREEN : DIM);
+			graphics.text(font, trim(group + " · " + labels[index], cellWidth - 34),
+				cellX + 24, cellY + 9, active ? TEXT : MUTED);
+			int bit = 1 << index;
+			hits.add(new Hit(cellX, cellY, cellX + cellWidth, cellY + 26,
+				() -> toggleMultiChoice(bit)));
+		}
+		drawButton(graphics, x + w - 74, y + h - 28, 60, "Done", mouseX, mouseY);
+		hits.add(new Hit(x + w - 74, y + h - 28, x + w - 14, y + h - 6,
+			this::closeChoicePicker));
+	}
+
+	private static String groupFor(int index, String[] groups, int[] starts) {
+		String group = "";
+		for (int i = 0; i < groups.length && i < starts.length; i++) {
+			if (starts[i] > index) break;
+			group = groups[i];
+		}
+		return group;
+	}
+
+	private void toggleMultiChoice(int bit) {
+		try {
+			choiceField.setInt(choiceOwner, choiceField.getInt(choiceOwner) ^ bit);
+			ConfigManager.save();
+		} catch (IllegalAccessException ignored) {
+		}
+	}
+
 	private List<String> choiceLabels() {
 		if (isSoundChoice(choiceField)) return SOUND_LABELS;
 		if (isThemeChoice(choiceField)) return THEME_LABELS;
@@ -1002,6 +1086,7 @@ public final class SafariSettingsScreen extends Screen {
 		choiceField = null;
 		choiceOwner = null;
 		choiceDropdown = null;
+		multiChoiceDropdown = null;
 		if (search != null) search.visible = true;
 	}
 
@@ -1908,6 +1993,7 @@ public final class SafariSettingsScreen extends Screen {
 		if (oldAlertPlacement || oldSparklingPlacement) return false;
 		return field.isAnnotationPresent(SettingToggle.class)
 			|| field.isAnnotationPresent(SettingChoice.class)
+			|| field.isAnnotationPresent(SettingMultiChoice.class)
 			|| field.isAnnotationPresent(SettingRange.class)
 			|| field.isAnnotationPresent(SettingColor.class)
 			|| field.isAnnotationPresent(SettingText.class)

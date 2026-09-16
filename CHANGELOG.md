@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.5.0] - 2026-09-15
+
+### Fixes
+
+- Updated automatic Hideyho acceptance to use the current server-provided action instead of a fixed command
+- Kept manual Hideyho choices visible when no valid automatic action can be found or sent
+- Prevented No Feed and All Feed Used from both sending after Forest objectives are complete
+- Prevented Only In That Biome encounter alerts from firing outside their detected biome
+
+### Changes & Additions
+
+- Added a configurable Starting Items chat alert with item selection, quantities, and correct plural names
+- Replaced the Sparkling command collection with a dedicated `/sparkling` menu
+- Added direct editing for Sparkling counts and Rainbow Feathers in the collection menu
+- Added a Party tab for importing shared or missing Sparkling lists used by Sparkling Mode
+- Improved Sparkling menu layout, rarity colors, completed-biome styling, inline editing, and status feedback
+
 ## [1.4.1] - 2026-09-08
 
 ### Fixes

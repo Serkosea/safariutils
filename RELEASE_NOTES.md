@@ -1,20 +1,27 @@
-# Safari Utils v1.4.1
+# Safari Utils v1.5.0
 
-## Birds
+## Fixes
 
+- Updated automatic Hideyho acceptance to use the current server-provided action instead of a fixed command
+- Kept manual Hideyho choices visible when no valid automatic action can be found or sent
 - Prevented No Feed and All Feed Used from both sending after Forest objectives are complete
+- Prevented Only In That Biome encounter alerts from firing outside their detected biome
 
-## Alerts
+## Changes & Additions
 
-- Prevented Only In That Biome encounter alerts from firing in the Safari center or connecting paths
+- Added a configurable Starting Items chat alert with item selection, quantities, and correct plural names
+- Replaced the Sparkling command collection with a dedicated `/sparkling` menu
+- Added direct editing for Sparkling counts and Rainbow Feathers in the collection menu
+- Added a Party tab for importing shared or missing Sparkling lists used by Sparkling Mode
+- Improved Sparkling menu layout, rarity colors, completed-biome styling, inline editing, and status feedback
 
 ## Downloads
 
 Choose one jar for your Minecraft version:
 
-- `safariutils-1.4.1+mc26.1.2.jar`
-- `safariutils-1.4.1-extra+mc26.1.2.jar`
-- `safariutils-1.4.1+mc26.2.jar`
-- `safariutils-1.4.1-extra+mc26.2.jar`
+- `safariutils-1.5.0+mc26.1.2.jar`
+- `safariutils-1.5.0-extra+mc26.1.2.jar`
+- `safariutils-1.5.0+mc26.2.jar`
+- `safariutils-1.5.0-extra+mc26.2.jar`
 
 The regular jars use Safe Mode. Extra includes features in advanced section that provide information the player cannot directly see and may not be safe to use; Minecraft 26.2 builds have received limited testing compared with 26.1.2

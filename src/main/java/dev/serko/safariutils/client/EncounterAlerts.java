@@ -366,9 +366,9 @@ public final class EncounterAlerts implements HudElement {
 
 	private static String formatFeedList(int seeds, int worms, int berries) {
 		java.util.List<String> feed = new java.util.ArrayList<>(3);
-		if (seeds > 0) feed.add(seeds + (seeds == 1 ? " Seed" : " Seeds"));
-		if (worms > 0) feed.add(worms + (worms == 1 ? " Worm" : " Worms"));
 		if (berries > 0) feed.add(berries + (berries == 1 ? " Berry" : " Berries"));
+		if (worms > 0) feed.add(worms + (worms == 1 ? " Worm" : " Worms"));
+		if (seeds > 0) feed.add(seeds + (seeds == 1 ? " Seed" : " Seeds"));
 		return feed.isEmpty() ? "No Feed" : String.join(", ", feed);
 	}
 

@@ -112,7 +112,7 @@ Banner text, duration, color, and sound remain alert-specific. Position and scal
 
 ## Sparkling Mode invariants
 
-- Public builds use `/sparkling shared <comma-separated species>`; no-argument `shared` displays the alphabetized list. `/sparkling missing` accepts the inverse list.
+- `/sparkling` opens the standalone collection and party editor. Public builds import Shared or Missing lists from the clipboard in that screen; private builds can refresh them from the API.
 - Before a species' unique catch, Missing HUD shows `Near` only—never `N+ Left`.
 - After its unique catch, a still-relevant species remains available for Sparkling hunting without a cumulative Seen counter.
 - Shared species disappear after their unique catch; unshared species remain available for Sparkling hunting.
@@ -145,9 +145,9 @@ Bundled static locations seed Safe Mode. Unknown positions can still be used dur
 - Contest warning suppression and the encounter biome gate are independent for banners and chat. The biome gate also covers Forest bird events.
 - Banner playback indices are 0 Off, 1 Banner, 2 Sound, 3 Banner + Sound. `ConfigManager` migrates old toggles; sound-only events must not replace a visible banner.
 - Settings Reset Page copies defaults only into exposed settings rendered by the current tab/expanded sections. The category rail scrolls independently without drawing a scrollbar.
-- All clipboard commands live under `/sparkling import`. The optional `shared` and `missing` branches accept plain lists; the bare command parses the formatted message. They all replace the same shared collection.
-- Private refresh/lookup implementation and credentials remain ignored and are never release assets.
-- Private `/sparkling lookup <IGN> ticket` reads the selected profile's `safari.tickets` balances and lists Basic, Economy, Premium, and First Class on separate lines without changing shared lists.
+- Clipboard imports live in the Sparkling Party tab and accept either Shared or Missing formatted lists.
+- Private refresh/lookup implementation and credentials remain ignored and are never public release assets. Private jars contain a build-generated obfuscated key payload and must be distributed privately.
+- The private Player Lookup tab loads one cached profile containing unique Sparklings, duplicates, and Basic, Economy, Premium, and First-Class tickets.
 
 ## Optional custom sounds
 

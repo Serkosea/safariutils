@@ -87,9 +87,7 @@ public final class SafariDashboardScreen extends Screen {
 		/** Filterable saved runs. */
 		HISTORY("History"),
 		/** Totals per species across every saved run. */
-		STATS("Stats"),
-		/** Lifetime Sparkling collection, including manually entered older catches. */
-		SPARKLING("Sparkling");
+		STATS("Stats");
 
 		final String label;
 
@@ -188,7 +186,6 @@ public final class SafariDashboardScreen extends Screen {
 			case HISTORY -> 46 + (HISTORY_ROWS + 2) * LINE_HEIGHT + 46;
 			// A summary block, then the species columns.
 			case STATS -> 46 + (4 + statsValueRows + 10) * LINE_HEIGHT;
-			case SPARKLING -> 46 + (6 + 10) * LINE_HEIGHT;
 		};
 		panelLeft = Math.max(4, (layoutWidth - panelWidth) / 2);
 		panelTop = Math.max(10, (layoutHeight - panelHeight) / 2);
@@ -201,7 +198,7 @@ public final class SafariDashboardScreen extends Screen {
 			int buttonWidth = 80;
 			int buttonX = panelLeft + (panelWidth - buttonWidth) / 2;
 			controls.add(new Control("Close", buttonX, buttonY, buttonWidth, ACTION_HEIGHT,
-				ControlStyle.BUTTON, false, tab == Tab.SPARKLING, this::onClose));
+				ControlStyle.BUTTON, false, false, this::onClose));
 		}
 	}
 
@@ -290,7 +287,7 @@ public final class SafariDashboardScreen extends Screen {
 
 		for (Tab value : tabs) {
 			controls.add(new Control(value.label, x, y, NAV_ITEM_WIDTH, NAV_ITEM_HEIGHT, ControlStyle.TAB,
-				value == tab, value == Tab.SPARKLING, () -> switchTo(value)));
+				value == tab, false, () -> switchTo(value)));
 			x += NAV_ITEM_WIDTH;
 		}
 	}
@@ -406,8 +403,7 @@ public final class SafariDashboardScreen extends Screen {
 		if (SpecialTheme.rainbow()) {
 			SpecialTheme.stars(graphics, panelLeft + 2, panelTop + 2, panelWidth - 4, panelHeight - 4);
 			SpecialTheme.border(graphics, panelLeft, panelTop, panelWidth, panelHeight);
-		} else if (tab == Tab.SPARKLING) drawSparklingBorder(graphics);
-		else drawPanelBorder(graphics, tabBorderColour());
+		} else drawPanelBorder(graphics, tabBorderColour());
 		// Drawn after the main frame so a two-pixel themed border cannot cover it.
 		UIDraw.outline(graphics, panelLeft + 2, panelTop + 2, panelWidth - 4,
 			panelHeight - 4, PANEL_KEYLINE);
@@ -428,7 +424,6 @@ public final class SafariDashboardScreen extends Screen {
 			}
 			case HISTORY -> drawHistory(graphics, font, y, logicalMouseX, logicalMouseY);
 			case STATS -> drawStats(graphics, font, y);
-			case SPARKLING -> drawSparkling(graphics, font, y);
 		}
 
 		// Screen children first, then the themed controls above the panel.
@@ -778,84 +773,6 @@ public final class SafariDashboardScreen extends Screen {
 		return y;
 	}
 
-	private void drawSparkling(GuiGraphicsExtractor graphics, Font font, int y) {
-		int left = panelLeft + PANEL_PADDING;
-		int right = panelLeft + panelWidth - PANEL_PADDING;
-		int totalSpecies = Critters.total();
-
-		rainbowText(graphics, font, "Sparkling Collection", left, y);
-		String lifetime = "Lifetime Totals";
-		text(graphics, font, Component.literal(lifetime), right - font.width(lifetime), y, 0xFFFFD86B);
-		y += LINE_HEIGHT + 4;
-
-		String summary = "Unique Sparklings  %d/%d   ✦   Sparklings  %d   ✦   Duplicates  %d   ✦   Rainbow Feathers  %d"
-			.formatted(SparklingStats.unique(), totalSpecies, SparklingStats.total(),
-				SparklingStats.duplicates(), SparklingStats.rainbowFeathers());
-		centered(graphics, font, summary, y, 0xFFFFE08A);
-		y += LINE_HEIGHT + 3;
-
-		int barLeft = panelLeft + PANEL_PADDING * 2;
-		int barRight = panelLeft + panelWidth - PANEL_PADDING * 2;
-		graphics.fill(barLeft, y, barRight, y + 4, 0x553A2A10);
-		int filled = totalSpecies == 0 ? 0
-			: (barRight - barLeft) * SparklingStats.unique() / totalSpecies;
-		graphics.fill(barLeft, y, barLeft + filled, y + 4, 0xFFFFC83D);
-		y += 10;
-
-		SafariBiome[] biomes = SafariBiome.values();
-		int gridLeft = panelLeft + (panelWidth - columnWidth * biomes.length) / 2;
-		for (int i = 0; i < biomes.length; i++) {
-			SafariBiome biome = biomes[i];
-			int x = gridLeft + i * columnWidth;
-			int rowY = y;
-			centeredCell(graphics, font, "✦ " + biome.displayName() + " ✦", x, columnWidth,
-				rowY, 0xFF000000 | biome.colour());
-			rowY += LINE_HEIGHT + 2;
-
-			for (Critter critter : Critters.inBiome(biome)) {
-				int count = SparklingStats.count(critter);
-				String note = count == 0 ? "—" : String.valueOf(count);
-				int nameColour = count == 0 ? 0xFF5F594E
-					: 0xFF000000 | critter.rarity().colour();
-				int countColour = count > 1 ? 0xFFFFD700 : count == 1 ? 0xFFFFF2B2 : 0xFF5F594E;
-				text(graphics, font, Component.literal(critter.name()), x + COLUMN_PAD, rowY, nameColour);
-				text(graphics, font, Component.literal(note),
-					x + columnWidth - COLUMN_PAD - font.width(note), rowY, countColour);
-				rowY += LINE_HEIGHT;
-			}
-		}
-	}
-
-	private void drawSparklingBorder(GuiGraphicsExtractor graphics) {
-		int horizontalSegments = 28;
-		int verticalSegments = Math.max(1, Math.round(horizontalSegments * panelHeight / (float) panelWidth));
-		int totalSegments = 2 * (horizontalSegments + verticalSegments);
-		int segmentWidth = Math.max(1, panelWidth / horizontalSegments);
-		int segmentHeight = Math.max(1, panelHeight / verticalSegments);
-		float phase = (System.currentTimeMillis() % 4_000L) / 4_000f;
-		for (int i = 0; i < horizontalSegments; i++) {
-			int x1 = panelLeft + i * segmentWidth;
-			int x2 = i == horizontalSegments - 1 ? panelLeft + panelWidth : Math.min(panelLeft + panelWidth, x1 + segmentWidth);
-			int colour = UIDraw.rainbow(phase, i, totalSegments, 0.55f);
-			graphics.fill(x1, panelTop, x2, panelTop + 2, colour);
-			// Bottom runs right-to-left so the hue continues clockwise from the
-			// right edge instead of beginning a visibly separate gradient.
-			graphics.fill(panelLeft + panelWidth - (x2 - panelLeft), panelTop + panelHeight - 2,
-				panelLeft + panelWidth - (x1 - panelLeft), panelTop + panelHeight,
-				UIDraw.rainbow(phase, horizontalSegments + verticalSegments + i, totalSegments, 0.55f));
-		}
-		for (int i = 0; i < verticalSegments; i++) {
-			int y1 = panelTop + i * segmentHeight;
-			int y2 = i == verticalSegments - 1 ? panelTop + panelHeight : Math.min(panelTop + panelHeight, y1 + segmentHeight);
-			graphics.fill(panelLeft + panelWidth - 2, y1, panelLeft + panelWidth, y2,
-				UIDraw.rainbow(phase, horizontalSegments + i, totalSegments, 0.55f));
-			// Left runs bottom-to-top to complete the same clockwise loop.
-			graphics.fill(panelLeft, panelTop + panelHeight - (y2 - panelTop), panelLeft + 2,
-				panelTop + panelHeight - (y1 - panelTop),
-				UIDraw.rainbow(phase, 2 * horizontalSegments + verticalSegments + i, totalSegments, 0.55f));
-		}
-	}
-
 	private int tabBorderColour() {
 		return tabColour(tab);
 	}
@@ -866,7 +783,6 @@ public final class SafariDashboardScreen extends Screen {
 			case RUN -> Colours.argb(display.currentRunTabBorderColour, 0xFF55FF55);
 			case HISTORY -> Colours.argb(display.historyTabBorderColour, 0xFFFFAA00);
 			case STATS -> Colours.argb(display.statsTabBorderColour, 0xFF55FFFF);
-			case SPARKLING -> 0xFFFFD700;
 		};
 	}
 

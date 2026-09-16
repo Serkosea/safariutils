@@ -52,7 +52,9 @@ public final class SparklingStats {
 
 	public static void recordSparkling(Critter critter) {
 		if (critter == null) return;
+		boolean duplicate = count(critter) > 0;
 		increment(critter.name());
+		if (duplicate && data.importedDuplicates >= 0) data.importedDuplicates++;
 		save();
 	}
 
@@ -75,6 +77,30 @@ public final class SparklingStats {
 
 	public static int duplicates() {
 		return Math.max(0, total() - unique());
+	}
+
+	/** API-imported aggregate, or {@code -1} when only per-species totals are known. */
+	public static int importedDuplicates() {
+		return data.importedDuplicates;
+	}
+
+	public static boolean hasImportedDuplicates() {
+		return data.importedDuplicates >= 0;
+	}
+
+	public static boolean importedSetUnchanged() {
+		return data.importedSetDuplicates < 0 || duplicates() == data.importedSetDuplicates;
+	}
+
+	/** Imports ownership without assigning aggregate duplicates to arbitrary species. */
+	public static void importApiCollection(java.util.Set<String> species, int duplicates) {
+		for (Critter critter : Critters.all()) {
+			String id = critter.name().trim().toUpperCase(java.util.Locale.ROOT).replace(' ', '_');
+			if (species.contains(id) && count(critter) == 0) data.species.put(critter.name(), 1);
+		}
+		data.importedDuplicates = Math.max(-1, duplicates);
+		data.importedSetDuplicates = SparklingStats.duplicates();
+		save();
 	}
 
 	public static int rainbowFeathers() {
@@ -112,5 +138,7 @@ public final class SparklingStats {
 	private static final class Data {
 		Map<String, Integer> species = new LinkedHashMap<>();
 		int rainbowFeathers;
+		int importedDuplicates = -1;
+		int importedSetDuplicates = -1;
 	}
 }

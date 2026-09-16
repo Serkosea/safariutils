@@ -858,7 +858,7 @@ public class SafariConfig {
 
 		@SettingInfo(
 			name = "Pricing Option",
-			desc = "How shards are priced")
+			desc = "How Shards, Essence, and Rainbow Feathers are priced")
 		@SettingChoice(values = {"Instant Sell", "Sell Offer"})
 		@Expose
 		public int priceSource = 0;
@@ -3078,6 +3078,7 @@ public class SafariConfig {
 		private static final int CHAT_ALL_BIRDS = 20;
 		private static final int CHAT_TOTAL_FEED = 21;
 		private static final int CHAT_FEED_GONE = 22;
+		private static final int CHAT_STARTING_ITEMS = 23;
 
 		@SettingInfo(name = "Safari Chat Alerts", desc = "")
 		@SettingSection(id = SAFARI_CHAT_ALERTS)
@@ -3093,6 +3094,24 @@ public class SafariConfig {
 		public int fullPartyJoinedBroadcast = 1;
 		@SettingInfo(name = "Text", desc = "Custom chat text\n§bTags: <PLAYERS>, <MAX>") @SettingText @SettingGroup(id = CHAT_FULL_PARTY) @Expose
 		public String fullPartyJoinedChatText = "Full Party Joined!";
+
+		@SettingInfo(name = "Starting Items", desc = "")
+		@SettingSection(id = CHAT_STARTING_ITEMS) @SettingGroup(id = SAFARI_CHAT_ALERTS)
+		public boolean startingItemsChatAccordion = false;
+		@SettingInfo(name = "Send To", desc = "Sends your selected starting items when a run starts")
+		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
+		@SettingGroup(id = CHAT_STARTING_ITEMS) @Expose
+		public int startingItemsBroadcast = 1;
+		@SettingInfo(name = "Items", desc = "Choose which starting item types may be included")
+		@SettingMultiChoice(
+			values = {"Lime Gem", "Orange Gem", "Purple Gem", "Icebreaker", "Coin", "Incense", "Berry", "Worm", "Seed"},
+			groups = {"Cavern", "Icy", "Haunted", "Forest"},
+			groupStarts = {0, 3, 4, 6})
+		@SettingGroup(id = CHAT_STARTING_ITEMS) @Expose
+		public int startingItemsMask = StartingItems.BIRD_FEED;
+		@SettingInfo(name = "Text", desc = "Custom chat text\n§bTags: <ITEMS>")
+		@SettingText @SettingGroup(id = CHAT_STARTING_ITEMS) @Expose
+		public String startingItemsChatText = "<ITEMS>";
 
 		@SettingInfo(name = "Your Hotspot", desc = "")
 		@SettingSection(id = CHAT_HOTSPOT) @SettingGroup(id = SAFARI_CHAT_ALERTS)
@@ -3319,6 +3338,10 @@ public class SafariConfig {
 			return broadcast(fullPartyJoinedBroadcast);
 		}
 
+		public Broadcast startingItems() {
+			return broadcast(startingItemsBroadcast);
+		}
+
 		public Broadcast contestStart() {
 			return broadcast(contestStartBroadcast);
 		}
@@ -3354,7 +3377,7 @@ public class SafariConfig {
 
 		@SettingInfo(name = "Sparkling Mode",
 			desc = "Enables sparkling mode to remove extra information for party's mutual Sparkling critters\n" +
-				"§b/sparkling shared §7sets your party's shared Sparkling list")
+				"§b/sparkling §7opens the collection and party editor")
 		@SettingToggle
 		@Expose
 		public boolean sparklingMode = true;

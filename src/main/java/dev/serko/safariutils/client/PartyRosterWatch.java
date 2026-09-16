@@ -65,7 +65,7 @@ public final class PartyRosterWatch {
 				|| lower.equals("you are not currently in a party."));
 		}
 		if (count.matches()) {
-			expectedPlayers = Math.clamp(Integer.parseInt(count.group(1)), 1, 4);
+			expectedPlayers = Math.max(1, Integer.parseInt(count.group(1)));
 			known = true;
 			sawCount = true;
 			return false;

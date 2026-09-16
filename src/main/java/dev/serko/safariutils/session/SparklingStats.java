@@ -54,7 +54,10 @@ public final class SparklingStats {
 		if (critter == null) return;
 		boolean duplicate = count(critter) > 0;
 		increment(critter.name());
-		if (duplicate && data.importedDuplicates >= 0) data.importedDuplicates++;
+		if (duplicate && data.importedDuplicates >= 0) {
+			data.importedDuplicates++;
+			if (data.importedSetDuplicates >= 0) data.importedSetDuplicates++;
+		}
 		save();
 	}
 

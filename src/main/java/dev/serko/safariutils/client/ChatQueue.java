@@ -19,7 +19,7 @@ public final class ChatQueue {
 	/** Server-side chat limit; anything longer is rejected outright. */
 	private static final int MAX_LENGTH = 250;
 
-	private record Queued(String line, long readyAtMillis) { }
+	private record Queued(String line, long readyAtMillis, boolean verifiedParty) { }
 	private static final Deque<Queued> pending = new ArrayDeque<>();
 	private static long nextSendMillis;
 
@@ -36,9 +36,19 @@ public final class ChatQueue {
 	}
 
 	public static void enqueueDelayed(String line, boolean command, long delayMillis) {
+		enqueueDelayed(line, command, delayMillis, false);
+	}
+
+	/** Queues party chat after a feature independently verified a multi-player roster. */
+	public static void enqueueVerifiedParty(String line) {
+		enqueueDelayed(line, true, 0L, true);
+	}
+
+	private static void enqueueDelayed(String line, boolean command, long delayMillis,
+			boolean verifiedParty) {
 		String trimmed = line.length() > MAX_LENGTH ? line.substring(0, MAX_LENGTH) : line;
 		pending.addLast(new Queued((command ? "/" : "") + trimmed,
-			System.currentTimeMillis() + Math.max(0, delayMillis)));
+			System.currentTimeMillis() + Math.max(0, delayMillis), verifiedParty));
 	}
 
 	public static int pendingCount() {
@@ -62,10 +72,11 @@ public final class ChatQueue {
 			return;
 		}
 
-		String line = pending.pollFirst().line();
+		Queued queued = pending.pollFirst();
+		String line = queued.line();
 		if (line.startsWith("/")) {
 			if (line.regionMatches(true, 1, "pc ", 0, 3)) {
-				if (!PartyRosterWatch.canSendPartyChat()) return;
+				if (!queued.verifiedParty() && !PartyRosterWatch.canSendPartyChat()) return;
 				PartyErrorSuppressor.expectResponse();
 			}
 			client.player.connection.sendCommand(line.substring(1));

@@ -4,6 +4,9 @@
 
 ### Fixes
 
+- Allowed Starting Items to wait for Seeds, Worms, and other slower inventory updates before sending
+- Prevented Starting Items party messages from being discarded while party-list data is briefly stale
+- Kept imported Sparkling duplicate totals and comparison data synchronized after tracked catches
 - Updated automatic Hideyho acceptance to use the current server-provided action instead of a fixed command
 - Kept manual Hideyho choices visible when no valid automatic action can be found or sent
 - Prevented No Feed and All Feed Used from both sending after Forest objectives are complete

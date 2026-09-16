@@ -15,8 +15,12 @@ public final class HeadStartWatch {
 	private static final String HEAD_START_LINE = "HEAD START!";
 	/** Brief wait for head-start items to appear in the client inventory. */
 	private static final long POST_MESSAGE_DELAY_MILLIS = 500;
+	private static final long ITEM_SYNC_WINDOW_MILLIS = 4_000;
+	private static final long RETRY_DELAY_MILLIS = 250;
 
 	private static long scanAtMillis;
+	private static long headStartAtMillis;
+	private static long scanDeadlineMillis;
 	/** The inventory counts as of the last scan, so a second one only credits what changed. */
 	private static final int[] lastScanned = new int[StartingItems.ORDERED.size()];
 	private static boolean headStartSeen;
@@ -34,8 +38,10 @@ public final class HeadStartWatch {
 	 */
 	public static void onChatMessage(String line) {
 		if (!line.startsWith(HEAD_START_LINE)) return;
+		headStartAtMillis = System.currentTimeMillis();
 		headStartSeen = true;
-		scanAtMillis = System.currentTimeMillis() + POST_MESSAGE_DELAY_MILLIS;
+		scanAtMillis = headStartAtMillis + POST_MESSAGE_DELAY_MILLIS;
+		scanDeadlineMillis = headStartAtMillis + ITEM_SYNC_WINDOW_MILLIS;
 	}
 
 	/**
@@ -73,12 +79,26 @@ public final class HeadStartWatch {
 		}
 		if (newlyFound[4] > 0) ShiningCoinWatch.creditFound(newlyFound[4]);
 		if (headStartSeen && !startingItemsAnnounced) {
-			startingItemsAnnounced = true;
 			SafariConfig.PartyConfig party = ConfigManager.get().party;
 			String items = StartingItems.format(found, party.startingItemsMask);
-			if (!items.isEmpty()) {
-				EncounterAlerts.post(party.startingItems(),
-					AlertText.format(party.startingItemsChatText, "<ITEMS>", items));
+			String command = party.startingItems().command();
+			boolean verifiedParty = "pc".equals(command)
+				&& SafariPartyWatch.joinedPlayers() > 1;
+			boolean partyUnavailable = "pc".equals(command) && !verifiedParty
+				&& !PartyRosterWatch.canSendPartyChat();
+			if (!items.isEmpty() && !partyUnavailable) {
+				String message = AlertText.format(party.startingItemsChatText, "<ITEMS>", items);
+				if (!message.isBlank()) {
+					if (verifiedParty) ChatQueue.enqueueVerifiedParty(command + " " + message);
+					else EncounterAlerts.post(party.startingItems(), message);
+				}
+				startingItemsAnnounced = true;
+			} else if (command == null) {
+				startingItemsAnnounced = true;
+			} else if (System.currentTimeMillis() < scanDeadlineMillis) {
+				scanAtMillis = System.currentTimeMillis() + RETRY_DELAY_MILLIS;
+			} else {
+				startingItemsAnnounced = true;
 			}
 		}
 		DebugLog.line("HEADSTART", "scan found=" + java.util.Arrays.toString(found)
@@ -87,9 +107,14 @@ public final class HeadStartWatch {
 
 	/** Clears the old baseline and scans every starting item after activation. */
 	public static void reset() {
-		scanAtMillis = System.currentTimeMillis() + POST_MESSAGE_DELAY_MILLIS;
+		long now = System.currentTimeMillis();
+		boolean recentHeadStart = headStartAtMillis > 0
+			&& now - headStartAtMillis <= ITEM_SYNC_WINDOW_MILLIS;
+		scanAtMillis = now + POST_MESSAGE_DELAY_MILLIS;
 		java.util.Arrays.fill(lastScanned, 0);
-		headStartSeen = false;
+		headStartSeen = recentHeadStart;
+		if (recentHeadStart) scanDeadlineMillis = headStartAtMillis + ITEM_SYNC_WINDOW_MILLIS;
+		else scanDeadlineMillis = 0;
 		startingItemsAnnounced = false;
 	}
 }

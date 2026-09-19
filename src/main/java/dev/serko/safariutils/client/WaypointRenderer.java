@@ -492,6 +492,8 @@ public final class WaypointRenderer {
 	 * are suppressed so the recatch marker is the only active mark.
 	 */
 	private static void renderTrackedWaypoints(LevelRenderContext context, Vec3 camera) {
+		// This remains session-independent so a Hideonfloor seen from the starting
+		// ship's Forest boundary can be marked before the player submits a ticket.
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
 		SafariBiome biome = SafariLocation.biome();
 

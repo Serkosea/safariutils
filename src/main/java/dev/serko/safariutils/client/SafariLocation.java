@@ -79,6 +79,8 @@ public final class SafariLocation {
 	private static boolean skyblock;
 	private static String lobbyId;
 	private static Integer safariEssence;
+	/** Start of the current inside-Safari visit, captured before slower observers run. */
+	private static long insideSinceMillis;
 
 	/** Set by the entry message; only consulted while the server has stated no area. */
 	private static boolean chatEntered;
@@ -98,6 +100,11 @@ public final class SafariLocation {
 	/** Whether the player is inside the Safari proper, the entrance not counting. */
 	public static boolean inside() {
 		return where == Where.INSIDE;
+	}
+
+	/** Timestamp shared by visit observers so a fast roster response cannot race them. */
+	public static long insideSinceMillis() {
+		return insideSinceMillis;
 	}
 
 	/** The full answer, for anything that treats the entrance differently. */
@@ -140,6 +147,7 @@ public final class SafariLocation {
 
 	/** Recomputes the location. Called once per client tick, before anything reads it. */
 	public static void tick() {
+		Where previousWhere = where;
 		sidebarLines = readSidebarLines();
 		tabListEntries = readTabListEntries();
 		skyblock = findSkyblock();
@@ -171,6 +179,11 @@ public final class SafariLocation {
 		}
 
 		biome = where == Where.INSIDE ? resolveBiome() : null;
+		if (where == Where.INSIDE && previousWhere != Where.INSIDE) {
+			insideSinceMillis = System.currentTimeMillis();
+		} else if (where != Where.INSIDE) {
+			insideSinceMillis = 0L;
+		}
 	}
 
 	/**
@@ -184,7 +197,10 @@ public final class SafariLocation {
 	/** Marks the player as being at the Safari on evidence other than the area line. */
 	public static void markEntered() {
 		chatEntered = true;
-		if (where != Where.INSIDE) where = Where.INSIDE;
+		if (where != Where.INSIDE) {
+			where = Where.INSIDE;
+			insideSinceMillis = System.currentTimeMillis();
+		}
 		if (source == Source.NONE) source = Source.CHAT;
 	}
 
@@ -206,6 +222,7 @@ public final class SafariLocation {
 		skyblock = false;
 		lobbyId = null;
 		safariEssence = null;
+		insideSinceMillis = 0L;
 	}
 
 	// --- reading the server's area line --------------------------------------

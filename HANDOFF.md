@@ -42,12 +42,11 @@ Do not add independent scoreboard, tab-list, or world-wide entity scans when an 
 
 Entering a Safari instance creates a transient visit context immediately. Objective trackers and optional synchronization may collect information during this pre-ticket period, but the visit is not yet a run and must not be saved.
 
-A run begins only after both of these signals:
-
-1. The player submits a ticket action: the leader interacts with the Safari Manager, or a member chooses a ticket in the entry menu
-2. The server places 32–64 normal Critter Capsules in inventory and that inventory remains available for the 250 ms Starting Items settling delay
+A run begins when the server places one or more normal Critter Capsules in inventory. Their appearance is authoritative proof that a ticket was accepted. Manager interaction and ticket-menu selection are useful early signals, but are not required because Hypixel can vary or omit those client-visible paths.
 
 Catches, floor drops, Rainbow Feathers, Safari Essence changes, and other activity never activate a run. `StartingItemsWatch` owns this capsule-gated transition and freezes one immutable full-inventory snapshot. Later floor drops and inventory movement cannot alter that snapshot.
+
+`StartingItemsWatch` begins watching on Safari entry. It activates the run immediately when the first normal capsule appears, then waits 250 ms before freezing Starting Items so the remaining server-populated inventory can settle. `TicketProtection` still records Manager and entry-menu actions and prevents a leader from starting early when ticket protection applies. Before activation, the Progress HUD shows only the `N/N` attendance title and no timer or run statistics. Sparkling detection and detected Hideonfloor rendering intentionally remain active throughout the pre-ticket visit for scouting from the starting ship.
 
 `PartyRosterWatch` requests `/party list` on Safari entry. The first fresh response after entry defines the complete visit roster. `SafariPartyWatch` tracks current instance attendance. The roster is immutable for the visit: leaves, kicks, crashes, delayed arrivals, and party changes do not redefine the current run. A changed party takes effect in the next Safari instance.
 

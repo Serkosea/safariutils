@@ -36,6 +36,7 @@ public final class SparklingWatch {
 	private SparklingWatch() {
 	}
 
+	/** Intentionally runs for the whole Safari visit, including before ticket use. */
 	public static void tick() {
 		long now = System.currentTimeMillis();
 		justCaught.entrySet().removeIf(entry -> now - entry.getValue() > CAUGHT_THEME_MILLIS);

@@ -4,7 +4,9 @@
 
 ### Fixes
 
-- Required a submitted Safari Ticket and the server's Critter Capsule allocation before starting or saving a run
+- Used the server's Critter Capsule allocation to reliably start runs across every ticket submission path
+- Kept the title-only party attendance HUD visible while waiting for Safari Tickets
+- Kept Sparkling detection and detected Hideonfloor waypoints available before ticket use
 - Made Starting Items wait for the complete capsule-populated inventory without including later floor drops
 - Prevented cursor-held or rejected Bird Feed transfers from being treated as completed deposits
 - Confirmed Bee Nest completion from a nearby Honeybug spawn and supported both left- and right-click interactions

@@ -103,7 +103,7 @@ public final class SessionManager {
 		if (!SafariLocation.inside()) {
 			visitPrepared = false;
 			visitLobbyId = null;
-			StartingItemsWatch.cancelPendingTicket();
+			StartingItemsWatch.cancelPendingRun();
 			waitingLobbyId = null;
 			completedSummaryLobbyId = null;
 			return;
@@ -207,8 +207,8 @@ public final class SessionManager {
 				+ " inside=" + SafariLocation.inside() + " raw=\"" + line + "\"");
 		}
 
-		// A Manager confirmation proves ticket submission, but capsule allocation is the
-		// final server-side acceptance signal and owns actual run activation.
+		// A Manager confirmation is useful early evidence, but capsule allocation is the
+		// authoritative server-side acceptance signal and owns actual run activation.
 		if (isRunStart(line)) {
 			if (current == null) StartingItemsWatch.onTicketSubmitted("Safari Manager");
 			else DebugLog.line("ACTIVATE", "Manager confirmation arrived with a run already active");
@@ -347,7 +347,6 @@ public final class SessionManager {
 		visitPeakPlayers = Math.max(1, SafariPartyWatch.joinedPlayers());
 		visitExpectedPlayers = visitPeakPlayers;
 		runExpectedPlayers = 1;
-		StartingItemsWatch.cancelPendingTicket();
 		CritterCountLog.reset();
 		SafariObjectives.reset();
 		EncounterAlerts.reset();
@@ -363,6 +362,7 @@ public final class SessionManager {
 		WallTracker.SNOOPER.reset();
 		WallTracker.TROODON.reset();
 		DetectedCritters.reset();
+		StartingItemsWatch.onSafariVisitStarted();
 		DebugLog.line("RUN", "Safari visit tracking prepared lobby=" + lobbyId);
 	}
 
@@ -412,7 +412,7 @@ public final class SessionManager {
 		RunHistory.record(session);
 	}
 
-	/** What opened the live run, normally the Safari Manager ticket confirmation. */
+	/** What opened the live run, normally the server's Critter Capsule allocation. */
 	public static String startedBy() {
 		return current == null ? "no run open"
 			: "%s, %ds ago".formatted(startedBy, (System.currentTimeMillis() - startedAt) / 1000);
@@ -443,7 +443,7 @@ public final class SessionManager {
 		current = null;
 		runLobbyId = null;
 		waitingLobbyId = null;
-		StartingItemsWatch.cancelPendingTicket();
+		StartingItemsWatch.cancelPendingRun();
 		rewardSummaryOpen = false;
 		visitPrepared = false;
 		visitLobbyId = null;

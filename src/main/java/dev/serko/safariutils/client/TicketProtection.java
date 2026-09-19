@@ -47,9 +47,12 @@ public final class TicketProtection {
 	}
 
 	public static boolean blockManagerInteraction(Entity entity) {
-		if (!PartyRosterWatch.localPlayerIsLeader() || !(entity instanceof Player)) return false;
+		if (!(entity instanceof Player)) return false;
 		if (entity.distanceToSqr(MANAGER_X, MANAGER_Y, MANAGER_Z) > 9.0) return false;
-		if (shouldBlock()) {
+		// Only the leader can submit the party's Manager interaction, but members also
+		// interact with this NPC before choosing their own ticket. Arming both paths is
+		// harmless because capsule allocation remains the required activation signal.
+		if (PartyRosterWatch.localPlayerIsLeader() && shouldBlock()) {
 			blockedMessage();
 			return true;
 		}
@@ -59,9 +62,7 @@ public final class TicketProtection {
 
 	private static boolean allowMouseClick(Screen screen, MouseButtonEvent event) {
 		Slot slot = slotAt(screen, event.x(), event.y());
-		if (slot == null || !slot.getItem().getHoverName().getString().endsWith("Safari Experience")) {
-			return true;
-		}
+		if (slot == null || slot.getItem().isEmpty()) return true;
 		if (shouldBlock()) {
 			blockedMessage();
 			return false;

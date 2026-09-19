@@ -6,16 +6,15 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
 /**
- * Credits starting items from the full inventory after a run starts.
- * The normal Critter Capsule allocation is the run-start inventory signal. Once its
- * guaranteed 32-64 capsules appear, one inventory snapshot is taken 250 ms later.
+ * Activates a run and credits starting items from the full inventory.
+ * Any normal Critter Capsule appearing during a fresh Safari visit is authoritative
+ * proof that the server accepted a ticket. The run starts immediately, then one
+ * inventory snapshot is taken 250 ms later so the rest of the allocation can settle.
  * Keeping that snapshot immutable prevents later floor drops or manual inventory
  * changes from changing the Starting Items message while party chat becomes ready.
  */
 public final class StartingItemsWatch {
 
-	private static final int MIN_STARTING_CAPSULES = 32;
-	private static final int MAX_STARTING_CAPSULES = 64;
 	private static final long POST_CAPSULE_DELAY_MILLIS = 250;
 	private static final long ITEM_SYNC_WINDOW_MILLIS = 30_000;
 	private static final long RETRY_DELAY_MILLIS = 250;
@@ -25,18 +24,22 @@ public final class StartingItemsWatch {
 	private static long capsulesDetectedAtMillis;
 	private static int[] startingInventory;
 	private static boolean startingItemsAnnounced;
-	private static boolean awaitingTicketInventory;
-	private static String activationTrigger = "ticket";
+	private static boolean awaitingRunInventory;
+	private static String activationTrigger = "capsule allocation";
 
 	private StartingItemsWatch() {
 	}
 
 	/**
 	 * Called every client tick. Inventory contents are frozen once, 250 ms after the
-	 * guaranteed normal capsule allocation first appears. Only message delivery may
+	 * normal capsule allocation first appears. Only message delivery may
 	 * retry after that point; the inventory is never sampled again for this run.
 	 */
 	public static void tick() {
+		if (!SafariLocation.inside()) {
+			cancelPendingRun();
+			return;
+		}
 		if (scanAtMillis == 0 || System.currentTimeMillis() < scanAtMillis) return;
 		scanAtMillis = 0;
 
@@ -51,17 +54,23 @@ public final class StartingItemsWatch {
 		long now = System.currentTimeMillis();
 		if (startingInventory == null) {
 			int normalCapsules = countNormalCapsules(inventory);
-			boolean capsuleAllocationReady = normalCapsules >= MIN_STARTING_CAPSULES
-				&& normalCapsules <= MAX_STARTING_CAPSULES;
-			if (!capsuleAllocationReady) {
-				capsulesDetectedAtMillis = 0;
-				if (now < scanDeadlineMillis) scanAtMillis = now + RETRY_DELAY_MILLIS;
+			if (capsulesDetectedAtMillis == 0 && normalCapsules <= 0) {
+				// Keep watching for the whole visit. Ticket interaction is only an early
+				// hint, so it must never be required for a later allocation to be seen.
+				scanAtMillis = now + RETRY_DELAY_MILLIS;
 				DebugLog.line("HEADSTART", "waiting for starting capsule allocation capsules="
 					+ normalCapsules);
 				return;
 			}
 			if (capsulesDetectedAtMillis == 0) {
 				capsulesDetectedAtMillis = now;
+				scanDeadlineMillis = now + ITEM_SYNC_WINDOW_MILLIS;
+				if (awaitingRunInventory
+					&& dev.serko.safariutils.session.SessionManager.current() == null) {
+					awaitingRunInventory = false;
+					dev.serko.safariutils.session.SessionManager.startSession(
+						activationTrigger + " + capsule allocation");
+				}
 				scanAtMillis = now + POST_CAPSULE_DELAY_MILLIS;
 				DebugLog.line("HEADSTART", "starting capsule allocation detected capsules="
 					+ normalCapsules);
@@ -73,12 +82,6 @@ public final class StartingItemsWatch {
 			}
 
 			startingInventory = countStartingItems(inventory);
-			if (awaitingTicketInventory
-				&& dev.serko.safariutils.session.SessionManager.current() == null) {
-				awaitingTicketInventory = false;
-				dev.serko.safariutils.session.SessionManager.startSession(
-					activationTrigger + " + capsule allocation");
-			}
 			int berries = startingInventory[6];
 			int worms = startingInventory[7];
 			int seeds = startingInventory[8];
@@ -142,9 +145,11 @@ public final class StartingItemsWatch {
 		return found;
 	}
 
-	/** Arms one fresh capsule-gated starting-inventory snapshot for the new run. */
-	public static void onRunStarted() {
+	/** Watches a fresh Safari visit for the capsule allocation that proves run start. */
+	public static void onSafariVisitStarted() {
 		long now = System.currentTimeMillis();
+		activationTrigger = "capsule allocation";
+		awaitingRunInventory = true;
 		scanAtMillis = now;
 		scanDeadlineMillis = now + ITEM_SYNC_WINDOW_MILLIS;
 		capsulesDetectedAtMillis = 0;
@@ -152,18 +157,20 @@ public final class StartingItemsWatch {
 		startingItemsAnnounced = false;
 	}
 
-	/** Arms activation after a leader Manager interaction or member ticket selection. */
+	/** Records an early ticket signal; capsule allocation remains authoritative. */
 	public static void onTicketSubmitted(String trigger) {
 		if (dev.serko.safariutils.session.SessionManager.current() != null) return;
 		activationTrigger = trigger;
-		awaitingTicketInventory = true;
-		onRunStarted();
+		awaitingRunInventory = true;
+		long now = System.currentTimeMillis();
+		scanAtMillis = scanAtMillis == 0 ? now : Math.min(scanAtMillis, now);
+		scanDeadlineMillis = Math.max(scanDeadlineMillis, now + ITEM_SYNC_WINDOW_MILLIS);
 		DebugLog.line("ACTIVATE", "ticket submitted; awaiting capsule allocation via " + trigger);
 	}
 
-	/** Discards an unconfirmed ticket action when its Safari visit ends. */
-	public static void cancelPendingTicket() {
-		awaitingTicketInventory = false;
+	/** Discards an unfinished allocation watch when its Safari visit ends. */
+	public static void cancelPendingRun() {
+		awaitingRunInventory = false;
 		scanAtMillis = 0;
 		scanDeadlineMillis = 0;
 		capsulesDetectedAtMillis = 0;

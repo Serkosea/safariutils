@@ -89,7 +89,7 @@ Do not let a catalog candidate become a completed objective solely because an un
 
 `SparklingStats` stores per-species counts, Rainbow Feathers, and an imported duplicate baseline. Tracked duplicate catches advance both the imported aggregate and its comparison baseline. Unique catches do not change duplicates.
 
-Player Lookup results are cached for five minutes. Hypixel profile requests are globally spaced by ten seconds in the private client. Automatic party loads happen on Safari entry; the same party refreshes only on a later Safari entry after five minutes have elapsed.
+Player Lookup results are cached for five minutes. Manual Hypixel profile lookups are globally spaced by ten seconds in the private client; automatic party-cache requests run back-to-back and do not consume that manual cooldown. Automatic party loads happen on Safari entry; the same party refreshes only on a later Safari entry after five minutes have elapsed.
 
 Screen-facing API state must remain lock-free. In particular, Player Lookup's cooldown reads a volatile request timestamp and must never acquire the monitor held by a sleeping or in-flight HTTP request, or opening the tab can freeze the render thread during an automatic party refresh.
 

@@ -8,7 +8,7 @@ import dev.serko.safariutils.client.ProgressHud;
 import dev.serko.safariutils.client.ConfigManager;
 import dev.serko.safariutils.client.ContestTracker;
 import dev.serko.safariutils.client.DetectedCritters;
-import dev.serko.safariutils.client.HeadStartWatch;
+import dev.serko.safariutils.client.StartingItemsWatch;
 import dev.serko.safariutils.client.CritterEntities;
 import dev.serko.safariutils.client.CritterSpotter;
 import dev.serko.safariutils.client.DarknessFilter;
@@ -27,6 +27,7 @@ import dev.serko.safariutils.client.HotspotWatch;
 import dev.serko.safariutils.client.BirdfeederWatch;
 import dev.serko.safariutils.client.ShiningCoinWatch;
 import dev.serko.safariutils.client.MissingHud;
+import dev.serko.safariutils.client.PartyBirdFeedHud;
 import dev.serko.safariutils.client.MoundSpotter;
 import dev.serko.safariutils.client.NestTracker;
 import dev.serko.safariutils.client.RecatchSpots;
@@ -43,6 +44,7 @@ import dev.serko.safariutils.client.SafariObjectives;
 import dev.serko.safariutils.client.WaypointRenderer;
 import dev.serko.safariutils.client.EncounterAlerts;
 import dev.serko.safariutils.api.SharedSparklingProviders;
+import dev.serko.safariutils.api.PartyItemSyncProviders;
 import dev.serko.safariutils.parse.ChatParser;
 import dev.serko.safariutils.session.RunHistory;
 import dev.serko.safariutils.session.SessionManager;
@@ -70,7 +72,8 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Listens to Hypixel's own catch messages and tallies, for the current run,
  * how many of the 37 species you and your party have caught — overall and per
- * biome. Nothing is sent anywhere; it only reads chat the client already receives.
+ * biome. It reads chat the client already receives and sends only the chat alerts
+ * the player explicitly enables.
  */
 public class SafariUtils implements ClientModInitializer {
 
@@ -89,7 +92,8 @@ public class SafariUtils implements ClientModInitializer {
 			InteractionDebugLog.onGameMessage(message, overlay);
 			return PartyRosterWatch.allow(message, overlay)
 				&& PartyErrorSuppressor.allow(message, overlay)
-				&& HideyhoAutoAccept.allow(message, overlay);
+				&& HideyhoAutoAccept.allow(message, overlay)
+				&& PartyItemSyncProviders.allowMessage(message, overlay);
 		});
 		// Hypixel sends catch messages as system chat, which is what GAME covers.
 		// This fires upstream of chat-compacting mods, so the duplicate counters
@@ -111,6 +115,7 @@ public class SafariUtils implements ClientModInitializer {
 				// Log server messages before parsing so an unknown format remains
 				// diagnosable. Player chat was filtered out above.
 				DebugLog.line("RAW", "\"" + line + "\"");
+				PartyItemSyncProviders.onServerMessage(line);
 
 				SafariLocation.onChatMessage(line);
 				SparklingMode.onChatMessage(line);
@@ -125,7 +130,6 @@ public class SafariUtils implements ClientModInitializer {
 				StillCritters.onChatMessage(line);
 				FloorDrops.onChatMessage(line);
 				MoundSpotter.onChatMessage(line);
-				HeadStartWatch.onChatMessage(line);
 			}
 		});
 
@@ -139,6 +143,7 @@ public class SafariUtils implements ClientModInitializer {
 			SafariPartyWatch.tick();
 			SparklingMode.tick();
 			SharedSparklingProviders.tick();
+			PartyItemSyncProviders.tick();
 			if (BuildVersion.DEVELOPER) DebugStateLog.tick();
 			if (BuildVersion.DEVELOPER) InteractionDebugLog.tick();
 			ContestTracker.tick();
@@ -149,7 +154,7 @@ public class SafariUtils implements ClientModInitializer {
 			HideyhoSolver.tick();
 			StillCritters.tick();
 			DetectedCritters.tick();
-			HeadStartWatch.tick();
+			StartingItemsWatch.tick();
 			SafariObjectives.tick();
 			SessionManager.tick();
 			CritterSpotter.tick();
@@ -161,7 +166,7 @@ public class SafariUtils implements ClientModInitializer {
 			StaticEntityCatalog.tick();
 			RecatchSpots.tick();
 			DarknessFilter.tick();
-			// Off-thread, at most every two minutes, and only where a price is shown.
+			// Off-thread, at most every five minutes, and only where a price is shown.
 			BazaarPrices.tick();
 			ChatQueue.tick();
 			ConfigManager.tick();
@@ -188,10 +193,8 @@ public class SafariUtils implements ClientModInitializer {
 			SessionManager.onWorldChange();
 		});
 
-		// Punching a bee nest changes nothing about the block, so the punch itself is
-		// the only signal that it has been done.
 		AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
-			NestTracker.onAttack(pos);
+			NestTracker.onInteract(pos);
 			// A drop being picked up would clear itself a few seconds later anyway;
 			// dropping it on the interaction just makes the mark go when you expect.
 			FloorDrops.onInteract(pos);
@@ -204,6 +207,7 @@ public class SafariUtils implements ClientModInitializer {
 				? InteractionResult.FAIL : InteractionResult.PASS;
 		});
 		UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
+			NestTracker.onInteract(hit.getBlockPos());
 			FloorDrops.onInteract(hit.getBlockPos());
 			return InteractionResult.PASS;
 		});
@@ -230,6 +234,10 @@ public class SafariUtils implements ClientModInitializer {
 			VanillaHudElements.CHAT,
 			Identifier.fromNamespaceAndPath(MOD_ID, "contest_tracker"),
 			new ContestTracker());
+		HudElementRegistry.attachElementBefore(
+			VanillaHudElements.CHAT,
+			Identifier.fromNamespaceAndPath(MOD_ID, "party_bird_feed"),
+			new PartyBirdFeedHud());
 		HudElementRegistry.attachElementBefore(
 			VanillaHudElements.CHAT,
 			Identifier.fromNamespaceAndPath(MOD_ID, "encounter_alerts"),

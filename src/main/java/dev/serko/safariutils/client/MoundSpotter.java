@@ -116,6 +116,10 @@ public final class MoundSpotter {
 		}
 		String lobby = SafariLocation.lobbyId() == null ? "pending" : SafariLocation.lobbyId();
 		if (!lobby.equals(preparedLobby)) {
+			if ("pending".equals(preparedLobby)) {
+				preparedLobby = lobby;
+				return;
+			}
 			preparedLobby = lobby;
 			reset();
 		}

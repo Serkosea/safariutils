@@ -5,6 +5,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
 
 import java.util.EnumMap;
@@ -33,6 +34,7 @@ public final class HudEditorScreen extends Screen {
 	private int grabOffsetX;
 	private int grabOffsetY;
 	private HudBox hovered;
+	private HudBox lastHovered;
 	private Rect resetButton;
 	private Rect snapButton;
 	private Rect doneButton;
@@ -85,10 +87,15 @@ public final class HudEditorScreen extends Screen {
 			int y = box.pixelY(height, panel, scale);
 			int w = Math.round(panel.width(font) * scale);
 			int h = Math.round(panel.height() * scale);
+			// Normalized anchors can round outward by one pixel after a drag, especially
+			// for left-expanding HUDs. Apply the same visible-border bounds on every
+			// frame so all four screen edges remain perfectly symmetrical.
+			x = clamp(x, edgeMinimum(width, w), edgeMaximum(width, w));
+			y = clamp(y, edgeMinimum(height, h), edgeMaximum(height, h));
 
 			if (dragging == box) {
-				x = clamp(mouseX - grabOffsetX, 0, width - w);
-				y = clamp(mouseY - grabOffsetY, 0, height - h);
+				x = clamp(mouseX - grabOffsetX, edgeMinimum(width, w), edgeMaximum(width, w));
+				y = clamp(mouseY - grabOffsetY, edgeMinimum(height, h), edgeMaximum(height, h));
 				if (ConfigManager.get().display.hudSnapping) {
 					x = snapX(x, w);
 					y = snapY(y, h);
@@ -102,14 +109,17 @@ public final class HudEditorScreen extends Screen {
 
 			boolean over = dragging == box
 				|| (dragging == null && mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h);
-			if (over) hovered = box;
+			if (over) {
+				hovered = box;
+				lastHovered = box;
+			}
 			outline(graphics, x, y, w, h, over ? outline : outlineIdle);
 
 			if (over) {
 				String tag = "%s  ·  %.0f%%".formatted(box.label(), box.scale() * 100);
-				int tagY = Math.max(2, y - 14);
+				int tagY = Math.max(3, y - 14);
 				int tagW = font.width(tag) + 8;
-				int tagX = clamp(x + (w - tagW) / 2, 2, Math.max(2, width - tagW - 2));
+				int tagX = clamp(x + (w - tagW) / 2, 1, Math.max(1, width - tagW - 1));
 				graphics.fill(tagX, tagY - 2, tagX + tagW, tagY + 11, cardHover);
 				outline(graphics, tagX, tagY - 2, tagW, 13, accent);
 				graphics.text(font, Component.literal(tag), tagX + 4, tagY, hint);
@@ -124,7 +134,7 @@ public final class HudEditorScreen extends Screen {
 
 		String title = "HUD LAYOUT";
 		graphics.text(font, Component.literal(title), (width - font.width(title)) / 2, 12, hint);
-		String hint2 = "Drag to move  ·  Scroll to resize  ·  Snapping "
+		String hint2 = "Drag to move  ·  Arrows to nudge  ·  Scroll to resize  ·  Snapping "
 			+ (ConfigManager.get().display.hudSnapping ? "on" : "off");
 		graphics.text(font, Component.literal(hint2), (width - font.width(hint2)) / 2, 24, dim);
 		boolean resetArmed = System.currentTimeMillis() < resetArmedUntil;
@@ -250,14 +260,40 @@ public final class HudEditorScreen extends Screen {
 		return true;
 	}
 
+	@Override
+	public boolean keyPressed(KeyEvent event) {
+		int dx = 0;
+		int dy = 0;
+		switch (event.key()) {
+			case 262 -> dx = 1;
+			case 263 -> dx = -1;
+			case 264 -> dy = 1;
+			case 265 -> dy = -1;
+			default -> { return super.keyPressed(event); }
+		}
+		HudBox target = lastHovered;
+		Rect rect = target == null ? null : bounds.get(target);
+		if (rect == null) return super.keyPressed(event);
+		HudPanel panel = target.panel();
+		if (panel == null || panel.isEmpty()) panel = target.placeholderPanel();
+		float renderedScale = target.scale() * ResponsiveUI.scale(width, height);
+		int x = clamp(rect.x() + dx, edgeMinimum(width, rect.w()), edgeMaximum(width, rect.w()));
+		int y = clamp(rect.y() + dy, edgeMinimum(height, rect.h()), edgeMaximum(height, rect.h()));
+		target.setPixelPosition(x, y, width, height, panel, font, renderedScale);
+		ConfigManager.save();
+		return true;
+	}
+
 	private void resetAll() {
 		HudBox.PROGRESS.setScale(1.0f);
 		HudBox.MISSING.setScale(1.0f);
 		HudBox.CONTEST.setScale(1.0f);
 		HudBox.ALERTS.setScale(3.5f);
-		HudBox.PROGRESS.setPosition(0.0035128805f, 0.00625f);
-		HudBox.MISSING.setPosition(0.0035128805f, 0.29375f);
-		HudBox.CONTEST.setPosition(0.99531615f, 0.00625f);
+		HudBox.PROGRESS.setPosition(0.0046838406f, 0.008333334f);
+		HudBox.MISSING.setPosition(0.0046838406f, 0.26041666f);
+		HudBox.CONTEST.setPosition(0.23185012f, 0.008333334f);
+		HudBox.BIRD_FEED.setScale(1.0f);
+		HudBox.BIRD_FEED.setPosition(0.9941452f, 0.008333334f);
 		HudBox.ALERTS.setPosition(0.49882904f, 0.33125f);
 		ConfigManager.save();
 	}
@@ -276,6 +312,14 @@ public final class HudEditorScreen extends Screen {
 
 	private static int clamp(int value, int min, int max) {
 		return Math.max(min, Math.min(max, value));
+	}
+
+	private static int edgeMinimum(int screenSize, int boxSize) {
+		return boxSize < screenSize ? 1 : 0;
+	}
+
+	private static int edgeMaximum(int screenSize, int boxSize) {
+		return Math.max(edgeMinimum(screenSize, boxSize), screenSize - boxSize - 1);
 	}
 
 	private record Rect(int x, int y, int w, int h) {

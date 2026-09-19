@@ -1,8 +1,5 @@
 package dev.serko.safariutils.api;
 
-/** Current eligibility for a manual private-API party refresh. */
-public record PartyRefreshStatus(int players, long refreshAvailableAt, String error) {
-	public boolean available() {
-		return error == null && System.currentTimeMillis() >= refreshAvailableAt;
-	}
+/** Automatic party-loading state and whether the public manual fallback is needed. */
+public record PartyRefreshStatus(String error, boolean manualFallback) {
 }

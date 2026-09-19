@@ -47,29 +47,38 @@ public final class TicketProtection {
 	}
 
 	public static boolean blockManagerInteraction(Entity entity) {
-		if (!shouldBlock() || !PartyRosterWatch.localPlayerIsLeader()
-			|| !(entity instanceof Player)) return false;
+		if (!PartyRosterWatch.localPlayerIsLeader() || !(entity instanceof Player)) return false;
 		if (entity.distanceToSqr(MANAGER_X, MANAGER_Y, MANAGER_Z) > 9.0) return false;
-		blockedMessage();
-		return true;
+		if (shouldBlock()) {
+			blockedMessage();
+			return true;
+		}
+		StartingItemsWatch.onTicketSubmitted("Manager interaction");
+		return false;
 	}
 
 	private static boolean allowMouseClick(Screen screen, MouseButtonEvent event) {
-		if (!shouldBlock()) return true;
 		Slot slot = slotAt(screen, event.x(), event.y());
 		if (slot == null || !slot.getItem().getHoverName().getString().endsWith("Safari Experience")) {
 			return true;
 		}
-		blockedMessage();
-		return false;
+		if (shouldBlock()) {
+			blockedMessage();
+			return false;
+		}
+		StartingItemsWatch.onTicketSubmitted("ticket selection");
+		return true;
 	}
 
 	private static boolean allowKeyPress(Screen screen, KeyEvent event) {
-		if (!shouldBlock()) return true;
 		int key = event.key();
 		if ((key < 49 || key > 57) && (key < 321 || key > 329)) return true;
-		blockedMessage();
-		return false;
+		if (shouldBlock()) {
+			blockedMessage();
+			return false;
+		}
+		StartingItemsWatch.onTicketSubmitted("ticket hotkey");
+		return true;
 	}
 
 	private static boolean shouldBlock() {

@@ -4,6 +4,7 @@ import dev.serko.safariutils.api.SharedSparklingProviders;
 import dev.serko.safariutils.api.SparklingPlayerLookup;
 import dev.serko.safariutils.api.PartyRefreshStatus;
 import dev.serko.safariutils.api.PartySparklingSnapshot;
+import dev.serko.safariutils.api.PartyItemSyncProviders;
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.Critters;
 import dev.serko.safariutils.data.SafariBiome;
@@ -290,89 +291,34 @@ public final class SparklingScreen extends Screen {
 	private void drawParty(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
 		int x = panelLeft + 12;
 		int y = panelTop + 54;
-		PartySparklingSnapshot snapshot = SharedSparklingProviders.available()
-			? partySnapshot() : null;
-		if (SharedSparklingProviders.available()) {
-			drawPartyRefreshButton(graphics, x, y, mouseX, mouseY);
-		} else {
+		boolean privateProvider = SharedSparklingProviders.available();
+		PartySparklingSnapshot snapshot = privateProvider ? partySnapshot() : null;
+		PartyRefreshStatus refresh = privateProvider ? partyRefreshStatus() : null;
+		boolean automatic = snapshot != null && snapshot.apiManaged();
+		boolean fallback = refresh != null && refresh.manualFallback();
+		boolean editable = !privateProvider || fallback;
+		if (editable) {
 			button(graphics, x, y, 108, 18, "Import Clipboard", false, mouseX, mouseY,
 				this::importPartyClipboard);
+			button(graphics, x + 112, y, 52, 18, "Clear", false, mouseX, mouseY, () -> {
+				SparklingMode.clearShared();
+				setStatus("Party collection cleared", GOLD);
+			});
+		} else {
+			String description = refresh != null && refresh.error() != null ? refresh.error()
+				: "Automatically loads shared Sparklings when entering the Safari";
+			if (!automatic) centered(graphics, description, panelLeft, panelWidth,
+				centeredTextY(y, 18), refresh != null && refresh.error() != null ? RED : DIM);
 		}
-		int clearX = x + 112;
-		button(graphics, clearX, y, 52, 18, "Clear", false, mouseX, mouseY, () -> {
-			if (snapshot != null && snapshot.apiManaged()) {
-				setStatus("API-cached party collections cannot be changed manually", GOLD);
-				return;
-			}
-			SparklingMode.clearShared();
-			setStatus("Party collection cleared", GOLD);
-		});
 		Set<Critter> shared = SparklingMode.shared();
-		if (snapshot != null) drawApiResetButton(graphics, snapshot, shared, y, mouseX, mouseY);
-		int summaryY = y + 28;
-		if (snapshot != null && snapshot.apiManaged() && !snapshot.members().isEmpty()) {
-			centered(graphics, "Party   ✦   " + String.join(", ", snapshot.members()),
-				panelLeft, panelWidth, summaryY, WHITE);
+		int summaryY = automatic ? y : y + 28;
+		if (snapshot != null && !snapshot.members().isEmpty()) {
+			drawPartyMembers(graphics, snapshot.members(), summaryY);
 			summaryY += 12;
 		}
 		centered(graphics, "Shared Sparklings   ✦   " + shared.size() + "/" + Critters.total(),
 			panelLeft, panelWidth, summaryY, AQUA);
-		drawPartyColumns(graphics, summaryY + 15, mouseX, mouseY, shared,
-			snapshot != null && snapshot.apiManaged());
-	}
-
-	private void drawApiResetButton(GuiGraphicsExtractor graphics,
-			PartySparklingSnapshot snapshot, Set<Critter> shared, int y, int mouseX, int mouseY) {
-		int width = 66;
-		int x = panelLeft + panelWidth - width - 12;
-		Set<String> current = new LinkedHashSet<>();
-		for (Critter critter : shared) current.add(speciesId(critter.name()));
-		boolean usable = snapshot.apiManaged() && !current.equals(snapshot.sharedSpecies());
-		int colour = usable ? GOLD : DIM;
-		boolean hovered = contains(x, y, width, 18, mouseX, mouseY);
-		graphics.fill(x, y, x + width, y + 18, hovered && usable ? HOVER : SURFACE);
-		UIDraw.outline(graphics, x, y, width, 18, colour);
-		centered(graphics, "API Reset", x, width, centeredTextY(y, 18), colour);
-		hits.add(new Hit(x, y, width, 18, "API Reset", this::resetPartyToApi));
-	}
-
-	private void resetPartyToApi() {
-		PartySparklingSnapshot snapshot = partySnapshot();
-		if (!snapshot.apiManaged()) {
-			setStatus("No API-cached collection is available for this party", RED);
-			return;
-		}
-		Set<Critter> restored = new LinkedHashSet<>();
-		for (Critter critter : Critters.all()) {
-			if (snapshot.sharedSpecies().contains(speciesId(critter.name()))) restored.add(critter);
-		}
-		if (restored.equals(SparklingMode.shared())) return;
-		SparklingMode.replaceShared(restored);
-		setStatus("Shared Sparklings reset to the cached API collection", GREEN);
-	}
-
-	private void drawPartyRefreshButton(GuiGraphicsExtractor graphics, int x, int y,
-			int mouseX, int mouseY) {
-		PartyRefreshStatus refresh = partyRefreshStatus();
-		long remaining = Math.max(0L, refresh.refreshAvailableAt() - System.currentTimeMillis());
-		String label;
-		int colour;
-		if (refresh.error() != null) {
-			label = refresh.players() > 4 ? "Too Many Players" : "Roster Unavailable";
-			colour = RED;
-		} else if (remaining > 0) {
-			long seconds = (remaining + 999L) / 1_000L;
-			label = "Ready %d:%02d".formatted(seconds / 60, seconds % 60);
-			colour = GREEN;
-		} else {
-			label = "Refresh Party";
-			colour = GOLD;
-		}
-		boolean hovered = contains(x, y, 108, 18, mouseX, mouseY);
-		graphics.fill(x, y, x + 108, y + 18, hovered ? HOVER : SURFACE);
-		UIDraw.outline(graphics, x, y, 108, 18, colour);
-		centered(graphics, label, x, 108, centeredTextY(y, 18), colour);
-		hits.add(new Hit(x, y, 108, 18, label, this::refreshParty));
+		drawPartyColumns(graphics, summaryY + 15, mouseX, mouseY, shared, !editable);
 	}
 
 	private void drawPartyColumns(GuiGraphicsExtractor graphics, int y, int mouseX, int mouseY,
@@ -400,8 +346,8 @@ public final class SparklingScreen extends Screen {
 				int statusX = x + columnWidth - statusWidth - 8;
 				boldCentered(graphics, status, statusX, statusWidth, rowY,
 					shownSelected ? GREEN : 0xFF5F594E);
-				hits.add(new Hit(x + 4, rowY - 2, rowWidth, 12, critter.name(),
-					() -> toggleParty(critter)));
+				if (!apiManaged) hits.add(new Hit(x + 4, rowY - 2, rowWidth, 12,
+					critter.name(), () -> toggleParty(critter)));
 			}
 		}
 	}
@@ -457,28 +403,6 @@ public final class SparklingScreen extends Screen {
 		setStatus("Imported " + (missing ? "missing" : "shared") + " Sparkling list", GREEN);
 	}
 
-	private void refreshParty() {
-		PartyRefreshStatus refresh = partyRefreshStatus();
-		if (refresh.error() != null) {
-			setStatus(refresh.error(), RED);
-			return;
-		}
-		if (!refresh.available()) {
-			setStatus("This exact party was refreshed less than 5 minutes ago", GOLD);
-			return;
-		}
-		setStatus("Refreshing the current Safari party…", DIM);
-		SharedSparklingProviders.provider().orElseThrow().refreshCurrentParty()
-			.whenComplete((species, error) -> Minecraft.getInstance().execute(() -> {
-				invalidatePartyCache();
-				if (error != null) setStatus(ClientMessages.apiFailure("refresh shared Sparklings", error), RED);
-				else {
-					setStatus("Party collection refreshed — " + species.size() + " shared Sparklings", GREEN);
-					checkCachedLocalCollection();
-				}
-			}));
-	}
-
 	private PartySparklingSnapshot partySnapshot() {
 		refreshPartyUiCache();
 		return cachedPartySnapshot;
@@ -496,10 +420,6 @@ public final class SparklingScreen extends Screen {
 		cachedPartySnapshot = provider.partySnapshot();
 		cachedPartyRefresh = provider.partyRefreshStatus();
 		partyCacheUntil = now + 250L;
-	}
-
-	private void invalidatePartyCache() {
-		partyCacheUntil = 0L;
 	}
 
 	private void checkCachedLocalCollection() {
@@ -521,7 +441,10 @@ public final class SparklingScreen extends Screen {
 		int knownDuplicates = SparklingStats.hasImportedDuplicates()
 			? SparklingStats.importedDuplicates() : SparklingStats.duplicates();
 		if (!saved.equals(api)) return false;
-		if (SparklingStats.hasImportedDuplicates()) return SparklingStats.importedSetUnchanged();
+		if (SparklingStats.hasImportedDuplicates()) {
+			return SparklingStats.importedSetUnchanged()
+				&& (result.duplicates() < 0 || knownDuplicates == result.duplicates());
+		}
 		return result.duplicates() < 0 || knownDuplicates == result.duplicates();
 	}
 
@@ -560,11 +483,9 @@ public final class SparklingScreen extends Screen {
 		int y = panelTop + 54;
 		drawLookupButton(graphics, panelLeft + 214, y, mouseX, mouseY);
 		if (lastLookup == null) {
-			centered(graphics, "Enter a Minecraft username to load everything in one request",
-				panelLeft, panelWidth, panelTop + 112, DIM);
 			return;
 		}
-		drawLookupNameAndTickets(graphics, panelLeft + 14, y + 29);
+		drawLookupNameAndTickets(graphics, y + 29);
 		int unique = lastLookup.species().size();
 		String duplicates = lastLookup.duplicates() < 0 ? "—" : String.valueOf(lastLookup.duplicates());
 		String total = lastLookup.duplicates() < 0 ? "—" : String.valueOf(unique + lastLookup.duplicates());
@@ -574,11 +495,15 @@ public final class SparklingScreen extends Screen {
 		drawSpeciesColumns(graphics, y + 64, mouseX, mouseY, lastLookup.species(), false);
 	}
 
-	private void drawLookupNameAndTickets(GuiGraphicsExtractor graphics, int ignoredX, int y) {
+	private void drawLookupNameAndTickets(GuiGraphicsExtractor graphics, int y) {
 		int columnWidth = Math.min(150, (panelWidth - 24) / 4);
 		int x = panelLeft + (panelWidth - columnWidth * 4) / 2 + 8;
 		Component name = Component.literal(lastLookup.username()).withStyle(style -> style.withColor(AQUA));
-		SpecialTheme.text(graphics, font, name, x, y, AQUA);
+		if (PartyItemSyncProviders.whitelistedName(lastLookup.username())) {
+			UIDraw.rainbowText(graphics, font, lastLookup.username(), x, y, 0.45f);
+		} else {
+			SpecialTheme.text(graphics, font, name, x, y, AQUA);
+		}
 		String[] keys = {"Basic", "Economy", "Premium", "First Class"};
 		String[] labels = {"Basic", "Economy", "Premium", "First-Class"};
 		int[] colours = {0xFF55FF55, 0xFF5599FF, 0xFFAA55FF, 0xFFFFAA00};
@@ -602,13 +527,20 @@ public final class SparklingScreen extends Screen {
 		String entered = lookupName == null ? lastLookupName : lookupName.getValue().trim();
 		boolean same = lastLookup != null && entered.equalsIgnoreCase(lastLookup.username());
 		boolean stale = same && System.currentTimeMillis() - lastLookup.fetchedAt() >= LOOKUP_CACHE_MILLIS;
-		String label = lookupLoading ? "Loading…" : same ? stale ? "Refresh" : "Cached" : "Lookup";
-		int colour = same ? stale ? GOLD : GREEN : AQUA;
+		long cooldown = SharedSparklingProviders.provider()
+			.map(provider -> Math.max(0L, provider.lookupAvailableAt() - System.currentTimeMillis()))
+			.orElse(0L);
+		boolean freshCached = same && !stale;
+		boolean disabled = lookupLoading || freshCached || cooldown > 0;
+		String label = lookupLoading ? "Loading…" : freshCached ? "Cached"
+			: cooldown > 0 ? "Lookup " + ((cooldown + 999) / 1000) + "s"
+			: same ? "Refresh" : "Lookup";
+		int colour = disabled ? DIM : same ? GOLD : AQUA;
 		boolean hovered = contains(x, y, 72, 18, mouseX, mouseY);
 		graphics.fill(x, y, x + 72, y + 18, hovered ? HOVER : SURFACE);
 		UIDraw.outline(graphics, x, y, 72, 18, colour);
 		centered(graphics, label, x, 72, centeredTextY(y, 18), colour);
-		hits.add(new Hit(x, y, 72, 18, label, this::lookupPlayer));
+		if (!disabled) hits.add(new Hit(x, y, 72, 18, label, this::lookupPlayer));
 	}
 
 	private void lookupPlayer() {
@@ -649,6 +581,11 @@ public final class SparklingScreen extends Screen {
 		while (recentLookups.size() > 10) recentLookups.removeLast();
 	}
 
+	/** Adds automatic party results to the same five-minute cache as manual lookups. */
+	public static void cacheRecentLookups(List<SparklingPlayerLookup> results) {
+		for (SparklingPlayerLookup result : results) rememberLookup(result);
+	}
+
 	private void drawRecentLookups(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
 		if (recentLookups.isEmpty()) return;
 		int width = 142;
@@ -661,8 +598,14 @@ public final class SparklingScreen extends Screen {
 		graphics.fill(x, y, x + width, y + height, hovered ? HOVER : SURFACE);
 		UIDraw.outline(graphics, x, y, width, height, recentLookupsOpen ? AQUA : BORDER);
 		String buttonText = trimToWidth(selected, width - 25) + (recentLookupsOpen ? "  ▴" : "  ▾");
-		centered(graphics, buttonText, x, width, centeredTextY(y, height),
-			recentLookupsOpen ? AQUA : LABEL);
+		if (lastLookup != null && PartyItemSyncProviders.whitelistedName(lastLookup.username())) {
+			centeredRainbowName(graphics, "Recent: ", lastLookup.username(),
+				recentLookupsOpen ? "  ▴" : "  ▾", x, width, centeredTextY(y, height),
+				recentLookupsOpen ? AQUA : LABEL);
+		} else {
+			centered(graphics, buttonText, x, width, centeredTextY(y, height),
+				recentLookupsOpen ? AQUA : LABEL);
+		}
 		hits.add(new Hit(x, y, width, height, "Recent Lookups",
 			() -> recentLookupsOpen = !recentLookupsOpen));
 		if (!recentLookupsOpen) return;
@@ -672,8 +615,14 @@ public final class SparklingScreen extends Screen {
 			boolean itemHovered = contains(x, itemY, width, height, mouseX, mouseY);
 			graphics.fill(x, itemY, x + width, itemY + height, itemHovered ? HOVER : 0xFF141B25);
 			UIDraw.outline(graphics, x, itemY, width, height, BORDER);
-			centered(graphics, saved.username(), x, width, centeredTextY(itemY, height),
-				itemHovered ? WHITE : LABEL);
+			if (PartyItemSyncProviders.whitelistedName(saved.username())) {
+				UIDraw.rainbowText(graphics, font, saved.username(),
+					x + (width - font.width(saved.username())) / 2,
+					centeredTextY(itemY, height), 0.45f);
+			} else {
+				centered(graphics, saved.username(), x, width, centeredTextY(itemY, height),
+					itemHovered ? WHITE : LABEL);
+			}
 			hits.add(new Hit(x, itemY, width, height, "Recent Player", () -> selectRecent(saved)));
 		}
 	}
@@ -711,11 +660,10 @@ public final class SparklingScreen extends Screen {
 		int current = editingFeathers ? SparklingStats.rainbowFeathers()
 			: SparklingStats.count(editingCritter);
 		editingOriginal = current;
-		int textOffset = Math.max(0, (hit.width() - font.width(String.valueOf(current))) / 2);
-		editor = new EditBox(font, hit.x() + textOffset, hit.textY(),
-			Math.max(1, hit.width() - textOffset), 10,
+		editor = new EditBox(font, hit.x(), hit.textY(), hit.width(), 10,
 			Component.literal("Count"));
 		editor.setBordered(false);
+		editor.setCentered(true);
 		editor.setMaxLength(7);
 		editor.setValue(String.valueOf(current));
 		editor.setTextColor(0xFFFFE08A);
@@ -813,6 +761,11 @@ public final class SparklingScreen extends Screen {
 			commitEditor();
 			return true;
 		}
+		if (tab == Tab.LOOKUP && lookupName != null && lookupName.isFocused()
+				&& (event.key() == 257 || event.key() == 335)) {
+			lookupPlayer();
+			return true;
+		}
 		return super.keyPressed(event);
 	}
 
@@ -887,6 +840,37 @@ public final class SparklingScreen extends Screen {
 		text(graphics, value, x + (width - font.width(value)) / 2, y, colour);
 	}
 
+	private void centeredRainbowName(GuiGraphicsExtractor graphics, String prefix, String name,
+			String suffix, int x, int width, int y, int colour) {
+		int cursor = x + (width - font.width(prefix + name + suffix)) / 2;
+		text(graphics, prefix, cursor, y, colour);
+		cursor += font.width(prefix);
+		UIDraw.rainbowText(graphics, font, name, cursor, y, 0.45f);
+		cursor += font.width(name);
+		text(graphics, suffix, cursor, y, colour);
+	}
+
+	private void drawPartyMembers(GuiGraphicsExtractor graphics, List<String> members, int y) {
+		String prefix = "Party   ✦   ";
+		String joined = String.join(", ", members);
+		int cursor = panelLeft + (panelWidth - font.width(prefix + joined)) / 2;
+		text(graphics, prefix, cursor, y, WHITE);
+		cursor += font.width(prefix);
+		for (int i = 0; i < members.size(); i++) {
+			if (i > 0) {
+				text(graphics, ", ", cursor, y, WHITE);
+				cursor += font.width(", ");
+			}
+			String name = members.get(i);
+			if (PartyItemSyncProviders.whitelistedName(name)) {
+				UIDraw.rainbowText(graphics, font, name, cursor, y, 0.45f);
+			} else {
+				text(graphics, name, cursor, y, WHITE);
+			}
+			cursor += font.width(name);
+		}
+	}
+
 	private void boldCentered(GuiGraphicsExtractor graphics, String value, int x, int width,
 			int y, int colour) {
 		Component component = Component.literal(value).withStyle(ChatFormatting.BOLD);
@@ -936,7 +920,7 @@ public final class SparklingScreen extends Screen {
 		return switch (target) {
 			case COLLECTION -> "Click any critter count number or rainbow feathers number to change it";
 			case PARTY -> "This shared list controls the missing HUD while Sparkling Mode is enabled";
-			case LOOKUP -> "Loads unique sparklings, duplicates, and tickets amounts";
+			case LOOKUP -> "Loads unique sparklings, duplicates, and ticket amounts";
 		};
 	}
 

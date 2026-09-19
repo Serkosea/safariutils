@@ -14,12 +14,11 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 /**
  * Pins a critter's last body position while its capsule attempt is unresolved.
- * Multiple throws may be active; species-only outcomes resolve the newest matching
+ * Multiple throws may be active; species-only outcomes resolve the oldest matching
  * pin. Pins never follow entity IDs across breakouts. {@link #worthPinning(Critter)}
  * excludes attempts that cannot benefit from a recatch position.
  */
@@ -37,16 +36,6 @@ public final class RecatchSpots {
 	private static final long ORPHAN_MILLIS = 10_000;
 	/** Refuse pity transfer while the original ID was seen this recently. */
 	private static final long ORPHAN_STILL_LIVE_MILLIS = 1_000;
-
-	/**
-	 * Species a pin does nothing for, whatever their rarity. Snoozle used to be here on
-	 * the reasoning that it never moves, so a pin marking where it was told you nothing
-	 * you could not already see — but it still visibly disappears into the ball during
-	 * a capture attempt the same as anything else, and the pin is exactly what marks
-	 * that spot while it is gone, not just while it is running.
-	 */
-	private static final Set<String> NEVER_PINNED =
-		Set.of("Hideyho", "Wumpa", "Doomspiral");
 
 	/** Where an individual's body was last seen, how big it was, its species, and whether it is sparkling. */
 	private record Seen(Critter critter, AABB box, boolean sparkling, long millis) {
@@ -327,10 +316,10 @@ public final class RecatchSpots {
 		return toBox.subtract(look.scale(along)).length();
 	}
 
-	/** Returns whether a failed catch can benefit from a saved recatch position. */
+	/** Returns whether this critter can escape an ordinary capsule and need a recatch pin. */
 	private static boolean worthPinning(Critter critter) {
-		if (critter.rarity() == Critter.Rarity.COMMON) return false;
-		return !NEVER_PINNED.contains(critter.name());
+		return critter.rarity() != Critter.Rarity.COMMON
+			&& !"Hideyho".equals(critter.name());
 	}
 
 	private static void pin(Critter critter) {

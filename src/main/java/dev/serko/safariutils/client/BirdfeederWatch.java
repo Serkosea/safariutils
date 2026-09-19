@@ -45,6 +45,14 @@ public final class BirdfeederWatch {
 	private static net.minecraft.world.inventory.AbstractContainerMenu observedFeeder;
 	private static boolean feederHadFeed;
 	private static int emptyFeederTicks;
+	private static int feederType = -1;
+	private static int feederCount;
+	private static long lastEmptyAlertAt;
+	/** Feed left on the cursor when the feeder closes can disappear until Hypixel resyncs it. */
+	private static final int[] closingCursorFeed = new int[3];
+	private static long closingCursorFeedUntil;
+	private static final long CURSOR_RESYNC_MILLIS = 12_000L;
+	private static final long POSSIBLE_CURSOR_RESYNC_MILLIS = 2_000L;
 
 	private BirdfeederWatch() {
 	}
@@ -72,17 +80,35 @@ public final class BirdfeederWatch {
 		}
 		if (menu.slots.size() <= 22) return;
 		var contents = menu.getSlot(22).getItem();
+		var carried = menu.getCarried();
+		int carriedType = carried.isEmpty() ? -1 : feedTypeIn(carried.getHoverName().getString());
+		if (carriedType >= 0) {
+			java.util.Arrays.fill(closingCursorFeed, 0);
+			closingCursorFeed[carriedType] = carried.getCount();
+			int feederType = contents.isEmpty() ? -1 : feedTypeIn(contents.getHoverName().getString());
+			boolean rejected = feederType >= 0 && feederType != carriedType;
+			closingCursorFeedUntil = System.currentTimeMillis()
+				+ (rejected ? CURSOR_RESYNC_MILLIS : POSSIBLE_CURSOR_RESYNC_MILLIS);
+		} else {
+			clearClosingCursorFeed();
+		}
 		String name = contents.getHoverName().getString().toLowerCase(java.util.Locale.ROOT);
 		boolean hasFeed = !contents.isEmpty()
 			&& (name.contains("seed") || name.contains("wriggleworm") || name.contains("yogi berr"));
 		if (hasFeed) {
 			feederHadFeed = true;
 			emptyFeederTicks = 0;
-		} else if (feederHadFeed && ++emptyFeederTicks >= 2) {
+			setFeederState(feedTypeIn(contents.getHoverName().getString()), contents.getCount());
+		} else if (!feederHadFeed) {
+			setFeederState(-1, 0);
+		} else if (++emptyFeederTicks >= 2) {
 			// Two observations avoid firing on a one-tick container refresh gap.
 			feederHadFeed = false;
 			emptyFeederTicks = 0;
-			EncounterAlerts.onBirdfeederEmpty();
+			setFeederState(-1, 0);
+			if (!dev.serko.safariutils.api.PartyItemSyncProviders.active()) {
+				EncounterAlerts.onBirdfeederEmpty();
+			}
 		}
 	}
 
@@ -99,7 +125,7 @@ public final class BirdfeederWatch {
 			DebugLog.line("INVENTORY", "Birdfeeder rejected deposit; pending all-feed alert cancelled");
 			return;
 		}
-		// Starting feed is handled by HeadStartWatch because its chat line can omit items.
+		// Starting feed is credited from StartingItemsWatch's frozen run-start snapshot.
 		if (line.startsWith("FLOOR DROP!")) {
 			int type = feedTypeIn(line);
 			if (type >= 0) {
@@ -126,6 +152,8 @@ public final class BirdfeederWatch {
 		if (bird == null) return;
 
 		spawnEventsObserved++;
+		if (feederCount > 0) setFeederState(feederCount == 1 ? -1 : feederType,
+			Math.max(0, feederCount - 1));
 		spawnedBirds.add(bird);
 		if (NAME.equals(bird.name())) {
 			announce();
@@ -134,7 +162,7 @@ public final class BirdfeederWatch {
 		}
 	}
 
-	/** Credited by {@link HeadStartWatch} for feed found in the inventory scan. */
+	/** Credited by {@link StartingItemsWatch} from the frozen run-start inventory. */
 	public static void creditFeedFound(int seeds, int worms, int berries) {
 		int total = seeds + worms + berries;
 		feedFound += total;
@@ -143,6 +171,16 @@ public final class BirdfeederWatch {
 
 	public static int feedAcquired() {
 		return feedAcquired;
+	}
+
+	/** Best local-client account of feed discovered this run. */
+	public static int feedFound() {
+		return feedFound;
+	}
+
+	/** Birdfeeder spawn lines observed by this client during the run. */
+	public static int feedUsed() {
+		return spawnEventsObserved;
 	}
 
 	/** Whether every feed found this run has produced a spawn event. */
@@ -172,12 +210,41 @@ public final class BirdfeederWatch {
 
 	/** Feed found this run against feed already spent on a spawn event. */
 	public static int remaining() {
+		int synchronizedRemaining = dev.serko.safariutils.api.PartyItemSyncProviders.feedRemaining();
+		if (synchronizedRemaining >= 0) return synchronizedRemaining;
 		return dev.serko.safariutils.session.SessionManager.current() == null
 			? Math.max(0, feedFound - spawnEventsObserved) : SafariObjectives.birdFeedHeld();
 	}
 
 	public static int floorFeedFound() {
 		return floorFeedFound;
+	}
+
+	/** Suppresses duplicate/local-useless empty alerts before they reach banner logic. */
+	public static boolean claimEmptyAlert() {
+		long now = System.currentTimeMillis();
+		if (java.util.Arrays.stream(lastHeld).sum() <= 0 || now - lastEmptyAlertAt < 3_000L) {
+			return false;
+		}
+		lastEmptyAlertAt = now;
+		return true;
+	}
+
+	public static int feederType() {
+		return feederType;
+	}
+
+	public static int feederCount() {
+		return feederCount;
+	}
+
+	private static void setFeederState(int type, int count) {
+		type = count > 0 ? type : -1;
+		count = Math.max(0, count);
+		if (feederType == type && feederCount == count) return;
+		feederType = type;
+		feederCount = count;
+		dev.serko.safariutils.api.PartyItemSyncProviders.onBirdfeederState(type, count);
 	}
 
 	/** Marks the short transaction window opened by using the Birdfeeder NPC. */
@@ -209,6 +276,7 @@ public final class BirdfeederWatch {
 	public static void onInventoryUpdated(int seeds, int worms, int berries) {
 		int[] held = {Math.max(0, seeds), Math.max(0, worms), Math.max(0, berries)};
 		includeCarriedFeed(held);
+		dev.serko.safariutils.api.PartyItemSyncProviders.onInventoryFeed(held[0], held[1], held[2]);
 		long now = System.currentTimeMillis();
 		boolean birdfeederDeposit = isBirdfeederOpen()
 			|| now <= birdfeederInteractionUntil;
@@ -275,18 +343,44 @@ public final class BirdfeederWatch {
 		}
 		if (feedGoneAnnounced || !allFeedDeposited || totalHeld > 0) return;
 		feedGoneAnnounced = true;
-		EncounterAlerts.onFeedGone();
+		if (!dev.serko.safariutils.api.PartyItemSyncProviders.active()) {
+			EncounterAlerts.onFeedGone();
+		}
 	}
 
 	/** A stack held by the cursor has not entered the feeder yet. */
 	private static void includeCarriedFeed(int[] held) {
 		var screen = ClientCompat.screen();
-		if (!(screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> container)
-			|| !screen.getTitle().getString().contains("Birdfeeder")) return;
-		var carried = container.getMenu().getCarried();
-		if (carried.isEmpty()) return;
-		int type = feedTypeIn(carried.getHoverName().getString());
-		if (type >= 0) held[type] += carried.getCount();
+		if (screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> container
+			&& screen.getTitle().getString().contains("Birdfeeder")) {
+			var carried = container.getMenu().getCarried();
+			if (carried.isEmpty()) return;
+			int type = feedTypeIn(carried.getHoverName().getString());
+			if (type >= 0) held[type] += carried.getCount();
+			return;
+		}
+		long now = System.currentTimeMillis();
+		if (closingCursorFeedUntil == 0 || now > closingCursorFeedUntil) {
+			clearClosingCursorFeed();
+			return;
+		}
+		for (int type = 0; type < held.length; type++) {
+			int missing = closingCursorFeed[type];
+			if (missing <= 0) continue;
+			if (held[type] >= missing) {
+				closingCursorFeed[type] = 0;
+			} else {
+				held[type] += missing;
+			}
+		}
+		if (java.util.Arrays.stream(closingCursorFeed).allMatch(value -> value == 0)) {
+			clearClosingCursorFeed();
+		}
+	}
+
+	private static void clearClosingCursorFeed() {
+		java.util.Arrays.fill(closingCursorFeed, 0);
+		closingCursorFeedUntil = 0;
 	}
 
 	private static boolean isBirdfeederOpen() {
@@ -328,5 +422,9 @@ public final class BirdfeederWatch {
 		observedFeeder = null;
 		feederHadFeed = false;
 		emptyFeederTicks = 0;
+		feederType = -1;
+		feederCount = 0;
+		lastEmptyAlertAt = 0;
+		clearClosingCursorFeed();
 	}
 }

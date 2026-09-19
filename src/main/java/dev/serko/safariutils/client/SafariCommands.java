@@ -311,7 +311,8 @@ public final class SafariCommands {
 				SafariLocation.lobbyId()), ChatFormatting.GRAY);
 		report(source, record, "  active    " + (SessionManager.current() != null)
 			+ "  opened by " + SessionManager.startedBy(), ChatFormatting.WHITE);
-		report(source, record, "  joined    " + SafariPartyWatch.joinedPlayers() + "/4"
+		report(source, record, "  joined    " + SafariPartyWatch.joinedPlayers() + "/"
+			+ SessionManager.expectedRunPlayers()
 			+ "  sparkling mode " + SparklingMode.enabled(), ChatFormatting.GRAY);
 
 		var session = SessionManager.current();

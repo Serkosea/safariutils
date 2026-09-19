@@ -32,6 +32,7 @@ public final class MissingHud implements HudElement {
 		SafariConfig config = ConfigManager.get();
 		if (!config.display.hudEnabled || !config.display.showMissing) return;
 		if (!SafariLocation.inside() || SafariLocation.biome() == null) return;
+		if (SessionManager.current() == null) return;
 
 		Minecraft client = Minecraft.getInstance();
 		if (client.player == null || ClientCompat.hudHidden()) return;
@@ -53,13 +54,9 @@ public final class MissingHud implements HudElement {
 		}
 	}
 
-	/** Builds the list for {@code biome}; {@code session} may be null before the first catch. */
+	/** Builds the list for {@code biome}; production rendering supplies the ticketed run. */
 	static HudPanel buildPanel(SafariBiome biome, SafariSession session) {
 		if (SparklingMode.enabled()) return buildSparklingModePanel(biome, SessionManager.current());
-		// Before the first catch there is no session yet, but standing in a biome with
-		// nothing caught is exactly when the full list is most useful — so fall back
-		// to the whole roster rather than hiding the panel.
-		//
 		// Gimmiegold is always kept in, regardless of session.missing()'s usual
 		// caught-once-and-done judgement: its line tracks coins found against
 		// Gimmiegolds caught, not a one-and-done catch, so it needs to stay in its
@@ -361,6 +358,10 @@ public final class MissingHud implements HudElement {
 	private static boolean appendFloorDropCount(HudPanel panel, SafariBiome biome, boolean needsLeadingBlank) {
 		if (!ConfigManager.get().display.showFloorDropCount) return false;
 		if (SparklingMode.hideFloorDrops(biome, SessionManager.current())) return false;
+		// Synchronized party finds are authoritative for Forest, including Normal Mode's
+		// confirmed-drop counter which otherwise only knows about this client's pickups.
+		if (biome == SafariBiome.FOREST
+			&& dev.serko.safariutils.api.PartyItemSyncProviders.forestDropsComplete()) return false;
 		// Hide a completed countdown. Safe Mode uses confirmed drops so background
 		// scanning cannot reveal how many unseen drops exist.
 		int remaining = SafeMode.floorDrops()

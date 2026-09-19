@@ -47,6 +47,7 @@ public final class Markers {
 
 	/** Builds the current marker set once; render frames in the same game tick reuse it. */
 	private static List<Marker> collectFresh() {
+		if (SessionManager.current() == null) return List.of();
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
 		SafariBiome biome = SafariLocation.biome();
 		SafariSession session = SessionManager.current();

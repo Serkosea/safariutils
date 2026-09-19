@@ -1,10 +1,12 @@
 package dev.serko.safariutils.client;
 
 import com.google.gson.annotations.Expose;
+import com.google.gson.annotations.SerializedName;
 
 /**
  * Settings mapped to {@code config/safariutils/safariutils.json}. Public field names
- * are the stable persistence keys; UI annotations are owned by Safari Utils.
+ * are persistence keys unless an explicit {@link SerializedName} migration preserves
+ * an older key; UI annotations are owned by Safari Utils.
  */
 public class SafariConfig {
 
@@ -347,8 +349,8 @@ public class SafariConfig {
 		@Expose
 		public boolean contestShowEverywhere = true;
 
-		@SettingInfo(name = "Show Outside Skyblock",
-			desc = "Show Contest HUD outside of Skyblock")
+		@SettingInfo(name = "Show Outside SkyBlock",
+			desc = "Show Contest HUD outside of SkyBlock")
 		@SettingToggle
 		@SettingGroup(id = CONTEST_HUD)
 		@Expose
@@ -395,6 +397,39 @@ public class SafariConfig {
 		@SettingGroup(id = CONTEST_HUD_OPTIONS)
 		@Expose
 		public boolean contestHideOnComplete = false;
+
+		private static final int BIRD_FEED_HUD = 27;
+		private static final int BIRD_FEED_OPTIONS = 28;
+		@SettingInfo(name = "Bird Feed HUD", desc = "")
+		@SettingSection(id = BIRD_FEED_HUD)
+		public boolean birdFeedHudAccordion = false;
+		@SettingInfo(name = "Show Bird Feed HUD", desc = "Shows known party feed and bird status during Safari runs")
+		@SettingToggle @SettingGroup(id = BIRD_FEED_HUD) @Expose
+		@SerializedName(value = "showBirdFeedHud", alternate = "privateShowBirdFeedHud")
+		public boolean showBirdFeedHud = true;
+		@SettingInfo(name = "Bird Feed HUD Options", desc = "")
+		@SettingSection(id = BIRD_FEED_OPTIONS) @SettingGroup(id = BIRD_FEED_HUD)
+		public boolean birdFeedOptionsAccordion = false;
+		@SettingInfo(name = "Directional Expansion", desc = "Direction the HUD expands horizontally when text gets longer")
+		@SettingChoice(values = {"Left", "Equal", "Right"}) @SettingGroup(id = BIRD_FEED_OPTIONS) @Expose
+		@SerializedName(value = "birdFeedExpansion", alternate = "privateBirdFeedExpansion")
+		public int birdFeedExpansion = 0;
+		@SettingInfo(name = "Individual Player Feed", desc = "Shows each party member's Berry, Worm, and Seed counts")
+		@SettingToggle @SettingGroup(id = BIRD_FEED_OPTIONS) @Expose
+		@SerializedName(value = "birdFeedShowPlayers", alternate = "privateBirdFeedShowPlayers")
+		public boolean birdFeedShowPlayers = true;
+		@SettingInfo(name = "Show Feed Done", desc = "Shows how many discovered feed items have spawned a bird")
+		@SettingToggle @SettingGroup(id = BIRD_FEED_OPTIONS) @Expose
+		@SerializedName(value = "birdFeedShowFeedDone", alternate = "privateBirdFeedShowFeedDone")
+		public boolean birdFeedShowFeedDone = true;
+		@SettingInfo(name = "Show Birdfeeder", desc = "Shows the feed currently stacked in the Birdfeeder")
+		@SettingToggle @SettingGroup(id = BIRD_FEED_OPTIONS) @Expose
+		@SerializedName(value = "birdFeedShowBirdfeeder", alternate = "privateBirdFeedShowBirdfeeder")
+		public boolean birdFeedShowBirdfeeder = true;
+		@SettingInfo(name = "Show Bird Counts", desc = "Shows outstanding Bluebird, Parakeet, and Macaw counts")
+		@SettingToggle @SettingGroup(id = BIRD_FEED_OPTIONS) @Expose
+		@SerializedName(value = "birdFeedShowBirdCounts", alternate = "privateBirdFeedShowBirdCounts")
+		public boolean birdFeedShowBirdCounts = true;
 
 		/** Accordion id for the grouped highlight toggles. */
 		private static final int HIGHLIGHTS = 3;
@@ -654,6 +689,7 @@ public class SafariConfig {
 		private static final int PROGRESS_HUD_BORDER = 22;
 		private static final int MISSING_HUD_BORDER = 23;
 		private static final int CONTEST_HUD_BORDER = 24;
+		private static final int BIRD_FEED_BORDER = 29;
 
 		@SettingInfo(name = "Current Run Tab", desc = "")
 		@SettingColor @SettingGroup(id = HUD_BORDER_COLOURS) @Expose
@@ -725,6 +761,21 @@ public class SafariConfig {
 		@SettingInfo(name = "Use Bracket Color", desc = "Uses the current contest bracket's color for the Contest HUD border")
 		@SettingToggle @SettingGroup(id = CONTEST_HUD_BORDER) @Expose
 		public boolean contestBorderUseBracketColour = false;
+
+		@SettingInfo(name = "Bird Feed HUD", desc = "")
+		@SettingSection(id = BIRD_FEED_BORDER) @SettingGroup(id = HUD_BORDER_COLOURS)
+		public boolean birdFeedBorderAccordion = false;
+		@SettingInfo(name = "Show Border", desc = "Shows a border around the Bird Feed HUD")
+		@SettingToggle @SettingGroup(id = BIRD_FEED_BORDER) @Expose
+		@SerializedName(value = "birdFeedBorder", alternate = "privateBirdFeedBorder")
+		public boolean birdFeedBorder = true;
+		@SettingInfo(name = "Color", desc = "") @SettingColor @SettingGroup(id = BIRD_FEED_BORDER) @Expose
+		@SerializedName(value = "birdFeedBorderColour", alternate = "privateBirdFeedBorderColour")
+		public String birdFeedBorderColour = colour(0x26, 0xA0, 0xFF);
+		@SettingInfo(name = "Use Feed Status", desc = "Uses red while feed remains and green when all feed is done")
+		@SettingToggle @SettingGroup(id = BIRD_FEED_BORDER) @Expose
+		@SerializedName(value = "birdFeedBorderUseStatus", alternate = "privateBirdFeedBorderUseStatus")
+		public boolean birdFeedBorderUseStatus = false;
 
 		/**
 		 * A legacy-compatible static colour value used by the custom picker.
@@ -818,20 +869,30 @@ public class SafariConfig {
 
 		@Expose
 		public float contestScale = 1.0f;
+		@Expose
+		@SerializedName(value = "birdFeedScale", alternate = "privateBirdFeedScale")
+		public float birdFeedScale = 1.0f;
 
 		// Positions are fractions of the screen, so a box stays put across resolution
 		// and GUI-scale changes. Set by dragging in the editor, not by hand.
 		@Expose
-		public float progressX = 0.0035128805f;
+		public float progressX = 0.0046838406f;
 		@Expose
-		public float progressY = 0.00625f;
+		public float progressY = 0.008333334f;
 		@Expose
-		public float missingX = 0.0035128805f;
+		public float missingX = 0.0046838406f;
 		@Expose
-		public float missingY = 0.29375f;
-		public float contestX = 0.99531615f;
+		public float missingY = 0.26041666f;
 		@Expose
-		public float contestY = 0.00625f;
+		public float contestX = 0.23185012f;
+		@Expose
+		public float contestY = 0.008333334f;
+		@Expose
+		@SerializedName(value = "birdFeedX", alternate = "privateBirdFeedX")
+		public float birdFeedX = 0.9941452f;
+		@Expose
+		@SerializedName(value = "birdFeedY", alternate = "privateBirdFeedY")
+		public float birdFeedY = 0.008333334f;
 
 		@Expose
 		public long contestSavedCycle = Long.MIN_VALUE;
@@ -1391,6 +1452,9 @@ public class SafariConfig {
 		private static final int BIRDFEEDER_EMPTY = 124;
 		private static final int APPEAR_BIRDFEEDER_EMPTY = 125;
 		private static final int SOUND_SETTINGS_BIRDFEEDER_EMPTY = 126;
+		private static final int PRIVATE_FEED_DONE = 127;
+		private static final int PRIVATE_APPEAR_FEED_DONE = 128;
+		private static final int PRIVATE_SOUND_FEED_DONE = 129;
 
 		@SettingInfo(name = "Mute Other Sounds", desc = "Mutes Minecraft audio except Safari Utils alert sounds and previews")
 		@SettingToggle @Expose
@@ -2711,6 +2775,50 @@ public class SafariConfig {
 		@SettingGroup(id = SOUND_SETTINGS_FEED_GONE) @Expose
 		public float feedGoneSoundPitch = 0.5f;
 
+		@SettingInfo(name = "All Feed Done", desc = "")
+		@SettingSection(id = PRIVATE_FEED_DONE) @SettingGroup(id = BIRD_ALERTS)
+		public boolean privateFeedDoneAlertAccordion = false;
+		@SettingInfo(name = "Play Alert", desc = "Plays when every synchronized feed item has spawned a bird")
+		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"})
+		@SettingGroup(id = PRIVATE_FEED_DONE) @Expose
+		public int privateFeedDoneSoundMode = 3;
+		@SettingInfo(name = "Appearance Settings", desc = "")
+		@SettingSection(id = PRIVATE_APPEAR_FEED_DONE) @SettingGroup(id = PRIVATE_FEED_DONE)
+		public boolean privateFeedDoneAppearanceAccordion = false;
+		@SettingInfo(name = "Text", desc = "") @SettingText
+		@SettingGroup(id = PRIVATE_APPEAR_FEED_DONE) @Expose
+		public String privateFeedDoneText = "All Feed Done";
+		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
+		@SettingRange(minValue = 0.1f, maxValue = 10f, minStep = 0.1f)
+		@SettingGroup(id = PRIVATE_APPEAR_FEED_DONE) @Expose
+		public float privateFeedDoneScale = 4f;
+		@SettingInfo(name = "Vertical Position", desc = "How far down the screen this banner alert sits\n§7Always centered horizontally")
+		@SettingRange(minValue = 0f, maxValue = 1f, minStep = 0.01f)
+		@SettingGroup(id = PRIVATE_APPEAR_FEED_DONE) @Expose
+		public float privateFeedDoneVerticalPosition = 0.4f;
+		@SettingInfo(name = "Duration", desc = "How long this banner stays on screen, in seconds")
+		@SettingRange(minValue = 0.5f, maxValue = 30f, minStep = 0.5f)
+		@SettingGroup(id = PRIVATE_APPEAR_FEED_DONE) @Expose
+		public float privateFeedDoneDuration = 3f;
+		@SettingInfo(name = "Color", desc = "") @SettingColor
+		@SettingGroup(id = PRIVATE_APPEAR_FEED_DONE) @Expose
+		public String privateFeedDoneColour = DisplayConfig.colour(0x55, 0xFF, 0x55);
+		@SettingInfo(name = "Sound Settings", desc = "")
+		@SettingSection(id = PRIVATE_SOUND_FEED_DONE) @SettingGroup(id = PRIVATE_FEED_DONE)
+		public boolean privateFeedDoneSoundAccordion = false;
+		@SettingInfo(name = "Sound Choice", desc = "")
+		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
+		@SettingGroup(id = PRIVATE_SOUND_FEED_DONE) @Expose
+		public int privateFeedDoneSoundChoice = 9;
+		@SettingInfo(name = "Volume", desc = "")
+		@SettingRange(minValue = 0f, maxValue = 20f, minStep = 0.1f)
+		@SettingGroup(id = PRIVATE_SOUND_FEED_DONE) @Expose
+		public float privateFeedDoneSoundVolume = 20f;
+		@SettingInfo(name = "Pitch", desc = "")
+		@SettingRange(minValue = 0.5f, maxValue = 2f, minStep = 0.1f)
+		@SettingGroup(id = PRIVATE_SOUND_FEED_DONE) @Expose
+		public float privateFeedDoneSoundPitch = 0.5f;
+
 		public boolean soundContestAlertsAccordion = false;
 
 		public boolean contestStartSoundAccordion = false;
@@ -3079,6 +3187,7 @@ public class SafariConfig {
 		private static final int CHAT_TOTAL_FEED = 21;
 		private static final int CHAT_FEED_GONE = 22;
 		private static final int CHAT_STARTING_ITEMS = 23;
+		private static final int PRIVATE_CHAT_FEED_DONE = 24;
 
 		@SettingInfo(name = "Safari Chat Alerts", desc = "")
 		@SettingSection(id = SAFARI_CHAT_ALERTS)
@@ -3245,6 +3354,17 @@ public class SafariConfig {
 		@SettingText @SettingGroup(id = CHAT_FEED_GONE) @Expose
 		public String feedGoneChatText = "All Feed Used!";
 
+		@SettingInfo(name = "All Feed Done", desc = "")
+		@SettingSection(id = PRIVATE_CHAT_FEED_DONE) @SettingGroup(id = CHAT_BIRDS)
+		public boolean privateFeedDoneChatAccordion = false;
+		@SettingInfo(name = "Send To", desc = "Sends when every synchronized feed item has spawned a bird")
+		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
+		@SettingGroup(id = PRIVATE_CHAT_FEED_DONE) @Expose
+		public int privateFeedDoneBroadcast = 1;
+		@SettingInfo(name = "Text", desc = "") @SettingText
+		@SettingGroup(id = PRIVATE_CHAT_FEED_DONE) @Expose
+		public String privateFeedDoneChatText = "All Feed Done!";
+
 		@SettingInfo(name = "Contest Chat Alerts", desc = "")
 		@SettingSection(id = CONTEST_CHAT_ALERTS)
 		public boolean contestChatAlertsAccordion = false;
@@ -3328,6 +3448,10 @@ public class SafariConfig {
 
 		public Broadcast feedGone() {
 			return broadcast(feedGoneBroadcast);
+		}
+
+		public Broadcast privateFeedDone() {
+			return broadcast(privateFeedDoneBroadcast);
 		}
 
 		public Broadcast hotspot() {

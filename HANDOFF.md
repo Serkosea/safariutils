@@ -1,76 +1,126 @@
 # Safari Utils developer handoff
 
-This document covers the current v1.3.1 codebase. Installation, features, and commands are in [README.md](README.md).
+This document describes the v1.6.0 codebase. User-facing features, installation, and commands are documented in [README.md](README.md).
 
-## Project identity
+## Project and toolchain
 
-Safari Utils is a client-side Fabric mod for Hypixel SkyBlock's Critter Safari. Its documentation, package names, assets, settings, and releases all use the Safari Utils name.
-
-Public builds contain no private Hypixel API key. Bazaar prices use Hypixel's public endpoint and need no key. Chat announcements are only sent when their setting is enabled.
-
-## Toolchain and version profiles
+Safari Utils is a client-side Fabric mod for Hypixel SkyBlock's Critter Safari.
 
 - Java 25
 - Fabric Loader 0.19+
 - Fabric API
-- Safari Utils' dependency-free custom settings interface
-- Minecraft's official/deobfuscated 26.x names; no separate mappings dependency
-- Access widener namespace: `official`
+- Minecraft 26.1.2 and 26.2 profiles under `gradle/versions/`
+- Shared sources under `src/main/java`
+- Small compatibility sources under `src/<profile>/java`
+- Optional ignored private extension under `private-api/`
 
-The repository uses one shared source set plus small version-specific source directories:
-
-| Profile | Version | Output |
-|---|---|---|
-| `26.1.2` | Safe Mode public | `safariutils-1.3.1+mc26.1.2.jar` |
-| `26.1.2` | Extra public | `safariutils-1.3.1-extra+mc26.1.2.jar` |
-| `26.2` | Safe Mode public | `safariutils-1.3.1+mc26.2.jar` |
-| `26.2` | Extra public | `safariutils-1.3.1-extra+mc26.2.jar` |
-| Configured deploy profile | Private developer build | `safariutils-private-1.3.1-extra+mc<version>.jar` |
-
-The version-specific `WaypointRenderer` and `ClientCompat` implementations isolate rendering/API differences. Do not create version branches for normal compatibility work.
+Public outputs for each profile are a Safe Mode jar and an Extra jar:
 
 ```powershell
-.\gradlew.bat compileJava
 .\gradlew.bat build
-.\gradlew.bat build "-PextraBuild=true"
-.\gradlew.bat compileJava "-PminecraftProfile=26.2"
+.\gradlew.bat build -PextraBuild=true
 .\gradlew.bat build "-PminecraftProfile=26.2"
-.\gradlew.bat build "-PminecraftProfile=26.2" "-PextraBuild=true"
+.\gradlew.bat build "-PminecraftProfile=26.2" -PextraBuild=true
 ```
 
-`build` only builds. `deployToInstance` copies the selected profile's jar when `-PdeployDir=<mods folder>` is supplied, and `deployToInstanceAndLaunch` deploys and launches it. Override `prismExecutable` and `prismInstance` when needed. Machine-specific paths belong on the command line or in the user's Gradle properties, never in committed source.
+Private builds use `-PincludePrivateApi=true`; that flag also selects Extra behavior. The private source directory and `private-api/api-key.txt` are ignored by Git. `deployToInstance` deploys to the configured primary and optional secondary Prism mods directories, then mirrors Safari Utils configuration only from the configured source instance to the configured target instance.
 
-Parser changes should be checked against captured server messages, then verified in game for scoreboard, tab-list, entity, and rendering behavior.
+## Runtime order
 
-## Runtime pipeline
+`SafariUtils.onInitializeClient` owns registration. The important client-tick order is:
 
-`SafariUtils.onInitializeClient` registers the client tick, chat, rendering, commands, and HUD elements. The rough dependency order is:
+1. Cache location, scoreboard, and tab-list state in `SafariLocation`
+2. Update Birdfeeder menus and the Minecraft/Safari party observers
+3. Update Sparkling and optional provider state
+4. Scan entities once through `CritterEntities`
+5. Process encounter, starting-inventory, objective, and session state
+6. Update markers, persistent catalogs, prices, chat, and configuration
 
-1. `SafariLocation` parses cached scoreboard/tab-list state and identifies SkyBlock, area, sub-area, biome, and unique lobby ID.
-2. `CritterEntities` performs the shared entity sweep consumed by detection, markers, hitboxes, and Sparkling logic.
-3. `SessionManager` decides whether a run is pending, active, or finished.
-4. Objective and encounter watchers update the session.
-5. HUDs, alerts, and markers consume that state.
-6. `ConfigManager` persists settings after the editor closes.
+Do not add independent scoreboard, tab-list, or world-wide entity scans when an existing cache can supply the same information.
 
-Read the scoreboard and tab list once per tick. Several features use the same lines, so separate scans waste work and can disagree within one tick.
+## Safari visit and run lifecycle
 
-## Run lifecycle
+Entering a Safari instance creates a transient visit context immediately. Objective trackers and optional synchronization may collect information during this pre-ticket period, but the visit is not yet a run and must not be saved.
 
-A Safari lobby is not automatically an active run.
+A run begins only after both of these signals:
 
-- Entering `Area: Safari` creates pending arrival state and resets stale lobby information.
-- The run normally activates from the exact Safari Manager completion line. Leader and party-member messages are both supported.
-- Catches, loot shares, relevant floor-drop activity, or positive Safari Essence activity can activate the session as safety fallbacks. Pre-activation catch rewards are buffered and committed only if the run becomes active.
-- The pre-run `Players (N)` tab-list value is used for the Progress HUD and full-party alert. It is ignored as an activation requirement once the run starts.
-- A run ends from the Safari reward summary or a confirmed area/lobby-ID transition. The unique scoreboard lobby ID handles Safari-to-Safari warps and prevents a failed warp into the same lobby from ending the run.
-- The reward summary's Safari Essence value confirms the final run total; live positive scoreboard deltas drive the running value. Decreases are treated as spending, not negative profit.
+1. The player submits a ticket action: the leader interacts with the Safari Manager, or a member chooses a ticket in the entry menu
+2. The server places 32–64 normal Critter Capsules in inventory and that inventory remains available for the 250 ms Starting Items settling delay
 
-Keep matching exact and anchored. Location substrings, player-quoted messages, and capsule labels have all caused false positives in the past.
+Catches, floor drops, Rainbow Feathers, Safari Essence changes, and other activity never activate a run. `StartingItemsWatch` owns this capsule-gated transition and freezes one immutable full-inventory snapshot. Later floor drops and inventory movement cannot alter that snapshot.
 
-## State and persistence
+`PartyRosterWatch` requests `/party list` on Safari entry. The first fresh response after entry defines the complete visit roster. `SafariPartyWatch` tracks current instance attendance. The roster is immutable for the visit: leaves, kicks, crashes, delayed arrivals, and party changes do not redefine the current run. A changed party takes effect in the next Safari instance.
 
-`SafariPaths` owns all paths and migrates older layouts on startup:
+A run ends from its reward summary or a confirmed lobby transition. Empty visits are never persisted. `SafariSession` owns mutable run state, `RunRecord` is the persisted form, and `RunHistory` maintains aggregates only when history changes.
+
+## Starting Items and Bird Feed
+
+`StartingItemsWatch` counts every selected item anywhere in inventory after capsule allocation. It credits starting feed and Shining Coins to the same objective trackers that receive later floor drops.
+
+`BirdfeederWatch` distinguishes:
+
+- feed found or carried
+- feed stably deposited by this player
+- feed currently visible in Birdfeeder slot 22
+- bird-spawn messages, which prove feed consumption
+- cursor-held feed and rejected mismatched-stack interactions
+
+A cursor-held stack remains held after the menu closes for a bounded resynchronization window. No Feed and All Feed Used remain mutually exclusive. Empty alerts require locally held feed and have a three-second duplicate guard.
+
+The public Bird Feed HUD presents conservative local information and marks other loaded party members' feed as unknown. An optional provider may replace that panel with authoritative shared state. Keep public rendering and settings functional without a provider.
+
+## Objective confirmation and Safe Mode
+
+Safe Mode uses visible or otherwise player-observable evidence. Extra mode can use additional internal information. Optional synchronized facts are considered authoritative because another approved client observed them.
+
+- Bee Nests accept left- or right-click interaction but clear only after a newly appearing Honeybug is confirmed within 12 blocks and five seconds
+- Floor drops, mounds, walls, and stationary critters retain their existing candidate-versus-confirmed distinction
+- Synchronized Forest completion may clear the corresponding Missing HUD entries and waypoints
+- A loaded absent Bee Nest candidate may be repaired as completed while synchronization is authoritative
+
+Do not let a catalog candidate become a completed objective solely because an unloaded chunk reports air.
+
+`RecatchSpots` records every ordinary-capsule attempt against a non-Common critter, including Doomspiral and Wumpa. Hideyho is excluded because it is not captured with capsules; Commons and Masterful Capsule attempts are excluded because they cannot escape. A confirmed catch clears its pin and pity state, while an escape can carry pity to the replacement entity ID.
+
+## Sparkling behavior
+
+`/sparkling` opens `SparklingScreen`; all edits and imports live in that UI. Public builds provide manual Shared/Missing imports. Optional providers add automatic party collection and Player Lookup. A private client entering with any non-whitelisted party member keeps the provider idle and exposes the public manual controls after the fresh party-list response confirms that roster.
+
+`SparklingMode` keeps the visit's expected roster stable. A party catch becomes newly shared only when everyone who needed that unique received it. Optional providers may use cached ownership to prove that an absent original member already owned the species.
+
+`SparklingStats` stores per-species counts, Rainbow Feathers, and an imported duplicate baseline. Tracked duplicate catches advance both the imported aggregate and its comparison baseline. Unique catches do not change duplicates.
+
+Player Lookup results are cached for five minutes. Hypixel profile requests are globally spaced by ten seconds in the private client. Automatic party loads happen on Safari entry; the same party refreshes only on a later Safari entry after five minutes have elapsed.
+
+## Optional private party synchronization
+
+The ignored private extension resolves the complete party from the fresh `/party list` response and enables transport only when every current party member is approved. Solo private runs are synchronized because the local client has complete information.
+
+The original run roster remains immutable. If an outsider enters the Minecraft party, outgoing hidden messages stop and queued internal messages are discarded. Already confirmed facts remain. Transport resumes only after a newer party-list capture proves that the party is approved again; the provider then resends aggregate state and every locally confirmed nest.
+
+Aggregate messages coalesce rapid inventory and objective changes. `ChatQueue` serializes outgoing lines with a 1.2-second gap. Distinct Bee Nest confirmations are retained and retried. A departed member's completed contributions remain, while unused feed still held by that member becomes unavailable after confirmed absence.
+
+The synchronized Forest is done only after all nine floor drops are known and every discovered feed has produced a bird. Only the client receiving the final bird-spawn line may send the completion chat alert.
+
+## UI and configuration
+
+`SafariConfig` fields annotated with `@Expose` are persistent JSON keys. Renames require `@SerializedName` migration aliases or explicit migration in `ConfigManager`. Bird Feed HUD fields use public `birdFeed...` names while accepting the earlier `privateBirdFeed...` keys.
+
+`SafariSettingsScreen.visibleInThisBuild` hides fields prefixed with `private` from public builds and hides diagnostic/Safe Mode controls where appropriate. Public documentation and release notes must never mention private functionality.
+
+Custom screens use `ResponsiveUI` where a fixed reference canvas is required. Mouse events passed to scaled Minecraft widgets must be converted to logical coordinates as well as custom hit tests. `HudBox` is the single source for live and editor positioning. The HUD editor keeps its visible outline one pixel inside every edge and supports unsnapped one-pixel arrow-key adjustment.
+
+The Contest HUD distinguishes three settings:
+
+- ordinary Safari-only visibility
+- Show Everywhere inside SkyBlock, including Dungeons and Kuudra
+- Show Outside SkyBlock
+
+`SafariLocation.findSkyblock` uses the sidebar objective title; an Area row is not required for Dungeons or Kuudra.
+
+## Persistence
+
+`SafariPaths` owns every path:
 
 ```text
 config/safariutils/
@@ -78,106 +128,31 @@ config/safariutils/
 ├── safariutils-runs.json
 ├── safariutils-sparkling.json
 ├── safariutils-static-waypoints.json
-└── safariutils-static-entities.json
+├── safariutils-static-entities.json
+└── logs/
 ```
 
-The private developer build may also create timestamped files under `config/safariutils/logs/` while its output log is enabled.
-
-Use `SafariPaths` rather than constructing any path manually. Never delete or overwrite a user's old root-level files during a migration until the replacement has been written successfully.
-
-- `SafariSession` owns mutable current-run totals.
-- `RunRecord` is the persisted finished-run representation.
-- `RunHistory` loads, saves, and summarizes run records.
-- `SparklingStats` owns cumulative per-species catches and Rainbow Feathers.
-- `ContestTracker` persists the ongoing contest identity and last known standing in the settings data so restarts during the same contest do not replay one-time alerts.
-
-Persisted fields must remain exposed to Gson. Renaming one without migration resets the user's value. The custom interface reads Safari Utils' local annotations through reflection; field names remain the stable persistence and UI identities.
-
-## Major systems
-
-| System | Main classes | Notes |
-|---|---|---|
-| Location and session | `SafariLocation`, `SessionManager`, `SafariSession` | Area is from tab list; sub-area is from scoreboard; lobby ID is scoreboard-derived. |
-| Chat parsing | `ChatParser`, `CritterEvent` | Reject player-typed quotations unless a feature deliberately reads shared mod output. |
-| Entity detection | `CritterEntities`, `CritterSpotter`, `DetectedCritters`, `StillCritters` | One shared sweep; preserve entity identity rules around captures and multi-part mobs. |
-| Missing HUD/objectives | `MissingHud`, `SafariObjectives`, `FloorDrops`, `MoundSpotter`, `WallTracker`, `NestTracker` | Normal and Sparkling Mode have different completion and presentation rules. |
-| Sparkling | `SparklingWatch`, `ParticleDiagnostics`, `SparklingMode`, `SparklingStats`, `FullScreenAlert` | Name tags and the validated repeated particle signature complement each other. A live Sparkling remains tracked until caught. |
-| Profit | `BazaarPrices`, session/history models | Uses `ESSENCE_SAFARI`, `RAINBOW_FEATHER`, and shard product IDs. Network/cache failures must fail without corrupting run totals. |
-| Contest | `ContestTracker`, `ProgressHud` | Real-time cycle is 20 minutes; contest duration is 19:33. Score and bracket come from tab list. |
-| Alerts/chat | `EncounterAlerts`, `ChatQueue`, watcher classes | Alert processing cannot depend on a HUD being visible. Each alert owns text, duration, color, and sound; placement and scale are shared. |
-| Rendering | `Markers`, versioned `WaypointRenderer`, `HudPanel`, `HudBorderStyle`, `SpecialTheme` | Minecraft 26.2 has a separate renderer. Test block faces while falling as well as standing. |
-| Configuration | `SafariConfig`, `ConfigManager`, `SafariSettingsScreen`, `AdvancedUnlock` | Local annotations define cards and groups; verify the rendered hierarchy, editors, and search in game. |
-
-Banner text, duration, color, and sound remain alert-specific. Position and scale are intentionally shared through `AlertConfig.alertHorizontalPosition`, `alertVerticalPosition`, and `alertScale`, edited through the Banner Alerts target in `HudEditorScreen`. Older per-alert placement fields remain persisted for compatibility but are hidden and must not drive rendering.
-
-## Sparkling Mode invariants
-
-- `/sparkling` opens the standalone collection and party editor. Public builds import Shared or Missing lists from the clipboard in that screen; private builds can refresh them from the API.
-- Before a species' unique catch, Missing HUD shows `Near` only—never `N+ Left`.
-- After its unique catch, a still-relevant species remains available for Sparkling hunting without a cumulative Seen counter.
-- Shared species disappear after their unique catch; unshared species remain available for Sparkling hunting.
-- Loot-shared catches count as the party's unique catch.
-- If the current player count is lower than the run's expected party count when a Sparkling is caught, do not mutate the shared list; a disconnected member may not have received it.
-- Reducing ordinary Sparkling Mode HUD information must not disable Sparkling catch tracking.
-- `Ignore Uniques` hides shared species and their prerequisite objectives, but never disables detection of a Sparkling version.
-- Objective items are hidden only after the requirement they enable is complete. Death can remove inventory, so re-evaluate live inventory after the faint message instead of trusting an accumulated counter.
-- Multi-part or transformed mobs require special caps/buffers. Use species spawn maxima and the existing Shyworm cap; do not treat temporary capture-ball armor stands as new sightings.
-
-## Build versions and Advanced
-
-Every version includes a locked constellation in Settings. `SafariSettingsScreen` owns its node order, and completing it reveals Advanced for the current Minecraft session.
-
-The default build is the Safe Mode edition. `-PextraBuild=true` adds the Extra features and exposes the Safe Mode controls. `BuildVersion.SAFE` keeps every Safe Mode decision enabled in the default edition, whose Advanced page contains only Special Themes.
-
-Public jars do not register diagnostic commands, run debug collection, or show diagnostic settings. Those tools are available only when `-PincludePrivateApi=true` creates the private developer build. `BuildVersion.DEVELOPER` is the gate for this boundary.
-
-Bundled static locations seed Safe Mode. Unknown positions can still be used during the current run; persistent learning is limited to clean solo Hideonfloor observations. Neither edition performs a full-biome discovery sweep.
-
-## Gameplay and alert behavior
-
-- Alerts has a global, default-off Mute Other Sounds toggle. Playback is identified by its Safari Utils call path, not a sound ID, so identical vanilla sounds remain muted. Existing non-alert channels have their gain refreshed only when the toggle changes; Minecraft's volume settings are not modified.
-
-- `PartyRosterWatch` quietly verifies the party through `/party list`, including after reconnecting; only joining a party produces its client confirmation. A verified solo state prevents queued `/pc` alerts while unknown state still fails open.
-- `TicketProtection` blocks the leader's Manager interaction or a member's ticket selection while attendance is incomplete. Unknown roster data fails open. Keep the tested grace and stability timings unchanged.
-- `HideyhoAutoAccept` consumes the current choice line and accepts it before it reaches chat.
-- All Feed Used waits for a stable inventory deposit. Cursor-held stacks still count as held, and a server-rejected deposit cancels the pending alert.
-- `BirdfeederWatch.tickMenu` watches slot 22 for a loaded-to-empty transition in the open Birdfeeder menu. Opening an empty menu does not alert.
-- Contest warning suppression and the encounter biome gate are independent for banners and chat. The biome gate also covers Forest bird events.
-- Banner playback indices are 0 Off, 1 Banner, 2 Sound, 3 Banner + Sound. `ConfigManager` migrates old toggles; sound-only events must not replace a visible banner.
-- Settings Reset Page copies defaults only into exposed settings rendered by the current tab/expanded sections. The category rail scrolls independently without drawing a scrollbar.
-- Clipboard imports live in the Sparkling Party tab and accept either Shared or Missing formatted lists.
-- Private refresh/lookup implementation and credentials remain ignored and are never public release assets. Private jars contain a build-generated obfuscated key payload and must be distributed privately.
-- The private Player Lookup tab loads one cached profile containing unique Sparklings, duplicates, and Basic, Economy, Premium, and First-Class tickets.
-
-## Optional custom sounds
-
-A future user-sound library should read `.ogg` files from `config/safariutils/sounds/` and expose them through a generated runtime resource pack plus Minecraft's normal sound manager. Refresh the pack only when files change or the player requests it; do not scan the folder every tick. This preserves Minecraft's device handling and volume categories. Direct OpenAL playback would offer independent gain but is intentionally avoided because it can conflict with Minecraft's mixer and audio-device lifecycle. Source audio can be normalized before loading to provide stronger volume without layering the same event repeatedly.
-
-## Editing rules and known traps
-
-- Use exact or anchored server-text patterns. Never let `Entry To Critter Safari` match `Safari`, or a player quotation impersonate a server event.
-- The `entered Critter Safari!` line contains the party leader's name, not necessarily the local player's name.
-- Player levels in tab list are optional. Parse names both with and without `[level]` prefixes.
-- The scoreboard and tab list update asynchronously during lobby joins. Discard residual `Players` values above four and compare the stabilized `Players (N)` line with the verified party size before the full-party alert.
-- Contest transitions are wall-clock driven; scoreboard seconds are display context, not the timer source. Reset score, bracket, and ticket state at the contest boundary.
-- Safe Mode is unconditional in the default edition and configurable in Extra.
-- Renderer line vertices require a width. For 26.2 block faces, test falling and slope movement; culling based on vertical motion previously hid top faces.
-- Alert groups are intentionally nested per alert: test button, Play Alert, Appearance Settings, and Sound Settings. Verify the custom screen after changing accordion IDs.
-- Keep comments concise and explain reasons or non-obvious server behavior, not line-by-line mechanics.
+Settings, history, and learned catalogs use atomic writes. Migration never overwrites an existing destination. Diagnostic settings reset each launch and are not lasting preferences.
 
 ## Public/private boundary
 
-The public repository includes only the `SharedSparklingProvider` boundary and manual shared-list behavior. Optional developer-only profile lookup sources and credentials belong under ignored `private-api/` and are included only with `-PincludePrivateApi=true`.
+Public jars must contain no private classes, service registrations, usernames, UUIDs, API keys, or generated key payloads. Public source may contain only provider interfaces and no-op facades.
 
 Never commit:
 
 - `private-api/`
-- `api-key.txt` anywhere in the tree
-- `.env` files, PEM files, or key files
-- Minecraft config, run history, or debug logs
+- any `api-key.txt`
+- generated private sources
+- Minecraft configuration, histories, logs, or copied jars
 
-Before every public push, verify the private directory and key files remain ignored, inspect the staged diff, and scan the public jars for private classes, provider registrations, and credentials. A personal Hypixel key must never be embedded in a public jar or repository.
+Before release, inspect both the Git diff and jar contents. Confirm that only private jars contain `dev/serko/safariutils/privateapi`, provider service files, and `EmbeddedApiKey`.
 
-## Release standard
+## Release checklist
 
-For both profiles: compile, build, launch, open `/su`, render all HUDs, test waypoints while standing/jumping/falling, and complete a short Safari/contest smoke test. Confirm the jar metadata and names before publishing. GitHub generates the source zip and tar.gz automatically from the release tag.
+1. Run `git diff --check`
+2. Build Safe and Extra public jars for Minecraft 26.1.2 and 26.2
+3. Build private jars for both profiles
+4. Inspect jar metadata, filenames, class lists, service files, and public-key absence
+5. Test the lifecycle, Starting Items, Bird Feed, objective confirmation, HUD editor, Sparkling UI, and Contest visibility in game
+6. Keep README, CHANGELOG, RELEASE_NOTES, and this handoff synchronized
+7. Push or publish only after the user explicitly requests it

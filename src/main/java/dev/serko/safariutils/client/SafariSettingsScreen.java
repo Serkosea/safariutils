@@ -737,6 +737,7 @@ public final class SafariSettingsScreen extends Screen {
 
 	/** Keeps developer tools private and hides Safe Mode controls in Safe Mode jars. */
 	private static boolean visibleInThisBuild(Class<?> owner, Field field) {
+		if (field.getName().startsWith("private") && !BuildVersion.DEVELOPER) return false;
 		if (owner != SafariConfig.AdvancedConfig.class || BuildVersion.DEVELOPER) return true;
 		if (field.getName().equals("specialTheme")) return true;
 		return !BuildVersion.SAFE && (field.getName().startsWith("safe")

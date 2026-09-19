@@ -4,7 +4,7 @@ Safari Utils is a Fabric mod made for Hypixel SkyBlock's Critter Safari. It keep
 
 ## What it includes
 
-- Movable HUDs for run progress, missing critters, and contest status.
+- Movable HUDs for run progress, missing critters, Bird Feed status, and contest status.
 - Run history, lifetime totals, Safari Essence, Rainbow Feathers, and Bazaar profit.
 - A dedicated Sparkling menu with editable collection totals, party-shared lists, Sparkling Mode, and special catch effects.
 - Helpful markers for Safari objectives and encounters.
@@ -21,8 +21,8 @@ Choose the jar that matches your Minecraft version.
 
 | Minecraft | Safe Mode | Extra |
 |---|---|---|
-| 26.1.2 | `safariutils-1.5.0+mc26.1.2.jar` | `safariutils-1.5.0-extra+mc26.1.2.jar` |
-| 26.2 | `safariutils-1.5.0+mc26.2.jar` | `safariutils-1.5.0-extra+mc26.2.jar` |
+| 26.1.2 | `safariutils-1.6.0+mc26.1.2.jar` | `safariutils-1.6.0-extra+mc26.1.2.jar` |
+| 26.2 | `safariutils-1.6.0+mc26.2.jar` | `safariutils-1.6.0-extra+mc26.2.jar` |
 
 The Safe Mode edition is the recommended download. Extra includes features that may provide information the player cannot directly see and may not be safe to use.
 
@@ -47,7 +47,7 @@ Existing Safari Utils settings and history are moved into `config/safariutils/` 
 | `/safari stats` | Opens run history and statistics. |
 | `/sparkling` | Opens the Sparkling collection and party menu. |
 
-The `/su` and `/safariutils` aliases support the same subcommands.
+The `/su`, `/safari`, and `/safariutils` aliases support the same subcommands.
 
 ## License
 

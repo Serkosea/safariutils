@@ -59,6 +59,12 @@ public final class ChatQueue {
 		pending.clear();
 	}
 
+	/** Removes queued internal messages belonging to a context that has ended. */
+	public static void discardContaining(String marker) {
+		if (marker == null || marker.isEmpty()) return;
+		pending.removeIf(queued -> queued.line().contains(marker));
+	}
+
 	/** Drains at most one queued line per call; wired to the client tick. */
 	public static void tick() {
 		if (pending.isEmpty()) return;

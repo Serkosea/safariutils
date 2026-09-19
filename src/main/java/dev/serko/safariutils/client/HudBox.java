@@ -1,7 +1,6 @@
 package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.data.SafariBiome;
-import dev.serko.safariutils.session.SafariSession;
 import dev.serko.safariutils.session.SessionManager;
 import net.minecraft.client.gui.Font;
 
@@ -131,6 +130,36 @@ public enum HudBox {
 		}
 	},
 
+	BIRD_FEED("Bird Feed HUD", PartyBirdFeedHud::panel) {
+		@Override
+		public float x() { return ConfigManager.get().display.birdFeedX; }
+
+		@Override
+		public float y() { return ConfigManager.get().display.birdFeedY; }
+
+		@Override
+		public float scale() { return ConfigManager.get().display.birdFeedScale; }
+
+		@Override
+		public int expansion() { return ConfigManager.get().display.birdFeedExpansion; }
+
+		@Override
+		public void setPosition(float x, float y) {
+			ConfigManager.get().display.birdFeedX = x;
+			ConfigManager.get().display.birdFeedY = y;
+		}
+
+		@Override
+		public void setScale(float scale) {
+			ConfigManager.get().display.birdFeedScale = scale;
+		}
+
+		@Override
+		public boolean enabled() {
+			return ConfigManager.get().display.showBirdFeedHud;
+		}
+	},
+
 	ALERTS("Banner Alerts", EncounterAlerts::editorPanel) {
 		@Override
 		public float x() {
@@ -253,7 +282,7 @@ public enum HudBox {
 
 	public int pixelY(int screenHeight, HudPanel panel, float renderedScale) {
 		int max = Math.max(0, screenHeight - Math.round(panel.height() * renderedScale));
-		return Math.min(max, Math.round(y() * screenHeight));
+		return Math.clamp(Math.round(y() * screenHeight), 0, max);
 	}
 
 	/** Saves a dragged top-left pixel as this box's configured expansion anchor. */
@@ -279,8 +308,4 @@ public enum HudBox {
 		return MissingHud.buildPanel(biome, SessionManager.currentOrLast());
 	}
 
-	/** Convenience for the editor, which wants the live session without re-querying. */
-	static SafariSession session() {
-		return SessionManager.currentOrLast();
-	}
 }

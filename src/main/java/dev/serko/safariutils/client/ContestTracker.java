@@ -271,10 +271,10 @@ public final class ContestTracker implements HudElement {
 	private static boolean shouldShow() {
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
 		if (!display.showContestHud || display.contestHideOnComplete && ticket) return false;
+		if (!SafariLocation.inSkyblock()) return display.contestShowOutsideSkyblock;
+		if (display.contestShowEverywhere) return true;
 		String area = SafariLocation.tabListArea();
-		if (area == null) return display.contestShowOutsideSkyblock;
-		return "Torrhus Canyon".equals(area) || "Safari".equals(area)
-			|| display.contestShowEverywhere;
+		return "Torrhus Canyon".equals(area) || "Safari".equals(area);
 	}
 
 	static HudPanel buildPanel() {

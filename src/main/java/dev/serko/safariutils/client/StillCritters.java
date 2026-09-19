@@ -232,6 +232,10 @@ public final class StillCritters {
 		}
 		String lobby = SafariLocation.lobbyId() == null ? "pending" : SafariLocation.lobbyId();
 		if (lobby.equals(preparedLobby)) return;
+		if ("pending".equals(preparedLobby)) {
+			preparedLobby = lobby;
+			return;
+		}
 		preparedLobby = lobby;
 		reset();
 	}

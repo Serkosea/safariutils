@@ -17,6 +17,7 @@ public final class SpecialTheme {
 
 	public static void text(GuiGraphicsExtractor graphics, Font font, Component component,
 						int x, int y, int fallbackColour) {
+		if (PlayerNameStyle.drawIfPresent(graphics, font, component, x, y, fallbackColour)) return;
 		if (!rainbow()) {
 			graphics.text(font, component, x, y, fallbackColour);
 			return;

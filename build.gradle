@@ -16,7 +16,7 @@ if (localDeployFile.isFile()) {
 }
 
 def deployRequested = gradle.startParameter.taskNames.any {
-	it == 'deployToInstance' || it == 'deployToInstanceAndLaunch'
+	it == 'deployToInstance'
 }
 def minecraftProfile = project.findProperty('minecraftProfile')
 	?: (deployRequested ? project.findProperty('deployMinecraftProfile') : null)
@@ -37,7 +37,17 @@ profile.each { key, value -> project.ext.set(key.toString(), value.toString()) }
 
 sourceSets.main.java.srcDir("src/${minecraftProfile}/java")
 
-version = "${project.release_version}${extraBuild ? '-extra' : ''}+mc${project.minecraft_version}"
+// Keep variant outputs physically separate. Besides preserving all release jars,
+// this prevents stale private classes or service registrations from surviving into
+// a later incremental public build.
+def buildVariant = privateApiBuild ? 'private' : (extraBuild ? 'extra' : 'safe')
+layout.buildDirectory.set(layout.projectDirectory.dir(
+	"build/${minecraftProfile}/${buildVariant}"))
+
+def selectedReleaseVersion = privateApiBuild
+	? project.private_release_version
+	: project.release_version
+version = "${selectedReleaseVersion}${extraBuild ? '-extra' : ''}+mc${project.minecraft_version}"
 group = project.maven_group
 
 base {
@@ -145,9 +155,16 @@ java {
 def deployDirValue = project.findProperty('deployDir')
 	?: project.findProperty("deployDir.${minecraftProfile}")
 def deployDir = deployDirValue ? file(deployDirValue) : layout.buildDirectory.dir('undeployed').get().asFile
+def deployAdditionalDirValue = project.findProperty('deployAdditionalDir')
+	?: project.findProperty("deployAdditionalDir.${minecraftProfile}")
+def deployAdditionalDir = deployAdditionalDirValue ? file(deployAdditionalDirValue) : null
+def deployConfigSourceValue = project.findProperty('deployConfigSource')
+	?: project.findProperty("deployConfigSource.${minecraftProfile}")
+def deployConfigTargetValue = project.findProperty('deployConfigTarget')
+	?: project.findProperty("deployConfigTarget.${minecraftProfile}")
 
-tasks.register('deployToInstance', Copy) {
-	description = 'Copy the built mod jar into the Prism Launcher SkyBlock instance.'
+tasks.register('deployToInstance') {
+	description = 'Copy the built mod jar to configured Prism instances and mirror Safari Utils config one-way.'
 	group = 'fabric'
 	dependsOn tasks.named('jar')
 	onlyIf {
@@ -155,22 +172,31 @@ tasks.register('deployToInstance', Copy) {
 		logger.lifecycle('deployToInstance skipped: set -PdeployDir=<mods folder> or define it in local Gradle properties')
 		return false
 	}
-	doFirst { delete fileTree(deployDir) { include 'safariutils-*.jar' } }
-	from tasks.named('jar')
-	into deployDir
-	doLast { logger.lifecycle("deployToInstance -> ${deployDir}") }
-}
-
-// --- Build, deploy, and launch Prism in one go ------------------------------
-// The instance ID is its folder name under PrismLauncher/instances/. Override
-// either default with -PprismExecutable=... or -PprismInstance=... if these
-// don't match your setup.
-def prismExecutable = project.findProperty('prismExecutable') ?: 'prismlauncher'
-def prismInstance = project.findProperty('prismInstance') ?: project.profile_prism_instance
-
-tasks.register('deployToInstanceAndLaunch', Exec) {
-	description = 'Build, deploy the jar, then launch the Prism instance.'
-	group = 'fabric'
-	dependsOn tasks.named('deployToInstance')
-	commandLine prismExecutable, '--launch', prismInstance
+	doLast {
+		def destinations = [deployDir]
+		if (deployAdditionalDir != null) destinations.add(deployAdditionalDir)
+		for (def destination : destinations) {
+			if (!destination.isDirectory()) {
+				throw new GradleException("Deploy mods folder does not exist: ${destination}")
+			}
+			delete fileTree(destination) { include 'safariutils-*.jar' }
+			copy {
+				from tasks.named('jar').get().archiveFile
+				into destination
+			}
+			logger.lifecycle("deployToInstance -> ${destination}")
+		}
+		if (deployConfigSourceValue && deployConfigTargetValue) {
+			def source = file(deployConfigSourceValue)
+			def target = file(deployConfigTargetValue)
+			if (!source.isDirectory()) {
+				throw new GradleException("Main Safari Utils config folder does not exist: ${source}")
+			}
+			project.sync {
+				from source
+				into target
+			}
+			logger.lifecycle("Safari Utils config mirrored one-way: ${source} -> ${target}")
+		}
+	}
 }

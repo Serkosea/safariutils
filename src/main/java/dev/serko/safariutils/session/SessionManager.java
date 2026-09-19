@@ -20,7 +20,10 @@ import dev.serko.safariutils.client.SafariObjectives;
 import dev.serko.safariutils.client.NestTracker;
 import dev.serko.safariutils.client.RecatchSpots;
 import dev.serko.safariutils.client.DetectedCritters;
-import dev.serko.safariutils.client.HeadStartWatch;
+import dev.serko.safariutils.client.StartingItemsWatch;
+import dev.serko.safariutils.client.PartyRosterWatch;
+import dev.serko.safariutils.client.SafariPartyWatch;
+import dev.serko.safariutils.api.PartyItemSyncProviders;
 import dev.serko.safariutils.client.WallTracker;
 import dev.serko.safariutils.client.SafeMode;
 import dev.serko.safariutils.client.TestingMode;
@@ -64,16 +67,20 @@ public final class SessionManager {
 
 	private static String runLobbyId;
 	private static String waitingLobbyId;
-	private static Integer waitingEssenceBalance;
-	private static final List<PendingEvent> pendingEvents = new ArrayList<>();
 	/** What opened the live run, and when — reported by {@code /su debug}. */
 	private static String startedBy = "nothing yet";
 	private static long startedAt;
-	/** When the last critter event landed, used to keep an active run from closing. */
-	private static long lastEventMillis;
 	private static boolean rewardSummaryOpen;
 	/** Prevents the summary's final scoreboard update from opening a phantom run. */
 	private static String completedSummaryLobbyId;
+	/** Transient tracking starts at instance entry; persistence starts after the ticket. */
+	private static boolean visitPrepared;
+	private static String visitLobbyId;
+	private static int visitPeakPlayers = 1;
+	private static int visitExpectedPlayers = 1;
+	private static int runExpectedPlayers = 1;
+	private static long visitEnteredAt;
+	private static boolean visitRosterLocked;
 
 	private SessionManager() {
 	}
@@ -94,9 +101,27 @@ public final class SessionManager {
 		}
 
 		if (!SafariLocation.inside()) {
-			clearPending();
+			visitPrepared = false;
+			visitLobbyId = null;
+			StartingItemsWatch.cancelPendingTicket();
+			waitingLobbyId = null;
 			completedSummaryLobbyId = null;
 			return;
+		}
+		if (!visitPrepared || lobbyId != null && visitLobbyId != null
+			&& !lobbyId.equals(visitLobbyId)) beginVisit(lobbyId);
+		else if (visitLobbyId == null && lobbyId != null) visitLobbyId = lobbyId;
+		visitPeakPlayers = Math.max(visitPeakPlayers, Math.max(1, SafariPartyWatch.joinedPlayers()));
+		if (!visitRosterLocked && PartyRosterWatch.rosterCapturedAt() >= visitEnteredAt) {
+			visitExpectedPlayers = Math.max(1, PartyRosterWatch.expectedPlayers());
+			visitRosterLocked = true;
+			if (current != null) runExpectedPlayers = visitExpectedPlayers;
+			DebugLog.line("PARTYTIME", "run roster locked at " + visitExpectedPlayers
+				+ " player" + (visitExpectedPlayers == 1 ? "" : "s"));
+		} else if (!visitRosterLocked) {
+			// Until the fresh party response arrives, loaded attendance is a safer lower
+			// bound than a stale party list from the previous island.
+			visitExpectedPlayers = Math.max(visitExpectedPlayers, visitPeakPlayers);
 		}
 		if (completedSummaryLobbyId != null) {
 			if (lobbyId == null || completedSummaryLobbyId.equals(lobbyId)) return;
@@ -104,22 +129,12 @@ public final class SessionManager {
 		}
 
 		if (lobbyId != null && !lobbyId.equals(waitingLobbyId)) {
-			if (current == null) pendingEvents.clear();
 			waitingLobbyId = lobbyId;
-			waitingEssenceBalance = SafariLocation.safariEssence();
 		}
 
 		if (current != null) {
 			Integer balance = SafariLocation.safariEssence();
 			if (balance != null) current.updateEssenceBalance(balance, System.currentTimeMillis());
-		} else {
-			Integer balance = SafariLocation.safariEssence();
-			if (balance != null && waitingEssenceBalance != null
-				&& balance > waitingEssenceBalance) {
-				startSession("Safari Essence gained");
-			} else if (balance != null) {
-				waitingEssenceBalance = balance;
-			}
 		}
 	}
 
@@ -192,49 +207,31 @@ public final class SessionManager {
 				+ " inside=" + SafariLocation.inside() + " raw=\"" + line + "\"");
 		}
 
-		// The Manager confirmation is itself authoritative Safari-only evidence. It can
-		// arrive before the tab list/area state has caught up, so location must not gate it.
+		// A Manager confirmation proves ticket submission, but capsule allocation is the
+		// final server-side acceptance signal and owns actual run activation.
 		if (isRunStart(line)) {
-			if (current == null) startSession("Safari Manager");
+			if (current == null) StartingItemsWatch.onTicketSubmitted("Safari Manager");
 			else DebugLog.line("ACTIVATE", "Manager confirmation arrived with a run already active");
 			return;
 		}
 
 		ChatParser.SparklingCatch sparkling = ChatParser.sparklingCatch(line);
 		if (sparkling != null) {
-			if (current == null && SafariLocation.inside()) startSession("Sparkling catch");
 			SparklingWatch.onCaught(sparkling.critter());
 			if (current != null) {
 				SparklingMode.onSparklingCaught(sparkling.critter());
 				current.recordSparkling(sparkling.critter(), sparkling.catcher(), now);
 				recordLifetimeSparkling(sparkling.critter());
 			}
-			else if (SafariLocation.inside()) {
-				pendingEvents.add(PendingEvent.sparkling(sparkling, now));
-				DebugLog.line("ACTIVATE", "queued pre-activation sparkling "
-					+ sparkling.critter().name() + ", pending=" + pendingEvents.size());
-			}
 			return;
 		}
 
 		if (ChatParser.bonusRainbowFeather(line)) {
-			if (current == null && SafariLocation.inside()) startSession("Rainbow Feather");
 			if (current != null) {
 				current.recordBonusRainbowFeather(now);
 				if (!TestingMode.enabled()) SparklingStats.recordRainbowFeather();
 			}
-			else if (SafariLocation.inside()) {
-				pendingEvents.add(PendingEvent.bonusFeather(now));
-				DebugLog.line("ACTIVATE", "queued pre-activation bonus feather, pending="
-					+ pendingEvents.size());
-			}
 			return;
-		}
-
-		// Any collected floor drop proves the ticketed run is already live. This is a
-		// safety net for an unexpectedly changed or filtered Manager line.
-		if (current == null && SafariLocation.inside() && line.startsWith("FLOOR DROP!")) {
-			startSession("first floor drop");
 		}
 
 		CritterEvent event = ChatParser.parse(line, selfName());
@@ -245,18 +242,9 @@ public final class SessionManager {
 			return;
 		}
 
-		if (current == null && SafariLocation.inside() && event.isCatch()) {
-			startSession("first catch");
-		}
-
 		if (current == null) {
-			// A loot share may arrive during the ticket grace period. Keep it provisional:
-			// the Manager confirmation commits it, while a warp discards it.
-			if (SafariLocation.inside() && event.type() == CritterEvent.Type.SHARED_CATCH) {
-				pendingEvents.add(PendingEvent.critter(event, now));
-				DebugLog.line("ACTIVATE", "queued pre-activation loot share "
-					+ event.critter().name() + ", pending=" + pendingEvents.size());
-			}
+			// Pre-ticket messages never activate or populate a run. Objective and private
+			// synchronization trackers have their own Safari-visit context.
 			return;
 		}
 
@@ -272,7 +260,6 @@ public final class SessionManager {
 	}
 
 	private static void recordEvent(CritterEvent event, long now) {
-		lastEventMillis = now;
 		if (event.type() == CritterEvent.Type.ATTEMPT
 			|| event.type() == CritterEvent.Type.FAILED) {
 			SparklingWatch.onCaptureInteraction(event.critter());
@@ -322,21 +309,16 @@ public final class SessionManager {
 		}
 	}
 
-	public static void startSession() {
-		startSession("command");
-	}
-
 	/** Opens a fresh run, then safely files the previous one. */
 	public static void startSession(String trigger) {
+		if (!visitPrepared) beginVisit(SafariLocation.lobbyId());
 		DebugLog.line("RUN", "==== new run started (" + trigger + ") ====");
-		CritterCountLog.reset();
 		SafariSession finished = current;
 		current = new SafariSession(selfName(), System.currentTimeMillis());
+		runExpectedPlayers = Math.max(visitExpectedPlayers, visitPeakPlayers);
 		SparklingMode.onRunStarted();
-		SafariObjectives.reset();
 		runLobbyId = SafariLocation.lobbyId();
 		waitingLobbyId = runLobbyId;
-		waitingEssenceBalance = null;
 		Integer balance = SafariLocation.safariEssence();
 		if (balance != null) current.updateEssenceBalance(balance, System.currentTimeMillis());
 		startedBy = trigger;
@@ -353,6 +335,21 @@ public final class SessionManager {
 		announcedBiomes.clear();
 		announcedAllButMacaw = false;
 		announcedAllDone = false;
+		PartyItemSyncProviders.onRunStarted();
+	}
+
+	/** Clears one Safari instance's transient trackers before any ticket is submitted. */
+	private static void beginVisit(String lobbyId) {
+		visitPrepared = true;
+		visitLobbyId = lobbyId;
+		visitEnteredAt = System.currentTimeMillis();
+		visitRosterLocked = false;
+		visitPeakPlayers = Math.max(1, SafariPartyWatch.joinedPlayers());
+		visitExpectedPlayers = visitPeakPlayers;
+		runExpectedPlayers = 1;
+		StartingItemsWatch.cancelPendingTicket();
+		CritterCountLog.reset();
+		SafariObjectives.reset();
 		EncounterAlerts.reset();
 		NestTracker.reset();
 		RecatchSpots.reset();
@@ -366,25 +363,7 @@ public final class SessionManager {
 		WallTracker.SNOOPER.reset();
 		WallTracker.TROODON.reset();
 		DetectedCritters.reset();
-		HeadStartWatch.reset();
-		commitPending();
-	}
-
-	private static void commitPending() {
-		DebugLog.line("ACTIVATE", "committing " + pendingEvents.size() + " pending event(s)");
-		for (PendingEvent pending : pendingEvents) {
-			if (pending.event() != null) recordEvent(pending.event(), pending.atMillis());
-			else if (pending.sparkling() != null) {
-				SparklingMode.onSparklingCaught(pending.sparkling().critter());
-				current.recordSparkling(pending.sparkling().critter(),
-					pending.sparkling().catcher(), pending.atMillis());
-				recordLifetimeSparkling(pending.sparkling().critter());
-			} else {
-				current.recordBonusRainbowFeather(pending.atMillis());
-				if (!TestingMode.enabled()) SparklingStats.recordRainbowFeather();
-			}
-		}
-		pendingEvents.clear();
+		DebugLog.line("RUN", "Safari visit tracking prepared lobby=" + lobbyId);
 	}
 
 	private static void recordLifetimeSparkling(Critter critter) {
@@ -398,21 +377,10 @@ public final class SessionManager {
 		SparklingWatch.postCaught(message);
 	}
 
-	private static void clearPending() {
-		if (!pendingEvents.isEmpty()) {
-			DebugLog.line("ACTIVATE", "discarding " + pendingEvents.size()
-				+ " pending event(s) outside Safari");
-		}
-		pendingEvents.clear();
-		waitingLobbyId = null;
-		waitingEssenceBalance = null;
-	}
-
 	private static void endSession() {
 		SafariSession finished = current;
 		current = null;
 		runLobbyId = null;
-		waitingEssenceBalance = null;
 		SparklingWatch.reset();
 		if (finished == null || finished.isEmpty()) return;
 		finished.finish(System.currentTimeMillis());
@@ -444,7 +412,7 @@ public final class SessionManager {
 		RunHistory.record(session);
 	}
 
-	/** What opened the live run — "entry banner", "arrival", "first catch" or a command. */
+	/** What opened the live run, normally the Safari Manager ticket confirmation. */
 	public static String startedBy() {
 		return current == null ? "no run open"
 			: "%s, %ds ago".formatted(startedBy, (System.currentTimeMillis() - startedAt) / 1000);
@@ -453,6 +421,12 @@ public final class SessionManager {
 	/** The run in progress, or {@code null} outside the Safari. */
 	public static SafariSession current() {
 		return current;
+	}
+
+	/** Intended party size for this visit; it never decreases after ticket activation. */
+	public static int expectedRunPlayers() {
+		return current == null ? Math.max(1, visitExpectedPlayers)
+			: Math.max(1, runExpectedPlayers);
 	}
 
 	/** The run in progress if there is one, otherwise the most recent finished run. */
@@ -469,9 +443,10 @@ public final class SessionManager {
 		current = null;
 		runLobbyId = null;
 		waitingLobbyId = null;
-		waitingEssenceBalance = null;
-		pendingEvents.clear();
+		StartingItemsWatch.cancelPendingTicket();
 		rewardSummaryOpen = false;
+		visitPrepared = false;
+		visitLobbyId = null;
 		SparklingWatch.reset();
 	}
 
@@ -482,21 +457,6 @@ public final class SessionManager {
 	/** Wipes the active run's tallies without waiting to leave the island. */
 	public static void reset() {
 		current = new SafariSession(selfName(), System.currentTimeMillis());
-	}
-
-	private record PendingEvent(CritterEvent event, ChatParser.SparklingCatch sparkling,
-								long atMillis) {
-		static PendingEvent critter(CritterEvent event, long atMillis) {
-			return new PendingEvent(event, null, atMillis);
-		}
-
-		static PendingEvent sparkling(ChatParser.SparklingCatch sparkling, long atMillis) {
-			return new PendingEvent(null, sparkling, atMillis);
-		}
-
-		static PendingEvent bonusFeather(long atMillis) {
-			return new PendingEvent(null, null, atMillis);
-		}
 	}
 
 	private static String selfName() {

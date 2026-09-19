@@ -52,34 +52,25 @@ public final class ProgressHud implements HudElement {
 	static HudPanel buildPanel() {
 		SafariConfig config = ConfigManager.get();
 
-		// Standing at the entrance before going in, no run has been tracked yet. Showing
-		// an empty tracker is right there: it says the mod is watching and gives the
-		// biome targets. Returning nothing just looked like it was broken.
+		// A Safari visit is only a pending context until its ticket and capsule allocation
+		// are confirmed. Keep the run HUD hidden during that pre-ticket period.
 		SafariSession session = SessionManager.currentOrLast();
 		boolean waiting = SafariLocation.inside() && SessionManager.current() == null;
+		if (waiting) return null;
 
 		int total = Critters.total();
 		boolean live = SessionManager.current() != null;
 
 		HudPanel panel = new HudPanel();
-		if (waiting && SafariLocation.inside()) {
-			int joined = SafariPartyWatch.joinedPlayers();
-			int expected = PartyRosterWatch.known() ? PartyRosterWatch.expectedPlayers() : 4;
-			panel.titleSuffix("Critter Safari ", "(%d/%d)".formatted(joined, expected),
-				HudBorderStyle.progressTitle(), joined >= expected ? 0xFF55FF55 : 0xFFFF5555);
-		} else {
-			panel.title(waiting ? "Critter Safari"
-				: live ? "Critter Safari  " + formatDuration(session.elapsedMillis(System.currentTimeMillis()))
-				: config.display.showLastRun ? "Critter Safari (Last Run)" : "Critter Safari",
-				HudBorderStyle.progressTitle());
-		}
+		panel.title(live ? "Critter Safari  " + formatDuration(session.elapsedMillis(System.currentTimeMillis()))
+			: config.display.showLastRun ? "Critter Safari (Last Run)" : "Critter Safari",
+			HudBorderStyle.progressTitle());
 
 		// Nothing but the title while there is no actual run to report on — every bar
 		// and row below would just be showing zeroes against a session that only
 		// exists to give the title something to say. This is what makes it sensible
 		// to leave the panel visible outside the Safari at all rather than only
 		// inside it: elsewhere, it is just a small marker, not an empty tracker.
-		if (waiting) return panel;
 		panel.minimumWidth(190);
 		if (session == null) session = new SafariSession(Minecraft.getInstance().getUser().getName(),
 			System.currentTimeMillis());

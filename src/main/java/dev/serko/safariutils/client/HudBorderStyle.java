@@ -59,6 +59,16 @@ final class HudBorderStyle {
 		return colour == 0 ? 0xFFFFAA00 : colour;
 	}
 
+	static int birdFeed() {
+		SafariConfig.DisplayConfig display = ConfigManager.get().display;
+		if (!display.birdFeedBorder) return 0;
+		if (display.birdFeedBorderUseStatus) {
+			return dev.serko.safariutils.api.PartyItemSyncProviders.feedDone()
+				? 0xFF55FF55 : 0xFFFF5555;
+		}
+		return Colours.argb(display.birdFeedBorderColour, 0xFFFF5555);
+	}
+
 	static int editor(HudBox box) {
 		return switch (box) {
 			case PROGRESS -> progress();
@@ -66,6 +76,7 @@ final class HudBorderStyle {
 				dev.serko.safariutils.session.SessionManager.currentOrLast());
 			case CONTEST -> Colours.argb(ConfigManager.get().display.contestHudBorderColour,
 				BETWEEN_CONTESTS_GOLD);
+			case BIRD_FEED -> birdFeed();
 			case ALERTS -> 0xFFFFC857;
 		};
 	}

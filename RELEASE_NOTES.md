@@ -1,29 +1,29 @@
-# Safari Utils v1.5.0
+# Safari Utils v1.6.0
 
 ## Fixes
 
-- Fixed Player Lookup and inline number fields using unscaled click positions on smaller screens
-- Made Starting Items wait for a stable, capsule-populated inventory so slower items are included
-- Prevented Starting Items party messages from being discarded while party-list data is briefly stale
-- Kept imported Sparkling duplicate totals and comparison data synchronized after tracked catches
-- Updated automatic Hideyho acceptance to use the current server-provided action instead of a fixed command
-- Kept manual Hideyho choices visible when no valid automatic action can be found or sent
+- Required a submitted Safari Ticket and the server's Critter Capsule allocation before starting or saving a run
+- Made Starting Items wait for the complete capsule-populated inventory without including later floor drops
+- Prevented cursor-held or rejected Bird Feed transfers from being treated as completed deposits
+- Confirmed Bee Nest completion from a nearby Honeybug spawn and supported both left- and right-click interactions
+- Restored recatch pins and pity progression for Doomspiral, Wumpa, and every other non-Common capsule catch
+- Kept the Contest HUD visible in Dungeons and Kuudra when Show Everywhere is enabled
+- Kept HUD panels and their editor labels aligned consistently against every screen edge
 
 ## Changes & Additions
 
-- Added a configurable Starting Items chat alert with item selection, quantities, and correct plural names
-- Replaced the Sparkling command collection with a dedicated `/sparkling` menu
-- Added direct editing for Sparkling counts and Rainbow Feathers in the collection menu
-- Added a Party tab for importing shared or missing Sparkling lists used by Sparkling Mode
-- Improved Sparkling menu layout, rarity colors, completed-biome styling, inline editing, and status feedback
+- Added a movable Bird Feed HUD with feed, Birdfeeder, Forest-drop, and visible-bird status
+- Added one-pixel arrow-key adjustments to the HUD editor
+- Improved Safari party and run lifecycle tracking around delayed arrivals, disconnects, and lobby transitions
+- Cleaned up shared trackers, settings migration, rendering helpers, and build organization
 
 ## Downloads
 
 Choose one jar for your Minecraft version:
 
-- `safariutils-1.5.0+mc26.1.2.jar`
-- `safariutils-1.5.0-extra+mc26.1.2.jar`
-- `safariutils-1.5.0+mc26.2.jar`
-- `safariutils-1.5.0-extra+mc26.2.jar`
+- `safariutils-1.6.0+mc26.1.2.jar`
+- `safariutils-1.6.0-extra+mc26.1.2.jar`
+- `safariutils-1.6.0+mc26.2.jar`
+- `safariutils-1.6.0-extra+mc26.2.jar`
 
 The regular jars use Safe Mode. Extra includes features in advanced section that provide information the player cannot directly see and may not be safe to use; Minecraft 26.2 builds have received limited testing compared with 26.1.2

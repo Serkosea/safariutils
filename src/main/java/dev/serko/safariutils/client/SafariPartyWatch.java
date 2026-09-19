@@ -1,11 +1,21 @@
 package dev.serko.safariutils.client;
 
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.PlayerInfo;
+
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /** Reads and stabilizes Hypixel's four-player Safari count for the current instance. */
 public final class SafariPartyWatch {
 	private static final Pattern PLAYER_COUNT = Pattern.compile("^Players \\((\\d+)\\)$",
 		Pattern.CASE_INSENSITIVE);
+	private static final Pattern LEGACY_COLOURS = Pattern.compile("§.");
+	private static final Pattern PLAYER_ROW = Pattern.compile(
+		"^(?:\\[\\d+\\]\\s*)?([A-Za-z0-9_]{1,16})(?:\\s.*)?$");
 	private static final long INSTANCE_GRACE_MILLIS = 500L;
 	private static final long ROSTER_STABLE_MILLIS = 350L;
 	/** Extra certainty before persistent entity-location learning treats a run as solo. */
@@ -79,6 +89,28 @@ public final class SafariPartyWatch {
 
 	public static int joinedPlayers() {
 		return Math.clamp(joinedPlayers, 0, 4);
+	}
+
+	/** Names presently listed in the Safari's player section, in tab-list order. */
+	public static List<String> presentPlayerNames() {
+		Minecraft client = Minecraft.getInstance();
+		if (!SafariLocation.inside() || client.player == null || client.player.connection == null) {
+			return List.of();
+		}
+		Set<String> onlineNames = new LinkedHashSet<>();
+		for (PlayerInfo info : client.player.connection.getOnlinePlayers()) {
+			onlineNames.add(info.getProfile().name().toLowerCase(Locale.ROOT));
+		}
+		List<String> names = new java.util.ArrayList<>();
+		for (PlayerInfo info : client.player.connection.getOnlinePlayers()) {
+			if (info.getTabListDisplayName() == null) continue;
+			String shown = LEGACY_COLOURS.matcher(info.getTabListDisplayName().getString())
+				.replaceAll("").trim();
+			var row = PLAYER_ROW.matcher(shown);
+			if (!row.matches() || !onlineNames.contains(row.group(1).toLowerCase(Locale.ROOT))) continue;
+			if (!names.contains(row.group(1))) names.add(row.group(1));
+		}
+		return names.size() == joinedPlayers ? List.copyOf(names) : List.of();
 	}
 
 	/** Records the attendance state used by the Manager click guard. */

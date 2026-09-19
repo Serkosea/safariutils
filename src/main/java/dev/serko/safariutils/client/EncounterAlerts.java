@@ -355,6 +355,9 @@ public final class EncounterAlerts implements HudElement {
 
 	/** Reports the completed Forest's live feed inventory through its selected chat. */
 	static void onTotalFeed(int seeds, int worms, int berries) {
+		// The synchronized Bird Feed HUD is the party-wide source of truth; avoid a
+		// second, potentially partial feed list from an individual client's inventory.
+		if (dev.serko.safariutils.api.PartyItemSyncProviders.active()) return;
 		SafariConfig.PartyConfig party = ConfigManager.get().party;
 		if (birdChatAllowed()) post(party.totalFeed(), AlertText.format(party.totalFeedChatText,
 			"<ALL_FEED>", formatFeedList(seeds, worms, berries),
@@ -386,13 +389,31 @@ public final class EncounterAlerts implements HudElement {
 	}
 
 	/** Called only after the open feeder changes from containing feed to empty. */
-	static void onBirdfeederEmpty() {
+	public static void onBirdfeederEmpty() {
 		SafariConfig.AlertConfig a = ConfigManager.get().alerts;
 		if (!birdBannerAllowed()) return;
+		if (!BirdfeederWatch.claimEmptyAlert()) return;
 		banner(a.birdfeederEmptyText, Colours.argb(a.birdfeederEmptyColour, 0xFFFF5555),
 			a.birdfeederEmptySoundPitch, a.birdfeederEmptyDuration, a.birdfeederEmptySoundMode,
 			a.birdfeederEmptySoundChoice, a.birdfeederEmptySoundVolume,
 			a.birdfeederEmptyScale, a.birdfeederEmptyVerticalPosition);
+	}
+
+	/** Private synchronized completion: every discovered feed has produced a bird event. */
+	public static void onPrivateFeedDone(boolean sendChat) {
+		SafariConfig config = ConfigManager.get();
+		SafariConfig.AlertConfig alerts = config.alerts;
+		if (birdBannerAllowed() && alerts.privateFeedDoneSoundMode != 0) {
+			banner(alerts.privateFeedDoneText,
+				Colours.argb(alerts.privateFeedDoneColour, 0xFF55FF55),
+				alerts.privateFeedDoneSoundPitch, alerts.privateFeedDoneDuration,
+				alerts.privateFeedDoneSoundMode, alerts.privateFeedDoneSoundChoice,
+				alerts.privateFeedDoneSoundVolume, alerts.privateFeedDoneScale,
+				alerts.privateFeedDoneVerticalPosition);
+		}
+		if (sendChat && birdChatAllowed()) {
+			post(config.party.privateFeedDone(), config.party.privateFeedDoneChatText);
+		}
 	}
 
 	private static void fire(String boss, Stage stage, String detail, float pitch) {

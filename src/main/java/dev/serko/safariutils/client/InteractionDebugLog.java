@@ -68,6 +68,12 @@ public final class InteractionDebugLog {
 		}
 	}
 
+	/** Records commands sent while reproducing an interface interaction. */
+	public static void onCommand(String command) {
+		if (!active() || command == null) return;
+		DebugLog.line("INTERACT", "outbound command=\"/" + command + "\"");
+	}
+
 	/** Captures server-driven slot and menu-data changes without repeating stable screens. */
 	public static void tick() {
 		if (!active()) {
@@ -197,7 +203,7 @@ public final class InteractionDebugLog {
 
 	private static boolean active() {
 		return DebugLog.isEnabled() && ConfigManager.get().advanced.logInterfaces
-			&& SafariLocation.inside();
+			&& SafariLocation.inSafari();
 	}
 
 	private static String decimal(double value) {

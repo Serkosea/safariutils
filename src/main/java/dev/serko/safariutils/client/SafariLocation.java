@@ -76,6 +76,7 @@ public final class SafariLocation {
 	private static List<String> sidebarLines = List.of();
 	private static List<String> tabListEntries = List.of();
 	private static String tabListArea;
+	private static boolean skyblock;
 	private static String lobbyId;
 	private static Integer safariEssence;
 
@@ -116,6 +117,11 @@ public final class SafariLocation {
 		return tabListArea;
 	}
 
+	/** Whether the active sidebar identifies Hypixel SkyBlock, even without an Area row. */
+	public static boolean inSkyblock() {
+		return skyblock;
+	}
+
 	/** The biome being stood in, or {@code null} when it cannot be determined. */
 	public static SafariBiome biome() {
 		return biome;
@@ -136,6 +142,7 @@ public final class SafariLocation {
 	public static void tick() {
 		sidebarLines = readSidebarLines();
 		tabListEntries = readTabListEntries();
+		skyblock = findSkyblock();
 		tabListArea = findTabListArea();
 		lobbyId = findLobbyId();
 		safariEssence = findSafariEssence();
@@ -196,6 +203,7 @@ public final class SafariLocation {
 		labelFallbackTicks = 0;
 		labelsNearby = false;
 		tabListArea = null;
+		skyblock = false;
 		lobbyId = null;
 		safariEssence = null;
 	}
@@ -278,6 +286,14 @@ public final class SafariLocation {
 			if (!name.isEmpty()) return name;
 		}
 		return null;
+	}
+
+	private static boolean findSkyblock() {
+		Minecraft client = Minecraft.getInstance();
+		if (client.level == null) return false;
+		Objective objective = client.level.getScoreboard().getDisplayObjective(DisplaySlot.SIDEBAR);
+		return objective != null && strip(objective.getDisplayName().getString())
+			.toUpperCase(java.util.Locale.ROOT).contains("SKYBLOCK");
 	}
 
 	private static List<String> readSidebarLines() {

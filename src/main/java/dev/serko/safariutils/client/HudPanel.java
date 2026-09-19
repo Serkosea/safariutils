@@ -61,6 +61,19 @@ public final class HudPanel {
 		return this;
 	}
 
+	/** A right-aligned value made from mod-rendered icons and ordinary count text. */
+	public HudPanel iconPair(String label, int labelColour, IconValue... values) {
+		rows.add(new Row(Kind.ICON_PAIR, label, "", labelColour, 0xFFFFFFFF,
+			0, 0, null, List.of(values)));
+		return this;
+	}
+
+	public HudPanel rainbowIconPair(String label, IconValue... values) {
+		rows.add(new Row(Kind.RAINBOW_ICON_PAIR, label, "", 0xFFFFFFFF, 0xFFFFFFFF,
+			0, 0, null, List.of(values)));
+		return this;
+	}
+
 	/** A pair that uses the panel's existing width instead of widening it. */
 	public HudPanel compactPair(String label, String value, int labelColour, int valueColour) {
 		rows.add(new Row(Kind.COMPACT_PAIR, label, value, labelColour, valueColour, 0, 0));
@@ -141,7 +154,10 @@ public final class HudPanel {
 				barValueWidth = Math.max(barValueWidth, valueWidth(font, row));
 			} else if (row.kind() != Kind.COMPACT_PAIR) {
 				pairLabelWidth = Math.max(pairLabelWidth, labelWidth(font, row));
-				if (row.value() != null) pairValueWidth = Math.max(pairValueWidth, valueWidth(font, row));
+				if (row.kind() == Kind.ICON_PAIR || row.kind() == Kind.RAINBOW_ICON_PAIR)
+					pairValueWidth = Math.max(pairValueWidth, iconValueWidth(font, row.icons()));
+				else if (row.value() != null)
+					pairValueWidth = Math.max(pairValueWidth, valueWidth(font, row));
 			}
 		}
 		int contentWidth = pairLabelWidth + (pairValueWidth > 0 ? GUTTER + pairValueWidth : 0);
@@ -294,20 +310,20 @@ public final class HudPanel {
 				}
 				case TITLE -> {
 					if (rainbowTitle) rainbowText(graphics, font, row.label(), textLeft, rowY);
-					else graphics.text(font, Component.literal(row.label()), textLeft, rowY,
+					else drawText(graphics, font, Component.literal(row.label()), textLeft, rowY,
 						row.labelColour());
 				}
 				case TEXT -> {
 					if (rainbowAll) rainbowText(graphics, font, row.label(), textLeft, rowY);
-					else graphics.text(font, Component.literal(row.label()),
+					else drawText(graphics, font, Component.literal(row.label()),
 						textLeft, rowY, row.labelColour());
 				}
 				case TITLE_SUFFIX -> {
 					if (rainbowTitle) {
 						rainbowText(graphics, font, row.label() + row.value(), textLeft, rowY);
 					} else {
-						graphics.text(font, Component.literal(row.label()), textLeft, rowY, row.labelColour());
-						graphics.text(font, Component.literal(row.value()),
+						drawText(graphics, font, Component.literal(row.label()), textLeft, rowY, row.labelColour());
+						drawText(graphics, font, Component.literal(row.value()),
 							textLeft + font.width(row.label()), rowY, row.valueColour());
 					}
 				}
@@ -315,19 +331,28 @@ public final class HudPanel {
 					if (rainbowTitle) {
 						rainbowText(graphics, font, row.label() + row.value(), textLeft, rowY);
 					} else {
-						graphics.text(font, Component.literal(row.label()), textLeft, rowY, row.labelColour());
+						drawText(graphics, font, Component.literal(row.label()), textLeft, rowY, row.labelColour());
 						rainbowText(graphics, font, row.value(),
 							textLeft + font.width(row.label()), rowY);
 					}
 				}
 				case PAIR, COMPACT_PAIR, BOLD_PAIR -> {
 					if (rainbowAll) rainbowText(graphics, font, row.label(), textLeft, rowY);
-					else graphics.text(font, Component.literal(row.label()), textLeft, rowY, row.labelColour());
+					else drawText(graphics, font, Component.literal(row.label()), textLeft, rowY, row.labelColour());
 					Component value = value(row);
 					if (rainbowAll) SpecialTheme.rainbowText(graphics, font, value,
 						valueRight - font.width(value), rowY);
-					else graphics.text(font, value,
+					else drawText(graphics, font, value,
 						valueRight - font.width(value), rowY, row.valueColour());
+				}
+				case ICON_PAIR, RAINBOW_ICON_PAIR -> {
+					if (rainbowAll || row.kind() == Kind.RAINBOW_ICON_PAIR)
+						rainbowText(graphics, font, row.label(), textLeft, rowY);
+					else drawText(graphics, font, Component.literal(row.label()),
+						textLeft, rowY, row.labelColour());
+					// Icons retain their semantic feed/bird colours under every panel theme.
+					drawIconValue(graphics, font, row.icons(),
+						valueRight - iconValueWidth(font, row.icons()), rowY);
 				}
 				case RAINBOW_PAIR -> {
 					rainbowText(graphics, font, row.label(), textLeft, rowY);
@@ -343,11 +368,11 @@ public final class HudPanel {
 						rainbowText(graphics, font, row.value(),
 							valueRight - font.width(row.value()), rowY);
 					} else {
-						graphics.text(font, Component.literal(mark), textLeft, rowY,
+						drawText(graphics, font, Component.literal(mark), textLeft, rowY,
 							row.current() == 1 ? 0xFF55FF55 : 0xFFFF5555);
-						graphics.text(font, Component.literal(name), textLeft + font.width(mark),
+						drawText(graphics, font, Component.literal(name), textLeft + font.width(mark),
 							rowY, row.labelColour());
-						graphics.text(font, Component.literal(row.value()),
+						drawText(graphics, font, Component.literal(row.value()),
 							valueRight - font.width(row.value()), rowY, row.valueColour());
 					}
 				}
@@ -355,9 +380,9 @@ public final class HudPanel {
 					String label = row.kind() == Kind.CHECKED_BAR ? row.label() + " ✔" : row.label();
 					if (rainbowAll) rainbowText(graphics, font, label, textLeft, rowY);
 					else {
-						graphics.text(font, Component.literal(row.label()), textLeft, rowY, row.labelColour());
+						drawText(graphics, font, Component.literal(row.label()), textLeft, rowY, row.labelColour());
 						if (row.kind() == Kind.CHECKED_BAR) {
-							graphics.text(font, Component.literal(" ✔"), textLeft + font.width(row.label()),
+							drawText(graphics, font, Component.literal(" ✔"), textLeft + font.width(row.label()),
 								rowY, 0xFF55FF55);
 						}
 					}
@@ -369,7 +394,7 @@ public final class HudPanel {
 					}
 					if (rainbowAll) rainbowText(graphics, font, row.value(),
 						valueRight - font.width(row.value()), rowY);
-					else graphics.text(font, Component.literal(row.value()),
+					else drawText(graphics, font, Component.literal(row.value()),
 						valueRight - font.width(row.value()), rowY, row.valueColour());
 				}
 			}
@@ -413,6 +438,12 @@ public final class HudPanel {
 		UIDraw.rainbowText(graphics, font, text, x, y, 0.45f);
 	}
 
+	private static void drawText(GuiGraphicsExtractor graphics, Font font, Component component,
+			int x, int y, int colour) {
+		if (!PlayerNameStyle.drawIfPresent(graphics, font, component, x, y, colour))
+			graphics.text(font, component, x, y, colour);
+	}
+
 	private static int valueWidth(Font font, Row row) {
 		return font.width(value(row));
 	}
@@ -421,15 +452,103 @@ public final class HudPanel {
 		return font.width(row.kind() == Kind.CHECKED_BAR ? row.label() + " ✔" : row.label());
 	}
 
+	private static int iconValueWidth(Font font, List<IconValue> values) {
+		int width = 0;
+		for (int i = 0; i < values.size(); i++) {
+			if (i > 0) width += 5;
+			width += iconWidth(font, values.get(i).icon()) + 2 + font.width(values.get(i).text());
+		}
+		return width;
+	}
+
+	private static void drawIconValue(GuiGraphicsExtractor graphics, Font font,
+			List<IconValue> values, int x, int y) {
+		int cursor = x;
+		for (int i = 0; i < values.size(); i++) {
+			if (i > 0) cursor += 5;
+			IconValue value = values.get(i);
+			drawIcon(graphics, cursor, y, value.icon(), value.colour());
+			cursor += iconWidth(font, value.icon()) + 2;
+			graphics.text(font, Component.literal(value.text()), cursor, y, 0xFFFFFFFF);
+			cursor += font.width(value.text());
+		}
+	}
+
+	private static int iconWidth(Font font, HudIcon icon) {
+		return switch (icon) {
+			case BIRD -> 11;
+			case BERRY, WORM, SEED_BAG -> 10;
+		};
+	}
+
+	/** Compact sprites replace font-dependent Unicode while retaining each item's accent details. */
+	private static void drawIcon(GuiGraphicsExtractor graphics, int x, int y,
+			HudIcon icon, int colour) {
+		String[] sprite = switch (icon) {
+			case BIRD -> new String[]{".....ss....", "....s##ss..", "....wwwd#s.", "...hhw###oo",
+				".wwww####s.", "smww####s..", "mmmmms##s..", ".mmmms#s...", "..mm..ss..."};
+			case BERRY -> new String[]{"....bb....", "...#b#....", "..#hh###..", "..hh#####.",
+				".########s", ".########s", ".#######ss", "..######s.", "...####s.."};
+			case WORM -> new String[]{"..........", "........h.", ".......#hs", ".......mms",
+				"......h#s.", "......sss.", "....#mm...", ".m#hsss...", "..sss....."};
+			case SEED_BAG -> new String[]{"..........", "...#ggg#..", "...shhh##.", "...hh####.",
+				"..s#######", ".s########", ".s###dd###", ".s##d####s", "..s#####s."};
+		};
+		int shadow = shade(colour, 0.48f);
+		int highlight = shade(colour, 1.30f);
+		int medium = shade(colour, 0.72f);
+		int wing = shade(colour, 1.18f);
+		int dark = shade(colour, 0.28f);
+		for (int row = 0; row < sprite.length; row++) {
+			for (int column = 0; column < sprite[row].length(); column++) {
+				int pixel = switch (sprite[row].charAt(column)) {
+					case '#' -> colour;
+					case 's' -> shadow;
+					case 'h' -> highlight;
+					case 'm' -> medium;
+					case 'w' -> wing;
+					case 'd' -> dark;
+					case 'g' -> 0xFF65B84B;
+					case 'b' -> 0xFF70401F;
+					case 'o' -> 0xFFFFB33B;
+					default -> 0;
+				};
+				if (pixel != 0) graphics.fill(x + column, y + row, x + column + 1, y + row + 1, pixel);
+			}
+		}
+	}
+
+	private static int shade(int colour, float multiplier) {
+		int red = Math.clamp(Math.round(((colour >> 16) & 0xFF) * multiplier), 0, 255);
+		int green = Math.clamp(Math.round(((colour >> 8) & 0xFF) * multiplier), 0, 255);
+		int blue = Math.clamp(Math.round((colour & 0xFF) * multiplier), 0, 255);
+		return colour & 0xFF000000 | red << 16 | green << 8 | blue;
+	}
+
 	private static Component value(Row row) {
+		if (row.styledValue() != null) return row.styledValue();
 		Component value = Component.literal(row.value());
 		return row.kind() == Kind.BOLD_PAIR ? value.copy().withStyle(ChatFormatting.BOLD) : value;
 	}
 
+	public enum HudIcon { BIRD, BERRY, WORM, SEED_BAG }
+
+	public record IconValue(HudIcon icon, String text, int colour) { }
+
 	private enum Kind {TITLE, TITLE_SUFFIX, SPARKLING_MODE_TITLE, TEXT, PAIR, COMPACT_PAIR, BOLD_PAIR,
-		STATUS_PAIR, RAINBOW_PAIR, BAR, CHECKED_BAR, BLANK}
+		ICON_PAIR, RAINBOW_ICON_PAIR, STATUS_PAIR, RAINBOW_PAIR, BAR, CHECKED_BAR, BLANK}
 
 	private record Row(Kind kind, String label, String value,
-					   int labelColour, int valueColour, int current, int max) {
+					   int labelColour, int valueColour, int current, int max,
+					   Component styledValue, List<IconValue> icons) {
+		private Row(Kind kind, String label, String value, int labelColour,
+				int valueColour, int current, int max) {
+			this(kind, label, value, labelColour, valueColour, current, max, null, List.of());
+		}
+		private Row(Kind kind, String label, String value, int labelColour,
+				int valueColour, int current, int max, Component styledValue) {
+			this(kind, label, value, labelColour, valueColour, current, max,
+				styledValue, List.of());
+		}
 	}
 }

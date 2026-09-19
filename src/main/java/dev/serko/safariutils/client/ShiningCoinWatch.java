@@ -26,7 +26,7 @@ public final class ShiningCoinWatch {
 		floorFound++;
 	}
 
-	/** Credited by {@link HeadStartWatch} for coins found in the inventory scan. */
+	/** Credited by {@link StartingItemsWatch} from the frozen run-start inventory. */
 	public static void creditFound(int amount) {
 		found += amount;
 		acquired += amount;

@@ -88,6 +88,10 @@ public final class FloorDrops {
 		}
 		String lobby = SafariLocation.lobbyId() == null ? "pending" : SafariLocation.lobbyId();
 		if (lobby.equals(preparedLobby)) return;
+		if ("pending".equals(preparedLobby)) {
+			preparedLobby = lobby;
+			return;
+		}
 		preparedLobby = lobby;
 		reset();
 	}
@@ -249,6 +253,8 @@ public final class FloorDrops {
 	 * rendered box directly, rather than a raycast against this exact position.
 	 */
 	public static List<BlockPos> positions(dev.serko.safariutils.data.SafariBiome biome) {
+		if (biome == dev.serko.safariutils.data.SafariBiome.FOREST
+			&& dev.serko.safariutils.api.PartyItemSyncProviders.forestDropsComplete()) return List.of();
 		if (SafeMode.floorDrops()) seedSafeModeCandidates();
 		pruneVisibleCandidates();
 		List<BlockPos> result = new ArrayList<>();

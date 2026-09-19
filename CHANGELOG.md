@@ -1,13 +1,40 @@
 # Changelog
 
+## [1.6.0] - 2026-09-18
+
+### Fixes
+
+- Required a submitted Safari Ticket and the server's Critter Capsule allocation before starting or saving a run
+- Made Starting Items wait for the complete capsule-populated inventory without including later floor drops
+- Prevented cursor-held or rejected Bird Feed transfers from being treated as completed deposits
+- Confirmed Bee Nest completion from a nearby Honeybug spawn and supported both left- and right-click interactions
+- Restored recatch pins and pity progression for Doomspiral, Wumpa, and every other non-Common capsule catch
+- Kept the Contest HUD visible in Dungeons and Kuudra when Show Everywhere is enabled
+- Kept HUD panels and their editor labels aligned consistently against every screen edge
+
+### Changes & Additions
+
+- Added a movable Bird Feed HUD with feed, Birdfeeder, Forest-drop, and visible-bird status
+- Added one-pixel arrow-key adjustments to the HUD editor
+- Improved Safari party and run lifecycle tracking around delayed arrivals, disconnects, and lobby transitions
+- Cleaned up shared trackers, settings migration, rendering helpers, and build organization
+
+## [1.5.1] - 2026-09-17
+
+### Fixes
+
+- Made Starting Items use a capsule-gated run-start snapshot so all starting items are included without later floor drops
+
+### Changes & Additions
+
+- Improved Starting Items run-start detection for every ticket and perk combination
+
 ## [1.5.0] - 2026-09-15
 
 ### Fixes
 
-- Fixed Player Lookup and inline number fields using unscaled click positions on smaller screens
 - Made Starting Items wait for a stable, capsule-populated inventory so slower items are included
 - Prevented Starting Items party messages from being discarded while party-list data is briefly stale
-- Kept imported Sparkling duplicate totals and comparison data synchronized after tracked catches
 - Updated automatic Hideyho acceptance to use the current server-provided action instead of a fixed command
 - Kept manual Hideyho choices visible when no valid automatic action can be found or sent
 
@@ -170,7 +197,6 @@ The first standalone Safari Utils release.
 
 - Real-time Miria's Contest countdown, bracket and score parsing, ticket tracking, persistence, and alerts.
 - Pre-run party count and stable full-party notifications.
-- Cached shared-Sparkling support for optional private profile providers, with no credentials in public builds.
 
 ### Interface and customization
 

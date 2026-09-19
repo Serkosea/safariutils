@@ -3,7 +3,7 @@ package dev.serko.safariutils.client;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Canonical inventory names and chat ordering for Best Safari Ticket starting items. */
+/** Canonical inventory names and biome ordering for Safari starting items. */
 public final class StartingItems {
 	public record Entry(String inventoryName, String singular, String plural) {
 		String format(int count) {

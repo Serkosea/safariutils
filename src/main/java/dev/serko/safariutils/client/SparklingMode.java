@@ -59,7 +59,7 @@ public final class SparklingMode {
 	}
 
 	public static void onRunStarted() {
-		expectedPlayers = Math.max(1, SafariPartyWatch.joinedPlayers());
+		expectedPlayers = dev.serko.safariutils.session.SessionManager.expectedRunPlayers();
 		// Solo players share their own collection by definition. If neither the manual
 		// command nor the private provider supplied a list, use the saved unique set.
 		if (expectedPlayers == 1 && shared.isEmpty()) {
@@ -71,16 +71,19 @@ public final class SparklingMode {
 	/** Late arrivals raise the expected roster; disconnects never lower it mid-run. */
 	public static void tick() {
 		if (dev.serko.safariutils.session.SessionManager.current() != null) {
-			expectedPlayers = Math.max(expectedPlayers, SafariPartyWatch.joinedPlayers());
+			expectedPlayers = Math.max(expectedPlayers,
+				dev.serko.safariutils.session.SessionManager.expectedRunPlayers());
 		}
 	}
 
 	/** Everyone present at activation also received this catch unless the count dropped. */
 	public static void onSparklingCaught(Critter critter) {
 		if (critter == null) return;
-		if (SafariPartyWatch.joinedPlayers() >= expectedPlayers) {
+		boolean fullRosterPresent = SafariPartyWatch.joinedPlayers() >= expectedPlayers;
+		boolean sharedCatch = SharedSparklingProviders.available()
+			? SharedSparklingProviders.onSharedCatch(critter.name()) : fullRosterPresent;
+		if (sharedCatch) {
 			shared.add(critter);
-			SharedSparklingProviders.onSharedCatch(critter.name());
 		}
 	}
 
@@ -99,6 +102,7 @@ public final class SparklingMode {
 			// Keep the current result until the next run's stable roster replaces it.
 			// Clearing first can lose a valid cached result when the same party reconnects.
 			SharedSparklingProviders.onPartyMembershipChanged();
+			dev.serko.safariutils.api.PartyItemSyncProviders.onPartyMembershipChanged();
 		}
 	}
 

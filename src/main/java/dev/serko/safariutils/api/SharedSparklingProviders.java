@@ -24,8 +24,8 @@ public final class SharedSparklingProviders {
 		PROVIDER.ifPresent(SharedSparklingProvider::tick);
 	}
 
-	public static void onSharedCatch(String species) {
-		PROVIDER.ifPresent(provider -> provider.onSharedCatch(species));
+	public static boolean onSharedCatch(String species) {
+		return PROVIDER.map(provider -> provider.onSharedCatch(species)).orElse(true);
 	}
 
 	public static void onPartyMembershipChanged() {

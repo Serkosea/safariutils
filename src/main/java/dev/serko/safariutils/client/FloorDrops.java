@@ -189,6 +189,7 @@ public final class FloorDrops {
 
 	/** Records a click on a known drop and waits for Hypixel to confirm the pickup. */
 	public static void onInteract(BlockPos pos) {
+		if (!SafariLocation.inside()) return;
 		BlockPos tracked = confirmed.containsKey(pos) ? pos : confirmed.keySet().stream()
 			.min(java.util.Comparator.comparingDouble(candidate -> candidate.distSqr(pos)))
 			.filter(candidate -> candidate.distSqr(pos) <= 9.0)

@@ -13,6 +13,7 @@
 - Restored recatch pins and pity progression for Doomspiral, Wumpa, and every other non-Common capsule catch
 - Kept the Contest HUD visible in Dungeons and Kuudra when Show Everywhere is enabled
 - Kept HUD panels and their editor labels aligned consistently against every screen edge
+- Prevented interactions outside the Safari from reaching Safari-only objective trackers
 
 ### Changes & Additions
 

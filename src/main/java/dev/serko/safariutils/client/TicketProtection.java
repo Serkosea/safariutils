@@ -41,12 +41,13 @@ public final class TicketProtection {
 	private TicketProtection() {}
 
 	public static void onScreenInit(Screen screen) {
-		if (!isEntryScreen(screen)) return;
+		if (!SafariLocation.inside() || !isEntryScreen(screen)) return;
 		ScreenMouseEvents.allowMouseClick(screen).register(TicketProtection::allowMouseClick);
 		ScreenKeyboardEvents.allowKeyPress(screen).register(TicketProtection::allowKeyPress);
 	}
 
 	public static boolean blockManagerInteraction(Entity entity) {
+		if (!SafariLocation.inside()) return false;
 		if (!(entity instanceof Player)) return false;
 		if (entity.distanceToSqr(MANAGER_X, MANAGER_Y, MANAGER_Z) > 9.0) return false;
 		// Only the leader can submit the party's Manager interaction, but members also

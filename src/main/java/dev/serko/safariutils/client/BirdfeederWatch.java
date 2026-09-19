@@ -249,7 +249,8 @@ public final class BirdfeederWatch {
 
 	/** Marks the short transaction window opened by using the Birdfeeder NPC. */
 	public static void onEntityUse(net.minecraft.world.entity.Entity entity) {
-		if (entity == null || !entity.getName().getString().contains("Birdfeeder")) return;
+		if (!SafariLocation.inside() || entity == null
+			|| !entity.getName().getString().contains("Birdfeeder")) return;
 		birdfeederInteractionUntil = System.currentTimeMillis() + 500L;
 	}
 

@@ -58,6 +58,7 @@ public final class NestTracker {
 
 	/** Starts a confirmation window for either a left- or right-clicked nest. */
 	public static void onInteract(BlockPos pos) {
+		if (!SafariLocation.inside()) return;
 		Minecraft client = Minecraft.getInstance();
 		if (client.level == null) return;
 		if (client.level.getBlockState(pos).getBlock() != Blocks.BEE_NEST) return;

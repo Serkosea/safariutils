@@ -256,6 +256,7 @@ public final class MoundSpotter {
 
 	/** Remembers the exact locally struck mound until Hypixel confirms that it broke. */
 	public static void onAttack(Entity entity) {
+		if (!SafariLocation.inside()) return;
 		if (!EntityTypeIds.is(entity, "interaction")) return;
 		BlockPos attacked = nearestCatalog(entity.blockPosition(), StaticWaypointCatalog.mounds());
 		if (attacked == null || completed.contains(attacked)

@@ -1044,8 +1044,7 @@ public final class EncounterAlerts implements HudElement {
 		float phase = (System.currentTimeMillis() % 4_000L) / 4_000f;
 		for (int i = 0; i < text.length(); i++) {
 			String character = String.valueOf(text.charAt(i));
-			int rgb = java.awt.Color.HSBtoRGB(
-				(phase + i / (float) Math.max(1, text.length())) % 1f, 0.45f, 1f);
+			int rgb = UIDraw.rainbowAt(phase, x, 0.45f);
 			Component styledCharacter = styledBannerText(character, fontStyle);
 			graphics.text(font, styledCharacter, x, y,
 				(alpha << 24) | (rgb & 0xFFFFFF), shadow);

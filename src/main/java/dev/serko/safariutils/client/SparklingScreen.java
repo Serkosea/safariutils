@@ -46,6 +46,7 @@ public final class SparklingScreen extends Screen {
 	private static final int LABEL = 0xFFBBBBBB;
 	private static final int DIM = 0xFF888888;
 	private static final int LINE = 13;
+	private static final int SUMMARY_EDGE_MARGIN = 16;
 	private static final long LOOKUP_CACHE_MILLIS = 5 * 60_000L;
 
 	private enum Tab { COLLECTION, PARTY, LOOKUP }
@@ -58,6 +59,11 @@ public final class SparklingScreen extends Screen {
 			boolean feathers) {
 		boolean contains(double mouseX, double mouseY) {
 			return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
+		}
+	}
+	private record CollectionSummary(String prefix, String feathers, String suffix) {
+		String fullText() {
+			return prefix + feathers + suffix;
 		}
 	}
 
@@ -102,15 +108,20 @@ public final class SparklingScreen extends Screen {
 		clearWidgets();
 		hits.clear();
 		numberHits.clear();
+		updatePanelBounds();
+		if (tab == Tab.LOOKUP && SharedSparklingProviders.available()) addLookupField();
+		checkCachedLocalCollection();
+	}
+
+	private void updatePanelBounds() {
 		scale = ResponsiveUI.scale(width, height);
 		int logicalWidth = ResponsiveUI.logicalWidth(width, scale);
 		int logicalHeight = ResponsiveUI.logicalHeight(height, scale);
-		panelWidth = Math.min(660, logicalWidth - 8);
+		int summaryWidth = font.width(collectionSummary().fullText()) + SUMMARY_EDGE_MARGIN * 2;
+		panelWidth = Math.min(Math.max(660, summaryWidth), logicalWidth - 8);
 		panelHeight = Math.min(330, logicalHeight - 8);
 		panelLeft = (logicalWidth - panelWidth) / 2;
 		panelTop = (logicalHeight - panelHeight) / 2;
-		if (tab == Tab.LOOKUP && SharedSparklingProviders.available()) addLookupField();
-		checkCachedLocalCollection();
 	}
 
 	private void addLookupField() {
@@ -205,21 +216,11 @@ public final class SparklingScreen extends Screen {
 	private void drawCollection(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
 		int top = panelTop + 55;
 		int totalSpecies = Critters.total();
-		int since = RunHistory.runsSinceLastSparkling();
-		int setDuplicates = SparklingStats.duplicates();
-		String duplicateText = SparklingStats.hasImportedDuplicates()
-			&& SparklingStats.importedDuplicates() != setDuplicates
-			? SparklingStats.importedDuplicates() + " (" + setDuplicates + ")"
-			: String.valueOf(setDuplicates);
-		int displayedTotal = SparklingStats.hasImportedDuplicates()
-			? SparklingStats.unique() + SparklingStats.importedDuplicates() : SparklingStats.total();
-		String prefix = "Unique Sparklings  " + SparklingStats.unique() + "/" + totalSpecies
-			+ "   ✦   Sparklings  " + displayedTotal
-			+ "   ✦   Duplicates  " + duplicateText
-			+ "   ✦   Rainbow Feathers  ";
-		String feathers = String.valueOf(SparklingStats.rainbowFeathers());
-		String suffix = "   ✦   Runs Since Last  " + (since < 0 ? "—" : since);
-		int summaryWidth = font.width(prefix + feathers + suffix);
+		CollectionSummary summary = collectionSummary();
+		String prefix = summary.prefix();
+		String feathers = summary.feathers();
+		String suffix = summary.suffix();
+		int summaryWidth = font.width(summary.fullText());
 		int summaryX = panelLeft + (panelWidth - summaryWidth) / 2;
 		text(graphics, prefix, summaryX, top, 0xFFFFE08A);
 		int featherX = summaryX + font.width(prefix);
@@ -468,6 +469,7 @@ public final class SparklingScreen extends Screen {
 		button(graphics, x + width / 2 + 10, y + 82, 88, 20, "Import", true,
 			mouseX, mouseY, () -> {
 				SparklingStats.importApiCollection(pendingImport.species(), pendingImport.duplicates());
+				updatePanelBounds();
 				setStatus("Imported your Hypixel Sparkling collection", GREEN);
 				dismissPendingImport();
 			});
@@ -690,6 +692,7 @@ public final class SparklingScreen extends Screen {
 					if (count != editingOriginal) {
 						if (editingFeathers) SparklingStats.setRainbowFeathers(count);
 						else SparklingStats.set(editingCritter, count);
+						updatePanelBounds();
 						setStatus((editingFeathers ? "Rainbow Feathers" : editingCritter.name())
 							+ " set to " + count, GREEN);
 					}
@@ -704,6 +707,24 @@ public final class SparklingScreen extends Screen {
 		editingCritter = null;
 		editingFeathers = false;
 		editingOriginal = 0;
+	}
+
+	private static CollectionSummary collectionSummary() {
+		int setDuplicates = SparklingStats.duplicates();
+		String duplicateText = SparklingStats.hasImportedDuplicates()
+			&& SparklingStats.importedDuplicates() != setDuplicates
+			? SparklingStats.importedDuplicates() + " (" + setDuplicates + ")"
+			: String.valueOf(setDuplicates);
+		int displayedTotal = SparklingStats.hasImportedDuplicates()
+			? SparklingStats.unique() + SparklingStats.importedDuplicates() : SparklingStats.total();
+		String prefix = "Unique Sparklings  " + SparklingStats.unique() + "/" + Critters.total()
+			+ "   ✦   Sparklings  " + displayedTotal
+			+ "   ✦   Duplicates  " + duplicateText
+			+ "   ✦   Rainbow Feathers  ";
+		String feathers = String.valueOf(SparklingStats.rainbowFeathers());
+		int since = RunHistory.runsSinceLastSparkling();
+		String suffix = "   ✦   Runs Since Last  " + (since < 0 ? "—" : since);
+		return new CollectionSummary(prefix, feathers, suffix);
 	}
 
 	@Override

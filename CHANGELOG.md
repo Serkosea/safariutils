@@ -15,6 +15,8 @@
 - Kept HUD panels and their editor labels aligned consistently against every screen edge
 - Prevented interactions outside the Safari from reaching Safari-only objective trackers
 - Improved Bird Feed HUD performance by caching panel state and batching icon rendering
+- Kept rainbow text gradients continuous across adjacent values and changing text lengths
+- Kept large Sparkling collection totals comfortably inside the collection panel
 
 ### Changes & Additions
 

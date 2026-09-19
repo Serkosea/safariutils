@@ -33,16 +33,7 @@ public final class SpecialTheme {
 	/** Rainbow text which retains bold and any other style carried by the component. */
 	public static void rainbowText(GuiGraphicsExtractor graphics, Font font,
 							   Component component, int x, int y) {
-		String text = component.getString();
-		float phase = phase();
-		int cursor = x;
-		for (int i = 0; i < text.length(); i++) {
-			Component character = Component.literal(String.valueOf(text.charAt(i)))
-				.withStyle(component.getStyle());
-			graphics.text(font, character, cursor, y,
-				rainbowColour(phase, i, Math.max(1, text.length()), 0.5f, 1f));
-			cursor += font.width(character);
-		}
+		UIDraw.rainbowText(graphics, font, component, x, y, 0.5f);
 	}
 
 	/** Small deterministic twinkles behind panel text, with no per-frame allocations. */

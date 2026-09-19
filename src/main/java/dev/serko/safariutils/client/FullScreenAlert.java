@@ -285,7 +285,7 @@ public final class FullScreenAlert implements HudElement {
 		for (int i = 0; i < text.length(); i++) {
 			String character = String.valueOf(text.charAt(i));
 			graphics.text(font, Component.literal(character), x, y,
-				rainbow(alpha, phase + i / (float) text.length()));
+				(alpha << 24) | (UIDraw.rainbowAt(phase, x, 0.5f) & 0xFFFFFF));
 			x += font.width(character);
 		}
 	}

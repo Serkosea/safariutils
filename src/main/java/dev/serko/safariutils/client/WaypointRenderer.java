@@ -841,12 +841,14 @@ public final class WaypointRenderer {
 	private static Component rainbowLabel(String value) {
 		var result = Component.empty();
 		float phase = (System.currentTimeMillis() % 4_000L) / 4_000f;
+		int cursor = 0;
+		Font font = Minecraft.getInstance().font;
 		for (int i = 0; i < value.length(); i++) {
-			int colour = java.awt.Color.HSBtoRGB(
-				(phase + i / (float) Math.max(1, value.length()) * 0.55f) % 1f,
-				0.55f, 1f) & 0xFFFFFF;
-			result.append(Component.literal(String.valueOf(value.charAt(i)))
+			String character = String.valueOf(value.charAt(i));
+			int colour = UIDraw.rainbowAt(phase, cursor, 0.55f) & 0xFFFFFF;
+			result.append(Component.literal(character)
 				.withStyle(style -> style.withColor(colour)));
+			cursor += font.width(character);
 		}
 		return result;
 	}

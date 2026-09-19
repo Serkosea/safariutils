@@ -15,6 +15,7 @@ import java.util.List;
 public final class PartyBirdFeedHud implements HudElement {
 	private static final String[] BIRDS = {"Bluebird", "Parakeet", "Macaw"};
 	private static final int[] BIRD_COLOURS = {0xFF1647D8, 0xFFA7E522, 0xFFF04A24};
+	private final TickCache<HudPanel> panelCache = new TickCache<>();
 
 	/** The exact border colour used by both the panel frame and its title. */
 	public static int borderColour() {
@@ -122,7 +123,7 @@ public final class PartyBirdFeedHud implements HudElement {
 		if (!ConfigManager.get().display.showBirdFeedHud) return;
 		Minecraft client = Minecraft.getInstance();
 		if (client.player == null || ClientCompat.hudHidden()) return;
-		HudPanel panel = panel();
+		HudPanel panel = panelCache.get(PartyBirdFeedHud::panel);
 		if (panel == null || panel.isEmpty()) return;
 		HudBox box = HudBox.BIRD_FEED;
 		float scale = box.scale() * ResponsiveUI.scale(graphics.guiWidth(), graphics.guiHeight());

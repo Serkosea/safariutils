@@ -17,6 +17,18 @@ import java.util.List;
  * bar between them.
  */
 public final class HudPanel {
+	private static final String[] BIRD_ICON = {".....ss....", "....s##ss..", "....wwwd#s.",
+		"...hhw###oo", ".wwww####s.", "smww####s..", "mmmmms##s..", ".mmmms#s...",
+		"..mm..ss..."};
+	private static final String[] BERRY_ICON = {"....bb....", "...#b#....", "..#hh###..",
+		"..hh#####.", ".########s", ".########s", ".#######ss", "..######s.",
+		"...####s.."};
+	private static final String[] WORM_ICON = {"..........", "........h.", ".......#hs",
+		".......mms", "......h#s.", "......sss.", "....#mm...", ".m#hsss...",
+		"..sss....."};
+	private static final String[] SEED_BAG_ICON = {"..........", "...#ggg#..", "...shhh##.",
+		"...hh####.", "..s#######", ".s########", ".s###dd###", ".s##d####s",
+		"..s#####s."};
 
 	private static final int LINE_HEIGHT = 12;
 	private static final int TEXT_HEIGHT = 9;
@@ -485,14 +497,10 @@ public final class HudPanel {
 	private static void drawIcon(GuiGraphicsExtractor graphics, int x, int y,
 			HudIcon icon, int colour) {
 		String[] sprite = switch (icon) {
-			case BIRD -> new String[]{".....ss....", "....s##ss..", "....wwwd#s.", "...hhw###oo",
-				".wwww####s.", "smww####s..", "mmmmms##s..", ".mmmms#s...", "..mm..ss..."};
-			case BERRY -> new String[]{"....bb....", "...#b#....", "..#hh###..", "..hh#####.",
-				".########s", ".########s", ".#######ss", "..######s.", "...####s.."};
-			case WORM -> new String[]{"..........", "........h.", ".......#hs", ".......mms",
-				"......h#s.", "......sss.", "....#mm...", ".m#hsss...", "..sss....."};
-			case SEED_BAG -> new String[]{"..........", "...#ggg#..", "...shhh##.", "...hh####.",
-				"..s#######", ".s########", ".s###dd###", ".s##d####s", "..s#####s."};
+			case BIRD -> BIRD_ICON;
+			case BERRY -> BERRY_ICON;
+			case WORM -> WORM_ICON;
+			case SEED_BAG -> SEED_BAG_ICON;
 		};
 		int shadow = shade(colour, 0.48f);
 		int highlight = shade(colour, 1.30f);
@@ -500,8 +508,11 @@ public final class HudPanel {
 		int wing = shade(colour, 1.18f);
 		int dark = shade(colour, 0.28f);
 		for (int row = 0; row < sprite.length; row++) {
-			for (int column = 0; column < sprite[row].length(); column++) {
-				int pixel = switch (sprite[row].charAt(column)) {
+			String pixels = sprite[row];
+			int runStart = 0;
+			int runColour = 0;
+			for (int column = 0; column <= pixels.length(); column++) {
+				int pixel = column == pixels.length() ? 0 : switch (pixels.charAt(column)) {
 					case '#' -> colour;
 					case 's' -> shadow;
 					case 'h' -> highlight;
@@ -513,7 +524,12 @@ public final class HudPanel {
 					case 'o' -> 0xFFFFB33B;
 					default -> 0;
 				};
-				if (pixel != 0) graphics.fill(x + column, y + row, x + column + 1, y + row + 1, pixel);
+				if (pixel == runColour) continue;
+				if (runColour != 0) {
+					graphics.fill(x + runStart, y + row, x + column, y + row + 1, runColour);
+				}
+				runStart = column;
+				runColour = pixel;
 			}
 		}
 	}

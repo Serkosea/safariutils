@@ -14,6 +14,7 @@
 - Kept the Contest HUD visible in Dungeons and Kuudra when Show Everywhere is enabled
 - Kept HUD panels and their editor labels aligned consistently against every screen edge
 - Prevented interactions outside the Safari from reaching Safari-only objective trackers
+- Improved Bird Feed HUD performance by caching panel state and batching icon rendering
 
 ### Changes & Additions
 

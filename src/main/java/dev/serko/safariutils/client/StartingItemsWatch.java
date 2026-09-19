@@ -24,7 +24,6 @@ public final class StartingItemsWatch {
 	private static long capsulesDetectedAtMillis;
 	private static int[] startingInventory;
 	private static boolean startingItemsAnnounced;
-	private static boolean awaitingRunInventory;
 	private static String activationTrigger = "capsule allocation";
 
 	private StartingItemsWatch() {
@@ -45,8 +44,9 @@ public final class StartingItemsWatch {
 
 		Player player = Minecraft.getInstance().player;
 		if (player == null) {
-			long now = System.currentTimeMillis();
-			if (now < scanDeadlineMillis) scanAtMillis = now + RETRY_DELAY_MILLIS;
+			// A visit may outlive an unusually slow player load. Keep the capsule watcher
+			// alive for the visit rather than allowing a transient null player to disarm it.
+			scanAtMillis = System.currentTimeMillis() + RETRY_DELAY_MILLIS;
 			return;
 		}
 		Inventory inventory = player.getInventory();
@@ -65,9 +65,7 @@ public final class StartingItemsWatch {
 			if (capsulesDetectedAtMillis == 0) {
 				capsulesDetectedAtMillis = now;
 				scanDeadlineMillis = now + ITEM_SYNC_WINDOW_MILLIS;
-				if (awaitingRunInventory
-					&& dev.serko.safariutils.session.SessionManager.current() == null) {
-					awaitingRunInventory = false;
+				if (dev.serko.safariutils.session.SessionManager.current() == null) {
 					dev.serko.safariutils.session.SessionManager.startSession(
 						activationTrigger + " + capsule allocation");
 				}
@@ -149,7 +147,6 @@ public final class StartingItemsWatch {
 	public static void onSafariVisitStarted() {
 		long now = System.currentTimeMillis();
 		activationTrigger = "capsule allocation";
-		awaitingRunInventory = true;
 		scanAtMillis = now;
 		scanDeadlineMillis = now + ITEM_SYNC_WINDOW_MILLIS;
 		capsulesDetectedAtMillis = 0;
@@ -161,7 +158,6 @@ public final class StartingItemsWatch {
 	public static void onTicketSubmitted(String trigger) {
 		if (dev.serko.safariutils.session.SessionManager.current() != null) return;
 		activationTrigger = trigger;
-		awaitingRunInventory = true;
 		long now = System.currentTimeMillis();
 		scanAtMillis = scanAtMillis == 0 ? now : Math.min(scanAtMillis, now);
 		scanDeadlineMillis = Math.max(scanDeadlineMillis, now + ITEM_SYNC_WINDOW_MILLIS);
@@ -170,7 +166,6 @@ public final class StartingItemsWatch {
 
 	/** Discards an unfinished allocation watch when its Safari visit ends. */
 	public static void cancelPendingRun() {
-		awaitingRunInventory = false;
 		scanAtMillis = 0;
 		scanDeadlineMillis = 0;
 		capsulesDetectedAtMillis = 0;

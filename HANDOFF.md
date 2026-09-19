@@ -91,6 +91,8 @@ Do not let a catalog candidate become a completed objective solely because an un
 
 Player Lookup results are cached for five minutes. Hypixel profile requests are globally spaced by ten seconds in the private client. Automatic party loads happen on Safari entry; the same party refreshes only on a later Safari entry after five minutes have elapsed.
 
+Screen-facing API state must remain lock-free. In particular, Player Lookup's cooldown reads a volatile request timestamp and must never acquire the monitor held by a sleeping or in-flight HTTP request, or opening the tab can freeze the render thread during an automatic party refresh.
+
 ## Optional private party synchronization
 
 The ignored private extension resolves the complete party from the fresh `/party list` response and enables transport only when every current party member is approved. Solo private runs are synchronized because the local client has complete information.

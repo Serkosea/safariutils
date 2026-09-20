@@ -5,6 +5,6 @@ import java.util.List;
 /** Party members and whether their shared collection is currently API-managed. */
 public record PartySparklingSnapshot(List<String> members, boolean apiManaged) {
 	public PartySparklingSnapshot {
-		members = List.copyOf(members);
+		members = members.stream().sorted(String.CASE_INSENSITIVE_ORDER).toList();
 	}
 }

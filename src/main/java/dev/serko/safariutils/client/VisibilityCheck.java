@@ -164,7 +164,7 @@ public final class VisibilityCheck {
 			paintingLevel = client.level;
 			paintingsCachedAt = now;
 			paintingBoxes.clear();
-			for (Entity entity : client.level.entitiesForRendering()) {
+			for (Entity entity : WorldEntities.current()) {
 				if (EntityTypeIds.is(entity, "painting")) paintingBoxes.add(entity.getBoundingBox());
 			}
 		}

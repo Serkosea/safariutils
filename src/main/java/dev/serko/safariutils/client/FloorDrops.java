@@ -127,7 +127,7 @@ public final class FloorDrops {
 		if (client.level == null) return;
 
 		Map<BlockPos, Integer> strings = new HashMap<>();
-		for (Entity entity : client.level.entitiesForRendering()) {
+		for (Entity entity : WorldEntities.current()) {
 			if (!(entity instanceof Display.ItemDisplay display)) continue;
 			if (!isString(display)) continue;
 			strings.merge(entity.blockPosition(), 1, Integer::sum);

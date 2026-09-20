@@ -20,9 +20,9 @@ import java.util.UUID;
 
 /**
  * Keeps last-confirmed positions for Duplico, Hideonwall, Hideonfloor and Bloodbat.
- * Capture events clear a species because chat does not identify the individual.
- * Nearby replacements absorb entity-ID changes, and stale entries expire as a
- * fallback when event ordering reintroduces an old sighting.
+ * Capture attempts bind species-only chat outcomes to the best known individual.
+ * Nearby replacements absorb entity-ID changes, while caught Hideonwall perches
+ * remain closed until the current Safari instance ends.
  */
 public final class StillCritters {
 
@@ -55,6 +55,9 @@ public final class StillCritters {
 	private static final Set<Critter> catalogClosed = new java.util.HashSet<>();
 	private static final Map<Critter, Set<BlockPos>> unchecked = new HashMap<>();
 	private static final Map<Critter, UUID> resolving = new HashMap<>();
+	private static final Map<Critter, BlockPos> resolvingPositions = new HashMap<>();
+	/** Canonical Hideonwall perches caught during this run; those spawns cannot return. */
+	private static final Set<BlockPos> caughtHideonwallPositions = new java.util.HashSet<>();
 	/** Bodies resolved by a catch but still lingering in the client entity list. */
 	private static final Set<UUID> suppressedBodies = new java.util.HashSet<>();
 	private static long lastScan = Long.MIN_VALUE;
@@ -86,6 +89,10 @@ public final class StillCritters {
 
 			Entity entity = sighting.mob();
 			if (entity != null && suppressedBodies.contains(entity.getUUID())) continue;
+			if (caughtHideonwall(sighting)) {
+				if (entity != null) suppressedBodies.add(entity.getUUID());
+				continue;
+			}
 			learnInitialPosition(sighting, entity);
 			if (entity == null) {
 				// Duplico always has a persistent interaction body. A label without that
@@ -139,6 +146,13 @@ public final class StillCritters {
 		pruneVisibleEmptyCandidates();
 	}
 
+	private static boolean caughtHideonwall(CritterEntities.Sighting sighting) {
+		if (!"Hideonwall".equals(sighting.critter().name())) return false;
+		BlockPos actual = sighting.mob() != null
+			? sighting.mob().blockPosition() : sighting.label().blockPosition();
+		return caughtHideonwallPositions.stream().anyMatch(pos -> sameSpawn(pos, actual));
+	}
+
 	/**
 	 * Hideonfloor chat does not identify which individual was caught. Resolve markers
 	 * from the world instead: Extra Mode trusts a loaded, absent body while Safe Mode
@@ -179,7 +193,7 @@ public final class StillCritters {
 		var client = net.minecraft.client.Minecraft.getInstance();
 		if (client.level == null) return;
 
-		for (Entity entity : client.level.entitiesForRendering()) {
+		for (Entity entity : WorldEntities.current()) {
 			if (!(entity instanceof Display.ItemDisplay display) || !isCritterCapsule(display)) continue;
 			Vec3 previous = new Vec3(entity.xOld, entity.yOld, entity.zOld);
 			Vec3 current = entity.position();
@@ -195,6 +209,7 @@ public final class StillCritters {
 
 	private static void resolveHideonwallPerch(Critter hideonwall, BlockPos candidate, long now) {
 		unchecked.getOrDefault(hideonwall, Set.of()).remove(candidate);
+		if (caughtHideonwallPositions.stream().anyMatch(pos -> sameSpawn(pos, candidate))) return;
 		// A throw already assigned to this species is resolving a catch, so it should
 		// clear the candidate without reviving the body that the attempt just suppressed.
 		if (resolving.containsKey(hideonwall)) {
@@ -287,6 +302,10 @@ public final class StillCritters {
 	public static Set<BlockPos> candidatesFor(Critter critter) {
 		if (!SafeMode.hiddenCritterCandidates(critter)) return Set.of();
 		Set<BlockPos> result = new java.util.LinkedHashSet<>(unchecked.getOrDefault(critter, Set.of()));
+		if ("Hideonwall".equals(critter.name())) {
+			result.removeIf(candidate -> caughtHideonwallPositions.stream()
+				.anyMatch(caught -> sameSpawn(caught, candidate)));
+		}
 		// Suppress the candidate copy only after the real critter is visibly confirmed.
 		for (Entry entry : remembered.values()) {
 			if (!critter.equals(entry.critter()) || !entry.visiblyConfirmed()) continue;
@@ -361,23 +380,80 @@ public final class StillCritters {
 		if (event.type() == CritterEvent.Type.ATTEMPT) {
 			UUID id = RecatchSpots.pendingCatchEntity(event.critter());
 			if (id == null) id = nearestRemembered(event.critter());
+			Entry target = id == null ? null : remembered.get(id);
+			BlockPos targetPos = target != null ? target.pos()
+				: id == null ? null : sightingPosition(event.critter(), id);
+			if (targetPos == null) targetPos = RecatchSpots.pendingCatchPosition(event.critter());
+			if ("Hideonwall".equals(event.critter().name()) && targetPos != null) {
+				targetPos = canonicalHideonwallPerch(targetPos);
+			}
+			if (targetPos != null) {
+				resolvingPositions.put(event.critter(), targetPos);
+				BlockPos finalTargetPos = targetPos;
+				remembered.entrySet().removeIf(entry -> event.critter().equals(entry.getValue().critter())
+					&& sameSpawn(finalTargetPos, entry.getValue().pos()));
+			}
 			if (id != null) {
 				resolving.put(event.critter(), id);
 				suppressedBodies.add(id);
-				remembered.remove(id);
 				DebugLog.line("STILL", "RESOLVE " + event.critter().name() + " id=" + shortId(id));
 			}
 		} else if (event.type() == CritterEvent.Type.FAILED) {
 			UUID id = resolving.remove(event.critter());
+			resolvingPositions.remove(event.critter());
 			if (id != null) suppressedBodies.remove(id);
 		} else {
 			UUID id = resolving.remove(event.critter());
-			if (id == null) id = nearestRemembered(event.critter());
+			BlockPos resolvedPos = resolvingPositions.remove(event.critter());
+			if (id == null) {
+				id = nearestRemembered(event.critter());
+				Entry target = id == null ? null : remembered.get(id);
+				if (target != null) resolvedPos = target.pos();
+			}
 			if (id != null) {
 				suppressedBodies.add(id);
 				remembered.remove(id);
 			}
+			if ("Hideonwall".equals(event.critter().name()) && resolvedPos != null) {
+				suppressCaughtHideonwall(event.critter(), resolvedPos);
+			}
 		}
+	}
+
+	private static BlockPos sightingPosition(Critter critter, UUID id) {
+		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
+			if (!critter.equals(sighting.critter())) continue;
+			Entity body = sighting.mob();
+			if (body != null && id.equals(body.getUUID())) return body.blockPosition();
+			if (id.equals(sighting.label().getUUID())) return sighting.label().blockPosition();
+		}
+		return null;
+	}
+
+	/** Clears every lingering ID at the caught perch and keeps that one-use perch closed for this run. */
+	private static void suppressCaughtHideonwall(Critter hideonwall, BlockPos pos) {
+		pos = canonicalHideonwallPerch(pos);
+		caughtHideonwallPositions.add(pos.immutable());
+		BlockPos caughtPos = pos;
+		remembered.entrySet().removeIf(entry -> hideonwall.equals(entry.getValue().critter())
+			&& sameSpawn(caughtPos, entry.getValue().pos()));
+		Set<BlockPos> candidates = unchecked.get(hideonwall);
+		if (candidates != null) candidates.removeIf(candidate -> sameSpawn(caughtPos, candidate));
+		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
+			if (!hideonwall.equals(sighting.critter())) continue;
+			Entity body = sighting.mob();
+			BlockPos actual = body != null ? body.blockPosition() : sighting.label().blockPosition();
+			if (sameSpawn(caughtPos, actual) && body != null) suppressedBodies.add(body.getUUID());
+		}
+		DebugLog.line("STILL", "CAUGHT Hideonwall perch closed pos=" + pos(caughtPos));
+	}
+
+	/** Normalizes an observed body/label position to its fixed catalog perch. */
+	private static BlockPos canonicalHideonwallPerch(BlockPos observed) {
+		return StaticEntityCatalog.positions("Hideonwall").stream()
+			.filter(candidate -> sameSpawn(candidate, observed))
+			.min(java.util.Comparator.comparingDouble(candidate -> candidate.distSqr(observed)))
+			.orElse(observed);
 	}
 
 	/** A spot from the last run says nothing about this one. */
@@ -391,6 +467,8 @@ public final class StillCritters {
 		duplicoPairLabels.clear();
 		duplicoStableScans.clear();
 		resolving.clear();
+		resolvingPositions.clear();
+		caughtHideonwallPositions.clear();
 		suppressedBodies.clear();
 		catalogClosed.clear();
 		unchecked.clear();

@@ -4,6 +4,7 @@ import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.parse.ChatParser;
 import dev.serko.safariutils.parse.CritterEvent;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -55,7 +56,7 @@ public final class RecatchSpots {
 
 	/** Every currently sighted individual's own last-seen spot, by entity id. */
 	private static final Map<UUID, Seen> byEntity = new HashMap<>();
-	/** Active pins, by entity id. Insertion-ordered, so "most recently pinned" is cheap. */
+	/** Active pins by entity id, retaining throw order for species-only outcomes. */
 	private static final Map<UUID, Pin> pins = new LinkedHashMap<>();
 	/**
 	 * How many times each individual has actually been thrown at, by entity id — kept
@@ -298,6 +299,15 @@ public final class RecatchSpots {
 			oldest = entry.getValue();
 		}
 		return oldestId;
+	}
+
+	/** Last body position selected for the unresolved throw at this species. */
+	public static BlockPos pendingCatchPosition(Critter critter) {
+		UUID id = pendingCatchEntity(critter);
+		Pin pin = id == null ? null : pins.get(id);
+		if (pin == null) return null;
+		Vec3 center = pin.box().getCenter();
+		return BlockPos.containing(center.x, center.y, center.z);
 	}
 
 	/**

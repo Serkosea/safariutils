@@ -1,6 +1,7 @@
 package dev.serko.safariutils.api;
 
 import dev.serko.safariutils.client.HudPanel;
+import dev.serko.safariutils.data.SafariBiome;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 
@@ -58,7 +59,22 @@ public interface PartyItemSyncProvider {
 		return false;
 	}
 
-	default HudPanel birdFeedPanel() {
+	/** Biome-specific party objective panel supplied by private synchronized builds. */
+	default HudPanel objectivePanel() {
 		return null;
+	}
+
+	/** Whether the objective in the local player's current biome is complete. */
+	default boolean objectiveComplete() {
+		return feedDone();
+	}
+
+	/**
+	 * Whether this client may stop showing objective floor drops in {@code biome}.
+	 * Completion is shared, while a held-item shortcut must remain local to the
+	 * player who can personally finish the objective.
+	 */
+	default boolean objectiveAllowsFloorDropHide(SafariBiome biome) {
+		return biome == SafariBiome.FOREST && forestDropsComplete();
 	}
 }

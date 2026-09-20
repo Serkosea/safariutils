@@ -29,6 +29,8 @@ public final class HudEditorScreen extends Screen {
 
 	/** Where each box was drawn last frame, so clicks and scrolls can be hit-tested. */
 	private final Map<HudBox, Rect> bounds = new EnumMap<>(HudBox.class);
+	/** Real HUD contents change on ticks, not between multiple render frames in one tick. */
+	private final Map<HudBox, TickCache<HudPanel>> panelCaches = new EnumMap<>(HudBox.class);
 
 	private HudBox dragging;
 	private int grabOffsetX;
@@ -69,6 +71,7 @@ public final class HudEditorScreen extends Screen {
 		graphics.fill(0, 0, width, 43, surface);
 		graphics.fill(0, height - 42, width, height, surface);
 		graphics.fill(0, 42, width, 43, border);
+		if (SpecialTheme.rainbow()) SpecialTheme.stars(graphics, 0, 0, width, height, 0.7f);
 
 		Font font = this.font;
 		bounds.clear();
@@ -79,7 +82,8 @@ public final class HudEditorScreen extends Screen {
 		for (HudBox box : HudBox.values()) {
 			if (!box.enabled()) continue;
 
-			HudPanel panel = box.panel();
+			HudPanel panel = panelCaches.computeIfAbsent(box, ignored -> new TickCache<>())
+				.get(box::panel);
 			if (panel == null || panel.isEmpty()) panel = box.placeholderPanel();
 
 			float scale = box.scale() * ResponsiveUI.scale(width, height);
@@ -122,7 +126,7 @@ public final class HudEditorScreen extends Screen {
 				int tagX = clamp(x + (w - tagW) / 2, 1, Math.max(1, width - tagW - 1));
 				graphics.fill(tagX, tagY - 2, tagX + tagW, tagY + 11, cardHover);
 				outline(graphics, tagX, tagY - 2, tagW, 13, accent);
-				graphics.text(font, Component.literal(tag), tagX + 4, tagY, hint);
+				drawText(graphics, tag, tagX + 4, tagY, hint);
 			}
 		}
 		if (dragging != null && snappedHorizontal) {
@@ -133,10 +137,10 @@ public final class HudEditorScreen extends Screen {
 		}
 
 		String title = "HUD LAYOUT";
-		graphics.text(font, Component.literal(title), (width - font.width(title)) / 2, 12, hint);
+		drawText(graphics, title, (width - font.width(title)) / 2, 12, hint);
 		String hint2 = "Drag to move  ·  Arrows to nudge  ·  Scroll to resize  ·  Snapping "
 			+ (ConfigManager.get().display.hudSnapping ? "on" : "off");
-		graphics.text(font, Component.literal(hint2), (width - font.width(hint2)) / 2, 24, dim);
+		drawText(graphics, hint2, (width - font.width(hint2)) / 2, 24, dim);
 		boolean resetArmed = System.currentTimeMillis() < resetArmedUntil;
 		drawButton(graphics, resetButton, resetArmed ? "Confirm Reset" : "Reset Layout",
 			mouseX, mouseY, resetArmed);
@@ -155,7 +159,7 @@ public final class HudEditorScreen extends Screen {
 		graphics.fill(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h,
 			hovered ? cardHover : card);
 		outline(graphics, rect.x, rect.y, rect.w, rect.h, buttonBorder);
-		graphics.text(font, Component.literal(label),
+		drawText(graphics, label,
 			rect.x + (rect.w - font.width(label)) / 2, rect.y + 7, hovered ? hint : dim);
 	}
 
@@ -172,6 +176,25 @@ public final class HudEditorScreen extends Screen {
 		hint = palette[10];
 		dim = palette[12];
 		outlineIdle = (palette[4] & 0x00FFFFFF) | 0x70000000;
+		if (SpecialTheme.rainbow()) {
+			accent = SpecialTheme.accent(18);
+			outline = SpecialTheme.accent(54);
+			border = SpecialTheme.accent(72);
+			cardHover = blend(card, SpecialTheme.accent(36), 0.20f);
+			outlineIdle = (SpecialTheme.accent(0) & 0x00FFFFFF) | 0x70000000;
+		}
+	}
+
+	private void drawText(GuiGraphicsExtractor graphics, String text, int x, int y, int colour) {
+		SpecialTheme.text(graphics, font, Component.literal(text), x, y, colour);
+	}
+
+	private static int blend(int base, int accent, float amount) {
+		float inverse = 1f - amount;
+		int red = Math.round((base >> 16 & 0xFF) * inverse + (accent >> 16 & 0xFF) * amount);
+		int green = Math.round((base >> 8 & 0xFF) * inverse + (accent >> 8 & 0xFF) * amount);
+		int blue = Math.round((base & 0xFF) * inverse + (accent & 0xFF) * amount);
+		return 0xFF000000 | red << 16 | green << 8 | blue;
 	}
 
 	private int snapX(int value, int boxWidth) {
@@ -196,6 +219,10 @@ public final class HudEditorScreen extends Screen {
 	}
 
 	private void outline(GuiGraphicsExtractor graphics, int x, int y, int w, int h, int colour) {
+		if (SpecialTheme.rainbow()) {
+			SpecialTheme.border(graphics, x - 1, y - 1, w + 2, h + 2, 1);
+			return;
+		}
 		graphics.fill(x - 1, y - 1, x + w + 1, y, colour);
 		graphics.fill(x - 1, y + h, x + w + 1, y + h + 1, colour);
 		graphics.fill(x - 1, y, x, y + h, colour);
@@ -292,8 +319,8 @@ public final class HudEditorScreen extends Screen {
 		HudBox.PROGRESS.setPosition(0.0046838406f, 0.008333334f);
 		HudBox.MISSING.setPosition(0.0046838406f, 0.26041666f);
 		HudBox.CONTEST.setPosition(0.23185012f, 0.008333334f);
-		HudBox.BIRD_FEED.setScale(1.0f);
-		HudBox.BIRD_FEED.setPosition(0.9941452f, 0.008333334f);
+		HudBox.PARTY_OBJECTIVE.setScale(1.0f);
+		HudBox.PARTY_OBJECTIVE.setPosition(0.9941452f, 0.008333334f);
 		HudBox.ALERTS.setPosition(0.49882904f, 0.33125f);
 		ConfigManager.save();
 	}

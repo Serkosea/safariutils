@@ -1,6 +1,6 @@
 package dev.serko.safariutils.api;
 
-import dev.serko.safariutils.SafariUtils;
+import dev.serko.safariutils.client.OperationalLog;
 
 import java.util.Optional;
 import java.util.ServiceLoader;
@@ -40,7 +40,7 @@ public final class SharedSparklingProviders {
 		try {
 			return ServiceLoader.load(SharedSparklingProvider.class).findFirst();
 		} catch (RuntimeException error) {
-			SafariUtils.LOGGER.error("Could not load the private shared-Sparkling provider", error);
+			OperationalLog.error("PROVIDER/SHARED_SPARKLINGS_LOAD", error);
 			return Optional.empty();
 		}
 	}

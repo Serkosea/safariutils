@@ -13,6 +13,7 @@ import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.LinkedHashSet;
+import java.util.EnumMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -27,21 +28,28 @@ public final class StaticWaypointCatalog {
 	private static Data bundled;
 	private static boolean dirty;
 	private static long dirtyAt;
+	/** Decoding comma-separated positions is paid only when a catalog actually changes. */
+	private static final Map<SafariBiome, Set<BlockPos>> floorDropCache =
+		new EnumMap<>(SafariBiome.class);
+	private static Set<BlockPos> nestCache;
+	private static Set<BlockPos> moundCache;
 
 	private StaticWaypointCatalog() {
 	}
 
 	public static Set<BlockPos> floorDrops(SafariBiome biome) {
-		return decode(merged(getBundled().floorDrops.get(biome.name()),
-			get().floorDrops.get(biome.name())));
+		return floorDropCache.computeIfAbsent(biome, value -> Set.copyOf(decode(merged(
+			getBundled().floorDrops.get(value.name()), get().floorDrops.get(value.name())))));
 	}
 
 	public static Set<BlockPos> nests() {
-		return decode(merged(getBundled().nests, get().nests));
+		if (nestCache == null) nestCache = Set.copyOf(decode(merged(getBundled().nests, get().nests)));
+		return nestCache;
 	}
 
 	public static Set<BlockPos> mounds() {
-		return decode(merged(getBundled().mounds, get().mounds));
+		if (moundCache == null) moundCache = Set.copyOf(decode(merged(getBundled().mounds, get().mounds)));
+		return moundCache;
 	}
 
 	public static void learnFloorDrop(SafariBiome biome, BlockPos pos) {
@@ -77,6 +85,9 @@ public final class StaticWaypointCatalog {
 		DebugLog.line("WAYPOINT", "learned objective/" + type + " at " + encoded);
 		dirty = true;
 		dirtyAt = System.currentTimeMillis();
+		floorDropCache.clear();
+		nestCache = null;
+		moundCache = null;
 	}
 
 	/** Coalesces a whole scan's discoveries into one small disk write. */
@@ -94,7 +105,8 @@ public final class StaticWaypointCatalog {
 			if (Files.isRegularFile(SafariPaths.staticWaypoints())) {
 				data = GSON.fromJson(Files.readString(SafariPaths.staticWaypoints()), DATA_TYPE);
 			}
-		} catch (IOException | RuntimeException ignored) {
+		} catch (IOException | RuntimeException unreadable) {
+			OperationalLog.error("CATALOG/WAYPOINTS_LOAD", unreadable);
 		}
 		if (data == null) data = new Data();
 		if (data.floorDrops == null) data.floorDrops = new java.util.LinkedHashMap<>();
@@ -118,7 +130,8 @@ public final class StaticWaypointCatalog {
 		if (bundled != null) return bundled;
 		try (var stream = StaticWaypointCatalog.class.getResourceAsStream(BUNDLED)) {
 			if (stream != null) bundled = GSON.fromJson(new InputStreamReader(stream, StandardCharsets.UTF_8), DATA_TYPE);
-		} catch (IOException | RuntimeException ignored) {
+		} catch (IOException | RuntimeException unreadable) {
+			OperationalLog.error("CATALOG/WAYPOINTS_BUNDLED", unreadable);
 		}
 		if (bundled == null) bundled = new Data();
 		normalize(bundled);
@@ -171,7 +184,10 @@ public final class StaticWaypointCatalog {
 			AtomicFiles.writeString(path, GSON.toJson(get(), DATA_TYPE),
 				TestingMode.saveLearnedLocations());
 			dirty = false;
-		} catch (IOException ignored) {
+		} catch (IOException failed) {
+			// Keep retrying, but no faster than the normal coalesced-save interval.
+			dirtyAt = System.currentTimeMillis();
+			OperationalLog.error("CATALOG/WAYPOINTS_SAVE", failed);
 		}
 	}
 

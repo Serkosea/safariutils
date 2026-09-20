@@ -398,38 +398,42 @@ public class SafariConfig {
 		@Expose
 		public boolean contestHideOnComplete = false;
 
-		private static final int BIRD_FEED_HUD = 27;
-		private static final int BIRD_FEED_OPTIONS = 28;
-		@SettingInfo(name = "Bird Feed HUD", desc = "")
-		@SettingSection(id = BIRD_FEED_HUD)
-		public boolean birdFeedHudAccordion = false;
-		@SettingInfo(name = "Show Bird Feed HUD", desc = "Shows known party feed and bird status during Safari runs")
-		@SettingToggle @SettingGroup(id = BIRD_FEED_HUD) @Expose
-		@SerializedName(value = "showBirdFeedHud", alternate = "privateShowBirdFeedHud")
-		public boolean showBirdFeedHud = true;
-		@SettingInfo(name = "Bird Feed HUD Options", desc = "")
-		@SettingSection(id = BIRD_FEED_OPTIONS) @SettingGroup(id = BIRD_FEED_HUD)
-		public boolean birdFeedOptionsAccordion = false;
+		private static final int PARTY_OBJECTIVE_HUD = 27;
+		private static final int PARTY_OBJECTIVE_OPTIONS = 28;
+		@SettingInfo(name = "Party Objective HUD", desc = "")
+		@SettingSection(id = PARTY_OBJECTIVE_HUD)
+		public boolean partyObjectiveHudAccordion = false;
+		@SettingInfo(name = "Show Party Objective HUD", desc = "Shows known party objective items and progress for the current biome")
+		@SettingToggle @SettingGroup(id = PARTY_OBJECTIVE_HUD) @Expose
+		@SerializedName(value = "showPartyObjectiveHud", alternate = {"showBirdFeedHud", "privateShowBirdFeedHud"})
+		public boolean showPartyObjectiveHud = true;
+		@SettingInfo(name = "Party Objective HUD Options", desc = "")
+		@SettingSection(id = PARTY_OBJECTIVE_OPTIONS) @SettingGroup(id = PARTY_OBJECTIVE_HUD)
+		public boolean partyObjectiveOptionsAccordion = false;
+		@SettingInfo(name = "Title Biomes", desc = "Choose which biome objective states appear beside the HUD title")
+		@SettingMultiChoice(values = {"Cavern", "Icy", "Haunted", "Forest"})
+		@SettingGroup(id = PARTY_OBJECTIVE_OPTIONS) @Expose
+		public int partyObjectiveTitleBiomes = 15;
 		@SettingInfo(name = "Directional Expansion", desc = "Direction the HUD expands horizontally when text gets longer")
-		@SettingChoice(values = {"Left", "Equal", "Right"}) @SettingGroup(id = BIRD_FEED_OPTIONS) @Expose
-		@SerializedName(value = "birdFeedExpansion", alternate = "privateBirdFeedExpansion")
-		public int birdFeedExpansion = 0;
-		@SettingInfo(name = "Individual Player Feed", desc = "Shows each party member's Berry, Worm, and Seed counts")
-		@SettingToggle @SettingGroup(id = BIRD_FEED_OPTIONS) @Expose
-		@SerializedName(value = "birdFeedShowPlayers", alternate = "privateBirdFeedShowPlayers")
-		public boolean birdFeedShowPlayers = true;
-		@SettingInfo(name = "Show Feed Done", desc = "Shows how many discovered feed items have spawned a bird")
-		@SettingToggle @SettingGroup(id = BIRD_FEED_OPTIONS) @Expose
-		@SerializedName(value = "birdFeedShowFeedDone", alternate = "privateBirdFeedShowFeedDone")
-		public boolean birdFeedShowFeedDone = true;
-		@SettingInfo(name = "Show Birdfeeder", desc = "Shows the feed currently stacked in the Birdfeeder")
-		@SettingToggle @SettingGroup(id = BIRD_FEED_OPTIONS) @Expose
-		@SerializedName(value = "birdFeedShowBirdfeeder", alternate = "privateBirdFeedShowBirdfeeder")
-		public boolean birdFeedShowBirdfeeder = true;
+		@SettingChoice(values = {"Left", "Equal", "Right"}) @SettingGroup(id = PARTY_OBJECTIVE_OPTIONS) @Expose
+		@SerializedName(value = "partyObjectiveExpansion", alternate = {"birdFeedExpansion", "privateBirdFeedExpansion"})
+		public int partyObjectiveExpansion = 0;
+		@SettingInfo(name = "Individual Player Items", desc = "Shows each party member's known objective item counts")
+		@SettingToggle @SettingGroup(id = PARTY_OBJECTIVE_OPTIONS) @Expose
+		@SerializedName(value = "partyObjectiveShowPlayers", alternate = {"birdFeedShowPlayers", "privateBirdFeedShowPlayers"})
+		public boolean partyObjectiveShowPlayers = true;
+		@SettingInfo(name = "Show Objective Progress", desc = "Shows objective items ready or feed already used")
+		@SettingToggle @SettingGroup(id = PARTY_OBJECTIVE_OPTIONS) @Expose
+		@SerializedName(value = "partyObjectiveShowProgress", alternate = {"birdFeedShowFeedDone", "privateBirdFeedShowFeedDone"})
+		public boolean partyObjectiveShowProgress = true;
+		@SettingInfo(name = "Show Placement State", desc = "Shows Wumpa, the Birdfeeder, placed gems, or lit candles")
+		@SettingToggle @SettingGroup(id = PARTY_OBJECTIVE_OPTIONS) @Expose
+		@SerializedName(value = "partyObjectiveShowPlacement", alternate = {"birdFeedShowBirdfeeder", "privateBirdFeedShowBirdfeeder"})
+		public boolean partyObjectiveShowPlacement = true;
 		@SettingInfo(name = "Show Bird Counts", desc = "Shows outstanding Bluebird, Parakeet, and Macaw counts")
-		@SettingToggle @SettingGroup(id = BIRD_FEED_OPTIONS) @Expose
-		@SerializedName(value = "birdFeedShowBirdCounts", alternate = "privateBirdFeedShowBirdCounts")
-		public boolean birdFeedShowBirdCounts = true;
+		@SettingToggle @SettingGroup(id = PARTY_OBJECTIVE_OPTIONS) @Expose
+		@SerializedName(value = "partyObjectiveShowBirdCounts", alternate = {"birdFeedShowBirdCounts", "privateBirdFeedShowBirdCounts"})
+		public boolean partyObjectiveShowBirdCounts = true;
 
 		/** Accordion id for the grouped highlight toggles. */
 		private static final int HIGHLIGHTS = 3;
@@ -689,7 +693,7 @@ public class SafariConfig {
 		private static final int PROGRESS_HUD_BORDER = 22;
 		private static final int MISSING_HUD_BORDER = 23;
 		private static final int CONTEST_HUD_BORDER = 24;
-		private static final int BIRD_FEED_BORDER = 29;
+		private static final int PARTY_OBJECTIVE_BORDER = 29;
 
 		@SettingInfo(name = "Current Run Tab", desc = "")
 		@SettingColor @SettingGroup(id = HUD_BORDER_COLOURS) @Expose
@@ -762,20 +766,25 @@ public class SafariConfig {
 		@SettingToggle @SettingGroup(id = CONTEST_HUD_BORDER) @Expose
 		public boolean contestBorderUseBracketColour = false;
 
-		@SettingInfo(name = "Bird Feed HUD", desc = "")
-		@SettingSection(id = BIRD_FEED_BORDER) @SettingGroup(id = HUD_BORDER_COLOURS)
-		public boolean birdFeedBorderAccordion = false;
-		@SettingInfo(name = "Show Border", desc = "Shows a border around the Bird Feed HUD")
-		@SettingToggle @SettingGroup(id = BIRD_FEED_BORDER) @Expose
-		@SerializedName(value = "birdFeedBorder", alternate = "privateBirdFeedBorder")
-		public boolean birdFeedBorder = true;
-		@SettingInfo(name = "Color", desc = "") @SettingColor @SettingGroup(id = BIRD_FEED_BORDER) @Expose
-		@SerializedName(value = "birdFeedBorderColour", alternate = "privateBirdFeedBorderColour")
-		public String birdFeedBorderColour = colour(0x26, 0xA0, 0xFF);
-		@SettingInfo(name = "Use Feed Status", desc = "Uses red while feed remains and green when all feed is done")
-		@SettingToggle @SettingGroup(id = BIRD_FEED_BORDER) @Expose
-		@SerializedName(value = "birdFeedBorderUseStatus", alternate = "privateBirdFeedBorderUseStatus")
-		public boolean birdFeedBorderUseStatus = false;
+		@SettingInfo(name = "Party Objective HUD", desc = "")
+		@SettingSection(id = PARTY_OBJECTIVE_BORDER) @SettingGroup(id = HUD_BORDER_COLOURS)
+		public boolean partyObjectiveBorderAccordion = false;
+		@SettingInfo(name = "Show Border", desc = "Shows a border around the Party Objective HUD")
+		@SettingToggle @SettingGroup(id = PARTY_OBJECTIVE_BORDER) @Expose
+		@SerializedName(value = "partyObjectiveBorder", alternate = {"birdFeedBorder", "privateBirdFeedBorder"})
+		public boolean partyObjectiveBorder = true;
+		@SettingInfo(name = "Color", desc = "") @SettingColor @SettingGroup(id = PARTY_OBJECTIVE_BORDER) @Expose
+		@SerializedName(value = "partyObjectiveBorderColour", alternate = {"birdFeedBorderColour", "privateBirdFeedBorderColour"})
+		public String partyObjectiveBorderColour = colour(0x26, 0xA0, 0xFF);
+		@SettingInfo(name = "Use Objective Status", desc = "Uses red while the current biome objective remains and green when it is complete")
+		@SettingToggle @SettingGroup(id = PARTY_OBJECTIVE_BORDER) @Expose
+		@SerializedName(value = "partyObjectiveBorderUseStatus", alternate = {"birdFeedBorderUseStatus", "privateBirdFeedBorderUseStatus"})
+		public boolean partyObjectiveBorderUseStatus = false;
+
+		@SettingInfo(name = "Use Biome Color", desc = "Uses the current objective biome color when status coloring is off")
+		@SettingToggle @SettingGroup(id = PARTY_OBJECTIVE_BORDER) @Expose
+		@SerializedName(value = "partyObjectiveBorderUseBiomeColour", alternate = "birdFeedBorderUseBiomeColour")
+		public boolean partyObjectiveBorderUseBiomeColour = true;
 
 		/**
 		 * A legacy-compatible static colour value used by the custom picker.
@@ -870,8 +879,8 @@ public class SafariConfig {
 		@Expose
 		public float contestScale = 1.0f;
 		@Expose
-		@SerializedName(value = "birdFeedScale", alternate = "privateBirdFeedScale")
-		public float birdFeedScale = 1.0f;
+		@SerializedName(value = "partyObjectiveScale", alternate = {"birdFeedScale", "privateBirdFeedScale"})
+		public float partyObjectiveScale = 1.0f;
 
 		// Positions are fractions of the screen, so a box stays put across resolution
 		// and GUI-scale changes. Set by dragging in the editor, not by hand.
@@ -888,11 +897,11 @@ public class SafariConfig {
 		@Expose
 		public float contestY = 0.008333334f;
 		@Expose
-		@SerializedName(value = "birdFeedX", alternate = "privateBirdFeedX")
-		public float birdFeedX = 0.9941452f;
+		@SerializedName(value = "partyObjectiveX", alternate = {"birdFeedX", "privateBirdFeedX"})
+		public float partyObjectiveX = 0.9941452f;
 		@Expose
-		@SerializedName(value = "birdFeedY", alternate = "privateBirdFeedY")
-		public float birdFeedY = 0.008333334f;
+		@SerializedName(value = "partyObjectiveY", alternate = {"birdFeedY", "privateBirdFeedY"})
+		public float partyObjectiveY = 0.008333334f;
 
 		@Expose
 		public long contestSavedCycle = Long.MIN_VALUE;
@@ -942,7 +951,7 @@ public class SafariConfig {
 		private static final int SAFE_STATIC_OBJECTIVES = 23;
 
 		@SettingInfo(name = "Special Themes",
-			desc = "Applies a special theme to stats HUDs and on-screen HUDs")
+			desc = "Applies a special theme to settings and all HUDs")
 		@SettingChoice(values = {"Off", "Rainbow"})
 		@Expose
 		public int specialTheme = 0;
@@ -3593,12 +3602,17 @@ public class SafariConfig {
 		@SettingGroup(id = SPARKLING_ALERTS)
 		public boolean sparklingCatchAlertAccordion = false;
 
+		@SettingInfo(name = "Test Catch Alert", desc = "Preview the selected Sparkling catch intensity")
+		@SettingAction(buttonText = "Alert")
+		@SettingGroup(id = CATCH_ALERT)
+		public Runnable testSparklingCatch = FullScreenAlert::testSparklingCatch;
+
 		@SettingInfo(name = "Special Sparkling Catch",
-			desc = "Uses a special celebration when a Sparkling critter is caught\n§cEPILEPSY WARNING: This option may affect photosensitive players")
-		@SettingToggle
+			desc = "Selects the intensity of the special full-screen celebration\n§cHigher intensities may affect photosensitive players")
+		@SettingChoice(values = {"Special", "Intense", "Extreme", "Maximum"})
 		@SettingGroup(id = CATCH_ALERT)
 		@Expose
-		public boolean specialSparklingCatch = false;
+		public int specialSparklingIntensity = 0;
 
 		@SettingInfo(name = "Chat Alerts", desc = "")
 		@SettingSection(id = CHAT_ALERTS)

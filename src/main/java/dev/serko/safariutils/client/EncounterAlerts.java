@@ -47,6 +47,9 @@ public final class EncounterAlerts implements HudElement {
 	private static float displayedHorizontalPosition = 0.5f;
 	private static float displayedVerticalPosition = 0.4f;
 	private static boolean rainbowMessage;
+	private static String cachedStyledText;
+	private static int cachedStyledFont = Integer.MIN_VALUE;
+	private static Component cachedStyledMessage;
 
 	public enum Stage {READY, STARTED, DONE}
 	public enum Preview {FULL_PARTY, HOTSPOT, FLOOR_DROPS, BIOME_UNIQUES, ALL_BUT_MACAW, ALL_DONE,
@@ -355,7 +358,7 @@ public final class EncounterAlerts implements HudElement {
 
 	/** Reports the completed Forest's live feed inventory through its selected chat. */
 	static void onTotalFeed(int seeds, int worms, int berries) {
-		// The synchronized Bird Feed HUD is the party-wide source of truth; avoid a
+		// The synchronized Party Objective HUD is the party-wide source of truth; avoid a
 		// second, potentially partial feed list from an individual client's inventory.
 		if (dev.serko.safariutils.api.PartyItemSyncProviders.active()) return;
 		SafariConfig.PartyConfig party = ConfigManager.get().party;
@@ -892,7 +895,7 @@ public final class EncounterAlerts implements HudElement {
 
 		Font font = client.font;
 		SafariConfig.AlertConfig appearance = ConfigManager.get().alerts;
-		Component styledMessage = styledBannerText(message, appearance.bannerFont);
+		Component styledMessage = cachedStyledBannerText(message, appearance.bannerFont);
 		int frameWidth = font.width(styledMessage) + 16;
 		int edgeMargin = 5;
 		int availableWidth = Math.max(1, graphics.guiWidth() - edgeMargin * 2);
@@ -935,9 +938,8 @@ public final class EncounterAlerts implements HudElement {
 		int leftAccent = colour & 0xFFFFFF;
 		int rightAccent = leftAccent;
 		if (rainbow) {
-			float phase = (System.currentTimeMillis() % 4_000L) / 4_000f;
-			leftAccent = java.awt.Color.HSBtoRGB(phase, 0.55f, 1f) & 0xFFFFFF;
-			rightAccent = java.awt.Color.HSBtoRGB((phase + 0.5f) % 1f, 0.55f, 1f) & 0xFFFFFF;
+			leftAccent = RainbowColours.shared(0f, 0.55f) & 0xFFFFFF;
+			rightAccent = RainbowColours.shared(0.5f, 0.55f) & 0xFFFFFF;
 		}
 		int background = Colours.argb(appearance.bannerBackgroundColour, 0x9B121925);
 		int panelAlpha = (background >>> 24) * alpha / 255;
@@ -965,10 +967,14 @@ public final class EncounterAlerts implements HudElement {
 		// Horizontal edges own the corners; vertical edges stop before them, so the
 		// same alpha is written exactly once everywhere around the frame.
 		if (appearance.bannerBorder) {
-			graphics.fill(left, top, right, top + thickness, borderColor);
-			graphics.fill(left, bottom - thickness, right, bottom, borderColor);
-			graphics.fill(left, top + thickness, left + thickness, bottom - thickness, borderColor);
-			graphics.fill(right - thickness, top + thickness, right, bottom - thickness, borderColor);
+			int widthPixels = right - left;
+			int heightPixels = bottom - top;
+			GuiQuadBatchRenderState.submit(graphics, left, top, widthPixels, heightPixels, new int[]{
+				0, 0, widthPixels, thickness, borderColor,
+				0, heightPixels - thickness, widthPixels, heightPixels, borderColor,
+				0, thickness, thickness, heightPixels - thickness, borderColor,
+				widthPixels - thickness, thickness, widthPixels, heightPixels - thickness, borderColor
+			});
 		}
 		drawSmoothProgress(graphics, left, right, top, bottom, progressColor, remaining,
 			appearance.bannerTopBar, appearance.bannerBottomBar, appearance.bannerBorder ? thickness : 0);
@@ -986,14 +992,26 @@ public final class EncounterAlerts implements HudElement {
 		int progressWidth = Math.round((right - left - inset * 2) * horizontalPrecision * remaining);
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(1f / horizontalPrecision, 1f);
+		int[] quads = new int[10];
+		int count = 0;
 		if (topDirection != 0) {
 			int start = topDirection == 1 ? scaledLeft : scaledRight - progressWidth;
-			graphics.fill(start, top + inset, start + progressWidth, top + inset + 1, color);
+			quads[count++] = start;
+			quads[count++] = top + inset;
+			quads[count++] = start + progressWidth;
+			quads[count++] = top + inset + 1;
+			quads[count++] = color;
 		}
 		if (bottomDirection != 0) {
 			int start = bottomDirection == 1 ? scaledLeft : scaledRight - progressWidth;
-			graphics.fill(start, bottom - inset - 1, start + progressWidth, bottom - inset, color);
+			quads[count++] = start;
+			quads[count++] = bottom - inset - 1;
+			quads[count++] = start + progressWidth;
+			quads[count++] = bottom - inset;
+			quads[count++] = color;
 		}
+		if (count > 0) GuiQuadBatchRenderState.submit(graphics, 0, 0,
+			Math.max(1, scaledRight), Math.max(1, bottom), quads, count);
 		graphics.pose().popMatrix();
 	}
 
@@ -1004,6 +1022,15 @@ public final class EncounterAlerts implements HudElement {
 			case 2 -> component.copy().withStyle(ChatFormatting.ITALIC);
 			default -> component;
 		};
+	}
+
+	private static Component cachedStyledBannerText(String text, int fontStyle) {
+		if (!text.equals(cachedStyledText) || fontStyle != cachedStyledFont) {
+			cachedStyledText = text;
+			cachedStyledFont = fontStyle;
+			cachedStyledMessage = styledBannerText(text, fontStyle);
+		}
+		return cachedStyledMessage;
 	}
 
 	private static int mixWithWhite(int rgb, float amount) {
@@ -1040,15 +1067,8 @@ public final class EncounterAlerts implements HudElement {
 
 	private static void rainbowCenteredText(GuiGraphicsExtractor graphics, Font font,
 			String text, int centreX, int y, int alpha, int fontStyle, boolean shadow) {
-		int x = centreX - font.width(styledBannerText(text, fontStyle)) / 2;
-		float phase = (System.currentTimeMillis() % 4_000L) / 4_000f;
-		for (int i = 0; i < text.length(); i++) {
-			String character = String.valueOf(text.charAt(i));
-			int rgb = UIDraw.rainbowAt(phase, x, 0.45f);
-			Component styledCharacter = styledBannerText(character, fontStyle);
-			graphics.text(font, styledCharacter, x, y,
-				(alpha << 24) | (rgb & 0xFFFFFF), shadow);
-			x += font.width(styledCharacter);
-		}
+		Component styled = cachedStyledBannerText(text, fontStyle);
+		int x = centreX - font.width(styled) / 2;
+		UIDraw.rainbowText(graphics, font, styled, x, y, 0.45f, alpha, shadow);
 	}
 }

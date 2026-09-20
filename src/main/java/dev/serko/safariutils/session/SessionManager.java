@@ -1,6 +1,5 @@
 package dev.serko.safariutils.session;
 
-import dev.serko.safariutils.SafariUtils;
 import dev.serko.safariutils.client.ConfigManager;
 import dev.serko.safariutils.client.AlertText;
 import dev.serko.safariutils.client.EncounterAlerts;
@@ -23,6 +22,7 @@ import dev.serko.safariutils.client.DetectedCritters;
 import dev.serko.safariutils.client.StartingItemsWatch;
 import dev.serko.safariutils.client.PartyRosterWatch;
 import dev.serko.safariutils.client.SafariPartyWatch;
+import dev.serko.safariutils.client.OperationalLog;
 import dev.serko.safariutils.api.PartyItemSyncProviders;
 import dev.serko.safariutils.client.WallTracker;
 import dev.serko.safariutils.client.SafeMode;
@@ -45,6 +45,10 @@ public final class SessionManager {
 	private static final int MAX_HISTORY = 20;
 	private static final String LEADER_RUN_START =
 		"[NPC] Safari Manager: I already saw your ticket, so you're free to go.";
+	private static final String TICKET_LOCKOUT =
+		"[NPC] Safari Manager: Dude, if you're not gonna pay, you're not gonna play.";
+	/** Conservative against the fastest observed 33.548-second server lockout. */
+	private static final long TICKET_WINDOW_MILLIS = 33_000L;
 	private static final Set<String> MEMBER_RUN_STARTS = Set.of(
 		"[NPC] Safari Manager: Looks good to me. Have fun out there!"
 	);
@@ -81,6 +85,9 @@ public final class SessionManager {
 	private static int runExpectedPlayers = 1;
 	private static long visitEnteredAt;
 	private static boolean visitRosterLocked;
+	private static long entryChatAt;
+	private static long ticketWindowStartedAt;
+	private static boolean ticketWindowLocked;
 
 	private SessionManager() {
 	}
@@ -101,6 +108,11 @@ public final class SessionManager {
 		}
 
 		if (!SafariLocation.inside()) {
+			if (visitPrepared) {
+				DebugLog.line("ACTIVATE", "Safari visit ended after "
+					+ formatElapsed(System.currentTimeMillis() - visitEnteredAt)
+					+ " ticketActivated=" + (current != null));
+			}
 			visitPrepared = false;
 			visitLobbyId = null;
 			StartingItemsWatch.cancelPendingRun();
@@ -203,8 +215,11 @@ public final class SessionManager {
 			}
 		}
 		if (line.contains("Safari Manager")) {
+			if (line.equals(TICKET_LOCKOUT)) ticketWindowLocked = true;
 			DebugLog.line("ACTIVATE", "Manager line matched=" + isRunStart(line)
-				+ " inside=" + SafariLocation.inside() + " raw=\"" + line + "\"");
+				+ " inside=" + SafariLocation.inside()
+				+ " visitElapsed=" + formatElapsed(visitElapsedMillis(now))
+				+ " raw=\"" + line + "\"");
 		}
 
 		// A Manager confirmation is useful early evidence, but capsule allocation is the
@@ -238,6 +253,10 @@ public final class SessionManager {
 		if (event == null) return;
 
 		if (event.type() == CritterEvent.Type.ENTERED_SAFARI) {
+			entryChatAt = now;
+			ticketWindowLocked = false;
+			DebugLog.line("ACTIVATE", "self entry chat received at visitElapsed="
+				+ formatElapsed(visitElapsedMillis(now)) + " raw=\"" + line + "\"");
 			SafariLocation.markEntered();
 			return;
 		}
@@ -267,6 +286,7 @@ public final class SessionManager {
 		current.record(event, now);
 		if (event.sparkling() && !TestingMode.enabled()) SparklingStats.recordRainbowFeather();
 		if (!event.isCatch()) return;
+		SafariObjectives.onCatch(event.critter().name());
 		EncounterAlerts.onCatch(event.critter().name());
 		announceNewlyCompleteBiomes();
 		announceRunMilestones();
@@ -313,6 +333,7 @@ public final class SessionManager {
 	public static void startSession(String trigger) {
 		if (!visitPrepared) beginVisit(SafariLocation.lobbyId());
 		DebugLog.line("RUN", "==== new run started (" + trigger + ") ====");
+		OperationalLog.info("RUN", "Started Safari run via " + trigger);
 		SafariSession finished = current;
 		current = new SafariSession(selfName(), System.currentTimeMillis());
 		runExpectedPlayers = Math.max(visitExpectedPlayers, visitPeakPlayers);
@@ -329,7 +350,7 @@ public final class SessionManager {
 			try {
 				archive(finished);
 			} catch (RuntimeException failed) {
-				SafariUtils.LOGGER.warn("Could not file the finished run", failed);
+				OperationalLog.error("RUN/ARCHIVE_REPLACED", failed);
 			}
 		}
 		announcedBiomes.clear();
@@ -340,9 +361,16 @@ public final class SessionManager {
 
 	/** Clears one Safari instance's transient trackers before any ticket is submitted. */
 	private static void beginVisit(String lobbyId) {
+		long now = System.currentTimeMillis();
 		visitPrepared = true;
 		visitLobbyId = lobbyId;
-		visitEnteredAt = System.currentTimeMillis();
+		visitEnteredAt = now;
+		// The entry chat precedes stable area detection by several seconds and was the
+		// most consistent origin across repeated lockout samples. A visit detected
+		// without that line still receives a conservative local fallback.
+		ticketWindowStartedAt = entryChatAt > 0L && now - entryChatAt <= 15_000L
+			? entryChatAt : now;
+		ticketWindowLocked = false;
 		visitRosterLocked = false;
 		visitPeakPlayers = Math.max(1, SafariPartyWatch.joinedPlayers());
 		visitExpectedPlayers = visitPeakPlayers;
@@ -363,7 +391,29 @@ public final class SessionManager {
 		WallTracker.TROODON.reset();
 		DetectedCritters.reset();
 		StartingItemsWatch.onSafariVisitStarted();
-		DebugLog.line("RUN", "Safari visit tracking prepared lobby=" + lobbyId);
+		DebugLog.line("RUN", "Safari visit tracking prepared lobby=" + lobbyId
+			+ " visitElapsed=0.000s");
+	}
+
+	/** Milliseconds since this client first recognized the current Safari instance. */
+	public static long visitElapsedMillis() {
+		return visitElapsedMillis(System.currentTimeMillis());
+	}
+
+	private static long visitElapsedMillis(long now) {
+		return visitPrepared && visitEnteredAt > 0 ? Math.max(0L, now - visitEnteredAt) : 0L;
+	}
+
+	private static String formatElapsed(long millis) {
+		return "%d.%03ds".formatted(millis / 1_000L, millis % 1_000L);
+	}
+
+	/** Remaining conservative pre-ticket join window, or {@code -1} when not waiting. */
+	public static long ticketWindowRemainingMillis() {
+		if (!SafariLocation.inside() || current != null || ticketWindowStartedAt <= 0L) return -1L;
+		if (ticketWindowLocked) return 0L;
+		return Math.max(0L, TICKET_WINDOW_MILLIS
+			- (System.currentTimeMillis() - ticketWindowStartedAt));
 	}
 
 	private static void recordLifetimeSparkling(Critter critter) {
@@ -384,6 +434,7 @@ public final class SessionManager {
 		SparklingWatch.reset();
 		if (finished == null || finished.isEmpty()) return;
 		finished.finish(System.currentTimeMillis());
+		OperationalLog.info("RUN", "Finished Safari run");
 		if (TestingMode.enabled()) {
 			// Keep the completed session available to the live Run panel, but never add
 			// an Alpha/test run to history or lifetime totals.
@@ -394,7 +445,7 @@ public final class SessionManager {
 		try {
 			archive(finished);
 		} catch (RuntimeException failed) {
-			SafariUtils.LOGGER.warn("Could not file the finished run", failed);
+			OperationalLog.error("RUN/ARCHIVE_FINISHED", failed);
 		}
 	}
 

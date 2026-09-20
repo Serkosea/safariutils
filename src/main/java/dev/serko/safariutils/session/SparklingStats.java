@@ -2,10 +2,10 @@ package dev.serko.safariutils.session;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import dev.serko.safariutils.SafariUtils;
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.Critters;
 import dev.serko.safariutils.io.AtomicFiles;
+import dev.serko.safariutils.client.OperationalLog;
 
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
@@ -18,7 +18,10 @@ import java.util.Map;
 public final class SparklingStats {
 
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+	private static final long API_PROPAGATION_MILLIS = 10 * 60_000L;
 	private static Data data = new Data();
+	private static int unique;
+	private static int total;
 	private static Path file;
 
 	private SparklingStats() {
@@ -31,14 +34,17 @@ public final class SparklingStats {
 				Data loaded = GSON.fromJson(reader, Data.class);
 				if (loaded != null) data = loaded;
 				if (data.species == null) data.species = new LinkedHashMap<>();
+				rebuildTotals();
 				return;
 			} catch (Exception unreadable) {
-				SafariUtils.LOGGER.warn("Could not read Sparkling statistics", unreadable);
+				OperationalLog.error("SPARKLING_STATS/LOAD", unreadable);
 			}
 		}
 
 		// Seed the ledger once from every run that was already saved before it existed.
 		data = new Data();
+		unique = 0;
+		total = 0;
 		for (RunRecord run : RunHistory.runs()) {
 			if (run.sparklings != null) {
 				for (RunRecord.SparklingRecord sparkling : run.sparklings) {
@@ -58,7 +64,16 @@ public final class SparklingStats {
 			data.importedDuplicates++;
 			if (data.importedSetDuplicates >= 0) data.importedSetDuplicates++;
 		}
+		// Hypixel's profile endpoint can trail a newly caught Sparkling. Require a
+		// genuinely newer API snapshot before offering to replace local collection data.
+		data.apiComparisonNotBefore = Math.max(data.apiComparisonNotBefore,
+			System.currentTimeMillis() + API_PROPAGATION_MILLIS);
 		save();
+	}
+
+	/** Whether this response is new enough to compare after the latest local catch. */
+	public static boolean apiComparisonAllowed(long fetchedAt) {
+		return data.apiComparisonNotBefore == 0L || fetchedAt >= data.apiComparisonNotBefore;
 	}
 
 	public static void recordRainbowFeather() {
@@ -71,11 +86,11 @@ public final class SparklingStats {
 	}
 
 	public static int unique() {
-		return (int) Critters.all().stream().filter(critter -> count(critter) > 0).count();
+		return unique;
 	}
 
 	public static int total() {
-		return Critters.all().stream().mapToInt(SparklingStats::count).sum();
+		return total;
 	}
 
 	public static int duplicates() {
@@ -101,8 +116,10 @@ public final class SparklingStats {
 			String id = critter.name().trim().toUpperCase(java.util.Locale.ROOT).replace(' ', '_');
 			if (species.contains(id) && count(critter) == 0) data.species.put(critter.name(), 1);
 		}
+		rebuildTotals();
 		data.importedDuplicates = Math.max(-1, duplicates);
 		data.importedSetDuplicates = SparklingStats.duplicates();
+		data.apiComparisonNotBefore = 0L;
 		save();
 	}
 
@@ -112,8 +129,12 @@ public final class SparklingStats {
 
 	public static boolean set(Critter critter, int count) {
 		if (critter == null || count < 0) return false;
+		int previous = SparklingStats.count(critter);
 		if (count == 0) data.species.remove(critter.name());
 		else data.species.put(critter.name(), count);
+		total += count - previous;
+		if (previous == 0 && count > 0) unique++;
+		else if (previous > 0 && count == 0) unique--;
 		save();
 		return true;
 	}
@@ -126,7 +147,20 @@ public final class SparklingStats {
 	}
 
 	private static void increment(String species) {
-		data.species.merge(species, 1, Integer::sum);
+		int previous = Math.max(0, data.species.getOrDefault(species, 0));
+		data.species.put(species, previous + 1);
+		if (previous == 0) unique++;
+		total++;
+	}
+
+	private static void rebuildTotals() {
+		unique = 0;
+		total = 0;
+		for (Critter critter : Critters.all()) {
+			int count = count(critter);
+			if (count > 0) unique++;
+			total += count;
+		}
 	}
 
 	private static void save() {
@@ -134,7 +168,7 @@ public final class SparklingStats {
 		try {
 			AtomicFiles.writeString(file, GSON.toJson(data));
 		} catch (Exception failed) {
-			SafariUtils.LOGGER.warn("Could not save Sparkling statistics", failed);
+			OperationalLog.error("SPARKLING_STATS/SAVE", failed);
 		}
 	}
 
@@ -143,5 +177,6 @@ public final class SparklingStats {
 		int rainbowFeathers;
 		int importedDuplicates = -1;
 		int importedSetDuplicates = -1;
+		long apiComparisonNotBefore;
 	}
 }

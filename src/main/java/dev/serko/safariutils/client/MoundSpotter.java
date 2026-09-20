@@ -295,7 +295,7 @@ public final class MoundSpotter {
 		List<Entity> candidates = new ArrayList<>();
 		List<Entity> creatures = new ArrayList<>();
 		Set<BlockPos> catalog = StaticWaypointCatalog.mounds();
-		for (Entity entity : client.level.entitiesForRendering()) {
+		for (Entity entity : WorldEntities.current()) {
 			if (!inCavern(entity.getX(), entity.getY(), entity.getZ())) continue;
 			if (!EntityTypeIds.is(entity, "interaction")) {
 				if (isCreature(entity)) creatures.add(entity);
@@ -442,11 +442,11 @@ public final class MoundSpotter {
 		Map<String, Integer> counted = new TreeMap<>();
 
 		List<Entity> creatures = new ArrayList<>();
-		for (Entity entity : client.level.entitiesForRendering()) {
+		for (Entity entity : WorldEntities.current()) {
 			if (!EntityTypeIds.is(entity, "interaction") && isCreature(entity)) creatures.add(entity);
 		}
 
-		for (Entity entity : client.level.entitiesForRendering()) {
+		for (Entity entity : WorldEntities.current()) {
 			if (!EntityTypeIds.is(entity, "interaction")) continue;
 			if (!inCavern(entity.getX(), entity.getY(), entity.getZ())) continue;
 			String size = "%.2f x %.2f".formatted(

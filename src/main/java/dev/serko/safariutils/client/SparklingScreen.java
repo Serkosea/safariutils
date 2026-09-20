@@ -135,6 +135,7 @@ public final class SparklingScreen extends Screen {
 		lookupName.setHint(Component.literal("Minecraft username"));
 		lookupName.setTextColor(WHITE);
 		lookupName.setTextColorUneditable(DIM);
+		UIDraw.rainbowEditBox(lookupName, font);
 		addRenderableWidget(lookupName);
 	}
 
@@ -147,6 +148,8 @@ public final class SparklingScreen extends Screen {
 		graphics.pose().scale(scale, scale);
 		graphics.fillGradient(panelLeft, panelTop, panelLeft + panelWidth, panelTop + panelHeight,
 			0xE0181220, BACKGROUND);
+		SpecialTheme.stars(graphics, panelLeft + 2, panelTop + 2,
+			panelWidth - 4, panelHeight - 4, 1.1f);
 		drawRainbowBorder(graphics);
 		UIDraw.outline(graphics, panelLeft + 2, panelTop + 2, panelWidth - 4, panelHeight - 4, KEYLINE);
 		hits.clear();
@@ -165,10 +168,16 @@ public final class SparklingScreen extends Screen {
 				editingBounds.x() + editingBounds.width(), editingBounds.y() + editingBounds.height(),
 				SURFACE);
 		}
+		UIDraw.updateRainbowCaret(lookupName, WHITE);
+		UIDraw.updateRainbowCaret(editor, 0xFFFFE08A);
 		super.extractRenderState(graphics, mx, my, partialTick);
 		if (editor != null && editingBounds != null) {
-			UIDraw.outline(graphics, editingBounds.x(), editingBounds.y(),
+			themedOutline(graphics, editingBounds.x(), editingBounds.y(),
 				editingBounds.width(), editingBounds.height(), GOLD);
+		}
+		if (tab == Tab.LOOKUP && SpecialTheme.rainbow() && lookupName != null) {
+			SpecialTheme.border(graphics, lookupName.getX(), lookupName.getY(),
+				lookupName.getWidth(), lookupName.getHeight(), 1);
 		}
 		checkCachedLocalCollection();
 		if (pendingImport != null) drawImportConfirmation(graphics, mx, my);
@@ -198,7 +207,7 @@ public final class SparklingScreen extends Screen {
 		boolean selected = tab == target;
 		boolean hovered = contains(x, y, width, 18, mouseX, mouseY);
 		graphics.fill(x, y, x + width, y + 18, selected ? 0xB025303D : hovered ? HOVER : SURFACE);
-		UIDraw.outline(graphics, x, y, width, 18, BORDER);
+		themedOutline(graphics, x, y, width, 18, BORDER);
 		if (selected) drawRainbowLine(graphics, x + 3, y + 15, width - 6, 1);
 		centered(graphics, label, x, width, centeredTextY(y, 18), selected || hovered ? WHITE : LABEL);
 		hits.add(new Hit(x, y, width, 18, label, () -> switchTab(target)));
@@ -239,7 +248,8 @@ public final class SparklingScreen extends Screen {
 		graphics.fill(barLeft, barY, barRight, barY + 4, 0x553A2A10);
 		int filled = totalSpecies == 0 ? 0
 			: (barRight - barLeft) * SparklingStats.unique() / totalSpecies;
-		graphics.fill(barLeft, barY, barLeft + filled, barY + 4, 0xFFFFC83D);
+		if (SpecialTheme.rainbow()) SpecialTheme.bar(graphics, barLeft, barY, filled, 4);
+		else graphics.fill(barLeft, barY, barLeft + filled, barY + 4, 0xFFFFC83D);
 		drawSpeciesColumns(graphics, barY + 12, mouseX, mouseY, null, true);
 	}
 
@@ -427,6 +437,7 @@ public final class SparklingScreen extends Screen {
 		if (!SharedSparklingProviders.available() || pendingImport != null) return;
 		SharedSparklingProviders.provider().orElseThrow().cachedLocalCollection()
 			.filter(result -> result.fetchedAt() != dismissedImportFetchedAt)
+			.filter(result -> SparklingStats.apiComparisonAllowed(result.fetchedAt()))
 			.filter(result -> !collectionMatches(result))
 			.ifPresent(result -> pendingImport = result);
 	}
@@ -457,7 +468,7 @@ public final class SparklingScreen extends Screen {
 		graphics.fill(panelLeft + 2, panelTop + 2, panelLeft + panelWidth - 2,
 			panelTop + panelHeight - 2, 0xA0000000);
 		graphics.fill(x, y, x + width, y + height, 0xFF141B25);
-		UIDraw.outline(graphics, x, y, width, height, GOLD);
+		themedOutline(graphics, x, y, width, height, GOLD);
 		centered(graphics, "Import Your API Collection?", x, width, y + 12, 0xFFFFE08A);
 		centered(graphics, "Your saved collection does not match Hypixel", x, width, y + 31, WHITE);
 		centered(graphics, "Import sets every API-owned unique to at least 1 and saves",
@@ -540,7 +551,7 @@ public final class SparklingScreen extends Screen {
 		int colour = disabled ? DIM : same ? GOLD : AQUA;
 		boolean hovered = contains(x, y, 72, 18, mouseX, mouseY);
 		graphics.fill(x, y, x + 72, y + 18, hovered ? HOVER : SURFACE);
-		UIDraw.outline(graphics, x, y, 72, 18, colour);
+		themedOutline(graphics, x, y, 72, 18, colour);
 		centered(graphics, label, x, 72, centeredTextY(y, 18), colour);
 		if (!disabled) hits.add(new Hit(x, y, 72, 18, label, this::lookupPlayer));
 	}
@@ -598,7 +609,7 @@ public final class SparklingScreen extends Screen {
 			: "Recent: " + lastLookup.username();
 		boolean hovered = contains(x, y, width, height, mouseX, mouseY);
 		graphics.fill(x, y, x + width, y + height, hovered ? HOVER : SURFACE);
-		UIDraw.outline(graphics, x, y, width, height, recentLookupsOpen ? AQUA : BORDER);
+		themedOutline(graphics, x, y, width, height, recentLookupsOpen ? AQUA : BORDER);
 		String buttonText = trimToWidth(selected, width - 25) + (recentLookupsOpen ? "  ▴" : "  ▾");
 		if (lastLookup != null && PartyItemSyncProviders.whitelistedName(lastLookup.username())) {
 			centeredRainbowName(graphics, "Recent: ", lastLookup.username(),
@@ -616,7 +627,7 @@ public final class SparklingScreen extends Screen {
 			int itemY = y + height * (index + 1);
 			boolean itemHovered = contains(x, itemY, width, height, mouseX, mouseY);
 			graphics.fill(x, itemY, x + width, itemY + height, itemHovered ? HOVER : 0xFF141B25);
-			UIDraw.outline(graphics, x, itemY, width, height, BORDER);
+			themedOutline(graphics, x, itemY, width, height, BORDER);
 			if (PartyItemSyncProviders.whitelistedName(saved.username())) {
 				UIDraw.rainbowText(graphics, font, saved.username(),
 					x + (width - font.width(saved.username())) / 2,
@@ -669,6 +680,7 @@ public final class SparklingScreen extends Screen {
 		editor.setMaxLength(7);
 		editor.setValue(String.valueOf(current));
 		editor.setTextColor(0xFFFFE08A);
+		UIDraw.rainbowEditBox(editor, font);
 		addRenderableWidget(editor);
 		setFocused(editor);
 		editor.setFocused(true);
@@ -794,42 +806,14 @@ public final class SparklingScreen extends Screen {
 			String label, boolean selected, int mouseX, int mouseY, Runnable action) {
 		boolean hovered = contains(x, y, width, height, mouseX, mouseY);
 		graphics.fill(x, y, x + width, y + height, hovered ? HOVER : SURFACE);
-		UIDraw.outline(graphics, x, y, width, height, selected ? GOLD : BORDER);
+		themedOutline(graphics, x, y, width, height, selected ? GOLD : BORDER);
 		centered(graphics, label, x, width, centeredTextY(y, height),
 			selected ? GOLD : hovered ? WHITE : LABEL);
 		hits.add(new Hit(x, y, width, height, label, action));
 	}
 
 	private void drawRainbowBorder(GuiGraphicsExtractor graphics) {
-		int horizontalSegments = 28;
-		int verticalSegments = Math.max(1,
-			Math.round(horizontalSegments * panelHeight / (float) panelWidth));
-		int totalSegments = 2 * (horizontalSegments + verticalSegments);
-		int segmentWidth = Math.max(1, panelWidth / horizontalSegments);
-		int segmentHeight = Math.max(1, panelHeight / verticalSegments);
-		float phase = (System.currentTimeMillis() % 8_000L) / 8_000f;
-		for (int i = 0; i < horizontalSegments; i++) {
-			int x1 = panelLeft + i * segmentWidth;
-			int x2 = i == horizontalSegments - 1 ? panelLeft + panelWidth
-				: Math.min(panelLeft + panelWidth, x1 + segmentWidth);
-			int colour = UIDraw.rainbow(phase, i, totalSegments, 0.55f);
-			graphics.fill(x1, panelTop, x2, panelTop + 2, colour);
-			graphics.fill(panelLeft + panelWidth - (x2 - panelLeft), panelTop + panelHeight - 2,
-				panelLeft + panelWidth - (x1 - panelLeft), panelTop + panelHeight,
-				UIDraw.rainbow(phase, horizontalSegments + verticalSegments + i,
-					totalSegments, 0.55f));
-		}
-		for (int i = 0; i < verticalSegments; i++) {
-			int y1 = panelTop + i * segmentHeight;
-			int y2 = i == verticalSegments - 1 ? panelTop + panelHeight
-				: Math.min(panelTop + panelHeight, y1 + segmentHeight);
-			graphics.fill(panelLeft + panelWidth - 2, y1, panelLeft + panelWidth, y2,
-				UIDraw.rainbow(phase, horizontalSegments + i, totalSegments, 0.55f));
-			graphics.fill(panelLeft, panelTop + panelHeight - (y2 - panelTop), panelLeft + 2,
-				panelTop + panelHeight - (y1 - panelTop),
-				UIDraw.rainbow(phase, 2 * horizontalSegments + verticalSegments + i,
-					totalSegments, 0.55f));
-		}
+		SpecialTheme.border(graphics, panelLeft, panelTop, panelWidth, panelHeight);
 	}
 
 	private void rainbowText(GuiGraphicsExtractor graphics, String value, int x, int y) {
@@ -845,11 +829,13 @@ public final class SparklingScreen extends Screen {
 	}
 
 	private void drawRainbowLine(GuiGraphicsExtractor graphics, int x, int y, int width, int height) {
-		float phase = (System.currentTimeMillis() % 8_000L) / 8_000f;
-		for (int i = 0; i < width; i++) {
-			int colour = UIDraw.rainbow(phase, i, width, 0.32f);
-			graphics.fill(x + i, y, x + i + 1, y + 1, colour);
-		}
+		SpecialTheme.bar(graphics, x, y, width, height);
+	}
+
+	private void themedOutline(GuiGraphicsExtractor graphics, int x, int y,
+			int width, int height, int fallback) {
+		if (SpecialTheme.rainbow()) SpecialTheme.border(graphics, x, y, width, height, 1);
+		else UIDraw.outline(graphics, x, y, width, height, fallback);
 	}
 
 	private void text(GuiGraphicsExtractor graphics, String value, int x, int y, int colour) {

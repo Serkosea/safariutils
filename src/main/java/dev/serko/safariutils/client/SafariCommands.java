@@ -73,6 +73,10 @@ public final class SafariCommands {
 					requireUnlocked(ctx.getSource(), () -> runState(ctx.getSource()));
 					return 1;
 				}))
+				.then(ClientCommands.literal("room").executes(ctx -> {
+					requireUnlocked(ctx.getSource(), () -> roomIdentity(ctx.getSource()));
+					return 1;
+				}))
 				.then(ClientCommands.literal("critters").executes(ctx -> {
 					requireUnlocked(ctx.getSource(), () -> critterPairings(ctx.getSource()));
 					return 1;
@@ -113,6 +117,7 @@ public final class SafariCommands {
 						HotspotWatch.onChatMessage("HOTSPOT! Your Hunting Hotspot is the Icy Biome!");
 						FullScreenAlert.show("SPARKLING!", "Rockmite", "Cavern -96 40 42",
 							FullScreenAlert.SPARKLING);
+						copyResult(ctx.getSource(), "Safari alert test triggered\n");
 					});
 					return 1;
 				}));
@@ -153,8 +158,9 @@ public final class SafariCommands {
 	 */
 	private static void waypoints(FabricClientCommandSource source) {
 		SafariConfig config = ConfigManager.get();
-		source.sendFeedback(header("Waypoints"));
-		source.sendFeedback(Component.literal("  on: %s%s%s%s%s%s%s%s%s%s%s".formatted(
+		StringBuilder record = new StringBuilder();
+		report(source, record, "Waypoints");
+		report(source, record, "  on: %s%s%s%s%s%s%s%s%s%s%s".formatted(
 			config.display.highlightSnooperWalls ? "snoozle " : "",
 			config.display.highlightTroodonWalls ? "troodon " : "",
 			config.display.highlightNests ? "nests " : "",
@@ -165,31 +171,30 @@ public final class SafariCommands {
 			config.display.highlightHideonfloor ? "hideonfloor " : "",
 			config.display.recatchHelper ? "recatch " : "",
 			config.display.floorDrops ? "drops " : "",
-			config.display.highlightMounds ? "mounds" : ""))
-			.withStyle(ChatFormatting.GREEN));
+			config.display.highlightMounds ? "mounds" : ""), ChatFormatting.GREEN);
 		// Most markers are gated on the biome, so the biome is half the
 		// answer to "why is nothing showing".
-		source.sendFeedback(Component.literal("  in Safari   " + SafariLocation.inSafari()
-			+ "  biome " + nameOf(SafariLocation.biome())).withStyle(ChatFormatting.GRAY));
+		report(source, record, "  in Safari   " + SafariLocation.inSafari()
+			+ "  biome " + nameOf(SafariLocation.biome()), ChatFormatting.GRAY);
 		// Hideyho, Hideonwall, Duplico and Hideonfloor draw outside this list, straight
 		// off their own live sightings — see WaypointRenderer — so this count is
 		// everything else: floor drops, walls, mounds, recatch, hard-to-find.
-		source.sendFeedback(Component.literal("  highlighted " + Markers.collect().size()
-			+ "  (plus hideyho/hideonwall/duplico/hideonfloor, tracked separately)")
-			.withStyle(ChatFormatting.WHITE));
+		report(source, record, "  highlighted " + Markers.collect().size()
+			+ "  (plus hideyho/hideonwall/duplico/hideonfloor, tracked separately)",
+			ChatFormatting.WHITE);
 
 		List<String> sizes = MoundSpotter.describeAll();
-		source.sendFeedback(Component.literal("  interaction hitboxes nearby (mound-sized: "
-			+ MoundSpotter.mounds().size() + ")").withStyle(ChatFormatting.YELLOW));
+		report(source, record, "  interaction hitboxes nearby (mound-sized: "
+			+ MoundSpotter.mounds().size() + ")", ChatFormatting.YELLOW);
 		sizes.stream().limit(12).forEach(line ->
-			source.sendFeedback(Component.literal(line).withStyle(
-				line.contains("<-") ? ChatFormatting.GREEN : ChatFormatting.WHITE)));
+			report(source, record, line,
+				line.contains("<-") ? ChatFormatting.GREEN : ChatFormatting.WHITE));
 
 		long nests = NestTracker.nests().stream().filter(NestTracker.Nest::unpunched).count();
-		source.sendFeedback(Component.literal(
+		report(source, record,
 			"  candidates  snooper %d · troodon %d · nests %d".formatted(
-				WallTracker.SNOOPER.intactCount(), WallTracker.TROODON.intactCount(), nests))
-			.withStyle(ChatFormatting.DARK_GRAY));
+				WallTracker.SNOOPER.intactCount(), WallTracker.TROODON.intactCount(), nests),
+			ChatFormatting.DARK_GRAY);
 		// Reported whether or not the solver is on, since "is it even loaded while
 		// hidden" is the thing worth checking.
 		// The farthest label loaded says what Hypixel's entity tracking range is, which
@@ -200,21 +205,21 @@ public final class SafariCommands {
 			farthest = Math.max(farthest,
 				source.getPlayer().position().distanceTo(sighting.body().position()));
 		}
-		source.sendFeedback(Component.literal("  critters    %d loaded, farthest %.0fm"
-			.formatted(CritterEntities.all().size(), farthest)).withStyle(ChatFormatting.DARK_GRAY));
+		report(source, record, "  critters    %d loaded, farthest %.0fm"
+			.formatted(CritterEntities.all().size(), farthest), ChatFormatting.DARK_GRAY);
 		SafariBiome hereBiome = SafariLocation.biome();
 		int floorDropCount = hereBiome == null ? 0 : FloorDrops.positions(hereBiome).size();
-		source.sendFeedback(Component.literal("  floor drops " + floorDropCount)
-			.withStyle(ChatFormatting.DARK_GRAY));
+		report(source, record, "  floor drops " + floorDropCount, ChatFormatting.DARK_GRAY);
 		List<RecatchSpots.ActivePin> pins = RecatchSpots.active();
-		source.sendFeedback(Component.literal("  pinned      " + (pins.isEmpty()
+		report(source, record, "  pinned      " + (pins.isEmpty()
 			? "nothing" : pins.size() + ": " + pins.stream()
-				.map(pin -> pin.critter().name()).collect(java.util.stream.Collectors.joining(", "))))
-			.withStyle(ChatFormatting.DARK_GRAY));
+				.map(pin -> pin.critter().name()).collect(java.util.stream.Collectors.joining(", "))),
+			ChatFormatting.DARK_GRAY);
 		BlockPos hideyho = HideyhoSolver.position();
-		source.sendFeedback(Component.literal("  hideyho     " + (hideyho == null ? "not loaded"
-			: "%d %d %d".formatted(hideyho.getX(), hideyho.getY(), hideyho.getZ())))
-			.withStyle(ChatFormatting.DARK_GRAY));
+		report(source, record, "  hideyho     " + (hideyho == null ? "not loaded"
+			: "%d %d %d".formatted(hideyho.getX(), hideyho.getY(), hideyho.getZ())),
+			ChatFormatting.DARK_GRAY);
+		finishReport(source, record);
 	}
 
 	private static void openSettings() {
@@ -339,6 +344,26 @@ public final class SafariCommands {
 		finishReport(source, record);
 	}
 
+	/** Reports only hashes needed to verify that every client derives one room identity. */
+	private static void roomIdentity(FabricClientCommandSource source) {
+		var result = SafariRoomIdentityProbe.inspect();
+		if (result == null) {
+			failReport(source,
+				"Room identity unavailable; enter the Safari and remain near the Manager");
+			return;
+		}
+
+		StringBuilder record = new StringBuilder();
+		report(source, record, "Safari room identity");
+		report(source, record, "  room     " + result.roomFingerprint(), ChatFormatting.AQUA);
+		report(source, record, "  manager  " + result.managerFingerprint(), ChatFormatting.LIGHT_PURPLE);
+		report(source, record, "  combined " + result.combinedFingerprint(), ChatFormatting.GREEN);
+		report(source, record, "  candidates %d · nearest %.2fm"
+			.formatted(result.managerCandidates(), result.managerDistance()),
+			result.managerCandidates() == 1 ? ChatFormatting.DARK_GRAY : ChatFormatting.YELLOW);
+		finishReport(source, record);
+	}
+
 	/** Shows every label/body pairing used by hitboxes, Near counts, and static tracking. */
 	private static void critterPairings(FabricClientCommandSource source) {
 		StringBuilder record = new StringBuilder();
@@ -406,7 +431,7 @@ public final class SafariCommands {
 	private static void entities(FabricClientCommandSource source) {
 		Minecraft client = source.getClient();
 		if (client.level == null) {
-			source.sendError(prefixed("No world loaded", ChatFormatting.RED));
+			failReport(source, "No world loaded");
 			return;
 		}
 
@@ -460,7 +485,7 @@ public final class SafariCommands {
 	private static void nearby(FabricClientCommandSource source) {
 		Minecraft client = source.getClient();
 		if (client.level == null) {
-			source.sendError(prefixed("No world loaded", ChatFormatting.RED));
+			failReport(source, "No world loaded");
 			return;
 		}
 
@@ -509,11 +534,11 @@ public final class SafariCommands {
 	private static void block(FabricClientCommandSource source) {
 		Minecraft client = source.getClient();
 		if (client.level == null) {
-			source.sendError(prefixed("No world loaded", ChatFormatting.RED));
+			failReport(source, "No world loaded");
 			return;
 		}
 		if (client.hitResult == null || client.hitResult.getType() == HitResult.Type.MISS) {
-			source.sendError(prefixed("Look directly at something first", ChatFormatting.RED));
+			failReport(source, "Look directly at something first");
 			return;
 		}
 
@@ -602,7 +627,7 @@ public final class SafariCommands {
 	 */
 	private static void requireUnlocked(FabricClientCommandSource source, Runnable action) {
 		if (!AdvancedUnlock.isUnlocked()) {
-			source.sendError(prefixed("Advanced settings are locked this session", ChatFormatting.RED));
+			failReport(source, "Advanced settings are locked this session");
 			return;
 		}
 		action.run();
@@ -631,9 +656,19 @@ public final class SafariCommands {
 
 	/** Copies the finished report and confirms it, ending a debug command's output. */
 	private static void finishReport(FabricClientCommandSource source, StringBuilder record) {
-		Minecraft.getInstance().keyboardHandler.setClipboard(record.toString());
+		copyResult(source, record.toString());
+	}
+
+	/** Copies even short or failed diagnostics, keeping every debug command shareable. */
+	private static void copyResult(FabricClientCommandSource source, String text) {
+		Minecraft.getInstance().keyboardHandler.setClipboard(text);
 		source.sendFeedback(prefixed("Copied to clipboard",
 			ChatFormatting.GREEN));
+	}
+
+	private static void failReport(FabricClientCommandSource source, String text) {
+		source.sendError(prefixed(text, ChatFormatting.RED));
+		copyResult(source, text + '\n');
 	}
 
 	private static Component prefixed(String text, ChatFormatting colour) {

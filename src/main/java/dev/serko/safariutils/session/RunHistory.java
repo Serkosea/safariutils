@@ -6,6 +6,7 @@ import com.google.gson.reflect.TypeToken;
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.Critters;
 import dev.serko.safariutils.io.AtomicFiles;
+import dev.serko.safariutils.client.OperationalLog;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -32,6 +33,7 @@ public final class RunHistory {
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
 	private static final List<RunRecord> runs = new ArrayList<>();
+	private static final List<RunRecord> RUNS_VIEW = Collections.unmodifiableList(runs);
 	/** Aggregates rebuilt only when history changes, never once per rendered frame. */
 	private static List<SpeciesStat> speciesStats = List.of();
 	private static Map<Critter, SpeciesStat> speciesStatsByCritter = Map.of();
@@ -43,6 +45,8 @@ public final class RunHistory {
 	private static int totalRainbowFeathers;
 	private static int totalSparklings;
 	private static int runsSinceLastSparkling = -1;
+	/** Monotonic view invalidation token; unlike size, this also catches a same-size reload. */
+	private static long revision;
 	private static Path file;
 
 	/** One species' lifetime total across every saved run. */
@@ -70,6 +74,7 @@ public final class RunHistory {
 			// Left in place rather than deleted: the next save overwrites it, and if
 			// something else is wrong the file is still there to look at.
 			runs.clear();
+			OperationalLog.error("HISTORY/LOAD", unreadable);
 		}
 		rebuildStats();
 	}
@@ -95,11 +100,16 @@ public final class RunHistory {
 
 	/** Saved runs, oldest first. */
 	public static List<RunRecord> runs() {
-		return Collections.unmodifiableList(runs);
+		return RUNS_VIEW;
 	}
 
 	public static int size() {
 		return runs.size();
+	}
+
+	/** Changes only when the saved history itself changes. */
+	public static long revision() {
+		return revision;
 	}
 
 	/** Drops everything, on disk as well. */
@@ -160,6 +170,7 @@ public final class RunHistory {
 
 	/** Rebuilds every aggregate in one pass after the underlying history changes. */
 	private static void rebuildStats() {
+		revision++;
 		Map<Critter, Integer> values = new HashMap<>();
 		for (Critter critter : Critters.all()) values.put(critter, 0);
 
@@ -209,6 +220,7 @@ public final class RunHistory {
 			AtomicFiles.writeString(file, GSON.toJson(runs));
 		} catch (IOException | RuntimeException failed) {
 			// Losing the history is not worth interrupting a run over.
+			OperationalLog.error("HISTORY/SAVE", failed);
 		}
 	}
 }

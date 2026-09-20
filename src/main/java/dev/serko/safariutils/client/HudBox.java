@@ -130,33 +130,33 @@ public enum HudBox {
 		}
 	},
 
-	BIRD_FEED("Bird Feed HUD", PartyBirdFeedHud::panel) {
+	PARTY_OBJECTIVE("Party Objective HUD", PartyObjectiveHud::panel) {
 		@Override
-		public float x() { return ConfigManager.get().display.birdFeedX; }
+		public float x() { return ConfigManager.get().display.partyObjectiveX; }
 
 		@Override
-		public float y() { return ConfigManager.get().display.birdFeedY; }
+		public float y() { return ConfigManager.get().display.partyObjectiveY; }
 
 		@Override
-		public float scale() { return ConfigManager.get().display.birdFeedScale; }
+		public float scale() { return ConfigManager.get().display.partyObjectiveScale; }
 
 		@Override
-		public int expansion() { return ConfigManager.get().display.birdFeedExpansion; }
+		public int expansion() { return ConfigManager.get().display.partyObjectiveExpansion; }
 
 		@Override
 		public void setPosition(float x, float y) {
-			ConfigManager.get().display.birdFeedX = x;
-			ConfigManager.get().display.birdFeedY = y;
+			ConfigManager.get().display.partyObjectiveX = x;
+			ConfigManager.get().display.partyObjectiveY = y;
 		}
 
 		@Override
 		public void setScale(float scale) {
-			ConfigManager.get().display.birdFeedScale = scale;
+			ConfigManager.get().display.partyObjectiveScale = scale;
 		}
 
 		@Override
 		public boolean enabled() {
-			return ConfigManager.get().display.showBirdFeedHud;
+			return ConfigManager.get().display.showPartyObjectiveHud;
 		}
 	},
 

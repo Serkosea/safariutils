@@ -49,6 +49,7 @@ public final class DebugLog {
 			line("LOG", "started, writing to " + file);
 		} catch (IOException e) {
 			writer = null;
+			OperationalLog.error("DEBUG_LOG/OPEN", e);
 		}
 	}
 

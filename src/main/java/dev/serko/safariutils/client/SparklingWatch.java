@@ -4,7 +4,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 
 import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -45,11 +47,13 @@ public final class SparklingWatch {
 		if (scan == lastScan) return;
 		lastScan = scan;
 		Set<UUID> visibleKeys = new HashSet<>();
-		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-			if (isSparkling(sighting)) visibleKeys.add(keyOf(sighting));
-		}
+		List<CritterEntities.Sighting> sparklingSightings = new ArrayList<>();
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
 			if (!isSparkling(sighting)) continue;
+			sparklingSightings.add(sighting);
+			visibleKeys.add(keyOf(sighting));
+		}
+		for (CritterEntities.Sighting sighting : sparklingSightings) {
 			if (SafeMode.sparklingCritters()) {
 				boolean mobVisible = sighting.mob() != null && VisibilityCheck.canSee(sighting.mob());
 				boolean labelVisible = VisibilityCheck.canSeeVisibleName(sighting.label());

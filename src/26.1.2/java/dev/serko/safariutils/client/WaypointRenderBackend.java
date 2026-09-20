@@ -31,6 +31,8 @@ final class WaypointRenderBackend {
 	}
 
 	void geometry(RenderType type, BiConsumer<PoseStack.Pose, VertexConsumer> draw) {
+		// The immediate BufferSource already accumulates every vertex for this type
+		// until flush, so a second pose/callback queue would only add allocations.
 		draw.accept(poses.last(), buffers.getBuffer(type));
 	}
 

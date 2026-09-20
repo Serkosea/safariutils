@@ -27,13 +27,14 @@ import dev.serko.safariutils.client.HotspotWatch;
 import dev.serko.safariutils.client.BirdfeederWatch;
 import dev.serko.safariutils.client.ShiningCoinWatch;
 import dev.serko.safariutils.client.MissingHud;
-import dev.serko.safariutils.client.PartyBirdFeedHud;
+import dev.serko.safariutils.client.PartyObjectiveHud;
 import dev.serko.safariutils.client.MoundSpotter;
 import dev.serko.safariutils.client.NestTracker;
 import dev.serko.safariutils.client.RecatchSpots;
 import dev.serko.safariutils.client.SafariLocation;
 import dev.serko.safariutils.client.SafariPartyWatch;
 import dev.serko.safariutils.client.SafariPaths;
+import dev.serko.safariutils.client.OperationalLog;
 import dev.serko.safariutils.client.StaticWaypointCatalog;
 import dev.serko.safariutils.client.StaticEntityCatalog;
 import dev.serko.safariutils.client.FullScreenAlert;
@@ -83,22 +84,25 @@ public class SafariUtils implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		SafariPaths.migrateLegacyFiles();
-		ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
+		OperationalLog.start();
+		ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> OperationalLog.run("SCREEN/INIT", () -> {
 			InteractionDebugLog.onScreenInit(client, screen, width, height);
 			TicketProtection.onScreenInit(screen);
-		});
+		}));
 		ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> {
-			// Log before optional automation hides a clickable server prompt.
-			InteractionDebugLog.onGameMessage(message, overlay);
-			return PartyRosterWatch.allow(message, overlay)
-				&& PartyErrorSuppressor.allow(message, overlay)
-				&& HideyhoAutoAccept.allow(message, overlay)
-				&& PartyItemSyncProviders.allowMessage(message, overlay);
+			return OperationalLog.get("CHAT/FILTER", () -> {
+				// Log before optional automation hides a clickable server prompt.
+				InteractionDebugLog.onGameMessage(message, overlay);
+				return PartyRosterWatch.allow(message, overlay)
+					&& PartyErrorSuppressor.allow(message, overlay)
+					&& HideyhoAutoAccept.allow(message, overlay)
+					&& PartyItemSyncProviders.allowMessage(message, overlay);
+			}, true);
 		});
 		// Hypixel sends catch messages as system chat, which is what GAME covers.
 		// This fires upstream of chat-compacting mods, so the duplicate counters
 		// they append never reach the parser.
-		ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+		ClientReceiveMessageEvents.GAME.register((message, overlay) -> OperationalLog.run("CHAT/HANDLE", () -> {
 			if (overlay) return;
 			// Hypixel sends banners such as the "entered Critter Safari!" notice as a
 			// single multi-line component, so each line has to be handled separately
@@ -131,45 +135,46 @@ public class SafariUtils implements ClientModInitializer {
 				FloorDrops.onChatMessage(line);
 				MoundSpotter.onChatMessage(line);
 			}
-		});
+		}));
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
-			AlertSounds.tick();
-			if (BuildVersion.DEVELOPER) DebugLog.tick();
+			tickSafely("alerts", AlertSounds::tick);
+			if (BuildVersion.DEVELOPER) tickSafely("debug-log", DebugLog::tick);
 			// Next, and only here: everything below asks it where the player is.
-			SafariLocation.tick();
-			BirdfeederWatch.tickMenu();
-			PartyRosterWatch.tick();
-			SafariPartyWatch.tick();
-			SparklingMode.tick();
-			SharedSparklingProviders.tick();
-			PartyItemSyncProviders.tick();
-			if (BuildVersion.DEVELOPER) DebugStateLog.tick();
-			if (BuildVersion.DEVELOPER) InteractionDebugLog.tick();
-			ContestTracker.tick();
+			tickSafely("location", SafariLocation::tick);
+			tickSafely("birdfeeder-menu", BirdfeederWatch::tickMenu);
+			tickSafely("party-roster", PartyRosterWatch::tick);
+			tickSafely("safari-party", SafariPartyWatch::tick);
+			tickSafely("sparkling-mode", SparklingMode::tick);
+			tickSafely("shared-sparklings", SharedSparklingProviders::tick);
+			tickSafely("starting-items", StartingItemsWatch::tick);
+			tickSafely("objectives", SafariObjectives::tick);
+			// Sync snapshots consume the inventory caches refreshed immediately above.
+			tickSafely("party-objectives", PartyItemSyncProviders::tick);
+			if (BuildVersion.DEVELOPER) tickSafely("debug-state", DebugStateLog::tick);
+			if (BuildVersion.DEVELOPER) tickSafely("interaction-debug", InteractionDebugLog::tick);
+			tickSafely("contest", ContestTracker::tick);
 			// One sweep of the world's critters, for everything below that wants them.
-			CritterEntities.tick();
-			ParticleDiagnostics.tick();
-			if (BuildVersion.DEVELOPER) CritterCountLog.tick();
-			HideyhoSolver.tick();
-			StillCritters.tick();
-			DetectedCritters.tick();
-			StartingItemsWatch.tick();
-			SafariObjectives.tick();
-			SessionManager.tick();
-			CritterSpotter.tick();
-			NestTracker.tick();
-			SparklingWatch.tick();
-			FloorDrops.tick();
-			MoundSpotter.tick();
-			StaticWaypointCatalog.tick();
-			StaticEntityCatalog.tick();
-			RecatchSpots.tick();
-			DarknessFilter.tick();
+			tickSafely("critter-entities", CritterEntities::tick);
+			tickSafely("particle-diagnostics", ParticleDiagnostics::tick);
+			if (BuildVersion.DEVELOPER) tickSafely("critter-count-log", CritterCountLog::tick);
+			tickSafely("hideyho", HideyhoSolver::tick);
+			tickSafely("still-critters", StillCritters::tick);
+			tickSafely("detected-critters", DetectedCritters::tick);
+			tickSafely("session", SessionManager::tick);
+			tickSafely("critter-spotter", CritterSpotter::tick);
+			tickSafely("nests", NestTracker::tick);
+			tickSafely("sparkling-watch", SparklingWatch::tick);
+			tickSafely("floor-drops", FloorDrops::tick);
+			tickSafely("mounds", MoundSpotter::tick);
+			tickSafely("static-waypoints", StaticWaypointCatalog::tick);
+			tickSafely("static-entities", StaticEntityCatalog::tick);
+			tickSafely("recatch", RecatchSpots::tick);
+			tickSafely("darkness", DarknessFilter::tick);
 			// Off-thread, at most every five minutes, and only where a price is shown.
-			BazaarPrices.tick();
-			ChatQueue.tick();
-			ConfigManager.tick();
+			tickSafely("bazaar", BazaarPrices::tick);
+			tickSafely("chat-queue", ChatQueue::tick);
+			tickSafely("config", ConfigManager::tick);
 		});
 
 		// Nothing else writes the settings file on the way out, and the game can be quit
@@ -180,43 +185,54 @@ public class SafariUtils implements ClientModInitializer {
 			SharedSparklingProviders.shutdown();
 			StaticWaypointCatalog.shutdown();
 			StaticEntityCatalog.shutdown();
+			OperationalLog.shutdown();
 		});
 
 		// Hypixel never says you have left the Safari, but moving island reconnects, so
 		// this is the one moment the chat-driven flag is known to be stale.
-		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> OperationalLog.run("CONNECTION/JOIN", () -> {
+			OperationalLog.info("LIFECYCLE", "Joined a server world");
 			SafariLocation.onWorldChange();
 			SessionManager.onWorldChange();
-		});
-		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+		}));
+		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> OperationalLog.run("CONNECTION/DISCONNECT", () -> {
+			OperationalLog.info("LIFECYCLE", "Disconnected from server world");
 			SafariLocation.onWorldChange();
 			SessionManager.onWorldChange();
-		});
+		}));
 
 		AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
-			NestTracker.onInteract(pos);
-			// A drop being picked up would clear itself a few seconds later anyway;
-			// dropping it on the interaction just makes the mark go when you expect.
-			FloorDrops.onInteract(pos);
-			return InteractionResult.PASS;
+			return OperationalLog.get("INTERACTION/ATTACK_BLOCK", () -> {
+				NestTracker.onInteract(pos);
+				// A drop being picked up would clear itself a few seconds later anyway;
+				// dropping it on the interaction just makes the mark go when you expect.
+				FloorDrops.onInteract(pos);
+				return InteractionResult.PASS;
+			}, InteractionResult.PASS);
 		});
 		AttackEntityCallback.EVENT.register((player, level, hand, entity, hitResult) -> {
-			MoundSpotter.onAttack(entity);
-			InteractionDebugLog.onEntityInteraction("attack", entity, hand.toString());
-			return TicketProtection.blockManagerInteraction(entity)
-				? InteractionResult.FAIL : InteractionResult.PASS;
+			return OperationalLog.get("INTERACTION/ATTACK_ENTITY", () -> {
+				MoundSpotter.onAttack(entity);
+				InteractionDebugLog.onEntityInteraction("attack", entity, hand.toString());
+				return TicketProtection.blockManagerInteraction(entity)
+					? InteractionResult.FAIL : InteractionResult.PASS;
+			}, InteractionResult.PASS);
 		});
 		UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
-			NestTracker.onInteract(hit.getBlockPos());
-			FloorDrops.onInteract(hit.getBlockPos());
-			return InteractionResult.PASS;
+			return OperationalLog.get("INTERACTION/USE_BLOCK", () -> {
+				NestTracker.onInteract(hit.getBlockPos());
+				FloorDrops.onInteract(hit.getBlockPos());
+				return InteractionResult.PASS;
+			}, InteractionResult.PASS);
 		});
 		UseEntityCallback.EVENT.register((player, level, hand, entity, hitResult) -> {
-			SafariPartyWatch.onEntityUse(entity);
-			BirdfeederWatch.onEntityUse(entity);
-			InteractionDebugLog.onEntityInteraction("use", entity, hand.toString());
-			return TicketProtection.blockManagerInteraction(entity)
-				? InteractionResult.FAIL : InteractionResult.PASS;
+			return OperationalLog.get("INTERACTION/USE_ENTITY", () -> {
+				SafariPartyWatch.onEntityUse(entity);
+				BirdfeederWatch.onEntityUse(entity);
+				InteractionDebugLog.onEntityInteraction("use", entity, hand.toString());
+				return TicketProtection.blockManagerInteraction(entity)
+					? InteractionResult.FAIL : InteractionResult.PASS;
+			}, InteractionResult.PASS);
 		});
 
 		ClientCommandRegistrationCallback.EVENT.register(
@@ -225,27 +241,27 @@ public class SafariUtils implements ClientModInitializer {
 		HudElementRegistry.attachElementBefore(
 			VanillaHudElements.CHAT,
 			Identifier.fromNamespaceAndPath(MOD_ID, "safari_progress"),
-			new ProgressHud());
+			OperationalLog.hud("progress", new ProgressHud()));
 		HudElementRegistry.attachElementBefore(
 			VanillaHudElements.CHAT,
 			Identifier.fromNamespaceAndPath(MOD_ID, "safari_missing"),
-			new MissingHud());
+			OperationalLog.hud("missing", new MissingHud()));
 		HudElementRegistry.attachElementBefore(
 			VanillaHudElements.CHAT,
 			Identifier.fromNamespaceAndPath(MOD_ID, "contest_tracker"),
-			new ContestTracker());
+			OperationalLog.hud("contest", new ContestTracker()));
 		HudElementRegistry.attachElementBefore(
 			VanillaHudElements.CHAT,
-			Identifier.fromNamespaceAndPath(MOD_ID, "party_bird_feed"),
-			new PartyBirdFeedHud());
+			Identifier.fromNamespaceAndPath(MOD_ID, "party_objectives"),
+			OperationalLog.hud("party-objectives", new PartyObjectiveHud()));
 		HudElementRegistry.attachElementBefore(
 			VanillaHudElements.CHAT,
 			Identifier.fromNamespaceAndPath(MOD_ID, "encounter_alerts"),
-			new EncounterAlerts());
+			OperationalLog.hud("encounter-alerts", new EncounterAlerts()));
 		HudElementRegistry.attachElementBefore(
 			VanillaHudElements.CHAT,
 			Identifier.fromNamespaceAndPath(MOD_ID, "full_screen_alert"),
-			new FullScreenAlert());
+			OperationalLog.hud("full-screen-alert", new FullScreenAlert()));
 
 		WaypointRenderer.register();
 
@@ -255,5 +271,9 @@ public class SafariUtils implements ClientModInitializer {
 		SparklingStats.load(SafariPaths.sparklingStats());
 
 		LOGGER.info("Critter Safari tracker ready");
+	}
+
+	private static void tickSafely(String tracker, Runnable action) {
+		OperationalLog.run(tracker, action);
 	}
 }

@@ -3,6 +3,7 @@ package dev.serko.safariutils.client;
 import dev.serko.safariutils.BuildVersion;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.input.KeyEvent;
@@ -27,6 +28,8 @@ public final class SafariSettingsScreen extends Screen {
 	private static final Map<String, String> REMEMBERED_SELECTIONS = new HashMap<>();
 	private static final Set<String> REMEMBERED_OPEN_GROUPS = new HashSet<>();
 	private static final Map<Class<?>, Field[]> PUBLIC_FIELDS = new HashMap<>();
+	private static final Map<String, String> CLEAN_TEXT = new HashMap<>();
+	private static final Map<String, String> DISPLAY_NAMES = new HashMap<>();
 	private static String rememberedSettingCategory;
 	private static int rememberedScroll;
 	private static long rememberedAt;
@@ -34,6 +37,7 @@ public final class SafariSettingsScreen extends Screen {
 	private static final int HEADER_HEIGHT = 58;
 	private static final int FOOTER_HEIGHT = 30;
 	private static final int THEME_BUTTON_WIDTH = 126;
+	private static final int[] CONSTELLATION_ORDER = {0, 4, 8, 3, 7, 2, 6, 1, 5};
 	private static final String MOD_VERSION = FabricLoader.getInstance().getModContainer("safariutils")
 		.map(container -> releaseVersion(container.getMetadata().getVersion().getFriendlyString()))
 		.orElse("unknown");
@@ -63,6 +67,15 @@ public final class SafariSettingsScreen extends Screen {
 	private final Set<VisibleSetting> visibleSettings = new java.util.LinkedHashSet<>();
 	private final Map<String, String> selectedGroups = new HashMap<>();
 	private final Set<String> openGroups = new HashSet<>();
+	private final Map<WrapKey, List<String>> wrappedText = new LinkedHashMap<>(128, 0.75f, true) {
+		@Override
+		protected boolean removeEldestEntry(Map.Entry<WrapKey, List<String>> eldest) {
+			return size() > 512;
+		}
+	};
+	private Class<?> cachedSearchType;
+	private String cachedSearchQuery;
+	private List<SearchItem> cachedSearchResults = List.of();
 	private SettingCategoryView selected;
 	private EditBox search;
 	private EditBox editor;
@@ -89,6 +102,7 @@ public final class SafariSettingsScreen extends Screen {
 	private SettingMultiChoice multiChoiceDropdown;
 	private int scroll;
 	private int contentHeight;
+	private ScreenRectangle contentScissor;
 	private int navigationScroll;
 	private int navigationContentHeight;
 	private Field draggingSlider;
@@ -100,7 +114,17 @@ public final class SafariSettingsScreen extends Screen {
 	private boolean unlockPanel;
 	private boolean customThemePanel;
 	private boolean specialSparklingConfirmation;
+	private int pendingSparklingIntensity = -1;
 	private long signalCompletedAt;
+	private int constellationLeft = Integer.MIN_VALUE;
+	private int constellationTop;
+	private int constellationSize;
+	private final int[][] constellationNodes = new int[9][2];
+	private long unlockGeometryFrame = Long.MIN_VALUE;
+	private int unlockGeometryProgress = -1;
+	private boolean unlockGeometryComplete;
+	private final UnlockQuadBuilder unlockGeometry = new UnlockQuadBuilder(12_000);
+	private int unlockGeometryLength;
 	private int modalHitStart = -1;
 	private long resetArmedUntil;
 
@@ -149,6 +173,7 @@ public final class SafariSettingsScreen extends Screen {
 	private static final List<String> SOUND_LABELS = AlertSounds.alphabetical().stream()
 		.map(AlertSounds.Choice::label).toList();
 	private record SearchItem(Field field, List<SettingInfo> context) { }
+	private record WrapKey(String text, int width) { }
 	private record SoundPreviewHit(int left, int top, int right, int bottom, int soundId) {
 		boolean contains(double x, double y) {
 			return x >= left && x < right && y >= top && y < bottom;
@@ -213,6 +238,7 @@ public final class SafariSettingsScreen extends Screen {
 		search.setResponder(value -> {
 			scroll = 0;
 		});
+		UIDraw.rainbowEditBox(search, font);
 		addRenderableWidget(search);
 	}
 
@@ -256,6 +282,11 @@ public final class SafariSettingsScreen extends Screen {
 		graphics.fill(NAV_WIDTH, height - FOOTER_HEIGHT, width, height, SURFACE);
 		graphics.fill(NAV_WIDTH - 1, 0, NAV_WIDTH, height, BORDER);
 		graphics.fill(NAV_WIDTH, HEADER_HEIGHT - 1, width, HEADER_HEIGHT, BORDER);
+		if (SpecialTheme.rainbow()) {
+			// One cached batch covers the whole workspace; individual cards do not own
+			// independent particle systems or allocate effects while scrolling.
+			SpecialTheme.stars(graphics, 0, 0, width, height, 0.7f);
+		}
 		drawBrand(graphics);
 		hits.clear();
 		soundPreviewHits.clear();
@@ -287,14 +318,15 @@ public final class SafariSettingsScreen extends Screen {
 		if (search != null) {
 			search.setTextColor(TEXT);
 			search.setTextColorUneditable(MUTED);
+			UIDraw.updateRainbowCaret(search, TEXT);
 		}
+		UIDraw.updateRainbowCaret(editor, TEXT);
 		super.extractRenderState(graphics, mouseX, mouseY, partialTick);
 	}
 
 	private void applyTheme() {
 		int id = Math.clamp(ConfigManager.get().display.settingsTheme, 0, 34);
-		int rainbow = java.awt.Color.HSBtoRGB((System.currentTimeMillis() % 8_000L) / 8_000f, 0.66f, 1f)
-			| 0xFF000000;
+		int rainbow = UIDraw.rainbowAt(0, 0.66f);
 		if (themePalettes == null) themePalettes = new int[][] {
 			{0xF00B0D13, 0xE611141C, 0xD9181B24, 0xE3222733, 0xFF30384A, 0xFF55AAFF, 0xFF55FFFF, 0xFF55FF88, 0xFFFF6677, 0xFFFFC857, 0xFFF2F5FA, 0xFF9DA7B8, 0xFF697386},
 			{0xF0060810, 0xEB0C1020, 0xDC11172A, 0xEB18213A, 0xFF2A3557, 0xFF7A8CFF, 0xFFA6B3FF, 0xFF67E8A5, 0xFFFF6F91, 0xFFB8A7FF, 0xFFF5F6FF, 0xFFA2A9C2, 0xFF69708B},
@@ -340,12 +372,24 @@ public final class SafariSettingsScreen extends Screen {
 		GOLD = value[9]; TEXT = value[10]; MUTED = value[11]; DIM = value[12];
 		SELECTED = id == 34 ? value[13] : blendOpaque(CARD, BLUE, 0.38f);
 		SUB_SELECTED = id == 34 ? value[14] : blendOpaque(CARD, GOLD, 0.30f);
+		if (SpecialTheme.rainbow()) {
+			// Keep surfaces dark and readable while every semantic/accent role follows
+			// the same cached rainbow clock used by text, borders, and HUDs.
+			BLUE = SpecialTheme.accent(0);
+			CYAN = SpecialTheme.accent(18);
+			GREEN = SpecialTheme.accent(36);
+			RED = SpecialTheme.accent(54);
+			GOLD = SpecialTheme.accent(72);
+			BORDER = blendOpaque(CARD, SpecialTheme.accent(9), 0.58f);
+			CARD_HOVER = blendOpaque(CARD, SpecialTheme.accent(27), 0.20f);
+			SELECTED = blendOpaque(CARD, SpecialTheme.accent(45), 0.38f);
+			SUB_SELECTED = blendOpaque(CARD, SpecialTheme.accent(63), 0.30f);
+		}
 	}
 
 	/** Active settings palette, shared by the standalone HUD editor. */
 	static int[] activeThemePalette() {
-		int rainbow = java.awt.Color.HSBtoRGB((System.currentTimeMillis() % 8_000L) / 8_000f,
-			0.66f, 1f) | 0xFF000000;
+		int rainbow = UIDraw.rainbowAt(0, 0.66f);
 		if (themePalettes == null) {
 			// Initialize through the normal path so the palette has one source of truth.
 			new SafariSettingsScreen(null).applyTheme();
@@ -412,8 +456,8 @@ public final class SafariSettingsScreen extends Screen {
 		int titleLeft = Math.round(NAV_WIDTH / 2f / titleScale - titleWidth / 2f);
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(titleScale, titleScale);
-		graphics.text(font, safariTitle, titleLeft, Math.round(11f / titleScale), safariColour);
-		graphics.text(font, utilsTitle, titleLeft + font.width(safariTitle), Math.round(11f / titleScale), utilsColour);
+		drawText(graphics, safariTitle, titleLeft, Math.round(11f / titleScale), safariColour);
+		drawText(graphics, utilsTitle, titleLeft + font.width(safariTitle), Math.round(11f / titleScale), utilsColour);
 		graphics.pose().popMatrix();
 		drawScaledCenteredText(graphics, "VERSION " + MOD_VERSION, NAV_WIDTH / 2, 32, 1.08f, MUTED);
 	}
@@ -427,8 +471,8 @@ public final class SafariSettingsScreen extends Screen {
 			hovered ? SELECTED : CARD, hovered ? SUB_SELECTED : SURFACE);
 		outline(graphics, x, y, THEME_BUTTON_WIDTH, 28, hovered ? CYAN : GOLD);
 		drawDiamond(graphics, x + 13, y + 14, 5, ConfigManager.get().display.settingsTheme == 4 ? CYAN : GOLD);
-		graphics.text(font, "THEME", x + 24, y + 5, DIM);
-		graphics.text(font, currentThemeLabel(), x + 24, y + 16, hovered ? TEXT : MUTED);
+		drawText(graphics, "THEME", x + 24, y + 5, DIM);
+		drawText(graphics, currentThemeLabel(), x + 24, y + 16, hovered ? TEXT : MUTED);
 		hits.add(new Hit(x, y, x + THEME_BUTTON_WIDTH, y + 28, this::openThemePicker));
 	}
 
@@ -473,7 +517,7 @@ public final class SafariSettingsScreen extends Screen {
 			int lockY = y + 8;
 			boolean hovered = mouseX >= 8 && mouseX < NAV_WIDTH - 8 && mouseY >= lockY && mouseY < lockY + 30;
 			if (hovered) graphics.fill(8, lockY, NAV_WIDTH - 8, lockY + 30, CARD_HOVER);
-			graphics.text(font, "◇  Locked", 18, lockY + 10, hovered ? GOLD : DIM);
+			drawText(graphics, "◇  Locked", 18, lockY + 10, hovered ? GOLD : DIM);
 			if (lockY + 30 > top && lockY < bottom) {
 				hits.add(new Hit(8, Math.max(lockY, top), NAV_WIDTH - 8,
 					Math.min(lockY + 30, bottom), this::openUnlockPanel));
@@ -515,6 +559,7 @@ public final class SafariSettingsScreen extends Screen {
 		int right = width - 20;
 		int top = HEADER_HEIGHT + 14;
 		int bottom = height - FOOTER_HEIGHT - 8;
+		contentScissor = new ScreenRectangle(left, top, right - left, bottom - top);
 		graphics.enableScissor(left, top, right, bottom);
 		int y = top - scroll;
 		String query = search == null ? "" : search.getValue().trim().toLowerCase(Locale.ROOT);
@@ -527,6 +572,7 @@ public final class SafariSettingsScreen extends Screen {
 		}
 		contentHeight = Math.max(0, y + scroll - top);
 		graphics.disableScissor();
+		contentScissor = null;
 	}
 
 	private int drawNormalFields(GuiGraphicsExtractor graphics, Object owner, Class<?> type,
@@ -606,7 +652,7 @@ public final class SafariSettingsScreen extends Screen {
 			graphics.fill(x, y, x + tabWidth, y + 23,
 				active ? activeFill : hovered ? CARD_HOVER : inactiveFill);
 			outline(graphics, x, y, tabWidth, 23, active ? accent : BORDER);
-			graphics.centeredText(font, trim(label, tabWidth - 12), x + tabWidth / 2, y + 8,
+			drawCenteredText(graphics, trim(label, tabWidth - 12), x + tabWidth / 2, y + 8,
 				active ? TEXT : MUTED);
 			String choice = field.getName();
 			hits.add(new Hit(x, y, x + tabWidth, y + 23, () -> {
@@ -633,10 +679,10 @@ public final class SafariSettingsScreen extends Screen {
 			int left, int right, int y) {
 		if (option.desc().isBlank()) return y;
 		List<String> lines = wrap(clean(option.desc()), right - left - 24);
-		graphics.text(font, displayName(option.name()), left + 4, y + 2, TEXT);
+		drawText(graphics, displayName(option.name()), left + 4, y + 2, TEXT);
 		int lineY = y + 17;
 		for (String line : lines) {
-			graphics.text(font, line, left + 4, lineY, MUTED);
+			drawText(graphics, line, left + 4, lineY, MUTED);
 			lineY += 11;
 		}
 		return lineY + 5;
@@ -651,11 +697,11 @@ public final class SafariSettingsScreen extends Screen {
 		graphics.fill(left, y, right, y + height, hovered ? CARD_HOVER : CARD);
 		int accent = depth <= 1 ? GOLD : CYAN;
 		graphics.fill(left, y, left + 3, y + height, accent);
-		graphics.text(font, open ? "−" : "+", left + 11, y + 10, accent);
-		graphics.text(font, displayName(option.name()), left + 27, y + 9, TEXT);
+		drawText(graphics, open ? "−" : "+", left + 11, y + 10, accent);
+		drawText(graphics, displayName(option.name()), left + 27, y + 9, TEXT);
 		int lineY = y + 24;
 		for (String line : description) {
-			graphics.text(font, line, left + 27, lineY, MUTED);
+			drawText(graphics, line, left + 27, lineY, MUTED);
 			lineY += 11;
 		}
 		hits.add(new Hit(left, y, right, y + height, () -> {
@@ -667,8 +713,14 @@ public final class SafariSettingsScreen extends Screen {
 
 	private int drawSearchResults(GuiGraphicsExtractor graphics, Object owner, Class<?> type,
 			String query, int left, int right, int y, int mouseX, int mouseY) {
-		List<SearchItem> results = new ArrayList<>();
-		collectSearchResults(type, null, List.of(), query, false, results);
+		if (cachedSearchType != type || !query.equals(cachedSearchQuery)) {
+			List<SearchItem> results = new ArrayList<>();
+			collectSearchResults(type, null, List.of(), query, false, results);
+			cachedSearchType = type;
+			cachedSearchQuery = query;
+			cachedSearchResults = List.copyOf(results);
+		}
+		List<SearchItem> results = cachedSearchResults;
 		String previousContext = null;
 		for (SearchItem result : results) {
 			String context = result.context.stream().map(SettingInfo::name)
@@ -681,7 +733,7 @@ public final class SafariSettingsScreen extends Screen {
 			y = drawSetting(graphics, owner, result.field, option, left + 5, right, y, mouseX, mouseY);
 		}
 		if (results.isEmpty()) {
-			graphics.centeredText(font, "No matching settings", (left + right) / 2, y + 30, MUTED);
+			drawCenteredText(graphics, "No matching settings", (left + right) / 2, y + 30, MUTED);
 			y += 70;
 		}
 		return y;
@@ -763,7 +815,7 @@ public final class SafariSettingsScreen extends Screen {
 			int left, int right, int y) {
 		graphics.fill(left, y, right, y + 28, CARD);
 		graphics.fill(left, y, left + 3, y + 28, GOLD);
-		graphics.text(font, trim(context, right - left - 22), left + 12, y + 10, TEXT);
+		drawText(graphics, trim(context, right - left - 22), left + 12, y + 10, TEXT);
 		return y + 34;
 	}
 
@@ -793,14 +845,14 @@ public final class SafariSettingsScreen extends Screen {
 				: controlHovered;
 		graphics.fill(left, y, right, y + height, hovered ? CARD_HOVER : CARD);
 		outline(graphics, left, y, right - left, height, hovered ? CYAN : BORDER);
-		graphics.text(font, displayName(option.name()), left + 12, y + 9, TEXT);
+		drawText(graphics, displayName(option.name()), left + 12, y + 9, TEXT);
 		int lineY = y + 24;
 		for (String line : mainLines) {
-			graphics.text(font, line, left + 12, lineY, safeModeComparison ? CYAN : MUTED);
+			drawText(graphics, line, left + 12, lineY, safeModeComparison ? CYAN : MUTED);
 			lineY += 11;
 		}
 		for (String line : tagLines) {
-			graphics.text(font, line, left + 12, lineY, safeModeComparison ? MUTED : CYAN);
+			drawText(graphics, line, left + 12, lineY, safeModeComparison ? MUTED : CYAN);
 			lineY += 11;
 		}
 		drawControl(graphics, owner, field, left, right, y, height, mouseX, mouseY);
@@ -918,8 +970,8 @@ public final class SafariSettingsScreen extends Screen {
 	private void drawChoice(GuiGraphicsExtractor graphics, int x, int y, int width, String label) {
 		graphics.fill(x, y, x + width, y + 22, CARD);
 		outline(graphics, x, y, width, 22, BORDER);
-		graphics.text(font, trim(label, width - 30), x + 8, y + 7, CYAN);
-		graphics.text(font, "▦", x + width - 15, y + 7, MUTED);
+		drawText(graphics, trim(label, width - 30), x + 8, y + 7, CYAN);
+		drawText(graphics, "▦", x + width - 15, y + 7, MUTED);
 	}
 
 	private void openChoicePicker(Object owner, Field field, SettingChoice dropdown) {
@@ -958,9 +1010,9 @@ public final class SafariSettingsScreen extends Screen {
 		graphics.fill(x, y, x + w, y + h, SURFACE);
 		outline(graphics, x, y, w, h, CYAN);
 		SettingInfo option = choiceField.getAnnotation(SettingInfo.class);
-		graphics.text(font, "Choose " + displayName(option.name()), x + 14, y + 14, TEXT);
+		drawText(graphics, "Choose " + displayName(option.name()), x + 14, y + 14, TEXT);
 		if (soundChoice) {
-			graphics.text(font, "Right-click a sound to preview it", x + 14, y + 26, CYAN);
+			drawText(graphics, "Right-click a sound to preview it", x + 14, y + 26, CYAN);
 		}
 		int cellWidth = (w - 28 - (columns - 1) * 6) / columns;
 		int current = choiceValue();
@@ -976,7 +1028,7 @@ public final class SafariSettingsScreen extends Screen {
 			graphics.fill(cellX, cellY, cellX + cellWidth, cellY + 22,
 				active ? SELECTED : hovered ? CARD_HOVER : CARD);
 			outline(graphics, cellX, cellY, cellWidth, 22, active ? CYAN : BORDER);
-			graphics.centeredText(font, trim(labels.get(index), cellWidth - 12),
+			drawCenteredText(graphics, trim(labels.get(index), cellWidth - 12),
 				cellX + cellWidth / 2, cellY + 7, active ? TEXT : MUTED);
 			hits.add(new Hit(cellX, cellY, cellX + cellWidth, cellY + 22,
 				() -> chooseDropdownValue(value)));
@@ -1004,8 +1056,8 @@ public final class SafariSettingsScreen extends Screen {
 		graphics.fill(x, y, x + w, y + h, SURFACE);
 		outline(graphics, x, y, w, h, CYAN);
 		SettingInfo option = choiceField.getAnnotation(SettingInfo.class);
-		graphics.text(font, "Choose " + displayName(option.name()), x + 14, y + 14, TEXT);
-		graphics.text(font, "Select every item type that may be sent", x + 14, y + 27, MUTED);
+		drawText(graphics, "Choose " + displayName(option.name()), x + 14, y + 14, TEXT);
+		drawText(graphics, "Select every item type that may be sent", x + 14, y + 27, MUTED);
 		int cellWidth = (w - 28 - (columns - 1) * 8) / columns;
 		int selected = choiceValue();
 		for (int index = 0; index < labels.length; index++) {
@@ -1022,8 +1074,8 @@ public final class SafariSettingsScreen extends Screen {
 			outline(graphics, cellX, cellY, cellWidth, 26, active ? CYAN : BORDER);
 			Component mark = Component.literal(active ? "✓" : "○")
 				.withStyle(style -> style.withBold(true));
-			graphics.text(font, mark, cellX + 8, cellY + 9, active ? GREEN : DIM);
-			graphics.text(font, trim(group + " · " + labels[index], cellWidth - 34),
+			drawText(graphics, mark, cellX + 8, cellY + 9, active ? GREEN : DIM);
+			drawText(graphics, trim(group + " · " + labels[index], cellWidth - 34),
 				cellX + 24, cellY + 9, active ? TEXT : MUTED);
 			int bit = 1 << index;
 			hits.add(new Hit(cellX, cellY, cellX + cellWidth, cellY + 26,
@@ -1073,6 +1125,14 @@ public final class SafariSettingsScreen extends Screen {
 
 	private void chooseDropdownValue(int value) {
 		boolean customTheme = isThemeChoice(choiceField) && value == 34;
+		if (choiceField != null && choiceField.getName().equals("specialSparklingIntensity")
+			&& value > 0) {
+			pendingSparklingIntensity = value;
+			closeChoicePicker();
+			specialSparklingConfirmation = true;
+			if (search != null) search.visible = false;
+			return;
+		}
 		try {
 			choiceField.setInt(choiceOwner, value);
 			applyChoiceSideEffect(choiceField, value);
@@ -1081,6 +1141,14 @@ public final class SafariSettingsScreen extends Screen {
 		}
 		closeChoicePicker();
 		if (customTheme) openCustomThemePanel();
+	}
+
+	private void cancelSparklingIntensity() {
+		ConfigManager.get().sparkling.specialSparklingIntensity = 0;
+		ConfigManager.save();
+		specialSparklingConfirmation = false;
+		pendingSparklingIntensity = -1;
+		if (search != null) search.visible = true;
 	}
 
 	private void closeChoicePicker() {
@@ -1127,8 +1195,8 @@ public final class SafariSettingsScreen extends Screen {
 		graphics.fill(0, 0, width, height, 0x88000000);
 		graphics.fill(x, y, x + w, y + h, SURFACE);
 		outline(graphics, x, y, w, h, CYAN);
-		graphics.text(font, "CUSTOM THEME", x + 14, y + 13, TEXT);
-		graphics.text(font, "Select a role to edit it · Changes preview live",
+		drawText(graphics, "CUSTOM THEME", x + 14, y + 13, TEXT);
+		drawText(graphics, "Select a role to edit it · Changes preview live",
 			x + 14, y + 27, MUTED);
 
 		int gap = 8;
@@ -1150,7 +1218,7 @@ public final class SafariSettingsScreen extends Screen {
 				int colour = Colours.argb((String) field.get(display), 0xFFFFFFFF);
 				graphics.fill(cellX + 5, cellY + 4, cellX + 33, cellY + 20, colour);
 				outline(graphics, cellX + 5, cellY + 4, 28, 16, BORDER);
-				graphics.text(font, role.label(), cellX + 41, cellY + 8,
+				drawText(graphics, role.label(), cellX + 41, cellY + 8,
 					hovered ? TEXT : MUTED);
 				hits.add(new Hit(cellX, cellY, cellX + cellWidth, cellY + 24,
 					() -> openEditor(display, field, true)));
@@ -1170,7 +1238,7 @@ public final class SafariSettingsScreen extends Screen {
 		graphics.fill(x, y + 15, x + width, y + 18, BORDER);
 		graphics.fill(x, y + 15, x + Math.round(width * Math.clamp(progress, 0f, 1f)), y + 18, BLUE);
 		String label = formatNumber(value) + "  ✎";
-		graphics.text(font, label, x + width - font.width(label), y + 2, TEXT);
+		drawText(graphics, label, x + width - font.width(label), y + 2, TEXT);
 	}
 
 	private void drawColour(GuiGraphicsExtractor graphics, int x, int y, int width, int colour) {
@@ -1179,13 +1247,13 @@ public final class SafariSettingsScreen extends Screen {
 		graphics.fill(x + 5, y + 4, x + 35, y + 18, colour);
 		outline(graphics, x + 5, y + 4, 30, 14, BORDER);
 		String hex = "#%06X".formatted(colour & 0xFFFFFF);
-		graphics.text(font, hex, x + 44, y + 7, TEXT);
+		drawText(graphics, hex, x + 44, y + 7, TEXT);
 	}
 
 	private void drawTextValue(GuiGraphicsExtractor graphics, int x, int y, int width, String value) {
 		graphics.fill(x, y, x + width, y + 22, CARD);
 		outline(graphics, x, y, width, 22, BORDER);
-		graphics.text(font, trim(value, width - 16), x + 8, y + 7, TEXT);
+		drawText(graphics, trim(value, width - 16), x + 8, y + 7, TEXT);
 	}
 
 	/** Keeps inline editing visually identical to the control it replaces. */
@@ -1218,7 +1286,7 @@ public final class SafariSettingsScreen extends Screen {
 		boolean hovered = inside(mouseX, mouseY, x, y, x + width, y + 22);
 		graphics.fill(x, y, x + width, y + 22, hovered ? SELECTED : shade(BLUE, 0.34f));
 		outline(graphics, x, y, width, 22, hovered ? CYAN : BLUE);
-		graphics.centeredText(font, label, x + width / 2, y + 7, TEXT);
+		drawCenteredText(graphics, label, x + width / 2, y + 7, TEXT);
 	}
 
 	private void drawSpecialSparklingConfirmation(GuiGraphicsExtractor graphics,
@@ -1230,21 +1298,28 @@ public final class SafariSettingsScreen extends Screen {
 		graphics.fill(0, 0, width, height, 0xBB000000);
 		graphics.fill(x, y, x + w, y + h, SURFACE);
 		outline(graphics, x, y, w, h, RED);
+		// The safety notice deliberately stays red even when the novelty theme owns
+		// every decorative colour around it.
 		graphics.centeredText(font, "EPILEPSY WARNING", x + w / 2, y + 15, RED);
 		graphics.centeredText(font, "This option may affect photosensitive players.",
 			x + w / 2, y + 40, RED);
 		graphics.centeredText(font, "Please confirm that you want to enable it.",
 			x + w / 2, y + 54, RED);
-		graphics.centeredText(font, "Enable Special Sparkling Catch?", x + w / 2, y + 72, GOLD);
+		String intensity = new String[]{"Special", "Intense", "Extreme", "Maximum"}
+			[Math.clamp(pendingSparklingIntensity, 0, 3)];
+		drawCenteredText(graphics, "Use " + intensity + " intensity?", x + w / 2, y + 72, GOLD);
 		int cancelX = x + w / 2 - 112;
 		int enableX = x + w / 2 + 8;
 		drawButton(graphics, cancelX, y + 96, 104, "Cancel", mouseX, mouseY);
 		drawButton(graphics, enableX, y + 96, 104, "Enable", mouseX, mouseY);
 		hits.add(new Hit(cancelX, y + 96, cancelX + 104, y + 118,
-			() -> specialSparklingConfirmation = false));
-		hits.add(new Hit(enableX, y + 96, enableX + 104, y + 118, () -> {
-			ConfigManager.get().sparkling.specialSparklingCatch = true;
+			this::cancelSparklingIntensity));
+			hits.add(new Hit(enableX, y + 96, enableX + 104, y + 118, () -> {
+			ConfigManager.get().sparkling.specialSparklingIntensity =
+				Math.clamp(pendingSparklingIntensity, 1, 3);
 			specialSparklingConfirmation = false;
+			pendingSparklingIntensity = -1;
+			if (search != null) search.visible = true;
 			ConfigManager.save();
 		}));
 	}
@@ -1269,15 +1344,32 @@ public final class SafariSettingsScreen extends Screen {
 			float x, float y, float scale, int colour) {
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(scale, scale);
-		graphics.text(font, text, Math.round(x / scale), Math.round(y / scale), colour);
+		drawText(graphics, text, Math.round(x / scale), Math.round(y / scale), colour);
 		graphics.pose().popMatrix();
+	}
+
+	private void drawText(GuiGraphicsExtractor graphics, String text,
+			int x, int y, int colour) {
+		drawText(graphics, Component.literal(text), x, y, colour);
+	}
+
+	private void drawText(GuiGraphicsExtractor graphics, Component text,
+			int x, int y, int colour) {
+		SpecialTheme.text(graphics, font, text, x, y, colour);
+	}
+
+	private void drawCenteredText(GuiGraphicsExtractor graphics, String text,
+			int centerX, int y, int colour) {
+		if (SpecialTheme.rainbow()) {
+			SpecialTheme.rainbowText(graphics, font, text, centerX - font.width(text) / 2, y);
+		} else graphics.centeredText(font, text, centerX, y, colour);
 	}
 
 	private void drawScaledCenteredText(GuiGraphicsExtractor graphics, String text,
 			float centerX, float y, float scale, int colour) {
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(scale, scale);
-		graphics.centeredText(font, text, Math.round(centerX / scale), Math.round(y / scale), colour);
+		drawCenteredText(graphics, text, Math.round(centerX / scale), Math.round(y / scale), colour);
 		graphics.pose().popMatrix();
 	}
 
@@ -1314,7 +1406,7 @@ public final class SafariSettingsScreen extends Screen {
 		graphics.fill(x, y, x + w, y + h, SURFACE);
 		outline(graphics, x, y, w, h, CYAN);
 		SettingInfo option = editingField.getAnnotation(SettingInfo.class);
-		graphics.text(font, editingColour ? "Choose " + option.name()
+		drawText(graphics, editingColour ? "Choose " + option.name()
 			: editingNumber ? "Enter " + option.name() : "Edit " + option.name(),
 			x + 14, y + 13, TEXT);
 		drawInlineEditorFrame(graphics, x + 14, y + 28, w - 28, 18);
@@ -1351,6 +1443,7 @@ public final class SafariSettingsScreen extends Screen {
 			editor.setTextColor(TEXT);
 			editor.setTextColorUneditable(MUTED);
 			editor.setMaxLength(240);
+			UIDraw.rainbowEditBox(editor, font);
 			int currentColour = Colours.argb(editingOriginal, 0xFFFFFFFF);
 			setEditingColourState(currentColour);
 			if (colour && !editingAllowsAlpha()) editingAlpha = 255;
@@ -1387,6 +1480,7 @@ public final class SafariSettingsScreen extends Screen {
 			editor.setTextColor(TEXT);
 			editor.setTextColorUneditable(MUTED);
 			editor.setMaxLength(240);
+			UIDraw.rainbowEditBox(editor, font);
 			editor.setValue(editingOriginal);
 			editor.setResponder(this::previewEditor);
 			addRenderableWidget(editor);
@@ -1413,6 +1507,7 @@ public final class SafariSettingsScreen extends Screen {
 			editor.setTextColor(TEXT);
 			editor.setTextColorUneditable(MUTED);
 			editor.setMaxLength(32);
+			UIDraw.rainbowEditBox(editor, font);
 			editor.setValue(formatNumber(editingNumberOriginal.floatValue()));
 			editor.setResponder(this::previewEditor);
 			addRenderableWidget(editor);
@@ -1432,7 +1527,7 @@ public final class SafariSettingsScreen extends Screen {
 		graphics.fill(x + 14, y + 54, x + 86, y + 94, selected);
 		outline(graphics, x + 14, y + 54, 72, 40, BORDER);
 		String previewLabel = "PREVIEW";
-		graphics.text(font, previewLabel,
+		drawText(graphics, previewLabel,
 			x + 14 + (72 - font.width(previewLabel)) / 2, y + 99, MUTED);
 
 		colourFieldLeft = x + 100;
@@ -1458,7 +1553,7 @@ public final class SafariSettingsScreen extends Screen {
 		graphics.fill(selectorX - 2, selectorY - 2, selectorX + 3, selectorY + 3,
 			hsb(255, editingHue, editingSaturation, editingBrightness));
 
-		graphics.text(font, "Hue", x + 14, y + 156, MUTED);
+		drawText(graphics, "Hue", x + 14, y + 156, MUTED);
 		hueSliderLeft = x + 54;
 		hueSliderTop = y + 154;
 		hueSliderWidth = w - 68;
@@ -1475,11 +1570,11 @@ public final class SafariSettingsScreen extends Screen {
 			hueSliderTop, 12);
 		if (!editingAllowsAlpha()) {
 			alphaSliderWidth = 0;
-			graphics.text(font, "Drag the gradients or enter #RRGGBB", x + 14, y + 184, DIM);
+			drawText(graphics, "Drag the gradients or enter #RRGGBB", x + 14, y + 184, DIM);
 			return;
 		}
 
-		graphics.text(font, "Opacity", x + 14, y + 184, MUTED);
+		drawText(graphics, "Opacity", x + 14, y + 184, MUTED);
 		alphaSliderLeft = x + 62;
 		alphaSliderTop = y + 182;
 		alphaSliderWidth = w - 76;
@@ -1495,9 +1590,9 @@ public final class SafariSettingsScreen extends Screen {
 		int alphaX = alphaSliderLeft
 			+ Math.round((editingAlpha - 1) / 254f * alphaSliderWidth);
 		drawSliderMarker(graphics, alphaX, alphaSliderTop, 12);
-		graphics.text(font, Math.round(editingAlpha / 255f * 100f) + "%",
+		drawText(graphics, Math.round(editingAlpha / 255f * 100f) + "%",
 			x + w - 42, y + 199, TEXT);
-		graphics.text(font, "Drag the gradients or enter #RRGGBB / #AARRGGBB",
+		drawText(graphics, "Drag the gradients or enter #RRGGBB / #AARRGGBB",
 			x + 14, y + 214, DIM);
 	}
 
@@ -1634,7 +1729,8 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private void drawUnlockPanel(GuiGraphicsExtractor graphics) {
-		if (signalCompletedAt > 0 && System.currentTimeMillis() - signalCompletedAt >= 900L) {
+		long now = System.currentTimeMillis();
+		if (signalCompletedAt > 0 && now - signalCompletedAt >= 900L) {
 			completeAdvancedUnlock();
 			return;
 		}
@@ -1645,73 +1741,58 @@ public final class SafariSettingsScreen extends Screen {
 		int y = (height - h) / 2;
 		graphics.fill(0, 0, width, height, 0xAA000000);
 		graphics.fillGradient(x, y, x + w, y + h, BACKGROUND, SURFACE);
-		outline(graphics, x, y, w, h, GOLD);
-		int[][] nodes = constellation(x, y, w, h);
-		int[] order = constellationOrder();
-		int completedLines = Math.max(0, unlockProgress - 1);
-		for (int step = 0; step < completedLines; step++) {
-			int from = order[step];
-			int to = order[step + 1];
-			drawSignalLine(graphics, nodes[from][0], nodes[from][1], nodes[to][0], nodes[to][1],
-				signalColour(step));
+		SpecialTheme.stars(graphics, x + 2, y + 2, w - 4, h - 4, 2.15f, true);
+		SpecialTheme.border(graphics, x, y, w, h, 2);
+		int[][] nodes = constellation(x, y, size);
+		boolean completedEffect = signalCompletedAt > 0;
+		long frame = RainbowColours.frameId();
+		if (unlockGeometryFrame != frame || unlockGeometryProgress != unlockProgress
+			|| unlockGeometryComplete != completedEffect) {
+			unlockGeometryLength = buildUnlockGeometry(unlockGeometry,
+				nodes, x + w / 2, y + h / 2,
+				unlockProgress, completedEffect, now);
+			unlockGeometryFrame = frame;
+			unlockGeometryProgress = unlockProgress;
+			unlockGeometryComplete = completedEffect;
 		}
-		if (signalCompletedAt > 0) {
-			int last = order[order.length - 1];
-			int first = order[0];
-			drawSignalLine(graphics, nodes[last][0], nodes[last][1], nodes[first][0], nodes[first][1],
-				signalColour(order.length));
-		}
+		GuiQuadBatchRenderState.submit(graphics, 0, 0, width, height,
+			unlockGeometry.values(), unlockGeometryLength);
 		for (int i = 0; i < nodes.length; i++) {
-			boolean completed = false;
-			for (int step = 0; step < unlockProgress; step++) completed |= order[step] == i;
-			boolean next = unlockProgress < order.length && order[unlockProgress] == i;
-			int colour = signalCompletedAt > 0 ? signalColour(i) : completed ? GREEN : next ? CYAN : DIM;
-			int pulse = signalCompletedAt > 0
-				? 6 + (int) (3 * Math.abs(Math.sin((System.currentTimeMillis() - signalCompletedAt) / 90.0)))
-				: next ? 8 : 6;
-			drawDiamond(graphics, nodes[i][0], nodes[i][1], pulse, colour);
 			int index = i;
-			if (signalCompletedAt == 0) {
+			if (!completedEffect) {
 				hits.add(new Hit(nodes[i][0] - 16, nodes[i][1] - 16, nodes[i][0] + 17,
 					nodes[i][1] + 17, () -> clickConstellation(index)));
 			}
 		}
-		if (signalCompletedAt > 0) {
-			long age = System.currentTimeMillis() - signalCompletedAt;
-			int radius = 8 + (int) (age / 18L);
-			drawDiamondOutline(graphics, x + w / 2, y + h / 2, radius,
-				signalColour((int) age / 80));
-		}
 	}
 
-	private int[][] constellation(int x, int y, int w, int h) {
-		int[][] nodes = new int[9][2];
-		int centreX = x + w / 2;
-		int centreY = y + h / 2;
-		int radius = Math.max(18, Math.min(116, (Math.min(w, h) - 64) / 2));
-		for (int i = 0; i < nodes.length; i++) {
-			double angle = -Math.PI / 2 + i * Math.PI * 2 / nodes.length;
-			nodes[i][0] = centreX + (int) Math.round(Math.cos(angle) * radius);
-			nodes[i][1] = centreY + (int) Math.round(Math.sin(angle) * radius);
+	private int[][] constellation(int x, int y, int size) {
+		if (constellationLeft != x || constellationTop != y || constellationSize != size) {
+			constellationLeft = x;
+			constellationTop = y;
+			constellationSize = size;
+			int centreX = x + size / 2;
+			int centreY = y + size / 2;
+			int radius = Math.max(18, Math.min(116, (size - 64) / 2));
+			for (int i = 0; i < constellationNodes.length; i++) {
+				double angle = -Math.PI / 2 + i * Math.PI * 2 / constellationNodes.length;
+				constellationNodes[i][0] = centreX + (int) Math.round(Math.cos(angle) * radius);
+				constellationNodes[i][1] = centreY + (int) Math.round(Math.sin(angle) * radius);
+			}
 		}
-		return nodes;
+		return constellationNodes;
 	}
 
 	private void clickConstellation(int index) {
-		int[] order = constellationOrder();
-		if (index != order[unlockProgress]) {
+		if (index != CONSTELLATION_ORDER[unlockProgress]) {
 			AlertSounds.play(Minecraft.getInstance(), 21, 0.8f, 0.65f);
-			unlockProgress = index == order[0] ? 1 : 0;
+			unlockProgress = index == CONSTELLATION_ORDER[0] ? 1 : 0;
 			return;
 		}
 		AlertSounds.play(Minecraft.getInstance(), 4, 0.65f, 0.85f + unlockProgress * 0.16f);
-		if (++unlockProgress == order.length) {
+		if (++unlockProgress == CONSTELLATION_ORDER.length) {
 			signalCompletedAt = System.currentTimeMillis();
 		}
-	}
-
-	private static int[] constellationOrder() {
-		return new int[]{0, 4, 8, 3, 7, 2, 6, 1, 5};
 	}
 
 	private void completeAdvancedUnlock() {
@@ -1730,12 +1811,63 @@ public final class SafariSettingsScreen extends Screen {
 		}
 	}
 
-	private static int signalColour(int step) {
-		return 0xFF000000 | (java.awt.Color.HSBtoRGB((step * 0.105f
-			+ (System.currentTimeMillis() % 3_000L) / 3_000f) % 1f, 0.5f, 1f) & 0xFFFFFF);
+	private static int signalColour(int step, long now) {
+		return RainbowColours.phased((now % 3_000L) / 3_000f,
+			step * 0.105f, 0.5f, 1f);
 	}
 
-	private static void drawSignalLine(GuiGraphicsExtractor graphics,
+	private int buildUnlockGeometry(UnlockQuadBuilder quads, int[][] nodes, int centreX, int centreY,
+			int progress, boolean complete, long now) {
+		quads.reset();
+		int completedLines = Math.max(0, progress - 1);
+		for (int step = 0; step < completedLines; step++) {
+			int from = CONSTELLATION_ORDER[step];
+			int to = CONSTELLATION_ORDER[step + 1];
+			addSignalLine(quads, nodes[from][0], nodes[from][1], nodes[to][0], nodes[to][1],
+				signalColour(step, now));
+		}
+		if (complete) {
+			int last = CONSTELLATION_ORDER[CONSTELLATION_ORDER.length - 1];
+			addSignalLine(quads, nodes[last][0], nodes[last][1],
+				nodes[CONSTELLATION_ORDER[0]][0], nodes[CONSTELLATION_ORDER[0]][1],
+				signalColour(CONSTELLATION_ORDER.length, now));
+		}
+		for (int i = 0; i < nodes.length; i++) {
+			boolean visited = false;
+			for (int step = 0; step < progress; step++) visited |= CONSTELLATION_ORDER[step] == i;
+			boolean next = progress < CONSTELLATION_ORDER.length
+				&& CONSTELLATION_ORDER[progress] == i;
+			int colour = complete ? signalColour(i, now) : visited ? GREEN : next ? CYAN : DIM;
+			int pulse = complete ? 6 + (int) (3 * Math.abs(Math.sin((now - signalCompletedAt) / 90.0)))
+				: next ? 8 : 6;
+			addDiamond(quads, nodes[i][0], nodes[i][1], pulse, colour);
+		}
+
+		// Orbiting sparks make the unlock feel distinct without creating independent
+		// widgets; all geometry is rebuilt together on the shared 25 FPS clock.
+		int orbit = Math.max(26, constellationSize / 3);
+		float phase = (now % 4_000L) / 4_000f;
+		for (int i = 0; i < 24; i++) {
+			double angle = (phase + i / 24f) * Math.PI * 2;
+			int radius = orbit + (i % 3) * 9;
+			int sx = centreX + (int) Math.round(Math.cos(angle) * radius);
+			int sy = centreY + (int) Math.round(Math.sin(angle) * radius);
+			int colour = signalColour(i, now);
+			quads.add(sx - 2, sy, sx + 3, sy + 1, colour);
+			quads.add(sx, sy - 2, sx + 1, sy + 3, colour);
+		}
+		if (complete) {
+			long age = now - signalCompletedAt;
+			for (int ring = 0; ring < 3; ring++) {
+				int radius = 8 + (int) (age / 18L) + ring * 13;
+				addDiamondOutline(quads, centreX, centreY, radius,
+					signalColour((int) age / 80 + ring * 3, now));
+			}
+		}
+		return quads.size();
+	}
+
+	private static void addSignalLine(UnlockQuadBuilder quads,
 			int x0, int y0, int x1, int y1, int colour) {
 		int dx = Math.abs(x1 - x0);
 		int sx = x0 < x1 ? 1 : -1;
@@ -1743,7 +1875,7 @@ public final class SafariSettingsScreen extends Screen {
 		int sy = y0 < y1 ? 1 : -1;
 		int error = dx + dy;
 		while (true) {
-			graphics.fill(x0 - 1, y0 - 1, x0 + 2, y0 + 2, colour);
+			quads.add(x0 - 1, y0 - 1, x0 + 2, y0 + 2, colour);
 			if (x0 == x1 && y0 == y1) break;
 			int twice = error * 2;
 			if (twice >= dy) { error += dy; x0 += sx; }
@@ -1751,19 +1883,58 @@ public final class SafariSettingsScreen extends Screen {
 		}
 	}
 
-	private static void drawDiamondOutline(GuiGraphicsExtractor graphics,
+	private static void addDiamondOutline(UnlockQuadBuilder quads,
 			int x, int y, int radius, int colour) {
 		for (int row = -radius; row <= radius; row++) {
 			int half = radius - Math.abs(row);
-			graphics.fill(x - half, y + row, x - half + 1, y + row + 1, colour);
-			graphics.fill(x + half, y + row, x + half + 1, y + row + 1, colour);
+			quads.add(x - half, y + row, x - half + 1, y + row + 1, colour);
+			quads.add(x + half, y + row, x + half + 1, y + row + 1, colour);
 		}
 	}
 
-	private void drawDiamond(GuiGraphicsExtractor graphics, int x, int y, int radius, int colour) {
+	private static void addDiamond(UnlockQuadBuilder quads, int x, int y, int radius, int colour) {
+		for (int row = -radius; row <= radius; row++) {
+			int half = radius - Math.abs(row);
+			quads.add(x - half, y + row, x + half + 1, y + row + 1, colour);
+		}
+	}
+
+	private static void drawDiamond(GuiGraphicsExtractor graphics,
+			int x, int y, int radius, int colour) {
 		for (int row = -radius; row <= radius; row++) {
 			int half = radius - Math.abs(row);
 			graphics.fill(x - half, y + row, x + half + 1, y + row + 1, colour);
+		}
+	}
+
+	private static final class UnlockQuadBuilder {
+		private int[] values;
+		private int size;
+
+		private UnlockQuadBuilder(int initialInts) {
+			values = new int[initialInts];
+		}
+
+		private void add(int x0, int y0, int x1, int y1, int colour) {
+			if (x1 <= x0 || y1 <= y0) return;
+			if (size + 5 > values.length) values = java.util.Arrays.copyOf(values, values.length * 2);
+			values[size++] = x0;
+			values[size++] = y0;
+			values[size++] = x1;
+			values[size++] = y1;
+			values[size++] = colour;
+		}
+
+		private void reset() {
+			size = 0;
+		}
+
+		private int[] values() {
+			return values;
+		}
+
+		private int size() {
+			return size;
 		}
 	}
 
@@ -1854,7 +2025,7 @@ public final class SafariSettingsScreen extends Screen {
 	@Override
 	public boolean keyPressed(KeyEvent event) {
 		if (specialSparklingConfirmation && event.key() == 256) {
-			specialSparklingConfirmation = false;
+			cancelSparklingIntensity();
 			return true;
 		}
 		if (choiceField != null && event.key() == 256) {
@@ -1882,10 +2053,6 @@ public final class SafariSettingsScreen extends Screen {
 
 	private void setBoolean(Object owner, Field field, boolean value) {
 		try {
-			if (field.getName().equals("specialSparklingCatch") && value) {
-				specialSparklingConfirmation = true;
-				return;
-			}
 			field.setBoolean(owner, value);
 			SettingToggle toggle = field.getAnnotation(SettingToggle.class);
 			if (toggle.runnableId() >= 0) ConfigManager.get().executeRunnable(toggle.runnableId());
@@ -2002,16 +2169,20 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private static String clean(String text) {
-		return text.replaceAll("§[0-9A-FK-ORa-fk-or]", "");
+		return CLEAN_TEXT.computeIfAbsent(text,
+			value -> value.replaceAll("§[0-9A-FK-ORa-fk-or]", ""));
 	}
 
 	private static String displayName(String text) {
-		return text.replace("Hud", "HUD").replace("Gui", "GUI")
-			.replace(" Id", " ID").replace("Api", "API");
+		return DISPLAY_NAMES.computeIfAbsent(text, value -> value.replace("Hud", "HUD")
+			.replace("Gui", "GUI").replace(" Id", " ID").replace("Api", "API"));
 	}
 
 	private List<String> wrap(String text, int width) {
 		if (text == null || text.isBlank()) return List.of();
+		WrapKey key = new WrapKey(text, width);
+		List<String> cached = wrappedText.get(key);
+		if (cached != null) return cached;
 		List<String> lines = new ArrayList<>();
 		for (String paragraph : text.split("\\n", -1)) {
 			if (paragraph.isBlank()) {
@@ -2030,7 +2201,9 @@ public final class SafariSettingsScreen extends Screen {
 			}
 			if (!line.isEmpty()) lines.add(line.toString());
 		}
-		return lines;
+		List<String> result = List.copyOf(lines);
+		wrappedText.put(key, result);
+		return result;
 	}
 
 	private String trim(String text, int width) {
@@ -2052,9 +2225,12 @@ public final class SafariSettingsScreen extends Screen {
 		return x >= left && x < right && y >= top && y < bottom;
 	}
 
-	private static void outline(GuiGraphicsExtractor graphics, int x, int y,
+	private void outline(GuiGraphicsExtractor graphics, int x, int y,
 			int width, int height, int colour) {
-		UIDraw.outline(graphics, x, y, width, height, colour);
+		if (SpecialTheme.rainbow()) {
+			SpecialTheme.border(graphics, x, y, width, height, 1, contentScissor);
+		}
+		else UIDraw.outline(graphics, x, y, width, height, colour);
 	}
 
 	@Override

@@ -50,6 +50,10 @@ public final class WallTracker {
 	private final java.util.Map<BlockPos, State> safeStates = new java.util.HashMap<>();
 	/** So a state change is logged once, not every one of the many calls a frame makes. */
 	private final java.util.Map<BlockPos, State> lastLoggedState = new java.util.HashMap<>();
+	private Object cachedLevel;
+	private long cachedTick = Long.MIN_VALUE;
+	private boolean cachedSafeMode;
+	private List<Wall> cachedWalls = List.of();
 
 	private WallTracker(String name, SafariBiome biome, int[][] positions) {
 		this.name = name;
@@ -70,8 +74,13 @@ public final class WallTracker {
 	/** Every tracked wall with its current state, nearest first. */
 	public List<Wall> walls() {
 		Minecraft client = Minecraft.getInstance();
+		if (client.level == null || client.player == null) return List.of();
+		boolean safeMode = safeModeEnabled();
+		long tick = client.level.getGameTime();
+		if (client.level == cachedLevel && tick == cachedTick && safeMode == cachedSafeMode) {
+			return cachedWalls;
+		}
 		List<Wall> result = new ArrayList<>();
-		if (client.level == null || client.player == null) return result;
 
 		boolean logging = DebugLog.isEnabled();
 		for (int[] coords : positions) {
@@ -79,7 +88,7 @@ public final class WallTracker {
 			State state;
 			if (!client.level.isLoaded(pos)) {
 				state = State.UNKNOWN;
-			} else if (safeModeEnabled()) {
+			} else if (safeMode) {
 				State live = client.level.getBlockState(pos).isAir() ? State.BROKEN : State.INTACT;
 				boolean visible = VisibilityCheck.canInspectCandidate(pos);
 				if (visible) safeStates.put(pos, live);
@@ -97,7 +106,11 @@ public final class WallTracker {
 			result.add(new Wall(pos, state, distance));
 		}
 		result.sort((a, b) -> Double.compare(a.distance(), b.distance()));
-		return result;
+		cachedLevel = client.level;
+		cachedTick = tick;
+		cachedSafeMode = safeMode;
+		cachedWalls = List.copyOf(result);
+		return cachedWalls;
 	}
 
 	private boolean safeModeEnabled() {
@@ -124,5 +137,8 @@ public final class WallTracker {
 	public void reset() {
 		safeStates.clear();
 		lastLoggedState.clear();
+		cachedLevel = null;
+		cachedTick = Long.MIN_VALUE;
+		cachedWalls = List.of();
 	}
 }

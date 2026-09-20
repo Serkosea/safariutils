@@ -125,15 +125,26 @@ public final class SafariDashboardScreen extends Screen {
 	private HistorySort historySort = HistorySort.NEWEST;
 	private int historyScroll;
 	private List<RunRecord> cachedHistory;
-	private int cachedHistorySize = -1;
+	private long cachedHistoryRevision = Long.MIN_VALUE;
+	private List<HistoryDisplayRow> cachedHistoryDisplayRows;
+	private List<RunRecord> cachedHistoryDisplaySource;
 	private final Map<RunRecord, Integer> cachedRunNumbers = new java.util.IdentityHashMap<>();
-	private int cachedRunNumberSize = -1;
+	private long cachedRunNumberRevision = Long.MIN_VALUE;
 	private final Map<RunRecord, HistoryRowView> cachedHistoryRows = new java.util.IdentityHashMap<>();
 	private long cachedHistoryPriceRevision = Long.MIN_VALUE;
 	private boolean cachedHistoryValueMode;
+	private List<RunRecord> cachedHistoryWidthsSource;
+	private long cachedHistoryWidthsPriceRevision = Long.MIN_VALUE;
+	private boolean cachedHistoryWidthsValueMode;
+	private int cachedHistoryWidthsCritterTotal = -1;
+	private HistoryColumnWidths cachedHistoryWidths;
 	private List<RunRecord> cachedHistorySummarySource;
 	private long cachedHistorySummaryPriceRevision = Long.MIN_VALUE;
 	private String cachedHistorySummary;
+	private final Map<RunRecord, String> cachedSparklingSummaries = new java.util.IdentityHashMap<>();
+	private long cachedValueTotalsHistoryRevision = Long.MIN_VALUE;
+	private long cachedValueTotalsPriceRevision = Long.MIN_VALUE;
+	private String cachedValueTotals = "";
 
 	/** Shrinks from the preferred width when the window cannot fit four columns. */
 	private int columnWidth;
@@ -217,7 +228,7 @@ public final class SafariDashboardScreen extends Screen {
 			ControlStyle.SPARKLING_TOGGLE, sparklingRunsOnly, true, () -> {
 			sparklingRunsOnly = !sparklingRunsOnly;
 			historyScroll = 0;
-			cachedHistory = null;
+			invalidateHistoryView();
 			rebuildWidgets();
 		}));
 		x += filterWidth + spacing;
@@ -225,7 +236,7 @@ public final class SafariDashboardScreen extends Screen {
 			ControlStyle.BUTTON, false, false, () -> {
 			historySort = next(historySort, HistorySort.values());
 			historyScroll = 0;
-			cachedHistory = null;
+			invalidateHistoryView();
 			rebuildWidgets();
 		}));
 		x += sortWidth + spacing;
@@ -302,8 +313,9 @@ public final class SafariDashboardScreen extends Screen {
 		drawNavigationRail(graphics);
 		for (Control control : controls) {
 			boolean hovered = control.contains(mouseX, mouseY);
-			int colour = control.sparkling
-				? UIDraw.rainbow((System.currentTimeMillis() % 4_000L) / 4_000f, 0, 12, 0.55f)
+			int colour = SpecialTheme.rainbow() ? SpecialTheme.accent(control.x)
+				: control.sparkling
+				? UIDraw.rainbow(0, 12, 0.55f)
 				: control.style == ControlStyle.TAB
 					? tabColour(Tab.valueOf(control.label.toUpperCase(java.util.Locale.ROOT)))
 					: tabBorderColour();
@@ -313,8 +325,9 @@ public final class SafariDashboardScreen extends Screen {
 					control.y + control.height, hovered ? PANEL_SURFACE_HOVER : PANEL_SURFACE);
 				int boxX = control.x + 6;
 				int boxY = control.y + (control.height - 9) / 2;
-				UIDraw.outline(graphics, control.x, control.y, control.width, control.height, PANEL_BORDER);
-				UIDraw.outline(graphics, boxX, boxY, 9, 9, colour);
+				themedOutline(graphics, control.x, control.y,
+					control.width, control.height, PANEL_BORDER);
+				themedOutline(graphics, boxX, boxY, 9, 9, colour);
 				if (control.selected) {
 					graphics.fill(boxX + 2, boxY + 2, boxX + 7, boxY + 7,
 						0xA0000000 | (colour & 0xFFFFFF));
@@ -338,8 +351,13 @@ public final class SafariDashboardScreen extends Screen {
 					graphics.fill(highlightLeft, control.y + NAV_HIGHLIGHT_INSET,
 						highlightRight, highlightBottom,
 						0xB025303D);
-					graphics.fill(highlightLeft, highlightBottom - 2,
-						highlightRight, highlightBottom, colour);
+					if (SpecialTheme.rainbow()) {
+						SpecialTheme.bar(graphics, highlightLeft, highlightBottom - 2,
+							highlightRight - highlightLeft, 2);
+					} else {
+						graphics.fill(highlightLeft, highlightBottom - 2,
+							highlightRight, highlightBottom, colour);
+					}
 				} else if (hovered) {
 					graphics.fill(control.x + NAV_HIGHLIGHT_INSET,
 						control.y + NAV_HIGHLIGHT_INSET,
@@ -350,11 +368,16 @@ public final class SafariDashboardScreen extends Screen {
 			} else {
 				graphics.fill(control.x, control.y, control.x + control.width,
 					control.y + control.height, hovered ? PANEL_SURFACE_HOVER : PANEL_SURFACE);
-				UIDraw.outline(graphics, control.x, control.y,
+				themedOutline(graphics, control.x, control.y,
 					control.width, control.height, PANEL_BORDER);
 				if (hovered) {
-					graphics.fill(control.x + 1, control.y + 1, control.x + 3,
-						control.y + control.height - 1, colour);
+					if (SpecialTheme.rainbow()) {
+						SpecialTheme.bar(graphics, control.x + 1, control.y + 1,
+							2, control.height - 2);
+					} else {
+						graphics.fill(control.x + 1, control.y + 1, control.x + 3,
+							control.y + control.height - 1, colour);
+					}
 				}
 			}
 			int textX = control.x + Math.round((control.width - font.width(control.label)) / 2.0f);
@@ -379,7 +402,7 @@ public final class SafariDashboardScreen extends Screen {
 		int right = last.x + last.width;
 		graphics.fillGradient(left, first.y, right, first.y + first.height,
 			0x9A18212C, 0x9A111820);
-		UIDraw.outline(graphics, left, first.y, right - left, first.height, PANEL_BORDER);
+		themedOutline(graphics, left, first.y, right - left, first.height, PANEL_BORDER);
 		Control previous = null;
 		for (Control control : controls) {
 			if (control.style != ControlStyle.TAB) continue;
@@ -401,7 +424,8 @@ public final class SafariDashboardScreen extends Screen {
 		graphics.fillGradient(panelLeft, panelTop, panelLeft + panelWidth, panelTop + panelHeight,
 			0xE0121922, PANEL_BACKGROUND);
 		if (SpecialTheme.rainbow()) {
-			SpecialTheme.stars(graphics, panelLeft + 2, panelTop + 2, panelWidth - 4, panelHeight - 4);
+			SpecialTheme.stars(graphics, panelLeft + 2, panelTop + 2,
+				panelWidth - 4, panelHeight - 4, 1.1f);
 			SpecialTheme.border(graphics, panelLeft, panelTop, panelWidth, panelHeight);
 		} else drawPanelBorder(graphics, tabBorderColour());
 		// Drawn after the main frame so a two-pixel themed border cannot cover it.
@@ -496,7 +520,9 @@ public final class SafariDashboardScreen extends Screen {
 		int barY = y + 2;
 		graphics.fill(barLeft, barY, barLeft + barWidth, barY + 5, BAR_TRACK);
 		if (current > 0) {
-			graphics.fill(barLeft, barY, barLeft + Math.max(1, barWidth * current / max), barY + 5, colour);
+			int filled = Math.max(1, barWidth * current / max);
+			if (SpecialTheme.rainbow()) SpecialTheme.bar(graphics, barLeft, barY, filled, 5);
+			else graphics.fill(barLeft, barY, barLeft + filled, barY + 5, colour);
 		}
 		text(graphics, font, Component.literal(current + "/" + max), barLeft + barWidth + 8, y, colour);
 		return y + LINE_HEIGHT + 2;
@@ -626,22 +652,24 @@ public final class SafariDashboardScreen extends Screen {
 
 		// Fixed columns: the proportional font makes padded text impossible to align.
 		int sparkleGutter = font.width("✦") + 3;
-		int tableLeft = left + sparkleGutter;
-		int tableRight = right - sparkleGutter;
+		// Anchor the two outside columns inward, so a fourth digit in the run number or
+		// a larger coin value grows toward the table instead of eating an edge margin.
+		int tableLeft = left + sparkleGutter + 4;
+		int tableRight = right - sparkleGutter - 4;
 		HistoryColumnWidths widths = historyColumnWidths(runs, value, Critters.total());
-		int free = Math.max(0, tableRight - tableLeft - widths.total());
-		int runX = tableLeft + distributedGap(free, 1);
-		int dateX = tableLeft + widths.run() + distributedGap(free, 2);
-		int lengthX = tableLeft + widths.run() + widths.date() + distributedGap(free, 3);
-		int uniquesX = tableLeft + widths.run() + widths.date() + widths.length()
-			+ distributedGap(free, 4);
-		int catchesX = tableLeft + widths.run() + widths.date() + widths.length()
-			+ widths.uniques() + distributedGap(free, 5);
-		centeredCell(graphics, font, "Run", runX, widths.run(), y, LABEL);
+		int runX = tableLeft;
+		int catchesX = tableRight - widths.catches();
+		int middleWidths = widths.date() + widths.length() + widths.uniques();
+		int gap = Math.max(0, (catchesX - runX - widths.run() - middleWidths) / 4);
+		int dateX = runX + widths.run() + gap;
+		int lengthX = dateX + widths.date() + gap;
+		int uniquesX = lengthX + widths.length() + gap;
+		text(graphics, font, Component.literal("Run"), runX, y, LABEL);
 		centeredCell(graphics, font, "Date", dateX, widths.date(), y, LABEL);
 		centeredCell(graphics, font, "Length", lengthX, widths.length(), y, LABEL);
 		centeredCell(graphics, font, "Uniques", uniquesX, widths.uniques(), y, LABEL);
-		centeredCell(graphics, font, "Catches", catchesX, widths.catches(), y, LABEL);
+		text(graphics, font, Component.literal("Catches"),
+			tableRight - font.width("Catches"), y, LABEL);
 		y += LINE_HEIGHT + 2;
 		int rowsTop = y;
 
@@ -663,13 +691,12 @@ public final class SafariDashboardScreen extends Screen {
 				graphics.fill(left, y - 1, right, y + LINE_HEIGHT - 1, 0x24FFFFFF);
 			}
 			if (sparkling) {
-				int runTextLeft = runX + (widths.run() - font.width(row.runLabel)) / 2;
-				int finalTextRight = catchesX + (widths.catches() + font.width(row.catches)) / 2;
-				rainbowText(graphics, font, "✦", runTextLeft - 8 - font.width("✦"), y);
-				rainbowText(graphics, font, "✦", finalTextRight + 8, y);
+				// Fixed outer anchors keep both stars and the table-wall spacing stable
+				// as run numbers and formatted profit values gain digits.
+				rainbowText(graphics, font, "✦", left + 2, y);
+				rainbowText(graphics, font, "✦", right - 2 - font.width("✦"), y);
 			}
-			historyCell(graphics, font, row.runLabel,
-				runX, widths.run(), y, WHITE, sparkling);
+			historyText(graphics, font, row.runLabel, runX, y, WHITE, sparkling);
 			historyCell(graphics, font, row.date,
 				dateX, widths.date(), y, WHITE, sparkling);
 			historyCell(graphics, font, row.length,
@@ -677,8 +704,8 @@ public final class SafariDashboardScreen extends Screen {
 			historyCell(graphics, font, row.uniques,
 				uniquesX, widths.uniques(), y,
 				row.perfect ? CAUGHT_BY_YOU : WHITE, sparkling);
-			historyCell(graphics, font, row.catches,
-				catchesX, widths.catches(), y,
+			historyText(graphics, font, row.catches,
+				tableRight - font.width(row.catches), y,
 				row.priced ? COINS : DIM, sparkling);
 			y += LINE_HEIGHT;
 		}
@@ -803,14 +830,15 @@ public final class SafariDashboardScreen extends Screen {
 	private void historyCell(GuiGraphicsExtractor graphics, Font font, String value,
 			int x, int width, int y, int colour, boolean sparkling) {
 		int textX = x + (width - font.width(value)) / 2;
+		historyText(graphics, font, value, textX, y, colour, sparkling);
+	}
+
+	private void historyText(GuiGraphicsExtractor graphics, Font font, String value,
+			int x, int y, int colour, boolean sparkling) {
 		if (sparkling && !SpecialTheme.rainbow()) {
-			float phase = (System.currentTimeMillis() % 4_000L) / 4_000f;
-			float position = (textX - panelLeft) / (float) Math.max(1, panelWidth);
-			int rainbow = 0xFF000000 | (java.awt.Color.HSBtoRGB(
-				(phase + position) % 1f, 0.45f, 1f) & 0xFFFFFF);
-			text(graphics, font, Component.literal(value), textX, y, rainbow);
+			UIDraw.rainbowText(graphics, font, value, x, y, 0.45f);
 		} else {
-			text(graphics, font, Component.literal(value), textX, y, colour);
+			text(graphics, font, Component.literal(value), x, y, colour);
 		}
 	}
 
@@ -845,6 +873,12 @@ public final class SafariDashboardScreen extends Screen {
 
 	private HistoryColumnWidths historyColumnWidths(List<RunRecord> runs, boolean value,
 			int totalCritters) {
+		long priceRevision = BazaarPrices.revision();
+		if (cachedHistoryWidthsSource == runs
+				&& cachedHistoryWidthsPriceRevision == priceRevision
+				&& cachedHistoryWidthsValueMode == value
+				&& cachedHistoryWidthsCritterTotal == totalCritters
+				&& cachedHistoryWidths != null) return cachedHistoryWidths;
 		int run = font.width("Run");
 		int date = font.width("Date");
 		int length = font.width("Length");
@@ -858,17 +892,20 @@ public final class SafariDashboardScreen extends Screen {
 			uniques = Math.max(uniques, font.width(row.uniques()));
 			catches = Math.max(catches, font.width(row.catches()));
 		}
-		return new HistoryColumnWidths(run, date, length, uniques, catches);
-	}
-
-	/** Cumulative sixths keep all five column gaps and both outer margins even. */
-	private static int distributedGap(int free, int boundary) {
-		return Math.round(free * boundary / 6f);
+		cachedHistoryWidthsSource = runs;
+		cachedHistoryWidthsPriceRevision = priceRevision;
+		cachedHistoryWidthsValueMode = value;
+		cachedHistoryWidthsCritterTotal = totalCritters;
+		cachedHistoryWidths = new HistoryColumnWidths(run, date, length, uniques, catches);
+		return cachedHistoryWidths;
 	}
 
 	private record HistoryDisplayRow(RunRecord run, int year, boolean divider) { }
 
-	private static List<HistoryDisplayRow> historyDisplayRows(List<RunRecord> runs) {
+	private List<HistoryDisplayRow> historyDisplayRows(List<RunRecord> runs) {
+		if (cachedHistoryDisplaySource == runs && cachedHistoryDisplayRows != null) {
+			return cachedHistoryDisplayRows;
+		}
 		List<HistoryDisplayRow> rows = new ArrayList<>();
 		Integer previousYear = null;
 		for (RunRecord run : runs) {
@@ -880,7 +917,9 @@ public final class SafariDashboardScreen extends Screen {
 			previousYear = year;
 		}
 		if (previousYear != null) rows.add(new HistoryDisplayRow(null, previousYear, true));
-		return rows;
+		cachedHistoryDisplaySource = runs;
+		cachedHistoryDisplayRows = List.copyOf(rows);
+		return cachedHistoryDisplayRows;
 	}
 
 	private static int countRuns(List<HistoryDisplayRow> rows, int from, int to) {
@@ -900,6 +939,12 @@ public final class SafariDashboardScreen extends Screen {
 		centered(graphics, font, label, y, tabBorderColour());
 	}
 
+	private void themedOutline(GuiGraphicsExtractor graphics, int x, int y,
+			int width, int height, int fallback) {
+		if (SpecialTheme.rainbow()) SpecialTheme.border(graphics, x, y, width, height, 1);
+		else UIDraw.outline(graphics, x, y, width, height, fallback);
+	}
+
 	private void rainbowCentered(GuiGraphicsExtractor graphics, Font font, String value, int y) {
 		rainbowText(graphics, font, value, panelLeft + (panelWidth - font.width(value)) / 2, y);
 	}
@@ -910,19 +955,22 @@ public final class SafariDashboardScreen extends Screen {
 
 	/** Chronological saved-run number, independent of the current filter and sort. */
 	private int runNumber(RunRecord target) {
-		if (cachedRunNumberSize != RunHistory.size()) {
+		long historyRevision = RunHistory.revision();
+		if (cachedRunNumberRevision != historyRevision) {
 			List<RunRecord> chronological = new ArrayList<>(RunHistory.runs());
 			chronological.sort(Comparator.comparingLong(run -> run.started));
 			cachedRunNumbers.clear();
 			for (int i = 0; i < chronological.size(); i++) {
 				cachedRunNumbers.put(chronological.get(i), i + 1);
 			}
-			cachedRunNumberSize = RunHistory.size();
+			cachedRunNumberRevision = historyRevision;
 		}
 		return cachedRunNumbers.getOrDefault(target, 0);
 	}
 
-	private static String sparklingSummary(RunRecord run) {
+	private String sparklingSummary(RunRecord run) {
+		String cached = cachedSparklingSummaries.get(run);
+		if (cached != null) return cached;
 		Map<String, Integer> species = new java.util.LinkedHashMap<>();
 		if (run.sparklings != null) {
 			for (RunRecord.SparklingRecord sparkling : run.sparklings) {
@@ -934,12 +982,23 @@ public final class SafariDashboardScreen extends Screen {
 		String names = species.entrySet().stream()
 			.map(entry -> entry.getKey() + (entry.getValue() > 1 ? " ×" + entry.getValue() : ""))
 			.collect(java.util.stream.Collectors.joining(", "));
-		return "✦ " + sparklingCount(run) + " Sparkling" + (sparklingCount(run) == 1 ? "" : "s")
+		String summary = "✦ " + sparklingCount(run) + " Sparkling" + (sparklingCount(run) == 1 ? "" : "s")
 			+ (names.isEmpty() ? "" : ": " + names) + " ✦";
+		cachedSparklingSummaries.put(run, summary);
+		return summary;
 	}
 
 	private List<RunRecord> filteredHistory() {
-		if (cachedHistory != null && cachedHistorySize == RunHistory.size()) return cachedHistory;
+		long historyRevision = RunHistory.revision();
+		if (cachedHistory != null && cachedHistoryRevision == historyRevision) return cachedHistory;
+		if (cachedHistoryRevision != historyRevision) {
+			cachedHistoryRows.clear();
+			cachedSparklingSummaries.clear();
+			cachedRunNumbers.clear();
+			cachedHistoryDisplayRows = null;
+			cachedHistoryWidths = null;
+			cachedHistorySummary = null;
+		}
 		List<RunRecord> runs = new ArrayList<>();
 		for (RunRecord run : RunHistory.runs()) {
 			if (!sparklingRunsOnly || sparklingCount(run) > 0) runs.add(run);
@@ -957,9 +1016,19 @@ public final class SafariDashboardScreen extends Screen {
 				.thenComparing(Comparator.comparingLong((RunRecord run) -> run.started).reversed());
 		};
 		runs.sort(order);
-		cachedHistorySize = RunHistory.size();
+		cachedHistoryRevision = historyRevision;
 		cachedHistory = List.copyOf(runs);
 		return cachedHistory;
+	}
+
+	private void invalidateHistoryView() {
+		cachedHistory = null;
+		cachedHistoryDisplaySource = null;
+		cachedHistoryDisplayRows = null;
+		cachedHistoryWidthsSource = null;
+		cachedHistoryWidths = null;
+		cachedHistorySummarySource = null;
+		cachedHistorySummary = null;
 	}
 
 	private String historySummary() {
@@ -977,7 +1046,9 @@ public final class SafariDashboardScreen extends Screen {
 			runs.size(), runs.size() == 1 ? "" : "s", STAT_SEPARATOR,
 			formatHours(played), STAT_SEPARATOR, catches);
 		if (showValue() && BazaarPrices.known()) {
-			summary += STAT_SEPARATOR + "%s Coins".formatted(BazaarPrices.format(BazaarPrices.totalValue(runs)));
+			long value = sparklingRunsOnly
+				? BazaarPrices.totalValue(runs) : BazaarPrices.totalHistoryValue();
+			summary += STAT_SEPARATOR + "%s Coins".formatted(BazaarPrices.format(value));
 		}
 		int unknown = sparklingRunsOnly ? unknownSparklings() : 0;
 		if (unknown > 0) {
@@ -1006,14 +1077,20 @@ public final class SafariDashboardScreen extends Screen {
 	}
 
 	private String valueTotalsText() {
-		List<RunRecord> runs = RunHistory.runs();
 		int priced = RunHistory.pricedRuns();
 		if (!BazaarPrices.known() || priced == 0) return "";
-		long total = BazaarPrices.totalValue(runs);
-		return "%s Coins%s%s Per Run%s%d Shards%s%d Essence"
+		long historyRevision = RunHistory.revision();
+		long priceRevision = BazaarPrices.revision();
+		if (cachedValueTotalsHistoryRevision == historyRevision
+				&& cachedValueTotalsPriceRevision == priceRevision) return cachedValueTotals;
+		long total = BazaarPrices.totalHistoryValue();
+		cachedValueTotals = "%s Coins%s%s Per Run%s%d Shards%s%d Essence"
 			.formatted(BazaarPrices.format(total), STAT_SEPARATOR,
 				BazaarPrices.format(total / priced), STAT_SEPARATOR, RunHistory.totalShards(),
 				STAT_SEPARATOR, RunHistory.totalSafariEssence());
+		cachedValueTotalsHistoryRevision = historyRevision;
+		cachedValueTotalsPriceRevision = priceRevision;
+		return cachedValueTotals;
 	}
 
 	private void centered(GuiGraphicsExtractor graphics, Font font, String text, int y, int colour) {

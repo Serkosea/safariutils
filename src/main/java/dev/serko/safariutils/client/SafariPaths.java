@@ -1,6 +1,5 @@
 package dev.serko.safariutils.client;
 
-import dev.serko.safariutils.SafariUtils;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.IOException;
@@ -41,6 +40,10 @@ public final class SafariPaths {
 		return LOGS;
 	}
 
+	public static Path operationalLog() {
+		return LOGS.resolve("safariutils.log");
+	}
+
 	/** Moves legacy files into the organized layout without overwriting any destination. */
 	public static void migrateLegacyFiles() {
 		try {
@@ -49,7 +52,7 @@ public final class SafariPaths {
 			moveIfNeeded(CONFIG.resolve("safariutils-runs.json"), runHistory());
 			moveLegacyOutputLogs(CONFIG.resolve("safariutils-debug-logs"));
 		} catch (IOException migrationError) {
-			SafariUtils.LOGGER.error("Could not migrate SafariUtils config files", migrationError);
+			OperationalLog.error("CONFIG/MIGRATION", migrationError);
 		}
 	}
 

@@ -3,6 +3,7 @@
   "package": "dev.serko.safariutils.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
+    "GuiGraphicsExtractorAccessor",
     "GuiMixin",
     "SoundEngineMixin",
     "ClientPacketListenerMixin"

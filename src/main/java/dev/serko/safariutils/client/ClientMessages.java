@@ -1,6 +1,8 @@
 package dev.serko.safariutils.client;
 
 import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 
@@ -24,7 +26,9 @@ public final class ClientMessages {
 	}
 
 	public static Component prefixed(String text, Tone tone) {
-		return prefix().append(Component.literal(withoutTrailingPeriod(text))
+		String message = withoutTrailingPeriod(text);
+		if (SpecialTheme.rainbow()) return themedMessage(message, false);
+		return prefix().append(Component.literal(message)
 			.withStyle(style -> style.withColor(toneColour(tone))));
 	}
 
@@ -33,9 +37,34 @@ public final class ClientMessages {
 	}
 
 	public static Component header(String text) {
+		String message = withoutTrailingPeriod(text);
+		if (SpecialTheme.rainbow()) return themedMessage(message, true);
 		return prefix()
-			.append(Component.literal(withoutTrailingPeriod(text)).withStyle(style ->
+			.append(Component.literal(message).withStyle(style ->
 				style.withColor(WARNING).withBold(true)));
+	}
+
+	/**
+	 * Builds one immutable chat component at send time. Unlike animated GUI text,
+	 * retained chat lines never need to be rebuilt while they remain visible.
+	 */
+	private static Component themedMessage(String text, boolean boldBody) {
+		String complete = "[SafariUtils] " + text;
+		int bodyStart = "[SafariUtils] ".length();
+		Font font = Minecraft.getInstance().font;
+		float phase = RainbowColours.phase(RainbowColours.frameId());
+		MutableComponent result = Component.empty();
+		int cursor = 0;
+		for (int index = 0; index < complete.length(); index++) {
+			String character = String.valueOf(complete.charAt(index));
+			int colour = RainbowColours.phased(phase, cursor / 96f, 0.5f, 1f) & 0xFFFFFF;
+			boolean bold = boldBody && index >= bodyStart;
+			Component segment = Component.literal(character).withStyle(style ->
+				style.withColor(colour).withBold(bold));
+			result.append(segment);
+			cursor += font.width(segment);
+		}
+		return result;
 	}
 
 	/** Turns common API outages into a useful message while preserving specific errors. */

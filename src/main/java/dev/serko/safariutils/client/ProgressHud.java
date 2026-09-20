@@ -24,6 +24,9 @@ public final class ProgressHud implements HudElement {
 	private static final int DIM = 0xFF888888;
 	private static final int WHITE = 0xFFFFFFFF;
 	private static final int DONE = 0xFF55FF55;
+	private static final int[] JOIN_TIMER_COLOURS = {
+		0xFF55FF55, 0xFFFFFF55, 0xFFFFAA00, 0xFFFF5555, 0xFFAA0000
+	};
 	/** Gold, as coins are everywhere else in SkyBlock. */
 	private static final int COINS = 0xFFFFD700;
 
@@ -66,6 +69,11 @@ public final class ProgressHud implements HudElement {
 			int expected = PartyRosterWatch.known() ? PartyRosterWatch.expectedPlayers() : 4;
 			panel.titleSuffix("Critter Safari ", "(%d/%d)".formatted(joined, expected),
 				HudBorderStyle.progressTitle(), joined >= expected ? 0xFF55FF55 : 0xFFFF5555);
+			long remaining = SessionManager.ticketWindowRemainingMillis();
+			if (remaining >= 0L) {
+				String value = remaining == 0L ? "Closed" : formatCountdown(remaining);
+				panel.pair("Join", value, LABEL, joinTimerColour(remaining));
+			}
 		} else {
 			panel.title(live ? "Critter Safari  "
 				+ formatDuration(session.elapsedMillis(System.currentTimeMillis()))
@@ -148,6 +156,30 @@ public final class ProgressHud implements HudElement {
 	static String formatDuration(long millis) {
 		long seconds = millis / 1000;
 		return "%d:%02d".formatted(seconds / 60, seconds % 60);
+	}
+
+	private static String formatCountdown(long millis) {
+		long seconds = (millis + 999L) / 1_000L;
+		return "%d:%02d".formatted(seconds / 60, seconds % 60);
+	}
+
+	/** Contest-style green-to-dark-red progression across the entire join window. */
+	private static int joinTimerColour(long remaining) {
+		double progress = 1.0 - Math.clamp(remaining / 33_000.0, 0.0, 1.0);
+		double scaled = progress * (JOIN_TIMER_COLOURS.length - 1);
+		int index = Math.min(JOIN_TIMER_COLOURS.length - 2, (int) scaled);
+		return blend(JOIN_TIMER_COLOURS[index], JOIN_TIMER_COLOURS[index + 1], scaled - index);
+	}
+
+	private static int blend(int from, int to, double amount) {
+		amount = Math.clamp(amount, 0.0, 1.0);
+		int red = Math.round((float) (((from >> 16) & 0xFF) * (1.0 - amount)
+			+ ((to >> 16) & 0xFF) * amount));
+		int green = Math.round((float) (((from >> 8) & 0xFF) * (1.0 - amount)
+			+ ((to >> 8) & 0xFF) * amount));
+		int blue = Math.round((float) ((from & 0xFF) * (1.0 - amount)
+			+ (to & 0xFF) * amount));
+		return 0xFF000000 | red << 16 | green << 8 | blue;
 	}
 
 	static int rarityColour(Critter critter) {

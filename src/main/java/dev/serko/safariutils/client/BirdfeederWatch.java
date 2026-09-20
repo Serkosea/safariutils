@@ -261,7 +261,7 @@ public final class BirdfeederWatch {
 		for (int i = 0; i < held.length; i++) {
 			lastHeld[i] = Math.max(0, held[i]);
 		}
-		onInventoryUpdated(seeds, worms, berries);
+		onStableInventoryUpdated(held);
 	}
 
 	/** Latches Forest completion; the next inventory scan supplies authoritative totals. */
@@ -275,8 +275,18 @@ public final class BirdfeederWatch {
 
 	/** Sends each feed alert once, using the latest inventory scan rather than chat timing. */
 	public static void onInventoryUpdated(int seeds, int worms, int berries) {
+		onStableInventoryUpdated(stableHeldCounts(seeds, worms, berries));
+	}
+
+	/** Returns one cursor-safe feed snapshot for every local HUD and sync consumer. */
+	static int[] stableHeldCounts(int seeds, int worms, int berries) {
 		int[] held = {Math.max(0, seeds), Math.max(0, worms), Math.max(0, berries)};
 		includeCarriedFeed(held);
+		return held;
+	}
+
+	/** Processes a snapshot already normalized by {@link #stableHeldCounts(int, int, int)}. */
+	static void onStableInventoryUpdated(int[] held) {
 		dev.serko.safariutils.api.PartyItemSyncProviders.onInventoryFeed(held[0], held[1], held[2]);
 		long now = System.currentTimeMillis();
 		boolean birdfeederDeposit = isBirdfeederOpen()
@@ -352,13 +362,15 @@ public final class BirdfeederWatch {
 	/** A stack held by the cursor has not entered the feeder yet. */
 	private static void includeCarriedFeed(int[] held) {
 		var screen = ClientCompat.screen();
-		if (screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> container
-			&& screen.getTitle().getString().contains("Birdfeeder")) {
+		if (screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> container) {
 			var carried = container.getMenu().getCarried();
-			if (carried.isEmpty()) return;
-			int type = feedTypeIn(carried.getHoverName().getString());
-			if (type >= 0) held[type] += carried.getCount();
-			return;
+			if (!carried.isEmpty()) {
+				int type = feedTypeIn(carried.getHoverName().getString());
+				if (type >= 0) {
+					held[type] += carried.getCount();
+					return;
+				}
+			}
 		}
 		long now = System.currentTimeMillis();
 		if (closingCursorFeedUntil == 0 || now > closingCursorFeedUntil) {

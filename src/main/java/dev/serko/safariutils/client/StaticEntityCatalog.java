@@ -27,15 +27,18 @@ public final class StaticEntityCatalog {
 	private static Data bundled;
 	private static boolean dirty;
 	private static long dirtyAt;
+	private static final Map<String, Set<BlockPos>> positionCache = new LinkedHashMap<>();
 
 	private StaticEntityCatalog() {
 	}
 
 	public static Set<BlockPos> positions(String critter) {
-		Set<String> encoded = new LinkedHashSet<>();
-		encoded.addAll(getBundled().positions.getOrDefault(critter, Set.of()));
-		encoded.addAll(getLocal().positions.getOrDefault(critter, Set.of()));
-		return decode(encoded);
+		return positionCache.computeIfAbsent(critter, name -> {
+			Set<String> encoded = new LinkedHashSet<>();
+			encoded.addAll(getBundled().positions.getOrDefault(name, Set.of()));
+			encoded.addAll(getLocal().positions.getOrDefault(name, Set.of()));
+			return Set.copyOf(decode(encoded));
+		});
 	}
 
 	public static void learn(String critter, BlockPos pos) {
@@ -48,6 +51,7 @@ public final class StaticEntityCatalog {
 		if (getBundled().positions.getOrDefault(critter, Set.of()).contains(encoded)) return;
 		Set<String> positions = getLocal().positions.computeIfAbsent(critter, ignored -> new LinkedHashSet<>());
 		if (!positions.add(encoded)) return;
+		positionCache.remove(critter);
 		DebugLog.line("WAYPOINT", "learned entity/" + critter + " at " + encoded);
 		dirty = true;
 		dirtyAt = System.currentTimeMillis();
@@ -67,7 +71,8 @@ public final class StaticEntityCatalog {
 			if (Files.isRegularFile(SafariPaths.staticEntities())) {
 				local = GSON.fromJson(Files.readString(SafariPaths.staticEntities()), DATA_TYPE);
 			}
-		} catch (IOException | RuntimeException ignored) {
+		} catch (IOException | RuntimeException unreadable) {
+			OperationalLog.error("CATALOG/ENTITIES_LOAD", unreadable);
 		}
 		if (local == null) local = new Data();
 		normalize(local);
@@ -104,7 +109,8 @@ public final class StaticEntityCatalog {
 		if (bundled != null) return bundled;
 		try (var stream = StaticEntityCatalog.class.getResourceAsStream(BUNDLED)) {
 			if (stream != null) bundled = GSON.fromJson(new InputStreamReader(stream, StandardCharsets.UTF_8), DATA_TYPE);
-		} catch (IOException | RuntimeException ignored) {
+		} catch (IOException | RuntimeException unreadable) {
+			OperationalLog.error("CATALOG/ENTITIES_BUNDLED", unreadable);
 		}
 		if (bundled == null) bundled = new Data();
 		normalize(bundled);
@@ -118,7 +124,10 @@ public final class StaticEntityCatalog {
 			AtomicFiles.writeString(path, GSON.toJson(getLocal(), DATA_TYPE),
 				TestingMode.saveLearnedLocations());
 			dirty = false;
-		} catch (IOException ignored) {
+		} catch (IOException failed) {
+			// Keep retrying, but no faster than the normal coalesced-save interval.
+			dirtyAt = System.currentTimeMillis();
+			OperationalLog.error("CATALOG/ENTITIES_SAVE", failed);
 		}
 	}
 

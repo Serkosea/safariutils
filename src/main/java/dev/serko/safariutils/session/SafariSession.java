@@ -7,6 +7,7 @@ import dev.serko.safariutils.parse.ChatParser;
 import dev.serko.safariutils.parse.CritterEvent;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -30,7 +31,15 @@ public final class SafariSession {
 	private final Map<Critter, Integer> failures = new LinkedHashMap<>();
 	/** critter -> partymate name -> how many times they caught it. */
 	private final Map<Critter, Map<String, Integer>> sharedCatches = new LinkedHashMap<>();
+	/** Shared totals kept beside the detailed player map for constant-time HUD reads. */
+	private final Map<Critter, Integer> sharedCatchTotals = new LinkedHashMap<>();
+	private final Map<SafariBiome, Integer> ownTotalsByBiome = new EnumMap<>(SafariBiome.class);
+	private final Map<SafariBiome, Integer> ownUniquesByBiome = new EnumMap<>(SafariBiome.class);
+	private final Map<SafariBiome, Integer> sharedTotalsByBiome = new EnumMap<>(SafariBiome.class);
+	private final Map<SafariBiome, Integer> partyUniquesByBiome = new EnumMap<>(SafariBiome.class);
 	private final List<SparklingOccurrence> sparklingOccurrences = new ArrayList<>();
+	private final Set<Critter> sparklingSpecies = new LinkedHashSet<>();
+	private final Set<Critter> sparklingSpeciesView = Collections.unmodifiableSet(sparklingSpecies);
 	/**
 	 * How many of each species are loaded right now, replaced wholesale each scan.
 	 *
@@ -42,8 +51,17 @@ public final class SafariSession {
 
 	private int ownShards;
 	private int sharedShards;
+	private int ownTotal;
+	private int sharedTotal;
+	private int partyUnique;
+	private int totalAttempts;
+	private int totalFailures;
 	/** The same shards as ownShards/sharedShards, but broken down by species — for pricing. */
 	private final Map<Critter, Integer> shardCounts = new LinkedHashMap<>();
+	private final Map<Critter, Integer> shardCountsView = Collections.unmodifiableMap(shardCounts);
+	private long catchRevision;
+	private long uniquePerPlayerRevision = Long.MIN_VALUE;
+	private Map<String, Map<SafariBiome, Integer>> uniquePerPlayerCache = Map.of();
 	private int safariEssence;
 	private int rainbowFeathers;
 	private Integer lastEssenceBalance;
@@ -62,18 +80,37 @@ public final class SafariSession {
 
 		switch (event.type()) {
 			case OWN_CATCH -> {
+				boolean newlyPartyCaught = !caughtByParty(critter);
+				boolean newlyOwnCaught = !caughtByYou(critter);
 				ownCatches.merge(critter, 1, Integer::sum);
+				ownTotal++;
+				ownTotalsByBiome.merge(critter.biome(), 1, Integer::sum);
+				if (newlyOwnCaught) ownUniquesByBiome.merge(critter.biome(), 1, Integer::sum);
+				if (newlyPartyCaught) recordPartyUnique(critter);
 				ownShards += event.shards();
 				shardCounts.merge(critter, event.shards(), Integer::sum);
+				catchRevision++;
 			}
 			case SHARED_CATCH -> {
+				boolean newlyPartyCaught = !caughtByParty(critter);
 				sharedCatches.computeIfAbsent(critter, c -> new TreeMap<>())
 					.merge(event.catcher(), 1, Integer::sum);
+				sharedCatchTotals.merge(critter, 1, Integer::sum);
+				sharedTotal++;
+				sharedTotalsByBiome.merge(critter.biome(), 1, Integer::sum);
+				if (newlyPartyCaught) recordPartyUnique(critter);
 				sharedShards += event.shards();
 				shardCounts.merge(critter, event.shards(), Integer::sum);
+				catchRevision++;
 			}
-			case ATTEMPT -> attempts.merge(critter, 1, Integer::sum);
-			case FAILED -> failures.merge(critter, 1, Integer::sum);
+			case ATTEMPT -> {
+				attempts.merge(critter, 1, Integer::sum);
+				totalAttempts++;
+			}
+			case FAILED -> {
+				failures.merge(critter, 1, Integer::sum);
+				totalFailures++;
+			}
 			case ENTERED_SAFARI -> {
 				return;
 			}
@@ -82,10 +119,16 @@ public final class SafariSession {
 		if (event.sparkling()) rainbowFeathers++;
 	}
 
+	private void recordPartyUnique(Critter critter) {
+		partyUnique++;
+		partyUniquesByBiome.merge(critter.biome(), 1, Integer::sum);
+	}
+
 	/** Adds a globally announced Sparkling without conflating it with the reward line. */
 	public void recordSparkling(Critter critter, String catcher, long atMillis) {
 		lastEventMillis = atMillis;
 		sparklingOccurrences.add(new SparklingOccurrence(critter, catcher, atMillis));
+		sparklingSpecies.add(critter);
 	}
 
 	public void recordBonusRainbowFeather(long atMillis) {
@@ -133,25 +176,23 @@ public final class SafariSession {
 	}
 
 	public int ownUnique(SafariBiome biome) {
-		return (int) ownCatches.keySet().stream().filter(c -> c.biome() == biome).count();
+		return ownUniquesByBiome.getOrDefault(biome, 0);
 	}
 
 	/** Every catch you made, duplicates included. */
 	public int ownTotal() {
-		return ownCatches.values().stream().mapToInt(Integer::intValue).sum();
+		return ownTotal;
 	}
 
 	public int ownTotal(SafariBiome biome) {
-		return ownCatches.entrySet().stream()
-			.filter(e -> e.getKey().biome() == biome)
-			.mapToInt(Map.Entry::getValue).sum();
+		return ownTotalsByBiome.getOrDefault(biome, 0);
 	}
 
 	// --- party progress (yours + loot share) ---------------------------------
 
 	/** True once anyone in the party has caught {@code critter} at least once. */
 	public boolean caughtByParty(Critter critter) {
-		return caughtByYou(critter) || sharedCatches.containsKey(critter);
+		return caughtByYou(critter) || sharedCatchTotals.getOrDefault(critter, 0) > 0;
 	}
 
 	/** Replaces the live nearby counts with a fresh scan of what is loaded. */
@@ -204,11 +245,11 @@ public final class SafariSession {
 	 * excluded so progress bars can only advance from catches and loot shares.
 	 */
 	public int partyUnique() {
-		return (int) Critters.all().stream().filter(this::caughtByParty).count();
+		return partyUnique;
 	}
 
 	public int partyUnique(SafariBiome biome) {
-		return (int) Critters.inBiome(biome).stream().filter(this::caughtByParty).count();
+		return partyUniquesByBiome.getOrDefault(biome, 0);
 	}
 
 	/** Every catch by anyone in the party, duplicates included. */
@@ -217,23 +258,16 @@ public final class SafariSession {
 	}
 
 	public int partyTotal(SafariBiome biome) {
-		return ownTotal(biome) + sharedCatches.entrySet().stream()
-			.filter(e -> e.getKey().biome() == biome)
-			.flatMap(e -> e.getValue().values().stream())
-			.mapToInt(Integer::intValue).sum();
+		return ownTotal(biome) + sharedTotalsByBiome.getOrDefault(biome, 0);
 	}
 
 	private int sharedTotal() {
-		return sharedCatches.values().stream()
-			.flatMap(m -> m.values().stream())
-			.mapToInt(Integer::intValue).sum();
+		return sharedTotal;
 	}
 
 	/** How many times {@code critter} was caught this run by anyone in the party. */
 	public int partyCatches(Critter critter) {
-		int shared = sharedCatches.getOrDefault(critter, Map.of()).values().stream()
-			.mapToInt(Integer::intValue).sum();
-		return ownCatches.getOrDefault(critter, 0) + shared;
+		return ownCatches.getOrDefault(critter, 0) + sharedCatchTotals.getOrDefault(critter, 0);
 	}
 
 	/** How many times you personally caught {@code critter} this run — loot share not counted. */
@@ -286,7 +320,8 @@ public final class SafariSession {
 	 * under their own name. This is the "who is covering which biome" view.
 	 */
 	public Map<String, Map<SafariBiome, Integer>> uniquePerPlayer() {
-		Map<String, Map<SafariBiome, Integer>> result = new LinkedHashMap<>();
+		if (uniquePerPlayerRevision == catchRevision) return uniquePerPlayerCache;
+		Map<String, Map<SafariBiome, Integer>> result = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
 		Map<SafariBiome, Integer> mine = new EnumMap<>(SafariBiome.class);
 		for (Critter critter : ownCatches.keySet()) {
@@ -294,7 +329,7 @@ public final class SafariSession {
 		}
 		if (!mine.isEmpty()) result.put(selfName, mine);
 
-		Map<String, Map<SafariBiome, Integer>> others = new TreeMap<>();
+		Map<String, Map<SafariBiome, Integer>> others = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 		for (Map.Entry<Critter, Map<String, Integer>> entry : sharedCatches.entrySet()) {
 			SafariBiome biome = entry.getKey().biome();
 			for (String player : entry.getValue().keySet()) {
@@ -303,10 +338,12 @@ public final class SafariSession {
 			}
 		}
 		result.putAll(others);
-		return result;
+		uniquePerPlayerCache = Collections.unmodifiableMap(result);
+		uniquePerPlayerRevision = catchRevision;
+		return uniquePerPlayerCache;
 	}
 
-	/** Every player seen this run, local player first. */
+	/** Every player seen this run, alphabetically by display name. */
 	public List<String> players() {
 		return new ArrayList<>(uniquePerPlayer().keySet());
 	}
@@ -320,10 +357,7 @@ public final class SafariSession {
 
 	/** Partymates' catches by species, summed across whoever made them. */
 	public Map<Critter, Integer> sharedCatchCounts() {
-		Map<Critter, Integer> totals = new LinkedHashMap<>();
-		sharedCatches.forEach((critter, byPlayer) -> totals.put(critter,
-			byPlayer.values().stream().mapToInt(Integer::intValue).sum()));
-		return totals;
+		return Map.copyOf(sharedCatchTotals);
 	}
 
 	/** Capsules thrown, by species. */
@@ -340,17 +374,15 @@ public final class SafariSession {
 	}
 
 	public int totalAttempts() {
-		return attempts.values().stream().mapToInt(Integer::intValue).sum();
+		return totalAttempts;
 	}
 
 	public int totalFailures() {
-		return failures.values().stream().mapToInt(Integer::intValue).sum();
+		return totalFailures;
 	}
 
 	public Set<Critter> sparklings() {
-		Set<Critter> species = new LinkedHashSet<>();
-		for (SparklingOccurrence occurrence : sparklingOccurrences) species.add(occurrence.critter());
-		return Set.copyOf(species);
+		return sparklingSpeciesView;
 	}
 
 	public List<SparklingOccurrence> sparklingOccurrences() {
@@ -376,7 +408,7 @@ public final class SafariSession {
 	 * exactly what reached your inventory and nothing more.
 	 */
 	public Map<Critter, Integer> shardCounts() {
-		return Map.copyOf(shardCounts);
+		return shardCountsView;
 	}
 
 	public String selfName() {

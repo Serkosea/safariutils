@@ -132,10 +132,13 @@ public final class SparklingMode {
 		return switch (biome) {
 			case FOREST -> forestFloorDropsExhausted()
 				|| allSharedFinished(session, "Bluebird", "Parakeet", "Macaw");
-			case CAVERN -> sharedFinished(session, "Gemzie") || SafariObjectives.allGemsFound();
+			case CAVERN -> sharedFinished(session, "Gemzie")
+				|| dev.serko.safariutils.api.PartyItemSyncProviders.objectiveAllowsFloorDropHide(biome)
+				|| SafariObjectives.canPersonallyOpenGemzieDoor(SafariObjectives.placedGemMask());
 			case ICY -> icyFloorDropsExhausted(session);
 			case HAUNTED -> (sharedFinished(session, "Doomspiral")
-					|| SafariObjectives.incenseSecured() >= 4)
+					|| dev.serko.safariutils.api.PartyItemSyncProviders.objectiveAllowsFloorDropHide(biome)
+					|| SafariObjectives.canPersonallyFinishDoomspiral(SafariObjectives.incenseUsed()))
 				&& (sharedFinished(session, "Gimmiegold")
 					|| isShared(Critters.byName("Gimmiegold"))
 						&& SafariObjectives.shiningCoinsHeld() >= 1);

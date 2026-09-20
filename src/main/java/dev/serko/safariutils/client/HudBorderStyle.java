@@ -59,14 +59,19 @@ final class HudBorderStyle {
 		return colour == 0 ? 0xFFFFAA00 : colour;
 	}
 
-	static int birdFeed() {
+	static int partyObjectives() {
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
-		if (!display.birdFeedBorder) return 0;
-		if (display.birdFeedBorderUseStatus) {
-			return dev.serko.safariutils.api.PartyItemSyncProviders.feedDone()
+		if (!display.partyObjectiveBorder) return 0;
+		if (display.partyObjectiveBorderUseStatus) {
+			boolean complete = dev.serko.safariutils.api.PartyItemSyncProviders.active()
+				? dev.serko.safariutils.api.PartyItemSyncProviders.objectiveComplete()
+				: PartyObjectiveHud.localObjectiveComplete();
+			return complete
 				? 0xFF55FF55 : 0xFFFF5555;
 		}
-		return Colours.argb(display.birdFeedBorderColour, 0xFFFF5555);
+		SafariBiome biome = SafariLocation.biome();
+		if (display.partyObjectiveBorderUseBiomeColour && biome != null) return 0xFF000000 | biome.colour();
+		return Colours.argb(display.partyObjectiveBorderColour, 0xFFFF5555);
 	}
 
 	static int editor(HudBox box) {
@@ -76,7 +81,7 @@ final class HudBorderStyle {
 				dev.serko.safariutils.session.SessionManager.currentOrLast());
 			case CONTEST -> Colours.argb(ConfigManager.get().display.contestHudBorderColour,
 				BETWEEN_CONTESTS_GOLD);
-			case BIRD_FEED -> birdFeed();
+			case PARTY_OBJECTIVE -> partyObjectives();
 			case ALERTS -> 0xFFFFC857;
 		};
 	}

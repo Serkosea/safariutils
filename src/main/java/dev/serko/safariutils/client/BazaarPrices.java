@@ -4,6 +4,7 @@ import com.google.gson.stream.JsonReader;
 import dev.serko.safariutils.SafariUtils;
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.Critters;
+import dev.serko.safariutils.session.RunHistory;
 import dev.serko.safariutils.session.RunRecord;
 import dev.serko.safariutils.session.SafariSession;
 
@@ -18,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -62,6 +64,15 @@ public final class BazaarPrices {
 	private static volatile HttpClient http;
 	/** Written by the worker and reset after a successful response. */
 	private static volatile int failures;
+
+	/** Saved runs are immutable, so each only needs pricing once per market snapshot/mode. */
+	private static final Map<RunRecord, Long> RUN_VALUE_CACHE = new IdentityHashMap<>();
+	private static long runValuePriceRevision = Long.MIN_VALUE;
+	private static SafariConfig.PriceSource runValuePriceSource;
+	private static long totalHistoryRevision = Long.MIN_VALUE;
+	private static long totalHistoryPriceRevision = Long.MIN_VALUE;
+	private static SafariConfig.PriceSource totalHistoryPriceSource;
+	private static long totalHistoryValue;
 
 	/** One shard's two prices, both top-of-book; {@code 0} where the book is empty. */
 	public record Price(double instantSell, double sellOffer) {
@@ -133,7 +144,7 @@ public final class BazaarPrices {
 			// Quiet at first — a dropped request during a server hop is not news. Said once
 			// when it stops looking like a blip, and not repeated every retry after that.
 			if (failures == QUIET_FAILURES + 1) {
-				SafariUtils.LOGGER.warn("Bazaar prices unavailable ({}), backing off", lastError);
+				OperationalLog.error("BAZAAR/FETCH", failed);
 			}
 		} finally {
 			fetching.set(false);
@@ -230,9 +241,9 @@ public final class BazaarPrices {
 		return fetchedAt != 0 && !prices.isEmpty();
 	}
 
-	/** Changes only when a fresh price snapshot is installed. */
+	/** Changes when a fresh price snapshot or the selected side of the market changes. */
 	static long revision() {
-		return fetchedAt;
+		return fetchedAt * 2L + ConfigManager.get().profit.priceSource().ordinal();
 	}
 
 	/** How long ago the prices were fetched, or {@code -1} if they never have been. */
@@ -289,6 +300,9 @@ public final class BazaarPrices {
 	public static long valueOf(RunRecord run) {
 		if (run == null || !run.hasShardData()) return 0;
 		SafariConfig.PriceSource source = ConfigManager.get().profit.priceSource();
+		prepareRunValueCache(source);
+		Long cached = RUN_VALUE_CACHE.get(run);
+		if (cached != null) return cached;
 		double total = 0;
 		for (Map.Entry<String, Integer> entry : run.shards.entrySet()) {
 			// A saved run holds species by name, so one dropped from the roster since is
@@ -298,7 +312,17 @@ public final class BazaarPrices {
 		}
 		total += price(SAFARI_ESSENCE, source) * run.safariEssence;
 		total += price(RAINBOW_FEATHER, source) * run.rainbowFeathers;
-		return Math.round(total);
+		long value = Math.round(total);
+		RUN_VALUE_CACHE.put(run, value);
+		return value;
+	}
+
+	private static void prepareRunValueCache(SafariConfig.PriceSource source) {
+		long priceRevision = fetchedAt;
+		if (runValuePriceRevision == priceRevision && runValuePriceSource == source) return;
+		RUN_VALUE_CACHE.clear();
+		runValuePriceRevision = priceRevision;
+		runValuePriceSource = source;
 	}
 
 	/** A run's tax-adjusted value using the selected pricing option. */
@@ -311,6 +335,21 @@ public final class BazaarPrices {
 		long total = 0;
 		for (RunRecord run : runs) total += valueOf(run);
 		return total;
+	}
+
+	/** Full saved-history value, calculated once per history/price/source combination. */
+	public static long totalHistoryValue() {
+		long historyRevision = RunHistory.revision();
+		long priceRevision = fetchedAt;
+		SafariConfig.PriceSource source = ConfigManager.get().profit.priceSource();
+		if (totalHistoryRevision == historyRevision
+				&& totalHistoryPriceRevision == priceRevision
+				&& totalHistoryPriceSource == source) return totalHistoryValue;
+		totalHistoryValue = totalValue(RunHistory.runs());
+		totalHistoryRevision = historyRevision;
+		totalHistoryPriceRevision = priceRevision;
+		totalHistoryPriceSource = source;
+		return totalHistoryValue;
 	}
 
 	/**

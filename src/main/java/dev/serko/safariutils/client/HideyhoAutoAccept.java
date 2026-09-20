@@ -43,6 +43,7 @@ public final class HideyhoAutoAccept {
 			return true;
 		} catch (RuntimeException error) {
 			DebugLog.line("INTERACT", "Hideyho auto-accept dispatch failed: " + error);
+			OperationalLog.error("INTERACT/HIDEYHO_ACCEPT", error);
 			return false;
 		}
 	}

@@ -4,7 +4,8 @@ Safari Utils is a Fabric mod made for Hypixel SkyBlock's Critter Safari. It keep
 
 ## What it includes
 
-- Movable HUDs for run progress, missing critters, Bird Feed status, and contest status.
+- Movable HUDs for run progress, missing critters, biome objectives, and contest status.
+- Confirmed Gemzie podium, Icy Wumpa, Haunted candle, and Forest Birdfeeder progress with selectable biome-completion marks in the Party Objective HUD.
 - Run history, lifetime totals, Safari Essence, Rainbow Feathers, and Bazaar profit.
 - A dedicated Sparkling menu with editable collection totals, party-shared lists, Sparkling Mode, and special catch effects.
 - Helpful markers for Safari objectives and encounters.
@@ -21,8 +22,8 @@ Choose the jar that matches your Minecraft version.
 
 | Minecraft | Safe Mode | Extra |
 |---|---|---|
-| 26.1.2 | `safariutils-1.6.0+mc26.1.2.jar` | `safariutils-1.6.0-extra+mc26.1.2.jar` |
-| 26.2 | `safariutils-1.6.0+mc26.2.jar` | `safariutils-1.6.0-extra+mc26.2.jar` |
+| 26.1.2 | `safariutils-2.0.0+mc26.1.2.jar` | `safariutils-2.0.0-extra+mc26.1.2.jar` |
+| 26.2 | `safariutils-2.0.0+mc26.2.jar` | `safariutils-2.0.0-extra+mc26.2.jar` |
 
 The Safe Mode edition is the recommended download. Extra includes features that may provide information the player cannot directly see and may not be safe to use.
 
@@ -37,6 +38,7 @@ Safari Utils requires Java 25, Fabric Loader 0.19 or newer, and Fabric API. Mod 
 3. Start Minecraft and enter `/su` to open the settings.
 
 Existing Safari Utils settings and history are moved into `config/safariutils/` automatically when possible.
+Important mod errors are recorded automatically in `config/safariutils/logs/safariutils.log`; verbose debug logging remains optional.
 
 ## Commands
 

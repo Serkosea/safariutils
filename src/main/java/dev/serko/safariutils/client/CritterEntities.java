@@ -8,6 +8,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -72,7 +74,7 @@ public final class CritterEntities {
 		if (ballCandidates.isEmpty()) return;
 
 		java.util.Set<java.util.UUID> stillPresent = new java.util.HashSet<>();
-		for (Entity entity : client.level.entitiesForRendering()) {
+		for (Entity entity : WorldEntities.current()) {
 			if (ballCandidates.containsKey(entity.getUUID())) stillPresent.add(entity.getUUID());
 		}
 
@@ -141,7 +143,7 @@ public final class CritterEntities {
 						StringBuilder nearby = new StringBuilder();
 						Entity likelyBall = null;
 						double likelyBallDistSq = Double.MAX_VALUE;
-						for (Entity candidate : client.level.entitiesForRendering()) {
+						for (Entity candidate : WorldEntities.current()) {
 							if (candidate == s.label()) continue;
 							double distSq = candidate.position().distanceToSqr(s.body().position());
 							if (distSq > ballScanRadiusSq) continue;
@@ -240,7 +242,7 @@ public final class CritterEntities {
 		// Gazer is the only critter whose body is an unnamed armor stand.
 		List<Entity> unnamedArmorStands = new ArrayList<>();
 
-		for (Entity entity : client.level.entitiesForRendering()) {
+		for (Entity entity : WorldEntities.current()) {
 			// The name identifies a label, not the entity type: most are armor stands
 			// but a Hideyho arrives as a player.
 			String name = entity.hasCustomName()
@@ -268,9 +270,13 @@ public final class CritterEntities {
 		}
 
 		List<Sighting> result = new ArrayList<>(labels.size());
+		EntityGrid candidateGrid = new EntityGrid(candidates);
+		EntityGrid interactionGrid = new EntityGrid(interactions);
+		EntityGrid armorStandGrid = new EntityGrid(unnamedArmorStands);
 		for (Label label : labels) {
 			result.add(new Sighting(label.critter(), label.entity(),
-				nearest(candidates, interactions, label.entity(), label.critter(), unnamedArmorStands),
+				nearest(candidates, candidateGrid, interactionGrid,
+					label.entity(), label.critter(), armorStandGrid),
 				label.sparkling()));
 		}
 		return result;
@@ -321,9 +327,9 @@ public final class CritterEntities {
 	private static final double GAZER_BODY_RADIUS = 3.0;
 
 	/** Returns the nearest qualifying body and logs throttled pairing diagnostics. */
-	private static Entity nearest(List<Entity> candidates, List<Entity> interactions,
-								   Entity label, Critter critter,
-								   List<Entity> unnamedArmorStands) {
+	private static Entity nearest(List<Entity> candidates, EntityGrid candidateGrid,
+					EntityGrid interactionGrid,
+					Entity label, Critter critter, EntityGrid armorStandGrid) {
 		Entity best = null;
 		double bestSq = LABEL_TO_MOB_RADIUS * LABEL_TO_MOB_RADIUS;
 
@@ -337,8 +343,8 @@ public final class CritterEntities {
 		if ("Duplico".equals(critter.name())) {
 			Entity interactionBest = null;
 			double interactionBestSq = LABEL_TO_MOB_RADIUS * LABEL_TO_MOB_RADIUS;
-			for (Entity interaction : interactions) {
-				double distanceSq = interaction.position().distanceToSqr(label.position());
+			for (Entity interaction : interactionGrid.near(label)) {
+				double distanceSq = distanceSquared(interaction, label);
 				if (distanceSq >= interactionBestSq) continue;
 				interactionBestSq = distanceSq;
 				interactionBest = interaction;
@@ -346,8 +352,9 @@ public final class CritterEntities {
 			if (interactionBest != null) return interactionBest;
 		}
 
-		for (Entity candidate : candidates) {
-			double distanceSq = candidate.position().distanceToSqr(label.position());
+		List<Entity> nearbyCandidates = candidateGrid.near(label);
+		for (Entity candidate : nearbyCandidates) {
+			double distanceSq = distanceSquared(candidate, label);
 			if (diagnostics && distanceSq < closestAnyDistanceSq) {
 				closestAnyDistanceSq = distanceSq;
 				closestAnyDistance = candidate;
@@ -356,13 +363,23 @@ public final class CritterEntities {
 			bestSq = distanceSq;
 			best = candidate;
 		}
+		// Debug diagnostics report the genuinely closest candidate even when it lies
+		// outside the pairing grid's radius.
+		if (diagnostics && best == null) {
+			for (Entity candidate : candidates) {
+				double distanceSq = distanceSquared(candidate, label);
+				if (distanceSq >= closestAnyDistanceSq) continue;
+				closestAnyDistanceSq = distanceSq;
+				closestAnyDistance = candidate;
+			}
+		}
 
 		// Gazer's body is an unnamed armor stand about two blocks from its label.
 		// Keep this fallback narrow because other armor stands are usually labels.
 		if (best == null && "Gazer".equals(critter.name())) {
 			double gazerBestSq = GAZER_BODY_RADIUS * GAZER_BODY_RADIUS;
-			for (Entity candidate : unnamedArmorStands) {
-				double distanceSq = candidate.position().distanceToSqr(label.position());
+			for (Entity candidate : armorStandGrid.near(label)) {
+				double distanceSq = distanceSquared(candidate, label);
 				if (distanceSq >= gazerBestSq) continue;
 				gazerBestSq = distanceSq;
 				best = candidate;
@@ -388,4 +405,51 @@ public final class CritterEntities {
 
 		return best;
 	}
+
+	private static double distanceSquared(Entity first, Entity second) {
+		double dx = first.getX() - second.getX();
+		double dy = first.getY() - second.getY();
+		double dz = first.getZ() - second.getZ();
+		return dx * dx + dy * dy + dz * dz;
+	}
+
+	/** Four-block buckets keep pairing local while retaining source-list tie ordering. */
+	private static final class EntityGrid {
+		private static final double CELL_SIZE = LABEL_TO_MOB_RADIUS;
+		private final Map<Cell, List<IndexedEntity>> cells = new HashMap<>();
+
+		private EntityGrid(List<Entity> entities) {
+			for (int i = 0; i < entities.size(); i++) {
+				Entity entity = entities.get(i);
+				cells.computeIfAbsent(cell(entity), ignored -> new ArrayList<>())
+					.add(new IndexedEntity(i, entity));
+			}
+		}
+
+		private List<Entity> near(Entity anchor) {
+			Cell centre = cell(anchor);
+			List<IndexedEntity> found = new ArrayList<>();
+			for (int x = centre.x() - 1; x <= centre.x() + 1; x++) {
+				for (int y = centre.y() - 1; y <= centre.y() + 1; y++) {
+					for (int z = centre.z() - 1; z <= centre.z() + 1; z++) {
+						List<IndexedEntity> bucket = cells.get(new Cell(x, y, z));
+						if (bucket != null) found.addAll(bucket);
+					}
+				}
+			}
+			found.sort(Comparator.comparingInt(IndexedEntity::index));
+			List<Entity> result = new ArrayList<>(found.size());
+			for (IndexedEntity indexed : found) result.add(indexed.entity());
+			return result;
+		}
+
+		private static Cell cell(Entity entity) {
+			return new Cell((int) Math.floor(entity.getX() / CELL_SIZE),
+				(int) Math.floor(entity.getY() / CELL_SIZE),
+				(int) Math.floor(entity.getZ() / CELL_SIZE));
+		}
+	}
+
+	private record Cell(int x, int y, int z) { }
+	private record IndexedEntity(int index, Entity entity) { }
 }

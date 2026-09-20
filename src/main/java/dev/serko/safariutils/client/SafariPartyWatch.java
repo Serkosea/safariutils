@@ -91,7 +91,7 @@ public final class SafariPartyWatch {
 		return Math.clamp(joinedPlayers, 0, 4);
 	}
 
-	/** Names presently listed in the Safari's player section, in tab-list order. */
+	/** Names presently listed in the Safari's player section, alphabetically for display. */
 	public static List<String> presentPlayerNames() {
 		Minecraft client = Minecraft.getInstance();
 		if (!SafariLocation.inside() || client.player == null || client.player.connection == null) {
@@ -110,7 +110,9 @@ public final class SafariPartyWatch {
 			if (!row.matches() || !onlineNames.contains(row.group(1).toLowerCase(Locale.ROOT))) continue;
 			if (!names.contains(row.group(1))) names.add(row.group(1));
 		}
-		return names.size() == joinedPlayers ? List.copyOf(names) : List.of();
+		if (names.size() != joinedPlayers) return List.of();
+		names.sort(String.CASE_INSENSITIVE_ORDER);
+		return List.copyOf(names);
 	}
 
 	/** Records the attendance state used by the Manager click guard. */

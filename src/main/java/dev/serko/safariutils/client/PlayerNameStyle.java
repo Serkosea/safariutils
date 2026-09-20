@@ -26,7 +26,9 @@ final class PlayerNameStyle {
 			String match = null;
 			int at = text.length();
 			for (String candidate : names) {
-				int candidateAt = lower.indexOf(candidate.toLowerCase(Locale.ROOT), from);
+				// Providers expose normalized lower-case names, avoiding repeated case
+				// conversion for every HUD text segment and rendered frame.
+				int candidateAt = lower.indexOf(candidate, from);
 				if (candidateAt >= 0 && (candidateAt < at
 					|| candidateAt == at && (match == null || candidate.length() > match.length()))) {
 					at = candidateAt;

@@ -39,6 +39,7 @@ public final class ConfigManager {
 		try {
 			JsonObject root = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
 			migrateBannerPlayback(root);
+			migrateSparklingCatchIntensity(root);
 			SafariConfig loaded = GSON.fromJson(root, SafariConfig.class);
 			if (loaded == null) loaded = new SafariConfig();
 			if (loaded.sparkling.sparklingUniqueHitboxColours) {
@@ -48,8 +49,23 @@ public final class ConfigManager {
 			resetSessionDebugOptions(loaded.advanced);
 			return loaded;
 		} catch (RuntimeException | IOException malformed) {
+			OperationalLog.error("CONFIG/LOAD", malformed);
 			return new SafariConfig();
 		}
+	}
+
+	/** Replaces the former on/off celebration with an always-enabled intensity picker. */
+	private static void migrateSparklingCatchIntensity(JsonObject root) {
+		if (!root.has("sparkling") || !root.get("sparkling").isJsonObject()) return;
+		JsonObject sparkling = root.getAsJsonObject("sparkling");
+		if (!sparkling.has("specialSparklingIntensity")) {
+			// The old disabled state was the original gentle celebration; the warned
+			// enabled state maps to the first of the new intense choices.
+			boolean intense = sparkling.has("specialSparklingCatch")
+				&& sparkling.get("specialSparklingCatch").getAsBoolean();
+			sparkling.addProperty("specialSparklingIntensity", intense ? 1 : 0);
+		}
+		sparkling.remove("specialSparklingCatch");
 	}
 
 	/** Converts the old two-toggle setup once; later saves contain only the picker. */
@@ -121,8 +137,9 @@ public final class ConfigManager {
 		Path path = SafariPaths.settings();
 		try {
 			AtomicFiles.writeString(path, GSON.toJson(config));
-		} catch (IOException ignored) {
+		} catch (IOException failed) {
 			// Settings remain live in memory; the next close/shutdown retries the save.
+			OperationalLog.error("CONFIG/SAVE", failed);
 		}
 	}
 
@@ -137,7 +154,8 @@ public final class ConfigManager {
 			var field = SafariConfig.class.getField(categoryField);
 			field.set(get(), field.getType().getDeclaredConstructor().newInstance());
 			save();
-		} catch (ReflectiveOperationException ignored) {
+		} catch (ReflectiveOperationException failed) {
+			OperationalLog.error("CONFIG/RESET", failed);
 		}
 	}
 }

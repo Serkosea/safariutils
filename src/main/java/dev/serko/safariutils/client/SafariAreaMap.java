@@ -53,7 +53,8 @@ public final class SafariAreaMap {
 
 		try (InputStream in = SafariAreaMap.class.getResourceAsStream(RESOURCE)) {
 			if (in == null) {
-				SafariUtils.LOGGER.error("Missing {}; position-based biome detection disabled", RESOURCE);
+				OperationalLog.error("AREA_MAP/MISSING_RESOURCE",
+					new IOException("Missing " + RESOURCE + "; position-based biome detection disabled"));
 				return;
 			}
 			try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
@@ -84,7 +85,7 @@ public final class SafariAreaMap {
 				SafariUtils.LOGGER.info("Loaded {} Safari area nodes", xs.length);
 			}
 		} catch (IOException | RuntimeException e) {
-			SafariUtils.LOGGER.error("Could not read {}", RESOURCE, e);
+			OperationalLog.error("AREA_MAP/LOAD", e);
 			xs = null;
 		}
 	}

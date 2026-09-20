@@ -1,5 +1,56 @@
 # Changelog
 
+## [2.0.0] - 2026-09-19
+
+### Performance
+
+- Reduced frame drops from the Special Rainbow theme, HUD sprites, alerts, and world markers
+- Cached large saved-run histories so they are not reformatted, remeasured, or repriced every frame
+- Added batched waypoint geometry, off-screen marker culling, cached waypoint labels, and spatially indexed critter pairing
+- Added cached HUD layout, text, border, progress-bar, and objective-icon rendering
+- Reused per-tick world entities, wall state, session aggregates, and decoded waypoint catalogs across consumers
+- Batched Sparkling celebrations and encounter banner geometry for smoother alert rendering
+- Unified animated rainbow colors around one shared, frame-limited clock and fixed screen-space wavelength
+
+### Fixes
+
+- Kept rainbow gradients continuous across changing text lengths and adjacent values
+- Matched editable-text carets to the animated rainbow at their current screen position
+- Made every rainbow frame edge sample one consistent horizontal gradient
+- Kept large Sparkling collection totals comfortably inside the collection panel
+- Prevented the optimized GUI batching layer from failing during client startup
+- Kept History table edge spacing stable as run numbers and profit totals grow
+- Kept History Runs, Catches, and Sparkling stars on fixed outer anchors regardless of text length
+- Applied the Special Rainbow gradient to complete interface status lines
+- Applied the Special Rainbow gradient to complete client messages and the SafariUtils chat tag
+- Made Gemzie podium chat messages the only source of placed gems, preventing cursor moves, drops, and losses from counting as placements
+- Kept carried objective items in HUD totals while rearranging them
+- Hid party members whose known objective-item totals are all zero
+- Corrected objective completion to require every Forest feed spawn and a 2.5-second settled Gemzie door
+- Treated Doomspiral's terminal retreat message as completed Haunted progress after a failed fight
+- Rendered a yellow unknown Forest title state whenever run-wide feed totals cannot be confirmed
+- Prevented caught Hideonwall markers from being restored by lingering replacement entity IDs in Extra Mode
+- Prevented failed learned-location saves from retrying every client tick
+
+### Changes & Additions
+
+- Added a conservative pre-ticket Join countdown with a gradual green-to-dark-red timer to the Progress HUD
+- Expanded the Bird Feed HUD into a biome-aware Party Objective HUD for Cavern, Icy, Haunted, and Forest progress
+- Added cached reference-matched icons for Soothing Incense and the three Gemzie gems
+- Added an efficient always-on rolling error and lifecycle log without requiring verbose debug logging
+- Added objective-status and biome-color border options for the Party Objective HUD
+- Added configurable Cavern, Icy, Haunted, and Forest completion marks to the globally visible Party Objectives title
+- Sorted party-member display lists alphabetically without changing internal roster order
+- Defaulted Party Objective options on, with biome border coloring enabled and status coloring disabled
+- Clarified Party Objective labels and kept Forest action labels consistently green
+- Expanded the Special Rainbow theme across settings, interface accents, and every HUD
+- Smoothed continuous rainbow borders, extended the gradient to editable text, and increased the cached star-field density
+- Added four selectable intensities and a current-intensity preview for the special Sparkling catch alert
+- Added photosensitivity confirmation for the higher Sparkling catch intensities
+- Kept Special as the original gentle catch celebration and jingle while giving higher intensities distinct batched bursts, comets, orbits, and confetti
+- Required photosensitivity confirmation whenever an intense catch alert is selected and reset rejected selections to Special
+- Enhanced the Advanced unlock constellation with cached stars, orbiting sparks, and batched geometry
+
 ## [1.6.0] - 2026-09-18
 
 ### Fixes

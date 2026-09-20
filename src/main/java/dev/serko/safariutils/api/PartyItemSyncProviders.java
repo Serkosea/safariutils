@@ -1,7 +1,8 @@
 package dev.serko.safariutils.api;
 
-import dev.serko.safariutils.SafariUtils;
 import dev.serko.safariutils.client.HudPanel;
+import dev.serko.safariutils.client.OperationalLog;
+import dev.serko.safariutils.data.SafariBiome;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 
@@ -20,7 +21,7 @@ public final class PartyItemSyncProviders {
 		try {
 			return ServiceLoader.load(PartyItemSyncProvider.class).findFirst();
 		} catch (RuntimeException error) {
-			SafariUtils.LOGGER.error("Could not load private party item synchronization", error);
+			OperationalLog.error("SYNC/LOAD", error);
 			return Optional.empty();
 		}
 	}
@@ -88,7 +89,15 @@ public final class PartyItemSyncProviders {
 		return PROVIDER.map(PartyItemSyncProvider::feedDone).orElse(false);
 	}
 
-	public static HudPanel birdFeedPanel() {
-		return PROVIDER.map(PartyItemSyncProvider::birdFeedPanel).orElse(null);
+	public static HudPanel objectivePanel() {
+		return PROVIDER.map(PartyItemSyncProvider::objectivePanel).orElse(null);
+	}
+
+	public static boolean objectiveComplete() {
+		return PROVIDER.map(PartyItemSyncProvider::objectiveComplete).orElse(false);
+	}
+
+	public static boolean objectiveAllowsFloorDropHide(SafariBiome biome) {
+		return PROVIDER.map(provider -> provider.objectiveAllowsFloorDropHide(biome)).orElse(false);
 	}
 }

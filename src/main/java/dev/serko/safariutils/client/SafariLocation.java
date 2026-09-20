@@ -23,6 +23,14 @@ import java.util.regex.Pattern;
  * World changes clear the chat-derived fallback.
  */
 public final class SafariLocation {
+	private static final int STRIP_CACHE_LIMIT = 256;
+	private static final java.util.Map<String, String> STRIP_CACHE =
+		new java.util.LinkedHashMap<>(64, 0.75f, true) {
+			@Override
+			protected boolean removeEldestEntry(java.util.Map.Entry<String, String> eldest) {
+				return size() > STRIP_CACHE_LIMIT;
+			}
+		};
 
 	/** Which of the three places the player is. */
 	public enum Where {
@@ -392,7 +400,7 @@ public final class SafariLocation {
 	public static boolean critterLabelsNearby() {
 		Minecraft client = Minecraft.getInstance();
 		if (client.level == null) return false;
-		for (Entity entity : client.level.entitiesForRendering()) {
+		for (Entity entity : WorldEntities.current()) {
 			if (!entity.hasCustomName()) continue;
 			if (Critters.byName(strip(entity.getCustomName().getString())) != null) return true;
 		}
@@ -407,6 +415,8 @@ public final class SafariLocation {
 
 	/** Strips §-codes and the invisible padding Hypixel puts in sidebar lines. */
 	public static String strip(String text) {
+		String cached = STRIP_CACHE.get(text);
+		if (cached != null) return cached;
 		StringBuilder clean = new StringBuilder(text.length());
 		for (int i = 0; i < text.length(); i++) {
 			char character = text.charAt(i);
@@ -417,6 +427,8 @@ public final class SafariLocation {
 			int type = Character.getType(character);
 			if (type != Character.FORMAT && type != Character.PRIVATE_USE) clean.append(character);
 		}
-		return clean.toString().trim();
+		String stripped = clean.toString().trim();
+		STRIP_CACHE.put(text, stripped);
+		return stripped;
 	}
 }

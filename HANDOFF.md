@@ -78,6 +78,8 @@ Objective consumption is chat-authoritative: each exact podium message sets its 
 
 Safe Mode uses visible or otherwise player-observable evidence. Extra mode can use additional internal information. Optional synchronized facts are considered authoritative because another approved client observed them.
 
+Settings are live presentation controls, not permissions to discard run state. Trackers retain detected state and direct visual/authoritative evidence separately: switching to Extra immediately exposes already detected information, while switching back to Safe may expose only facts that were visually confirmed, locally confirmed by interaction/chat, or received through trusted synchronization. Render and HUD caches include the configuration revision so changes made during a run appear without a world reload.
+
 - Bee Nests accept left- or right-click interaction but clear only after a newly appearing Honeybug is confirmed within 12 blocks and five seconds
 - Floor drops, mounds, walls, and stationary critters retain their existing candidate-versus-confirmed distinction
 - Synchronized Forest completion may clear the corresponding Missing HUD entries and waypoints
@@ -138,6 +140,8 @@ Animated rainbow rendering uses `RainbowColours` as one 25 FPS clock and palette
 `SparklingConfig.specialSparklingIntensity` stores the always-enabled catch celebration level from 0 through 3. Level 0 is the original gentle five-second celebration and jingle; levels 1–3 use the warned intense visuals and score. Older `specialSparklingCatch` Boolean values migrate to level 0 when false and level 1 when true. The settings picker previews the current level and requires the photosensitivity confirmation every time a level above 0 is selected, even when it is already active. Cancelling that confirmation resets the choice to level 0.
 
 `RunHistory.revision()` invalidates screen-facing history caches only when persisted run data changes. `SafariDashboardScreen` caches its filtered ordering, year dividers, formatted rows, column measurements, Sparkling summaries, and Bazaar totals by the relevant history/price revisions. Keep the render path proportional to the 15 visible rows rather than the full saved history.
+
+The Stats tab reads the in-memory Sparkling collection counters directly. Collected species retain their rarity-colored names and gain one rainbow star; a completed biome retains its biome-colored title and gains a rainbow star on each side. Nonzero run-catch totals are white and zero values remain dim.
 
 `BazaarPrices` keeps each immutable `RunRecord` valuation for the lifetime of one fetched price snapshot and selected price source. Its complete-history total is additionally keyed by `RunHistory.revision()`. Opening a screen must reuse these valuation caches; only a new Bazaar snapshot, a changed price source, or changed run history should trigger repricing.
 

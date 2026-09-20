@@ -62,6 +62,11 @@ final class HudBorderStyle {
 	static int partyObjectives() {
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
 		if (!display.partyObjectiveBorder) return 0;
+		SafariBiome biome = PartyObjectiveHud.currentBiome();
+		// A disabled title biome also disables that biome's dynamic HUD presentation.
+		if (biome == null || !PartyObjectiveHud.biomeEnabled(biome)) {
+			return Colours.argb(display.partyObjectiveBorderColour, 0xFFFF5555);
+		}
 		if (display.partyObjectiveBorderUseStatus) {
 			boolean complete = dev.serko.safariutils.api.PartyItemSyncProviders.active()
 				? dev.serko.safariutils.api.PartyItemSyncProviders.objectiveComplete()
@@ -69,8 +74,7 @@ final class HudBorderStyle {
 			return complete
 				? 0xFF55FF55 : 0xFFFF5555;
 		}
-		SafariBiome biome = SafariLocation.biome();
-		if (display.partyObjectiveBorderUseBiomeColour && biome != null) return 0xFF000000 | biome.colour();
+		if (display.partyObjectiveBorderUseBiomeColour) return 0xFF000000 | biome.colour();
 		return Colours.argb(display.partyObjectiveBorderColour, 0xFFFF5555);
 	}
 

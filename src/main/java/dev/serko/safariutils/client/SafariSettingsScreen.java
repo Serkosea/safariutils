@@ -1057,7 +1057,7 @@ public final class SafariSettingsScreen extends Screen {
 		outline(graphics, x, y, w, h, CYAN);
 		SettingInfo option = choiceField.getAnnotation(SettingInfo.class);
 		drawText(graphics, "Choose " + displayName(option.name()), x + 14, y + 14, TEXT);
-		drawText(graphics, "Select every item type that may be sent", x + 14, y + 27, MUTED);
+		drawText(graphics, "Select every option that should be enabled", x + 14, y + 27, MUTED);
 		int cellWidth = (w - 28 - (columns - 1) * 8) / columns;
 		int selected = choiceValue();
 		for (int index = 0; index < labels.length; index++) {

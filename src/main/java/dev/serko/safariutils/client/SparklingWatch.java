@@ -33,7 +33,8 @@ public final class SparklingWatch {
 	private static final Map<Critter, Long> replacementExpectedUntil = new LinkedHashMap<>();
 	private static long caughtThemeUntil;
 	private static long lastScan = Long.MIN_VALUE;
-	private record Outstanding(Critter critter, BlockPos pos) {}
+	private static long lastConfigRevision = Long.MIN_VALUE;
+	private record Outstanding(Critter critter, BlockPos pos, boolean visiblyConfirmed) {}
 
 	private SparklingWatch() {
 	}
@@ -44,8 +45,10 @@ public final class SparklingWatch {
 		justCaught.entrySet().removeIf(entry -> now - entry.getValue() > CAUGHT_THEME_MILLIS);
 		replacementExpectedUntil.entrySet().removeIf(entry -> now > entry.getValue());
 		long scan = CritterEntities.scannedAt();
-		if (scan == lastScan) return;
+		long configRevision = ConfigManager.revision();
+		if (scan == lastScan && configRevision == lastConfigRevision) return;
 		lastScan = scan;
+		lastConfigRevision = configRevision;
 		Set<UUID> visibleKeys = new HashSet<>();
 		List<CritterEntities.Sighting> sparklingSightings = new ArrayList<>();
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
@@ -54,14 +57,12 @@ public final class SparklingWatch {
 			visibleKeys.add(keyOf(sighting));
 		}
 		for (CritterEntities.Sighting sighting : sparklingSightings) {
+			boolean visiblyConfirmed = visuallyConfirmed(sighting);
 			if (SafeMode.sparklingCritters()) {
-				boolean mobVisible = sighting.mob() != null && VisibilityCheck.canSee(sighting.mob());
-				boolean labelVisible = VisibilityCheck.canSeeVisibleName(sighting.label());
-				boolean hiddenSafe = SafeMode.hiddenCritter(sighting.critter(), true);
 				// A dormant hidden species has no player-visible name tag. Its internal
 				// label must not reveal a Sparkling through terrain before the body itself
 				// is in direct view.
-				if (hiddenSafe ? !mobVisible : !labelVisible && !mobVisible) continue;
+				if (!visiblyConfirmed) continue;
 			}
 			// Keyed on the label rather than the mob: the label is what named it, and it
 			// is the entity that survives the pairing being ambiguous.
@@ -70,7 +71,9 @@ public final class SparklingWatch {
 			UUID key = keyOf(sighting);
 			BlockPos pos = sighting.body().blockPosition();
 			if (outstanding.containsKey(key)) {
-				outstanding.put(key, new Outstanding(sighting.critter(), pos));
+				Outstanding previous = outstanding.get(key);
+				outstanding.put(key, new Outstanding(sighting.critter(), pos,
+					visiblyConfirmed || previous.visiblyConfirmed()));
 				announcedLabels.add(labelId);
 				if (bodyId != null) announcedBodies.add(bodyId);
 				postVisibleChat(sighting, key);
@@ -86,8 +89,9 @@ public final class SparklingWatch {
 				replacementExpectedUntil.containsKey(sighting.critter()) || knownId);
 			if (replacement != null) {
 				boolean chatWasSent = chatAnnounced.remove(replacement);
-				outstanding.remove(replacement);
-				outstanding.put(key, new Outstanding(sighting.critter(), pos));
+				Outstanding previous = outstanding.remove(replacement);
+				outstanding.put(key, new Outstanding(sighting.critter(), pos,
+					visiblyConfirmed || previous != null && previous.visiblyConfirmed()));
 				if (chatWasSent) chatAnnounced.add(key);
 				replacementExpectedUntil.remove(sighting.critter());
 				DebugLog.line("SPARKLING", "replacement " + sighting.critter().name()
@@ -97,7 +101,7 @@ public final class SparklingWatch {
 				continue;
 			}
 			if (knownId) continue;
-			outstanding.put(key, new Outstanding(sighting.critter(), pos));
+			outstanding.put(key, new Outstanding(sighting.critter(), pos, visiblyConfirmed));
 			DebugLog.line("SPARKLING", "found " + sighting.critter().name()
 				+ " label=" + shortId(labelId) + " body=" + shortId(bodyId)
 				+ " key=" + shortId(key) + " pos=" + pos(pos)
@@ -105,6 +109,20 @@ public final class SparklingWatch {
 			EncounterAlerts.fireSparklingDetected(sighting.critter().name());
 			postVisibleChat(sighting, key);
 		}
+	}
+
+	/** Direct evidence retained independently from whichever mode is currently displayed. */
+	private static boolean visuallyConfirmed(CritterEntities.Sighting sighting) {
+		if ("Hideyho".equals(sighting.critter().name())) {
+			return VisibilityCheck.canSee(sighting.label());
+		}
+		boolean mobVisible = sighting.mob() != null && VisibilityCheck.canSee(sighting.mob());
+		return SafeMode.hiddenSpecies(sighting.critter())
+			? mobVisible : mobVisible || VisibilityCheck.canSeeVisibleName(sighting.label());
+	}
+
+	private static boolean presentable(Outstanding entry) {
+		return !SafeMode.sparklingCritters() || entry.visiblyConfirmed();
 	}
 
 	static UUID keyOf(CritterEntities.Sighting sighting) {
@@ -145,7 +163,11 @@ public final class SparklingWatch {
 	private static void postVisibleChat(CritterEntities.Sighting sighting, UUID key) {
 		if (chatAnnounced.contains(key) || sighting.critter().biome() != SafariLocation.biome()) return;
 		boolean visible = VisibilityCheck.canSeeVisibleName(sighting.label())
-			|| sighting.mob() != null && VisibilityCheck.canSee(sighting.mob());
+			|| sighting.mob() != null && VisibilityCheck.canSee(sighting.mob())
+			// Hideyho arrives as the named player entity itself rather than a separate
+			// visible-name label/body pair.
+			|| "Hideyho".equals(sighting.critter().name())
+				&& VisibilityCheck.canSee(sighting.label());
 		if (!visible) return;
 		SafariConfig config = ConfigManager.get();
 		chatAnnounced.add(key);
@@ -179,7 +201,8 @@ public final class SparklingWatch {
 
 	/** Whether every visible HUD should use the shared Sparkling presentation. */
 	public static boolean hudThemeActive() {
-		return !outstanding.isEmpty() || System.currentTimeMillis() < caughtThemeUntil;
+		return outstanding.values().stream().anyMatch(SparklingWatch::presentable)
+			|| System.currentTimeMillis() < caughtThemeUntil;
 	}
 
 	/** Kept as an alias for callers concerned specifically with the Missing HUD. */
@@ -189,7 +212,7 @@ public final class SparklingWatch {
 
 	public static Map<Critter, Integer> outstandingCounts(SafariBiome biome) {
 		Map<Critter, Integer> counts = new LinkedHashMap<>();
-		outstanding.values().stream().map(Outstanding::critter)
+		outstanding.values().stream().filter(SparklingWatch::presentable).map(Outstanding::critter)
 			.filter(critter -> critter.biome() == biome)
 			.forEach(critter -> counts.merge(critter, 1, Integer::sum));
 		return counts;
@@ -197,7 +220,8 @@ public final class SparklingWatch {
 
 	/** Whether this live sighting belongs to a Sparkling that has been announced but not caught. */
 	static boolean isOutstanding(CritterEntities.Sighting sighting) {
-		return isSparkling(sighting) && outstanding.containsKey(keyOf(sighting));
+		Outstanding entry = outstanding.get(keyOf(sighting));
+		return isSparkling(sighting) && entry != null && presentable(entry);
 	}
 
 	/** How far the alerted critter is, for the player's own line. Unused when none. */
@@ -219,6 +243,7 @@ public final class SparklingWatch {
 		ParticleDiagnostics.reset();
 		caughtThemeUntil = 0;
 		lastScan = Long.MIN_VALUE;
+		lastConfigRevision = Long.MIN_VALUE;
 		FullScreenAlert.clear();
 	}
 

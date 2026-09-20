@@ -75,6 +75,7 @@ public final class RecatchSpots {
 
 	/** Every pin currently active. */
 	public static List<ActivePin> active() {
+		if (!ConfigManager.get().display.recatchHelper) return List.of();
 		List<ActivePin> result = new ArrayList<>();
 		for (Map.Entry<UUID, Pin> entry : pins.entrySet()) {
 			Pin pin = entry.getValue();
@@ -86,6 +87,7 @@ public final class RecatchSpots {
 
 	/** Whether this exact individual is currently pinned. */
 	public static boolean isPinned(UUID entityId) {
+		if (!ConfigManager.get().display.recatchHelper) return false;
 		Pin pin = pins.get(entityId);
 		if (pin == null) return false;
 		// Not pinned for display purposes once its pity has reached the threshold
@@ -115,6 +117,7 @@ public final class RecatchSpots {
 
 	/** The nearest active pin to the player, or {@code null} when nothing is pinned. */
 	public static ActivePin nearest() {
+		if (!ConfigManager.get().display.recatchHelper) return null;
 		Minecraft client = Minecraft.getInstance();
 		if (pins.isEmpty() || client.player == null) return null;
 		Vec3 playerPos = client.player.position();
@@ -221,8 +224,6 @@ public final class RecatchSpots {
 		if (event.type() == CritterEvent.Type.ATTEMPT) {
 			SparklingWatch.onCaptureInteraction(event.critter());
 		}
-		if (!ConfigManager.get().display.recatchHelper) return;
-
 		DebugLog.line("CHAT", event.type() + " " + event.critter().name() + " raw=\"" + line + "\"");
 
 		// A Masterful Critter Capsule always catches, so a pin for it would never once

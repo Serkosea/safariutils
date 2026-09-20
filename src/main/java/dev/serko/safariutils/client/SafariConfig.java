@@ -410,7 +410,7 @@ public class SafariConfig {
 		@SettingInfo(name = "Party Objective HUD Options", desc = "")
 		@SettingSection(id = PARTY_OBJECTIVE_OPTIONS) @SettingGroup(id = PARTY_OBJECTIVE_HUD)
 		public boolean partyObjectiveOptionsAccordion = false;
-		@SettingInfo(name = "Title Biomes", desc = "Choose which biome objective states appear beside the HUD title")
+		@SettingInfo(name = "Shown Biomes", desc = "Choose which biome title states, detail lines, and dynamic border colors are shown")
 		@SettingMultiChoice(values = {"Cavern", "Icy", "Haunted", "Forest"})
 		@SettingGroup(id = PARTY_OBJECTIVE_OPTIONS) @Expose
 		public int partyObjectiveTitleBiomes = 15;

@@ -1,5 +1,7 @@
 package dev.serko.safariutils.client;
 
+import dev.serko.safariutils.data.Critters;
+import dev.serko.safariutils.session.SessionManager;
 import net.minecraft.core.BlockPos;
 
 import java.util.LinkedHashSet;
@@ -49,6 +51,8 @@ public final class HideyhoSolver {
 	private static boolean alertedThisPhase;
 	private static boolean sparkling;
 	private static boolean seenSparkling;
+	private static boolean visiblyConfirmed;
+	private static boolean lastSightingVisible;
 	private static final Set<BlockPos> unchecked = new LinkedHashSet<>();
 
 	/** Where START was confirmed — END never reuses this spot, so a repeat is discarded. */
@@ -81,6 +85,8 @@ public final class HideyhoSolver {
 		if (position != null) {
 			position = seen;
 			live = true;
+			visiblyConfirmed |= lastSightingVisible;
+			if (lastSightingVisible) unchecked.removeIf(pos -> matchesCandidate(pos, seen));
 			return;
 		}
 
@@ -130,8 +136,9 @@ public final class HideyhoSolver {
 		position = pos;
 		live = true;
 		sparkling = seenSparkling;
+		visiblyConfirmed = lastSightingVisible;
 		StaticEntityCatalog.learn(NAME, pos);
-		unchecked.clear();
+		if (visiblyConfirmed) unchecked.clear();
 		if (alertedThisPhase) return;
 		alertedThisPhase = true;
 		EncounterAlerts.fireHideyho();
@@ -139,12 +146,12 @@ public final class HideyhoSolver {
 
 	/** Where it is, or was last seen this phase. {@code null} before anything is confirmed. */
 	public static BlockPos position() {
-		return position;
+		return displayAllowed() ? position : null;
 	}
 
 	/** Whether it is loaded right now, as opposed to only remembered. */
 	public static boolean live() {
-		return live;
+		return live && displayAllowed();
 	}
 
 	public static boolean sparkling() {
@@ -158,7 +165,7 @@ public final class HideyhoSolver {
 
 	/** The shared location pool still unchecked in the current START or END search. */
 	public static Set<BlockPos> candidates() {
-		if (!SafeMode.hideyho() || position != null
+		if (!SafeMode.hideyho() || position != null && visiblyConfirmed
 			|| (phase != Phase.START && phase != Phase.END)) return Set.of();
 		if (phase == Phase.END
 			&& System.currentTimeMillis() - endPhaseSinceMillis < END_CANDIDATE_DELAY_MILLIS) return Set.of();
@@ -201,6 +208,7 @@ public final class HideyhoSolver {
 			phase = Phase.PENDING;
 			position = null;
 			live = false;
+			visiblyConfirmed = false;
 			candidate = null;
 			alertedThisPhase = false;
 			return;
@@ -211,6 +219,7 @@ public final class HideyhoSolver {
 			phase = Phase.END;
 			position = null;
 			live = false;
+			visiblyConfirmed = false;
 			candidate = null;
 			alertedThisPhase = false;
 			endPhaseSinceMillis = System.currentTimeMillis();
@@ -220,9 +229,15 @@ public final class HideyhoSolver {
 
 		if (line.contains(CAUGHT)) {
 			DebugLog.line("HIDEYHO", "CHAT CAUGHT, " + phase + " -> DONE raw=\"" + line + "\"");
+			// Hideyho completes through dialogue rather than a capsule, so Hypixel does
+			// not emit the ordinary species-bearing Sparkling catch line.
+			if (sparkling || seenSparkling) {
+				SessionManager.onInteractionSparklingCaught(Critters.byName(NAME));
+			}
 			phase = Phase.DONE;
 			position = null;
 			live = false;
+			visiblyConfirmed = false;
 			candidate = null;
 			startPosition = null;
 			alertedThisPhase = false;
@@ -238,6 +253,9 @@ public final class HideyhoSolver {
 		position = null;
 		live = false;
 		sparkling = false;
+		seenSparkling = false;
+		visiblyConfirmed = false;
+		lastSightingVisible = false;
 		candidate = null;
 		alertedThisPhase = false;
 		startPosition = null;
@@ -251,6 +269,7 @@ public final class HideyhoSolver {
 	}
 
 	private static BlockPos fromSightings() {
+		lastSightingVisible = false;
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
 			if (!NAME.equals(sighting.critter().name())) continue;
 			// Hideyho's named entity is Hideyho itself. Generic body pairing can select
@@ -261,12 +280,19 @@ public final class HideyhoSolver {
 			// what stops that gap from being used to find it before it is genuinely
 			// visible on the player's own screen.
 			boolean sparkling = SparklingWatch.isSparkling(sighting);
+			lastSightingVisible = VisibilityCheck.canSee(target);
 			if (SafeMode.hiddenCritter(sighting.critter(), sparkling)
-				&& !VisibilityCheck.canSee(target)) continue;
+				&& !lastSightingVisible) continue;
 			seenSparkling = sparkling;
 			return target.blockPosition();
 		}
 		return null;
+	}
+
+	private static boolean displayAllowed() {
+		var critter = Critters.byName(NAME);
+		return position == null || critter == null
+			|| !SafeMode.hiddenCritter(critter, sparkling) || visiblyConfirmed;
 	}
 
 	private static String pos(BlockPos pos) {

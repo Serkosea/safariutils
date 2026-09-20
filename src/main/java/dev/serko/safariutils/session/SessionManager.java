@@ -427,6 +427,21 @@ public final class SessionManager {
 		SparklingWatch.postCaught(message);
 	}
 
+	/** Finalizes a Sparkling whose encounter ends without a capsule catch announcement. */
+	public static void onInteractionSparklingCaught(Critter critter) {
+		if (critter == null) return;
+		long now = System.currentTimeMillis();
+		boolean alreadyRecorded = current != null && current.sparklings().contains(critter);
+		SparklingWatch.onCaught(critter);
+		if (current == null) return;
+		SparklingMode.onSparklingCaught(critter);
+		// Hideyho normally has no global catch line, but remain idempotent if Hypixel
+		// emits one in a future format before its dialogue completion arrives.
+		if (alreadyRecorded) return;
+		current.recordSparkling(critter, selfName(), now);
+		recordLifetimeSparkling(critter);
+	}
+
 	private static void endSession() {
 		SafariSession finished = current;
 		current = null;

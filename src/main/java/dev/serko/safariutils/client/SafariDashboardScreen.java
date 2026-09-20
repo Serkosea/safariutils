@@ -56,6 +56,9 @@ public final class SafariDashboardScreen extends Screen {
 
 	private static final DateTimeFormatter WHEN = DateTimeFormatter.ofPattern("MMM d @ h:mm a");
 	private static final String STAT_SEPARATOR = "  │  ";
+	private static final SafariBiome[] BIOME_ORDER = {
+		SafariBiome.CAVERN, SafariBiome.ICY, SafariBiome.HAUNTED, SafariBiome.FOREST
+	};
 
 	private static final int CAUGHT_BY_YOU = 0xFF55FF55;
 	private static final int CAUGHT_BY_PARTY = 0xFF55FFFF;
@@ -178,7 +181,7 @@ public final class SafariDashboardScreen extends Screen {
 		responsiveScale = ResponsiveUI.scale(width, height);
 		layoutWidth = ResponsiveUI.logicalWidth(width, responsiveScale);
 		layoutHeight = ResponsiveUI.logicalHeight(height, responsiveScale);
-		int columns = SafariBiome.values().length;
+		int columns = BIOME_ORDER.length;
 		int available = layoutWidth - PANEL_PADDING * 2 - 8;
 		// Measured from the longest species name rather than guessed at: "Mantis Shrimp"
 		// and "Shuddersquid" ran into their own counts at a fixed width.
@@ -253,7 +256,9 @@ public final class SafariDashboardScreen extends Screen {
 		int widestName = 0;
 		int widestCount = font.width("—");
 		for (Critter critter : Critters.all()) {
-			widestName = Math.max(widestName, font.width(critter.name()));
+			int nameWidth = font.width(critter.name());
+			if (SparklingStats.count(critter) > 0) nameWidth += 2 + font.width("✦");
+			widestName = Math.max(widestName, nameWidth);
 			widestCount = Math.max(widestCount,
 				font.width(String.valueOf(RunHistory.statFor(critter).total())));
 		}
@@ -530,7 +535,7 @@ public final class SafariDashboardScreen extends Screen {
 
 	private int drawBiomeColumns(GuiGraphicsExtractor graphics, Font font, int y) {
 		int bottom = y;
-		SafariBiome[] biomes = SafariBiome.values();
+		SafariBiome[] biomes = BIOME_ORDER;
 
 		for (int i = 0; i < biomes.length; i++) {
 			SafariBiome biome = biomes[i];
@@ -590,8 +595,8 @@ public final class SafariDashboardScreen extends Screen {
 		// Fixed columns, since the proportional font makes padded text impossible to align.
 		int nameWidth = Math.min(110,
 			Math.max(font.width("Unique Per Player") + 12, panelWidth / 3));
-		int cellWidth = Math.max(28, (panelWidth - PANEL_PADDING * 2 - nameWidth) / SafariBiome.values().length);
-		SafariBiome[] biomes = SafariBiome.values();
+		int cellWidth = Math.max(28, (panelWidth - PANEL_PADDING * 2 - nameWidth) / BIOME_ORDER.length);
+		SafariBiome[] biomes = BIOME_ORDER;
 
 		text(graphics, font, Component.literal("Unique Per Player"), left, y, LABEL);
 		for (int i = 0; i < biomes.length; i++) {
@@ -752,25 +757,38 @@ public final class SafariDashboardScreen extends Screen {
 		}
 		y += 5;
 
-		SafariBiome[] biomes = SafariBiome.values();
+		SafariBiome[] biomes = BIOME_ORDER;
 		int gridLeft = panelLeft + (panelWidth - columnWidth * biomes.length) / 2;
 		for (int i = 0; i < biomes.length; i++) {
 			SafariBiome biome = biomes[i];
 			int x = gridLeft + i * columnWidth;
 			int rowY = y;
 
-			centeredCell(graphics, font, biome.displayName(), x, columnWidth, rowY,
+			boolean biomeComplete = Critters.inBiome(biome).stream()
+				.allMatch(critter -> SparklingStats.count(critter) > 0);
+			String biomeTitle = biome.displayName();
+			int biomeTitleX = x + (columnWidth - font.width(biomeTitle)) / 2;
+			text(graphics, font, Component.literal(biomeTitle), biomeTitleX, rowY,
 				0xFF000000 | biome.colour());
+			if (biomeComplete) {
+				int starWidth = font.width("✦");
+				rainbowText(graphics, font, "✦", biomeTitleX - starWidth - 4, rowY);
+				rainbowText(graphics, font, "✦", biomeTitleX + font.width(biomeTitle) + 4, rowY);
+			}
 			rowY += LINE_HEIGHT + 2;
 
 			for (Critter critter : Critters.inBiome(biome)) {
 				RunHistory.SpeciesStat stat = RunHistory.statFor(critter);
 				String note = stat.total() == 0 ? "—" : String.valueOf(stat.total());
-				text(graphics, font, Component.literal(critter.name()), x + COLUMN_PAD, rowY,
+				int noteX = x + columnWidth - COLUMN_PAD - font.width(note);
+				int nameX = x + COLUMN_PAD;
+				text(graphics, font, Component.literal(critter.name()), nameX, rowY,
 					0xFF000000 | critter.rarity().colour());
-				text(graphics, font, Component.literal(note),
-					x + columnWidth - COLUMN_PAD - font.width(note), rowY,
-					stat.total() == 0 ? UNCAUGHT : DIM);
+				if (SparklingStats.count(critter) > 0) {
+					rainbowText(graphics, font, "✦", nameX + font.width(critter.name()) + 2, rowY);
+				}
+				text(graphics, font, Component.literal(note), noteX, rowY,
+					stat.total() == 0 ? UNCAUGHT : WHITE);
 				rowY += LINE_HEIGHT;
 			}
 		}

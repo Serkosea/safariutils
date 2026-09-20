@@ -18,6 +18,8 @@ public final class ConfigManager {
 	private static SafariConfig config;
 	private static Screen ourScreen;
 	private static boolean wasOpen;
+	/** Invalidates render-derived caches when a live setting changes between game ticks. */
+	private static long revision;
 
 	private ConfigManager() {
 	}
@@ -31,6 +33,10 @@ public final class ConfigManager {
 	public static SafariConfig get() {
 		if (config == null) config = load();
 		return config;
+	}
+
+	public static long revision() {
+		return revision;
 	}
 
 	private static SafariConfig load() {
@@ -134,6 +140,7 @@ public final class ConfigManager {
 	/** Writes atomically so an interrupted save cannot destroy a working config. */
 	public static synchronized void save() {
 		if (config == null || TestingMode.savingSuspended()) return;
+		revision++;
 		Path path = SafariPaths.settings();
 		try {
 			AtomicFiles.writeString(path, GSON.toJson(config));

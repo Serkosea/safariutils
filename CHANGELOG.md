@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.0.0] - 2026-09-19
+## [2.0.0] - 2026-09-20
 
 ### Performance
 
@@ -14,6 +14,10 @@
 
 ### Fixes
 
+- Made display, waypoint, recatch, and Safe/Extra settings update correctly during an active run without losing tracked state
+- Kept Extra-only detections available when returning to Extra Mode without treating them as visually confirmed in Safe Mode
+- Preserved Party Objective HUD state and biome details when display options change or location text briefly refreshes
+- Corrected Sparkling Hideyho detection, completion, run history, and HUD cleanup
 - Kept rainbow gradients continuous across changing text lengths and adjacent values
 - Matched editable-text carets to the animated rainbow at their current screen position
 - Made every rainbow frame edge sample one consistent horizontal gradient
@@ -34,6 +38,8 @@
 
 ### Changes & Additions
 
+- Added rainbow Sparkling markers around completed biome titles and beside collected species on Safari Stats
+- Kept Stats critter names in their rarity colors, made nonzero catch totals white, and ordered biomes as Cavern, Icy, Haunted, then Forest
 - Added a conservative pre-ticket Join countdown with a gradual green-to-dark-red timer to the Progress HUD
 - Expanded the Bird Feed HUD into a biome-aware Party Objective HUD for Cavern, Icy, Haunted, and Forest progress
 - Added cached reference-matched icons for Soothing Incense and the three Gemzie gems

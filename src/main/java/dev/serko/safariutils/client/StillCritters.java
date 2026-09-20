@@ -124,9 +124,7 @@ public final class StillCritters {
 				? stableDuplicoPair && VisibilityCheck.canSeeDecoratedEntity(entity)
 				: VisibilityCheck.canSee(entity);
 			boolean sparkling = SparklingWatch.isSparkling(sighting);
-			boolean visible = !SafeMode.hiddenCritter(sighting.critter(), sparkling)
-				|| directlyVisible;
-			if (visible) unchecked.computeIfAbsent(sighting.critter(),
+			if (directlyVisible) unchecked.computeIfAbsent(sighting.critter(),
 				ignored -> new java.util.LinkedHashSet<>())
 				.removeIf(candidate -> sameSpawn(candidate, pos));
 
@@ -140,7 +138,7 @@ public final class StillCritters {
 			boolean persistent = stationary && (directlyVisible
 				|| previous != null && previous.persistentThroughWalls() && previous.pos().equals(pos));
 			remembered.put(id, new Entry(sighting.critter(), pos, sparkling, now,
-				visible || previous != null && previous.visiblyConfirmed(), persistent));
+				directlyVisible || previous != null && previous.visiblyConfirmed(), persistent));
 		}
 		pruneMissingHideonfloors(now);
 		pruneVisibleEmptyCandidates();
@@ -339,6 +337,8 @@ public final class StillCritters {
 		List<Sighted> result = new ArrayList<>();
 		for (Map.Entry<UUID, Entry> entry : remembered.entrySet()) {
 			if (!critter.equals(entry.getValue().critter())) continue;
+			if (SafeMode.hiddenCritter(critter, entry.getValue().sparkling())
+				&& !entry.getValue().visiblyConfirmed()) continue;
 			result.add(new Sighted(entry.getKey(), entry.getValue().pos(), entry.getValue().sparkling(),
 				entry.getValue().persistentThroughWalls()));
 		}

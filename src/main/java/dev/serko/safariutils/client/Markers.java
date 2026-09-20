@@ -14,6 +14,7 @@ import java.util.List;
 public final class Markers {
 	private static Object cachedLevel;
 	private static long cachedTick = Long.MIN_VALUE;
+	private static long cachedConfigRevision = Long.MIN_VALUE;
 	private static List<Marker> cachedMarkers = List.of();
 
 	/** How a marker is drawn. */
@@ -37,10 +38,12 @@ public final class Markers {
 	public static List<Marker> collect() {
 		net.minecraft.client.Minecraft client = net.minecraft.client.Minecraft.getInstance();
 		if (client.level != null && client.level == cachedLevel
-			&& client.level.getGameTime() == cachedTick) return cachedMarkers;
+			&& client.level.getGameTime() == cachedTick
+			&& ConfigManager.revision() == cachedConfigRevision) return cachedMarkers;
 		List<Marker> result = collectFresh();
 		cachedLevel = client.level;
 		cachedTick = client.level == null ? Long.MIN_VALUE : client.level.getGameTime();
+		cachedConfigRevision = ConfigManager.revision();
 		cachedMarkers = List.copyOf(result);
 		return cachedMarkers;
 	}

@@ -22,8 +22,6 @@ public final class CritterSpotter {
 	}
 
 	public static void tick() {
-		if (!ConfigManager.get().display.countSpawns) return;
-
 		SafariSession session = SessionManager.current();
 		if (session == null || !SafariLocation.inSafari()) return;
 		long scan = CritterEntities.scannedAt();

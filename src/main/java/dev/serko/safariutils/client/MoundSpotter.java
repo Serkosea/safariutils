@@ -91,6 +91,8 @@ public final class MoundSpotter {
 	private static final Set<BlockPos> confirmedVisible = new HashSet<>();
 	/** Completed positions cannot be re-added by a stale interaction entity. */
 	private static final Set<BlockPos> completed = new HashSet<>();
+	/** Completion supported by direct inspection or an authoritative local break. */
+	private static final Set<BlockPos> safeCompleted = new HashSet<>();
 	/** Local breaks stay suppressed while their server-side interaction finishes despawning. */
 	private static final Map<BlockPos, Long> breakSuppressedUntil = new java.util.HashMap<>();
 	/** First reliable scan on which a previously detected mound was absent. */
@@ -107,6 +109,7 @@ public final class MoundSpotter {
 	private static int ticks;
 	private static String preparedLobby;
 	private static boolean lastSafeMode;
+	private static long lastConfigRevision = Long.MIN_VALUE;
 
 	/** Runs a cheap loaded-entity scan even before Cavern is entered. */
 	public static void tick() {
@@ -125,8 +128,10 @@ public final class MoundSpotter {
 		}
 		// One shared refresh feeds both the Missing HUD and waypoint renderer. Neither
 		// render path should launch an entity scan while a biome boundary is changing.
-		if (++ticks < 5) return;
+		long configRevision = ConfigManager.revision();
+		if (++ticks < 5 && configRevision == lastConfigRevision) return;
 		ticks = 0;
+		lastConfigRevision = configRevision;
 		refresh();
 	}
 	/** Every currently known, unbroken mound position. */
@@ -143,7 +148,7 @@ public final class MoundSpotter {
 			lastSafeMode = safeMode;
 			if (safeMode) {
 				for (BlockPos pos : StaticWaypointCatalog.mounds()) {
-					if (!completed.contains(pos)) everSeen.add(pos);
+					if (!safeCompleted.contains(pos)) everSeen.add(pos);
 				}
 			}
 		}
@@ -151,7 +156,7 @@ public final class MoundSpotter {
 		// when Safe Mode is enabled instead of requiring a lobby reset.
 		if (safeMode) {
 			for (BlockPos pos : StaticWaypointCatalog.mounds()) {
-				if (!completed.contains(pos)) everSeen.add(pos);
+				if (!safeCompleted.contains(pos)) everSeen.add(pos);
 			}
 		}
 
@@ -170,6 +175,7 @@ public final class MoundSpotter {
 				// required before discarding the impossible catalog position.
 				everSeen.remove(pos);
 				completed.add(pos);
+				safeCompleted.add(pos);
 			}
 		}
 		// Under Safe Mode, a position is only worth remembering once the player has
@@ -187,6 +193,7 @@ public final class MoundSpotter {
 			// Entity loading can trail the terrain by a few scans. A genuine live mound
 			// overrides an earlier visible-empty decision once its interaction arrives.
 			completed.remove(pos);
+			safeCompleted.remove(pos);
 			absentSince.remove(pos);
 			detectedLive.add(pos);
 			if (VisibilityCheck.canInspectCandidate(pos)) confirmedVisible.add(pos);
@@ -216,6 +223,7 @@ public final class MoundSpotter {
 				if (now - firstAbsent < ABSENCE_CONFIRM_MILLIS) continue;
 			}
 			completed.add(pos);
+			if (safeMode) safeCompleted.add(pos);
 			everSeen.remove(pos);
 			detectedLive.remove(pos);
 			confirmedVisible.remove(pos);
@@ -244,6 +252,7 @@ public final class MoundSpotter {
 		detectedLive.clear();
 		confirmedVisible.clear();
 		completed.clear();
+		safeCompleted.clear();
 		breakSuppressedUntil.clear();
 		absentSince.clear();
 		pendingLocalBreak = null;
@@ -252,6 +261,7 @@ public final class MoundSpotter {
 		cached = List.of();
 		ticks = 0;
 		lastSafeMode = SafeMode.mounds();
+		lastConfigRevision = ConfigManager.revision();
 	}
 
 	/** Remembers the exact locally struck mound until Hypixel confirms that it broke. */
@@ -273,6 +283,7 @@ public final class MoundSpotter {
 		if (pendingLocalBreak != null && System.currentTimeMillis() - pendingLocalBreakAt <= 2_000L) {
 			BlockPos broken = pendingLocalBreak;
 			completed.add(broken);
+			safeCompleted.add(broken);
 			everSeen.remove(broken);
 			detectedLive.remove(broken);
 			confirmedVisible.remove(broken);

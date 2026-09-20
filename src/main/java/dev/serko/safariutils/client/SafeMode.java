@@ -31,12 +31,13 @@ public final class SafeMode {
 	}
 
 	public static boolean hiddenCritter(Critter critter, boolean sparkling) {
-		if (BuildVersion.SAFE) return isHiddenSpecies(critter);
+		if (BuildVersion.SAFE) return hiddenSpecies(critter);
 		if (!config().safeMode || (sparkling && !config().safeSparklingCritters)) return false;
 		return isHiddenSpeciesEnabled(critter);
 	}
 
-	private static boolean isHiddenSpecies(Critter critter) {
+	/** Species whose loaded entities can reveal information the player has not seen. */
+	static boolean hiddenSpecies(Critter critter) {
 		return switch (critter.name()) {
 			case "Hideyho", "Hideonwall", "Duplico", "Bloodbat", "Hideonfloor" -> true;
 			default -> false;

@@ -8,16 +8,20 @@ import java.util.function.Supplier;
 final class TickCache<T> {
 	private Object level;
 	private long tick = Long.MIN_VALUE;
+	private long configRevision = Long.MIN_VALUE;
 	private T value;
 	private boolean initialized;
 
 	T get(Supplier<T> factory) {
 		Minecraft client = Minecraft.getInstance();
 		long currentTick = client.level == null ? Long.MIN_VALUE : client.level.getGameTime();
-		if (!initialized || client.level != level || currentTick != tick) {
+		long currentConfigRevision = ConfigManager.revision();
+		if (!initialized || client.level != level || currentTick != tick
+			|| currentConfigRevision != configRevision) {
 			initialized = true;
 			level = client.level;
 			tick = currentTick;
+			configRevision = currentConfigRevision;
 			value = factory.get();
 		}
 		return value;

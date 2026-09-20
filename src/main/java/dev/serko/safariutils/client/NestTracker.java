@@ -31,6 +31,8 @@ public final class NestTracker {
 	/** Candidates whose bee-nest block has actually been loaded and confirmed this run. */
 	private static final Set<BlockPos> present = new LinkedHashSet<>();
 	private static final Set<BlockPos> punched = new LinkedHashSet<>();
+	/** Resolutions supported by direct inspection, local interaction, or trusted sync. */
+	private static final Set<BlockPos> safePunched = new LinkedHashSet<>();
 	private static final long SPAWN_CONFIRM_WINDOW_MILLIS = 5_000;
 	private static final double SPAWN_CONFIRM_RADIUS_SQ = 12.0 * 12.0;
 	private static final Map<BlockPos, PendingInteraction> pending = new HashMap<>();
@@ -46,6 +48,7 @@ public final class NestTracker {
 	 */
 	private static final Set<BlockPos> confirmedVisible = new LinkedHashSet<>();
 	private static long cachedTick = Long.MIN_VALUE;
+	private static long cachedConfigRevision = Long.MIN_VALUE;
 	private static List<Nest> cachedNests = List.of();
 	private static String preparedLobby;
 
@@ -122,6 +125,7 @@ public final class NestTracker {
 		BlockPos immutable = pos.immutable();
 		known.add(immutable);
 		punched.add(immutable);
+		safePunched.add(immutable);
 		pending.remove(immutable);
 		cachedTick = Long.MIN_VALUE;
 		DebugLog.line("NEST", "confirmed Honeybug spawn at " + immutable.toShortString());
@@ -175,15 +179,17 @@ public final class NestTracker {
 		Minecraft client = Minecraft.getInstance();
 		if (client.level == null || client.player == null) return List.of();
 		long tick = client.level.getGameTime();
-		if (tick == cachedTick) return cachedNests;
+		long configRevision = ConfigManager.revision();
+		if (tick == cachedTick && configRevision == cachedConfigRevision) return cachedNests;
 		cachedTick = tick;
+		cachedConfigRevision = configRevision;
 		List<Nest> result = new ArrayList<>();
 
 		for (BlockPos pos : known) {
 			// An unloaded chunk reports air, which would read as punched. Only a loaded
 			// chunk can say either way, so anything else is left out of the count.
 			if (!client.level.isLoaded(pos)) {
-				if (!SafeMode.nests() || punched.contains(pos)) continue;
+				if (!SafeMode.nests() || safePunched.contains(pos)) continue;
 				result.add(new Nest(pos, true, Math.sqrt(client.player.position()
 					.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5))));
 				continue;
@@ -193,14 +199,16 @@ public final class NestTracker {
 			// An absent catalog candidate was never necessarily a nest this run. Normal
 			// Mode may clear only a nest it previously confirmed; Safe Mode may also
 			// clear a candidate once the player visibly checks its empty location.
-			if (!nestPresent && (present.contains(pos)
-				|| SafeMode.nests() && VisibilityCheck.canInspectCandidate(pos)
-				// In synchronized parties an absent, loaded candidate is definitively not
-				// usable. This also repairs a missed remote confirmation once anyone visits it.
-				|| PartyItemSyncProviders.active())) punched.add(pos);
+			if (!nestPresent) {
+				boolean safelyResolved = VisibilityCheck.canInspectCandidate(pos)
+					// In synchronized parties an absent, loaded candidate is authoritative.
+					|| PartyItemSyncProviders.active();
+				if (present.contains(pos) || safelyResolved) punched.add(pos);
+				if (safelyResolved) safePunched.add(pos);
+			}
 			// Normal detection reports actual blocks, never unverified catalog candidates.
 			if (!SafeMode.nests() && !present.contains(pos)) continue;
-			boolean unpunched = !punched.contains(pos);
+			boolean unpunched = !(SafeMode.nests() ? safePunched : punched).contains(pos);
 			// Grown here, once per call, rather than a separate pass of its own —
 			// every caller already walks this same list.
 			if (!confirmedVisible.contains(pos) && VisibilityCheck.canSeeBeeNest(pos)) {
@@ -235,6 +243,7 @@ public final class NestTracker {
 		known.addAll(StaticWaypointCatalog.nests());
 		present.clear();
 		punched.clear();
+		safePunched.clear();
 		pending.clear();
 		checkedSightingScan = Long.MIN_VALUE;
 		confirmedVisible.clear();
@@ -244,6 +253,7 @@ public final class NestTracker {
 		topupCursor = 0;
 		topupTotal = 0;
 		cachedTick = Long.MIN_VALUE;
+		cachedConfigRevision = Long.MIN_VALUE;
 		cachedNests = List.of();
 	}
 }

@@ -22,9 +22,32 @@ public final class PartyObjectiveHud implements HudElement {
 
 	public static int borderColour() { return HudBorderStyle.partyObjectives(); }
 
+	/**
+	 * The shared location cache is normally authoritative, but can briefly lose its
+	 * biome while Hypixel rebuilds area text. During an active run the position map is
+	 * still valid, so do not collapse an in-biome HUD to its title-only form.
+	 */
+	public static SafariBiome currentBiome() {
+		SafariBiome biome = SafariLocation.biome();
+		return biome != null || SessionManager.current() == null
+			? biome : SafariLocation.biomeFromPosition();
+	}
+
+	/** Whether this biome is selected for both its title status and live HUD details. */
+	public static boolean biomeEnabled(SafariBiome biome) {
+		if (biome == null) return false;
+		int bit = switch (biome) {
+			case CAVERN -> 1;
+			case ICY -> 2;
+			case HAUNTED -> 4;
+			case FOREST -> 8;
+		};
+		return (ConfigManager.get().display.partyObjectiveTitleBiomes & bit) != 0;
+	}
+
 	public static int titleColour() {
 		int border = borderColour();
-		SafariBiome biome = SafariLocation.biome();
+		SafariBiome biome = currentBiome();
 		return border != 0 ? border : biome == null ? 0xFFFFAA00 : 0xFF000000 | biome.colour();
 	}
 
@@ -32,9 +55,9 @@ public final class PartyObjectiveHud implements HudElement {
 		HudPanel synchronizedPanel = PartyItemSyncProviders.objectivePanel();
 		if (synchronizedPanel != null) return synchronizedPanel;
 		Minecraft client = Minecraft.getInstance();
-		SafariBiome biome = SafariLocation.biome();
+		SafariBiome biome = currentBiome();
 		if (SessionManager.current() == null || client.player == null) return null;
-		if (biome == null) return basePanel();
+		if (biome == null || !biomeEnabled(biome)) return basePanel();
 		return switch (biome) {
 			case FOREST -> forestPanel(client);
 			case CAVERN -> cavernPanel(client);
@@ -44,7 +67,7 @@ public final class PartyObjectiveHud implements HudElement {
 	}
 
 	public static boolean localObjectiveComplete() {
-		SafariBiome biome = SafariLocation.biome();
+		SafariBiome biome = currentBiome();
 		if (biome == null) return false;
 		return switch (biome) {
 			case FOREST -> BirdfeederWatch.allForestFeedUsed();
@@ -276,6 +299,7 @@ public final class PartyObjectiveHud implements HudElement {
 		float scale = box.scale() * ResponsiveUI.scale(graphics.guiWidth(), graphics.guiHeight());
 		int x = box.pixelX(graphics.guiWidth(), panel, client.font, scale);
 		int y = box.pixelY(graphics.guiHeight(), panel, scale);
-		panel.render(graphics, client.font, x, y, scale, borderColour());
+		if (SparklingWatch.hudThemeActive()) panel.renderRainbow(graphics, client.font, x, y, scale);
+		else panel.render(graphics, client.font, x, y, scale, borderColour());
 	}
 }

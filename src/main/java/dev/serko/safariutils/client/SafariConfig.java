@@ -867,11 +867,11 @@ public class SafariConfig {
 		public boolean removeDarkness = true;
 
 		@SettingInfo(name = "Hide Chat Messages",
-			desc = "Hides selected Safari server messages after Safari Utils processes them")
+			desc = "Hides selected server dialogue and objective messages")
 		@SettingMultiChoice(
 			values = {"Critter Catches", "Loot Shares", "Floor Drops", "Manager Dialogue",
-				"Mounds", "Gemzie", "Cold Messages", "Wumpa", "Doomspiral", "Hideyho Dialogue",
-				"Empty Nests", "Bird Spawns"},
+				"Gemzie", "Mounds", "Wumpa", "Cold Messages", "Doomspiral", "Hideyho Dialogue",
+				"Bird Spawns", "Empty Nests"},
 			groups = {"General", "Cavern", "Icy", "Haunted", "Forest"},
 			groupStarts = {0, 4, 6, 8, 10}, biomeColumns = true)
 		@Expose

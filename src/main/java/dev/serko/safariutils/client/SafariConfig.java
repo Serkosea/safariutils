@@ -870,11 +870,9 @@ public class SafariConfig {
 			desc = "Hides selected server dialogue and objective messages")
 		@SettingMultiChoice(
 			values = {"Run Start Information", "Catch Attempts", "Critter Catches", "Loot Shares",
-				"Floor Drops", "Manager Dialogue", "Gemzie", "Chuckwalla Messages", "Rockmite Messages",
-				"Scrappy Messages", "Shyworm Messages", "Snoozle Messages", "Wumpa",
-				"Troodon Messages", "Cold Messages", "Doomspiral", "Bloodbat Messages",
-				"Duplico Messages", "Gazer Messages", "Gimmiegold Messages", "Hideyho Dialogue",
-				"Bird Spawns", "Empty Nest Messages"},
+				"Floor Drops", "Safari Manager", "Gemzie", "Chuckwalla", "Rockmite", "Scrappy",
+				"Shyworm", "Snoozle", "Wumpa", "Troodon", "Cold", "Doomspiral", "Bloodbat",
+				"Duplico", "Gazer", "Gimmiegold", "Hideyho", "Bird Spawns", "Empty Nest"},
 			groups = {"General", "Cavern", "Icy", "Haunted", "Forest"},
 			groupStarts = {0, 6, 12, 15, 21}, biomeColumns = true)
 		@Expose

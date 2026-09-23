@@ -52,6 +52,11 @@ public final class ChatParser {
 		return PLAYER_SAID.matcher(line).matches();
 	}
 
+	/** Exact capsule throw/failure shapes shared by run tracking and chat hiding. */
+	public static boolean catchAttemptMessage(String line) {
+		return ATTEMPT.matcher(line).matches() || FAILED.matcher(line).find();
+	}
+
 	/** Server-reported entrant, including partymates who arrive before the local player. */
 	public static String safariEntrant(String line) {
 		Matcher entered = ENTERED.matcher(line);

@@ -1086,7 +1086,8 @@ public final class SafariSettingsScreen extends Screen {
 		int columns = multiChoiceColumns();
 		int rows = multiChoiceRows(labels.length, columns);
 		boolean groupedColumns = multiChoiceDropdown.biomeColumns() && columns == groups.length;
-		int w = Math.min(groupedColumns ? 760 : 620, width - 30);
+		int groupedWidth = groups.length >= 5 ? 900 : 760;
+		int w = Math.min(groupedColumns ? groupedWidth : 620, width - 30);
 		int h = Math.min(height - 30, (groupedColumns ? 90 : 76) + rows * 31);
 		int x = (width - w) / 2;
 		int y = (height - h) / 2;
@@ -1217,7 +1218,7 @@ public final class SafariSettingsScreen extends Screen {
 		if (multiChoiceDropdown.biomeColumns()) {
 			int groups = multiChoiceDropdown.critters()
 				? CRITTER_GROUPS.length : multiChoiceDropdown.groups().length;
-			if (width >= (groups >= 5 ? 720 : 600)) return groups;
+			if (width >= (groups >= 5 ? 800 : 600)) return groups;
 			return width >= 420 ? 2 : 1;
 		}
 		return width >= 560 ? 2 : 1;

@@ -28,7 +28,7 @@ public final class PartyObjectiveHud implements HudElement {
 	static final int FOREST_LINE_COLOUR = 0xFFAAFFAA;
 	static final int CAVERN_LINE_COLOUR = 0xFFFFCC77;
 	static final int ICY_LINE_COLOUR = 0xFF99EEFF;
-	static final int HAUNTED_LINE_COLOUR = 0xFFAA55FF;
+	static final int HAUNTED_LINE_COLOUR = 0xFFDDAAFF;
 	static final int INTERMEDIATE_COLOUR = 0xFFFFFF55;
 	private static final Pattern DISPLAYED_PLAYER = Pattern.compile(
 		"^\\[\\d+]\\s+([A-Za-z0-9_]{1,16})(?:\\s.*)?$");

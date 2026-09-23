@@ -869,12 +869,16 @@ public class SafariConfig {
 		@SettingInfo(name = "Hide Chat Messages",
 			desc = "Hides selected server dialogue and objective messages")
 		@SettingMultiChoice(
-			values = {"Critter Catches", "Loot Shares", "Floor Drops", "Manager Dialogue",
-				"Gemzie", "Mounds", "Wumpa", "Cold Messages", "Doomspiral", "Hideyho Dialogue",
-				"Bird Spawns", "Empty Nests"},
+			values = {"Run Start Information", "Catch Attempts", "Critter Catches", "Loot Shares",
+				"Floor Drops", "Manager Dialogue", "Gemzie", "Chuckwalla Messages", "Rockmite Messages",
+				"Scrappy Messages", "Shyworm Messages", "Snoozle Messages", "Wumpa",
+				"Troodon Messages", "Cold Messages", "Doomspiral", "Bloodbat Messages",
+				"Duplico Messages", "Gazer Messages", "Gimmiegold Messages", "Hideyho Dialogue",
+				"Bird Spawns", "Empty Nest Messages"},
 			groups = {"General", "Cavern", "Icy", "Haunted", "Forest"},
-			groupStarts = {0, 4, 6, 8, 10}, biomeColumns = true)
+			groupStarts = {0, 6, 12, 15, 21}, biomeColumns = true)
 		@Expose
+		@SerializedName("hiddenChatMessageGroups")
 		public int hiddenChatMessages = 0;
 
 		// Not shown in the menu — the drag-to-place editor's scroll-to-resize is the

@@ -14,6 +14,7 @@ public final class SafariObjectives {
 	private static final int[] currentInventory = new int[TRACKED.length];
 	private static boolean gemzieDoorOpened;
 	private static long gemzieDoorOpenedAt;
+	private static boolean gemzieCaught;
 	private static int placedGemMask;
 	private static int incenseUsed;
 	private static boolean doomspiralSpawned;
@@ -21,6 +22,7 @@ public final class SafariObjectives {
 	private static boolean doomspiralRetreated;
 	private static boolean wumpaSpawned;
 	private static boolean wumpaCaught;
+	private static boolean wumpaRetreated;
 	private static long reconcileDeathAt;
 	private static int scanTicks;
 
@@ -84,8 +86,10 @@ public final class SafariObjectives {
 
 	public static boolean gemzieDoorOpened() { return gemzieDoorOpened; }
 
-	/** The door animation has had time to finish after its authoritative chat line. */
-	public static boolean gemzieDoorSettled() {
+	public static boolean gemzieCaught() { return gemzieCaught; }
+
+	/** The authoritative door message has had time to match the visible opening. */
+	public static boolean gemzieDoorDisplayReady() {
 		return gemzieDoorOpened && gemzieDoorOpenedAt > 0
 			&& System.currentTimeMillis() - gemzieDoorOpenedAt >= 2_500L;
 	}
@@ -104,6 +108,13 @@ public final class SafariObjectives {
 	public static boolean wumpaSpawned() { return wumpaSpawned; }
 
 	public static boolean wumpaCaught() { return wumpaCaught; }
+
+	public static boolean wumpaRetreated() { return wumpaRetreated; }
+
+	/** Icy is terminal after either catching Wumpa or fainting during its one attempt. */
+	public static boolean wumpaComplete() {
+		return wumpaCaught || wumpaRetreated;
+	}
 
 	/** Confirmed podium placements, or all three once the chamber door opens. */
 	public static int placedGemMask() {
@@ -162,14 +173,22 @@ public final class SafariObjectives {
 			doomspiralRetreated = true;
 		}
 		if (line.startsWith("The Wumpa has awoken")) wumpaSpawned = true;
-		if (line.endsWith("You fainted and lost some of your items!")) {
+		if (line.contains("fainted by a Wumpa") && line.endsWith("lost some of your items!")) {
+			wumpaSpawned = true;
+			wumpaRetreated = true;
+		}
+		if (line.endsWith("lost some of your items!")) {
 			reconcileDeathAt = System.currentTimeMillis() + 750;
 		}
 	}
 
 	/** Records terminal encounter catches separately from their earlier spawn states. */
 	public static void onCatch(String critterName) {
-		if ("Doomspiral".equals(critterName)) {
+		if ("Gemzie".equals(critterName)) {
+			gemzieDoorOpened = true;
+			placedGemMask = 7;
+			gemzieCaught = true;
+		} else if ("Doomspiral".equals(critterName)) {
 			doomspiralSpawned = true;
 			doomspiralCaught = true;
 		} else if ("Wumpa".equals(critterName)) {
@@ -197,6 +216,7 @@ public final class SafariObjectives {
 		java.util.Arrays.fill(currentInventory, 0);
 		gemzieDoorOpened = false;
 		gemzieDoorOpenedAt = 0L;
+		gemzieCaught = false;
 		placedGemMask = 0;
 		incenseUsed = 0;
 		doomspiralSpawned = false;
@@ -204,6 +224,7 @@ public final class SafariObjectives {
 		doomspiralRetreated = false;
 		wumpaSpawned = false;
 		wumpaCaught = false;
+		wumpaRetreated = false;
 		reconcileDeathAt = 0;
 		scanTicks = 0;
 	}

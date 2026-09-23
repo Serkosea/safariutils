@@ -65,6 +65,9 @@ public final class Critters {
 
 	private static final Map<String, Critter> BY_NAME = new LinkedHashMap<>();
 	private static final Map<SafariBiome, List<Critter>> BY_BIOME = new EnumMap<>(SafariBiome.class);
+	private static final List<SafariBiome> SELECTION_BIOMES = List.of(
+		SafariBiome.CAVERN, SafariBiome.ICY, SafariBiome.HAUNTED, SafariBiome.FOREST);
+	private static final List<Critter> SELECTION_ORDER;
 
 	/** Species ordered longest-name-first, so substring matching never mis-resolves. */
 	private static final List<Critter> BY_NAME_LENGTH_DESC;
@@ -81,6 +84,16 @@ public final class Critters {
 		List<Critter> byLength = new ArrayList<>(ALL);
 		byLength.sort(Comparator.comparingInt((Critter c) -> c.name().length()).reversed());
 		BY_NAME_LENGTH_DESC = List.copyOf(byLength);
+		List<Critter> ordered = new ArrayList<>(ALL.size());
+		for (SafariBiome biome : SELECTION_BIOMES) {
+			List<Critter> group = new ArrayList<>(BY_BIOME.get(biome));
+			group.sort(Comparator.comparing(Critter::rarity).thenComparing(Critter::name));
+			ordered.addAll(group);
+		}
+		if (ordered.size() != ALL.size() || ordered.size() > Long.SIZE) {
+			throw new IllegalStateException("Critter selection must contain every species and fit a long mask");
+		}
+		SELECTION_ORDER = List.copyOf(ordered);
 	}
 
 	/**
@@ -94,6 +107,15 @@ public final class Critters {
 
 	public static List<Critter> all() {
 		return ALL;
+	}
+
+	/** Picker order: Cavern, Icy, Haunted, Forest; rarity then name within each. */
+	public static List<Critter> selectionOrder() {
+		return SELECTION_ORDER;
+	}
+
+	public static List<SafariBiome> selectionBiomes() {
+		return SELECTION_BIOMES;
 	}
 
 	/** Total species count — 37. */

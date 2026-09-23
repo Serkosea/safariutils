@@ -18,15 +18,14 @@ public final class SafariPartyWatch {
 		"^(?:\\[\\d+\\]\\s*)?([A-Za-z0-9_]{1,16})(?:\\s.*)?$");
 	private static final long INSTANCE_GRACE_MILLIS = 500L;
 	private static final long ROSTER_STABLE_MILLIS = 350L;
-	/** Extra certainty before persistent entity-location learning treats a run as solo. */
-	private static final long SOLO_LEARNING_STABLE_MILLIS = 3_000L;
+	/** Let stale tab data settle before persistent location learning in any party size. */
+	private static final long LEARNING_STABLE_MILLIS = 3_000L;
 	private static String lobbyId;
 	private static int joinedPlayers;
 	private static int candidatePlayers = -1;
 	private static long instanceObservedAt;
 	private static long candidateSince;
 	private static boolean fullPartyAnnounced;
-	private static boolean otherPlayerSeenThisInstance;
 	private static boolean graceLogged;
 
 	private SafariPartyWatch() {
@@ -75,7 +74,6 @@ public final class SafariPartyWatch {
 				+ (now - candidateSince) + "ms stable at +" + (now - instanceObservedAt) + "ms");
 			joinedPlayers = observed;
 		}
-		if (observed > 1) otherPlayerSeenThisInstance = true;
 		// Manager activation must not suppress this: a player can turn in their ticket
 		// before the tab-list roster has remained stable long enough to announce it.
 		int expected = PartyRosterWatch.expectedPlayers();
@@ -126,14 +124,13 @@ public final class SafariPartyWatch {
 	}
 
 	/**
-	 * True only after the current instance has reported one player continuously for a
-	 * few seconds. The longer window prevents a partially loaded party roster from
-	 * contaminating persistent initial-spawn data.
+	 * Wait for the current Safari's player count to settle before saving observations.
+	 * This guards against stale tab data without excluding runs with party members.
 	 */
-	public static boolean confirmedSoloForLearning() {
-		return !otherPlayerSeenThisInstance && joinedPlayers == 1
-			&& candidatePlayers == 1 && candidateSince > 0
-			&& System.currentTimeMillis() - candidateSince >= SOLO_LEARNING_STABLE_MILLIS;
+	public static boolean readyForLocationLearning() {
+		return SafariLocation.inside() && joinedPlayers >= 1 && joinedPlayers <= 4
+			&& candidatePlayers == joinedPlayers && candidateSince > 0
+			&& System.currentTimeMillis() - candidateSince >= LEARNING_STABLE_MILLIS;
 	}
 
 	private static int tabListPlayerCount() {
@@ -164,7 +161,6 @@ public final class SafariPartyWatch {
 		candidateSince = 0;
 		instanceObservedAt = now;
 		fullPartyAnnounced = false;
-		otherPlayerSeenThisInstance = false;
 		graceLogged = false;
 		DebugLog.line("PARTYTIME", "instance begin lobby=" + lobbyId);
 	}
@@ -176,7 +172,6 @@ public final class SafariPartyWatch {
 		candidateSince = 0;
 		instanceObservedAt = 0;
 		fullPartyAnnounced = false;
-		otherPlayerSeenThisInstance = false;
 		graceLogged = false;
 	}
 }

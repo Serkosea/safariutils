@@ -71,7 +71,7 @@ public final class ProgressHud implements HudElement {
 				HudBorderStyle.progressTitle(), joined >= expected ? 0xFF55FF55 : 0xFFFF5555);
 			long remaining = SessionManager.ticketWindowRemainingMillis();
 			if (remaining >= 0L) {
-				String value = remaining == 0L ? "Closed" : formatCountdown(remaining);
+				String value = remaining == 0L ? "Closing" : formatCountdown(remaining);
 				panel.pair("Join", value, LABEL, joinTimerColour(remaining));
 			}
 		} else {

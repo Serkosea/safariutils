@@ -38,11 +38,11 @@ public final class HudPanel {
 	private static final String[] GEM_ICON = {"..........", "...hhhh...", "..hh##hh..",
 		".hh####hs.", ".m######s.", ".m######s.", ".mm####ss.", "..mm##ss..",
 		"...msss..."};
-	// Party Objective title symbols: selected M4 mountain, S2 skull, and L2 leaf.
+	// Compact fixed-palette symbols for Party Objective title states.
 	private static final String[] MOUNTAIN_ICON = {"....l......", "...loo..l..", "..looosloo.",
 		".looogloogs", "looogggggss", "oogggggssss", "ogggggsssss", "sssdddsssss",
 		".sssssssss."};
-	// Temporary Icy objective symbol; this intentionally uses a fixed pale-blue palette.
+	// The Icy symbol intentionally uses a fixed pale-blue palette.
 	private static final String[] SNOWFLAKE_ICON = {".....g.....", "..l..g..l..", "...l.g.l...",
 		".l..ggg..l.", "..gggdggg..", ".l..ggg..l.", "...l.g.l...",
 		"..l..g..l..", ".....g....."};
@@ -615,7 +615,9 @@ public final class HudPanel {
 			// count glyphs when they share the text baseline.
 			drawIcon(graphics, cursor, y - 1, value.icon(), value.colour());
 			cursor += iconWidth(value.icon()) + 2;
-			if (rainbowCounts) rainbowText(graphics, font, value.text(), cursor, y);
+			if ("✔".equals(value.text())) {
+				graphics.text(font, Component.literal(value.text()), cursor, y, 0xFF55FF55);
+			} else if (rainbowCounts) rainbowText(graphics, font, value.text(), cursor, y);
 			else graphics.text(font, Component.literal(value.text()), cursor, y, 0xFFFFFFFF);
 			cursor += font.width(value.text());
 		}

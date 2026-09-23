@@ -73,6 +73,10 @@ public final class SafariCommands {
 					requireUnlocked(ctx.getSource(), () -> runState(ctx.getSource()));
 					return 1;
 				}))
+				.then(ClientCommands.literal("jointimer").executes(ctx -> {
+					requireUnlocked(ctx.getSource(), () -> joinTimer(ctx.getSource()));
+					return 1;
+				}))
 				.then(ClientCommands.literal("room").executes(ctx -> {
 					requireUnlocked(ctx.getSource(), () -> roomIdentity(ctx.getSource()));
 					return 1;
@@ -344,6 +348,15 @@ public final class SafariCommands {
 		finishReport(source, record);
 	}
 
+	/** Copies the latest pre-ticket transition timeline for comparing server anchors. */
+	private static void joinTimer(FabricClientCommandSource source) {
+		String report = JoinWindowDiagnostics.report();
+		for (String line : report.stripTrailing().split("\\R")) {
+			source.sendFeedback(Component.literal(line).withStyle(ChatFormatting.GRAY));
+		}
+		copyResult(source, report);
+	}
+
 	/** Reports only hashes needed to verify that every client derives one room identity. */
 	private static void roomIdentity(FabricClientCommandSource source) {
 		var result = SafariRoomIdentityProbe.inspect();
@@ -408,7 +421,8 @@ public final class SafariCommands {
 			int remembered = critter == null ? 0 : StillCritters.entriesFor(critter).size();
 			int possible = critter == null ? 0 : StillCritters.candidatesFor(critter).size();
 			report(source, record, "  %-11s catalog=%d possible=%d confirmed=%d".formatted(name,
-				StaticEntityCatalog.positions(name).size(), possible, remembered), ChatFormatting.GRAY);
+				StaticEntityCatalog.positions(name).size(),
+				possible, remembered), ChatFormatting.GRAY);
 		}
 		finishReport(source, record);
 	}

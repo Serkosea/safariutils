@@ -9,7 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/** Aggregates server particle packets so Alpha tests can identify Sparkling effects. */
+/** Aggregates server particle packets used to identify Sparkling effects. */
 public final class ParticleDiagnostics {
 	private static final long FLUSH_MILLIS = 1_000L;
 	private static final double ASSOCIATION_DISTANCE_SQ = 8.0 * 8.0;
@@ -69,7 +69,7 @@ public final class ParticleDiagnostics {
 		}
 	}
 
-	/** Exact packet shape repeatedly observed on every Alpha Sparkling tested so far. */
+	/** Packet shape consistently observed for Sparkling effects. */
 	private static boolean sparklingPattern(ClientboundLevelParticlesPacket packet) {
 		return packet.getParticle().getType() == ParticleTypes.WAX_ON && packet.getCount() == 5
 			&& close(packet.getXDist(), 0.30f) && close(packet.getYDist(), 0.50f)

@@ -1,64 +1,39 @@
-# Safari Utils v2.0.0
-
-## Performance
-
-- Reduced frame drops from the Special Rainbow theme, HUD sprites, alerts, and world markers
-- Cached large saved-run histories so they are not reformatted, remeasured, or repriced every frame
-- Added batched waypoint geometry, off-screen marker culling, cached waypoint labels, and spatially indexed critter pairing
-- Added cached HUD layout, text, border, progress-bar, and objective-icon rendering
-- Reused per-tick world entities, wall state, session aggregates, and decoded waypoint catalogs across consumers
-- Batched Sparkling celebrations and encounter banner geometry for smoother alert rendering
-- Unified animated rainbow colors around one shared, frame-limited clock and fixed screen-space wavelength
+# Safari Utils v2.1.0
 
 ## Fixes
 
-- Made display, waypoint, recatch, and Safe/Extra settings update correctly during active runs without losing tracked information
-- Kept Extra-only detections available when returning to Extra Mode without exposing unconfirmed information in Safe Mode
-- Preserved Party Objective HUD state and biome details when display options change or location text briefly refreshes
-- Corrected Sparkling Hideyho detection, completion, run history, and HUD cleanup
-- Kept rainbow gradients continuous across changing text lengths and adjacent values
-- Matched editable-text carets to the animated rainbow at their current position
-- Made rainbow borders use one consistent horizontal gradient on every edge
-- Kept large Sparkling collection totals comfortably inside the collection panel
-- Prevented the optimized GUI batching layer from failing during client startup
-- Kept History table edge spacing stable as run numbers and profit totals grow
-- Kept History Runs, Catches, and Sparkling stars aligned regardless of text length
-- Applied the Special Rainbow gradient consistently to interface status text
-- Applied the Special Rainbow gradient to client messages and the SafariUtils chat tag
-- Prevented moved, dropped, or lost gems from being mistaken for confirmed Gemzie podium placements
-- Kept carried objective items in HUD totals while rearranging inventory
-- Hid players with no currently held objective items from Party Objective HUD lists
-- Required Forest feed consumption and Gemzie's 2.5-second door-opening delay before marking those objectives complete
-- Completed Haunted after either catching Doomspiral or receiving its terminal retreat message
-- Displayed Forest completion as unknown when run-wide feed totals cannot be confirmed
-- Prevented caught Hideonwall markers from reappearing under lingering replacement entity IDs in Extra Mode
-- Prevented failed learned-location saves from retrying every client tick
+- Made solo Party Objective tracking complete without enabling Party Sync or sending party messages
+- Prevented Birdfeeder Empty and All Feed Done from firing before every tracked feed item is consumed
+- Completed Wumpa after either catching it or losing the one-attempt encounter, while allowing a later party catch to replace Retreated with Caught
+- Based Cavern completion on catching a Gemzie and kept Door Open as an intermediate state
+- Kept completed objective details concise while preserving useful Forest bird counts
+- Matched objective player names to their tab-list colors
+- Kept hidden Safari messages available to every tracker, alert, history, and objective feature
+- Corrected mound waypoint height and removed rejected transition-only Hideyho positions
+- Kept nearby critters paired to separate remembered positions
+- Kept debug packet settings in their correct category and improved failed-join timing cleanup
+- Started the pre-ticket Join timer from the earliest queue or party-entry signal
 
 ## Changes & Additions
 
-- Added rainbow Sparkling markers around completed biome titles and beside collected species on Safari Stats
-- Kept Stats names rarity-colored, made nonzero catch totals white, and ordered biomes as Cavern, Icy, Haunted, then Forest
-- Added a pre-ticket Join countdown with gradual urgency coloring to show when Safari ticket use will lock
-- Expanded the Bird Feed HUD into a biome-aware Party Objective HUD for Cavern, Icy, Haunted, and Forest progress
-- Added reference-matched icons for Soothing Incense and the three Gemzie gems
-- Added an efficient automatic error log for important mod failures without requiring debug logging
-- Added objective-status and biome-color border options for the Party Objective HUD
-- Added selectable Cavern, Icy, Haunted, and Forest completion marks to the Party Objectives title everywhere in the Safari
-- Sorted displayed party-member names alphabetically across HUDs and Sparkling screens
-- Enabled every Party Objective HUD option by default, with biome-colored borders and status coloring off
-- Clarified Party Objective labels and kept Forest action labels consistently green
-- Expanded the Special Rainbow theme across settings, interface accents, and every HUD
-- Smoothed continuous rainbow borders, extended the gradient to editable text, and increased the cached star-field density
-- Added four selectable Sparkling catch-alert intensities with a current-intensity preview and photosensitivity confirmation
-- Kept Special as the original gentle celebration and added distinct optimized effects to the confirmed higher intensities
+- Added a Hide Chat Messages checker for critter catches, loot shares, floor drops, objective messages, and Safari Manager dialogue
+- Expanded the Party Objective HUD with clearer Cavern, Icy, Haunted, and Forest terminal states
+- Added pale biome-relative objective colors, green placed-gem checks, and yellow intermediate encounter states
+- Added opt-in Party Sync with sender/lobby-bound verification, all-member confirmation, compact state snapshots, and queued recovery
+- Added selectable Always Active Critters and Always Active Waypoints for Sparkling Mode
+- Added verified Hideonfloor locations and an optional learned-candidate review overlay
+- Stored bundled static locations at block centers and sorted each catalog from the Safari center
+- Expanded focused debug presets and read-only server-packet diagnostics
+- Removed the obsolete Testing Session mode
+- Made each Runs-tab scroll move through 15 history entries
 
 ## Downloads
 
 Choose one jar for your Minecraft version:
 
-- `safariutils-2.0.0+mc26.1.2.jar`
-- `safariutils-2.0.0-extra+mc26.1.2.jar`
-- `safariutils-2.0.0+mc26.2.jar`
-- `safariutils-2.0.0-extra+mc26.2.jar`
+- `safariutils-2.1.0+mc26.1.2.jar`
+- `safariutils-2.1.0-extra+mc26.1.2.jar`
+- `safariutils-2.1.0+mc26.2.jar`
+- `safariutils-2.1.0-extra+mc26.2.jar`
 
-The regular jars use Safe Mode. Extra includes features in advanced section that provide information the player cannot directly see and may not be safe to use; Minecraft 26.2 builds have received limited testing compared with 26.1.2
+The regular jars use Safe Mode. Extra includes features in Advanced that may provide information the player cannot directly see and may not be safe to use. Minecraft 26.2 builds have received limited testing compared with 26.1.2

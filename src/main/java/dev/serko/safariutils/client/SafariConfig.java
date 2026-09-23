@@ -39,18 +39,16 @@ public class SafariConfig {
 
 	/** Runnable id for the "Edit Hud Positions" button in the Display category. */
 	private static final int EDIT_POSITIONS = 1;
-	private static final int TESTING_SESSION = 2;
 
 	public void executeRunnable(int runnableId) {
 		if (runnableId == EDIT_POSITIONS) {
 			HudEditorScreen.open();
 			return;
 		}
-		if (runnableId == TESTING_SESSION) TestingMode.settingChanged();
 	}
 
 	public boolean isValidRunnable(int runnableId) {
-		return runnableId == EDIT_POSITIONS || runnableId == TESTING_SESSION;
+		return runnableId == EDIT_POSITIONS;
 	}
 
 	@SettingCategory(name = "Display", desc = "HUDs, waypoints, colors, and interface appearance")
@@ -426,7 +424,7 @@ public class SafariConfig {
 		@SettingToggle @SettingGroup(id = PARTY_OBJECTIVE_OPTIONS) @Expose
 		@SerializedName(value = "partyObjectiveShowProgress", alternate = {"birdFeedShowFeedDone", "privateBirdFeedShowFeedDone"})
 		public boolean partyObjectiveShowProgress = true;
-		@SettingInfo(name = "Show Placement State", desc = "Shows Wumpa, the Birdfeeder, placed gems, or lit candles")
+		@SettingInfo(name = "Show Objective State", desc = "Shows Wumpa, Birdfeeder, Gemzie, or Doomspiral progress")
 		@SettingToggle @SettingGroup(id = PARTY_OBJECTIVE_OPTIONS) @Expose
 		@SerializedName(value = "partyObjectiveShowPlacement", alternate = {"birdFeedShowBirdfeeder", "privateBirdFeedShowBirdfeeder"})
 		public boolean partyObjectiveShowPlacement = true;
@@ -868,6 +866,13 @@ public class SafariConfig {
 		@Expose
 		public boolean removeDarkness = true;
 
+		@SettingInfo(name = "Hide Chat Messages",
+			desc = "Hides selected Safari server messages after Safari Utils processes them")
+		@SettingMultiChoice(values = {"Critter Catches", "Loot Shared Critters", "Floor Drops",
+			"Objective Messages", "Manager Dialogue"})
+		@Expose
+		public int hiddenChatMessages = 0;
+
 		// Not shown in the menu — the drag-to-place editor's scroll-to-resize is the
 		// only way to change these, and it reads/writes these fields directly.
 		@Expose
@@ -955,6 +960,11 @@ public class SafariConfig {
 		@SettingChoice(values = {"Off", "Rainbow"})
 		@Expose
 		public int specialTheme = 0;
+
+		@SettingInfo(name = "Enable Party Sync",
+			desc = "Shares Safari objective information with other party members through parsed party chat messages")
+		@SettingToggle
+		public transient boolean enablePartySync = false;
 
 		@SettingInfo(name = "Safe Mode", desc = "Limits tracking to information the player has visibly confirmed")
 		@SettingSection(id = SAFE_MODE)
@@ -1078,17 +1088,17 @@ public class SafariConfig {
 		@SettingSection(id = TESTING)
 		public boolean testingAccordion = false;
 
-		@SettingInfo(name = "Testing Session",
-			desc = "Runs normally without saving run history, totals, settings, or other progress until Minecraft restarts")
-		@SettingToggle(runnableId = TESTING_SESSION)
-		@SettingGroup(id = TESTING)
-		public transient boolean testingSession = false;
-
 		@SettingInfo(name = "Save Learned Locations",
-			desc = "Saves newly confirmed objective and initially stationary critter locations during solo runs")
+			desc = "Saves new Hideonfloor block-center locations for later review")
 		@SettingToggle
 		@SettingGroup(id = TESTING)
 		public transient boolean testingSaveLearnedLocations = false;
+
+		@SettingInfo(name = "Show Learned Candidates",
+			desc = "Shows newly learned locations absent from the bundled catalog across the whole Safari for manual review")
+		@SettingToggle
+		@SettingGroup(id = TESTING)
+		public transient boolean testingShowLearnedCandidates = false;
 
 		/** Accordion id for the debug-logging toggles. */
 		private static final int DEBUG_LOGGING = 1;
@@ -1109,8 +1119,10 @@ public class SafariConfig {
 
 		@SettingInfo(name = "Output Log Preset",
 			desc = "Applies a ready-made set of testing and logging options")
-		@SettingChoice(values = {"All", "Custom", "Party And Server", "Run Lifecycle",
-			"Sparkling Research", "Static Locations", "World Tracking"})
+		@SettingChoice(values = {"All", "Custom", "Join Timing", "Safari Run Research", "Party And Sync",
+			"Run Lifecycle", "Objectives And Inventory", "Contests And HUD",
+			"Sparkling Research", "Static Locations", "Entity And Catch Tracking",
+			"Server Packets"})
 		@SettingGroup(id = DEBUG_LOGGING)
 		public transient int outputLogPreset = 1;
 
@@ -1119,6 +1131,7 @@ public class SafariConfig {
 		private static final int OUTPUT_SESSION_DATA = 15;
 		private static final int OUTPUT_CRITTER_DETECTION = 16;
 		private static final int OUTPUT_WORLD_TRACKING = 17;
+		private static final int OUTPUT_SERVER_PACKETS = 25;
 
 		@SettingInfo(name = "Output Log Options",
 			desc = "Choose which information is written while Output Log is enabled")
@@ -1154,6 +1167,18 @@ public class SafariConfig {
 		@SettingGroup(id = OUTPUT_SESSION_DATA)
 		@Expose
 		public boolean logPartyTiming = false;
+
+		@SettingInfo(name = "Party Sync State", desc = "Party sync eligibility, message types, and enqueue counts without payloads")
+		@SettingToggle
+		@SettingGroup(id = OUTPUT_SESSION_DATA)
+		@Expose
+		public boolean logPartySync = false;
+
+		@SettingInfo(name = "Party API Refresh", desc = "Private automatic shared-Sparkling refresh decisions and outcomes without credentials")
+		@SettingToggle
+		@SettingGroup(id = OUTPUT_SESSION_DATA)
+		@Expose
+		public boolean logPartyApi = false;
 
 		@SettingInfo(name = "GUI And NPC Interactions",
 			desc = "Safari NPC uses, GUI openings, clicks, slots, and container changes")
@@ -1197,6 +1222,13 @@ public class SafariConfig {
 		@SettingGroup(id = OUTPUT_CRITTER_DETECTION)
 		@Expose
 		public boolean logRun = false;
+
+		@SettingInfo(name = "Objective State Changes",
+			desc = "Change-only gems, incense, bird feed, and encounter objective state")
+		@SettingToggle
+		@SettingGroup(id = OUTPUT_CRITTER_DETECTION)
+		@Expose
+		public boolean logObjectives = false;
 
 		@SettingInfo(name = "Run Activation", desc = "Safari entry, Manager-message matching, pending events, and activation decisions")
 		@SettingToggle
@@ -1297,7 +1329,7 @@ public class SafariConfig {
 		public boolean logCritterCounts = false;
 
 		@SettingInfo(name = "Static Waypoint Locations",
-			desc = "New stationary objective and initially hidden critter candidate positions")
+			desc = "New and confirmed solo static positions, exact coordinates, and discrepancies")
 		@SettingToggle
 		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
 		@Expose
@@ -1316,6 +1348,54 @@ public class SafariConfig {
 		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
 		@Expose
 		public boolean logSparkling = false;
+
+		@SettingInfo(name = "Passive Server Packets",
+			desc = "Read-only observations of packets vanilla Minecraft already receives")
+		@SettingSection(id = OUTPUT_SERVER_PACKETS)
+		@SettingGroup(id = OUTPUT_LOG_OPTIONS)
+		public boolean outputServerPacketsAccordion = false;
+
+		@SettingInfo(name = "World Transitions",
+			desc = "Configuration, login, respawn, position, spawn, and chunk-center packets")
+		@SettingToggle
+		@SettingGroup(id = OUTPUT_SERVER_PACKETS)
+		@Expose
+		public boolean logPacketTransitions = false;
+
+		@SettingInfo(name = "Server HUD Packets",
+			desc = "Scoreboard, title, subtitle, action-bar, boss-bar, and player-list updates")
+		@SettingToggle
+		@SettingGroup(id = OUTPUT_SERVER_PACKETS)
+		@Expose
+		public boolean logPacketHud = false;
+
+		@SettingInfo(name = "Server Inventory Packets",
+			desc = "Player inventory, open-container, carried-item, and slot updates")
+		@SettingToggle
+		@SettingGroup(id = OUTPUT_SERVER_PACKETS)
+		@Expose
+		public boolean logPacketInventory = false;
+
+		@SettingInfo(name = "Server Entity Packets",
+			desc = "Aggregated entity additions, removals, and metadata updates without per-packet spam")
+		@SettingToggle
+		@SettingGroup(id = OUTPUT_SERVER_PACKETS)
+		@Expose
+		public boolean logPacketEntities = false;
+
+		@SettingInfo(name = "Server World Packets",
+			desc = "Aggregated chunks plus time, ticking-state, and game-event updates")
+		@SettingToggle
+		@SettingGroup(id = OUTPUT_SERVER_PACKETS)
+		@Expose
+		public boolean logPacketWorld = false;
+
+		@SettingInfo(name = "Custom Payload Channels",
+			desc = "Channel identifiers only; payload contents are never inspected or recorded")
+		@SettingToggle
+		@SettingGroup(id = OUTPUT_SERVER_PACKETS)
+		@Expose
+		public boolean logPacketChannels = false;
 
 		/** Accordion id for hitboxes on entity types outside the normal critter set. */
 		private static final int DIAGNOSTIC_HITBOXES = 14;
@@ -3518,6 +3598,22 @@ public class SafariConfig {
 		@SettingInfo(name = "Sparkling Mode Options", desc = "")
 		@SettingSection(id = SPARKLING_MODE_OPTIONS)
 		public boolean sparklingModeOptionsAccordion = false;
+
+		@SettingInfo(name = "Always Active Critters",
+			desc = "Keep selected ordinary critter hitboxes and critter waypoints visible in Sparkling Mode, even with Ignore Uniques or Only Show Sparkling")
+		@SettingMultiChoice(critters = true, biomeColumns = true)
+		@SettingGroup(id = SPARKLING_MODE_OPTIONS) @Expose
+		public long sparklingAlwaysActiveCritters = 0L;
+
+		@SettingInfo(name = "Always Active Waypoints",
+			desc = "Keep selected objective and possible-location waypoints visible when Sparkling Mode would normally hide them")
+		@SettingMultiChoice(
+			values = {"Floor Drops", "Mounds", "Snoozle Walls", "Floor Drops", "Troodon Walls",
+				"Floor Drops", "Floor Drops", "Bee Nests"},
+			groups = {"Cavern", "Icy", "Haunted", "Forest"},
+			groupStarts = {0, 3, 5, 6}, biomeColumns = true)
+		@SettingGroup(id = SPARKLING_MODE_OPTIONS) @Expose
+		public int sparklingAlwaysActiveWaypoints = 0;
 
 		@SettingInfo(name = "Ignore Uniques",
 			desc = "Ignore unique catches in Sparkling Mode to prioritize faster Sparkling checks, completely ignoring already shared Sparkling critters")

@@ -1166,7 +1166,7 @@ public final class SafariDashboardScreen extends Screen {
 			historyDisplayRows(filteredHistory()).size() - HISTORY_ROWS);
 		int direction = scrollY > 0 ? -1 : scrollY < 0 ? 1 : 0;
 		if (direction == 0) return false;
-		historyScroll = Math.clamp(historyScroll + direction, 0, maxScroll);
+		historyScroll = Math.clamp(historyScroll + direction * HISTORY_ROWS, 0, maxScroll);
 		return true;
 	}
 

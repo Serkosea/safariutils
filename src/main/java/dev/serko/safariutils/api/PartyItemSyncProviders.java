@@ -8,9 +8,7 @@ import net.minecraft.network.chat.Component;
 
 import java.util.Optional;
 import java.util.ServiceLoader;
-import java.util.Set;
-
-/** Safe facade around the private party-sync provider, when one was included in the jar. */
+/** Safe facade around the optional party-sync transport implementation. */
 public final class PartyItemSyncProviders {
 	private static final Optional<PartyItemSyncProvider> PROVIDER = load();
 
@@ -45,15 +43,19 @@ public final class PartyItemSyncProviders {
 	public static void onInventoryFeed(int seeds, int worms, int berries) {
 		PROVIDER.ifPresent(provider -> provider.onInventoryFeed(seeds, worms, berries));
 	}
+
 	public static void onBirdfeederState(int feedType, int count) {
 		PROVIDER.ifPresent(provider -> provider.onBirdfeederState(feedType, count));
 	}
+
 	public static void onNestConfirmed(BlockPos pos) {
 		PROVIDER.ifPresent(provider -> provider.onNestConfirmed(pos.immutable()));
 	}
+
 	public static void onServerMessage(String line) {
 		PROVIDER.ifPresent(provider -> provider.onServerMessage(line));
 	}
+
 	public static void onPartyMembershipChanged() {
 		PROVIDER.ifPresent(PartyItemSyncProvider::onPartyMembershipChanged);
 	}
@@ -64,17 +66,6 @@ public final class PartyItemSyncProviders {
 
 	public static boolean suppressStartingItems() {
 		return PROVIDER.map(PartyItemSyncProvider::suppressStartingItems).orElse(false);
-	}
-
-	public static boolean whitelistedName(String name) {
-		return PROVIDER.map(provider -> provider.whitelistedName(name)).orElse(false);
-	}
-	public static Set<String> whitelistedNames() {
-		return PROVIDER.map(PartyItemSyncProvider::whitelistedNames).orElse(Set.of());
-	}
-
-	public static void rememberIdentity(String uuid, String name) {
-		PROVIDER.ifPresent(provider -> provider.rememberIdentity(uuid, name));
 	}
 
 	public static int feedRemaining() {

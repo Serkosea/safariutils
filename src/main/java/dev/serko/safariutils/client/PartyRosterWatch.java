@@ -119,6 +119,14 @@ public final class PartyRosterWatch {
 		return rosterLines;
 	}
 
+	/** True only for a name in the most recently confirmed party-list response. */
+	public static boolean isListedMember(String name) {
+		if (!known || name == null || name.isBlank()) return false;
+		Pattern exactName = Pattern.compile("(?i)(?<![A-Za-z0-9_])"
+			+ Pattern.quote(name) + "(?![A-Za-z0-9_])");
+		return rosterLines.stream().anyMatch(line -> exactName.matcher(line).find());
+	}
+
 	public static long rosterCapturedAt() {
 		return rosterCapturedAt;
 	}

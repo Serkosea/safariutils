@@ -1,195 +1,130 @@
 # Safari Utils developer handoff
 
-This document describes the v2.0.0 codebase. User-facing features, installation, and commands are documented in [README.md](README.md).
+This document records the invariants needed to maintain the v2.1 codebase. User-facing features, installation, and commands belong in [README.md](README.md); release history belongs in [CHANGELOG.md](CHANGELOG.md).
 
-## Project and toolchain
+## Project and builds
 
-Safari Utils is a client-side Fabric mod for Hypixel SkyBlock's Critter Safari.
+Safari Utils is a client-side Fabric mod for Hypixel SkyBlock's Critter Safari. It targets Java 25, Fabric Loader 0.19+, and the Minecraft profiles under `gradle/versions/`.
 
-- Java 25
-- Fabric Loader 0.19+
-- Fabric API
-- Minecraft 26.1.2 and 26.2 profiles under `gradle/versions/`
-- Shared sources under `src/main/java`
-- Small compatibility sources under `src/<profile>/java`
-- Optional ignored private extension under `private-api/`
+- Shared code: `src/main/java`
+- Profile compatibility code: `src/<profile>/java`
+- Optional ignored extension: `private-api/`
+- Safe build: `./gradlew build`
+- Extra build: `./gradlew build -PextraBuild=true`
+- Other profile: add `-PminecraftProfile=<profile>`
+- Private build: add `-PincludePrivateApi=true` (also selects Extra behavior)
 
-Public outputs for each profile are a Safe Mode jar and an Extra jar:
+Build variants use separate output directories so stale private classes cannot enter public jars. `deployToInstance` copies the selected jar to configured Prism instances and mirrors Safari Utils configuration only from the configured source instance to the target.
 
-```powershell
-.\gradlew.bat build
-.\gradlew.bat build -PextraBuild=true
-.\gradlew.bat build "-PminecraftProfile=26.2"
-.\gradlew.bat build "-PminecraftProfile=26.2" -PextraBuild=true
-```
+## Runtime and lifecycle
 
-Private builds use `-PincludePrivateApi=true`; that flag also selects Extra behavior. The private source directory and `private-api/api-key.txt` are ignored by Git. `deployToInstance` deploys to the configured primary and optional secondary Prism mods directories, then mirrors Safari Utils configuration only from the configured source instance to the configured target instance.
+`SafariUtils.onInitializeClient` owns registration. Each client tick deliberately follows this order:
 
-## Runtime order
+1. Cache location, scoreboard, and tab-list state
+2. Update menus and party observers
+3. Update Sparkling state and optional providers
+4. Update starting inventory and objective state, then publish optional shared snapshots
+5. Scan entities once and update entity-dependent trackers
+6. Update session state, markers, catalogs, prices, chat, and configuration
 
-`SafariUtils.onInitializeClient` owns registration. The important client-tick order is:
+Reuse `SafariLocation`, `WorldEntities`, `CritterEntities`, and existing tracker caches. Do not add independent scoreboard, tab-list, or world-wide entity scans.
 
-1. Cache location, scoreboard, and tab-list state in `SafariLocation`
-2. Update Birdfeeder menus and the Minecraft/Safari party observers
-3. Update Sparkling state and automatic shared-collection providers
-4. Process starting-inventory and local objective state, then publish optional synchronized objective snapshots from those fresh caches
-5. Scan entities once through `CritterEntities`, then update entity-dependent trackers and run/session state
-6. Update markers, persistent catalogs, prices, chat, and configuration
+Entering Safari creates a transient visit immediately. Scouting, objective observation, and optional synchronization may run before ticket use, but the visit is not saved as a run. A run starts only when one or more normal Critter Capsules appear in inventory, proving that the server accepted a ticket. Manager interactions are hints, not activation requirements. Catches, drops, essence changes, and feathers never activate a run.
 
-Do not add independent scoreboard, tab-list, or world-wide entity scans when an existing cache can supply the same information.
+`StartingItemsWatch` owns activation. It waits 250 ms after capsule allocation before freezing one complete inventory snapshot so later drops and inventory movement cannot change Starting Items. Before activation, the Progress HUD may show attendance, the conservative `Join` countdown, Sparkling detections, and detected Hideonfloor waypoints, but not run timing or statistics.
 
-## Safari visit and run lifecycle
+The countdown begins from the earliest local queue notice or confirmed party-entry notice for the attempt and uses a conservative 33-second deadline. It displays `Closing` at zero or after the Manager's lockout dialogue begins. This is an estimate, especially when another member reaches the instance first. `JoinWindowDiagnostics` and read-only packet diagnostics exist to refine it without sending, modifying, retaining, cancelling, or delaying network traffic.
 
-Entering a Safari instance creates a transient visit context immediately. Objective trackers and optional synchronization may collect information during this pre-ticket period, but the visit is not yet a run and must not be saved.
+The first fresh `/party list` response after entry freezes the visit roster. Leaves, kicks, crashes, delayed arrivals, and party changes do not rewrite that roster; a new composition applies on the next Safari entry. Attendance is tracked separately. Reward summary or confirmed lobby transition ends a run. Empty visits are never persisted.
 
-Run Lifecycle debug logging records Safari visit recognition as `visitElapsed=0.000s`, the local player's entry chat, every Safari Manager line, and the eventual instance exit with millisecond elapsed time. Use these measurements rather than assuming the server's unticketed-player timeout when maintaining the pre-ticket join-window display.
+## Objectives, Safe Mode, and waypoints
 
-A run begins when the server places one or more normal Critter Capsules in inventory. Their appearance is authoritative proof that a ticket was accepted. Manager interaction and ticket-menu selection are useful early signals, but are not required because Hypixel can vary or omit those client-visible paths.
+Inventory totals include cursor-held items so rearranging an item never looks like using it. Objective consumption is chat-authoritative:
 
-Catches, floor drops, Rainbow Feathers, Safari Essence changes, and other activity never activate a run. `StartingItemsWatch` owns this capsule-gated transition and freezes one immutable full-inventory snapshot. Later floor drops and inventory movement cannot alter that snapshot.
+- Gem podium messages set individual placement bits
+- The chamber-rumbling line confirms the Gemzie door is open
+- Incense-use messages light candles
+- Bird-spawn messages prove feed consumption
+- Catch and terminal encounter messages complete Gemzie, Wumpa, and Doomspiral states
 
-`StartingItemsWatch` begins watching on Safari entry. It activates the run immediately when the first normal capsule appears, then waits 250 ms before freezing Starting Items so the remaining server-populated inventory can settle. `TicketProtection` still records Manager and entry-menu actions and prevents a leader from starting early when ticket protection applies. Before activation, the Progress HUD shows the `N/N` attendance title and a `Join` countdown, but no run timer or statistics. The countdown uses the local entry-chat timestamp and a conservative 33-second deadline derived from repeated server samples, gradually changes from green to dark red across the full window, and is forced to `Closed` by the first Manager lockout line. Sparkling detection and detected Hideonfloor rendering intentionally remain active throughout the pre-ticket visit for scouting from the starting ship.
+The Party Objectives title remains visible throughout Safari and shows the enabled biome icons. Detail lines are biome-local. Cavern completes on a Gemzie catch, Icy on a Wumpa catch, Haunted on a Doomspiral catch or terminal retreat, and synchronized Forest after every discovered feed has produced a bird. Unsynchronized Forest completion is unknown. Completed biomes collapse to their terminal row; Forest may retain Birds. Player names use live tab-list rank colors, with UUID-backed owner styling applied afterward.
 
-`PartyRosterWatch` requests `/party list` on Safari entry. The first fresh response after entry defines the complete visit roster. `SafariPartyWatch` tracks current instance attendance. The roster is immutable for the visit: leaves, kicks, crashes, delayed arrivals, and party changes do not redefine the current run. A changed party takes effect in the next Safari instance.
+Forest retains its nine-drop count because every feed matters. Cavern and Haunted intentionally have no floor-drop count. Their floor-drop guidance stops only when the objective is complete or this client personally holds every remaining required item.
 
-A run ends from its reward summary or a confirmed lobby transition. Empty visits are never persisted. `SafariSession` owns mutable run state, `RunRecord` is the persisted form, and `RunHistory` maintains aggregates only when history changes.
+Safe Mode exposes visible or otherwise player-observable evidence. Extra Mode may expose additional internal detections. Presentation settings never discard tracker state: switching modes or toggles mid-run must immediately render the appropriate already-known subset. Caches that affect presentation include the configuration revision.
 
-## Starting Items and Party Objectives
+- Bee Nests clear only after a left/right interaction is followed by a new nearby Honeybug within five seconds
+- Loaded air alone never completes an objective candidate
+- Ordinary capsule failures against non-Common capturable critters create recatch pins
+- Commons, Masterful Capsule attempts, confirmed catches, and Hideyho do not retain pins
+- Always Active Critters bypass ordinary Sparkling/unique filtering for selected species
+- Always Active Waypoints do the same for selected objective sources
+- Neither checker bypasses global display, biome, completion, or Safe Mode rules
 
-`StartingItemsWatch` counts every selected item anywhere in inventory after capsule allocation. It credits starting feed and Shining Coins to the same objective trackers that receive later floor drops.
+Static catalogs use centered coordinate keys but decode to the same block-aligned runtime boxes. Ordinary entries store the cube center. Hideyho stores the upper cube center of its two-block box. Older integer/local schemas migrate without affecting rendering. Bundled catalogs are authoritative; optional local static JSON files are research overlays and need not exist.
 
-`BirdfeederWatch` distinguishes:
+`Save Learned Locations` is opt-in for any stable party size and records only conservative Hideonfloor block centers after repeated stationary observations. `Show Learned Candidates` renders only local Hideonfloor positions absent from the bundled entity catalog. Stationary objective catalogs are bundled-only. Candidate data always requires in-game review before being baked into assets.
 
-- feed found or carried
-- feed stably deposited by this player
-- feed currently visible in Birdfeeder slot 22
-- bird-spawn messages, which prove feed consumption
-- cursor-held feed and rejected mismatched-stack interactions
+## Sparkling and party behavior
 
-A cursor-held stack remains held after the menu closes for a bounded resynchronization window. The same cursor-safe inventory snapshot feeds local objective HUD values and optional synchronization, so moving an item never looks like using it. No Feed and All Feed Used remain mutually exclusive. Empty alerts require locally held feed and have a three-second duplicate guard.
+`/sparkling` opens the complete Sparkling UI. `SparklingStats` persists per-species counts, Rainbow Feathers, and the imported duplicate baseline. Tracked duplicate catches advance both duplicate totals and their comparison baseline; unique catches do not.
 
-The public Party Objective HUD presents Forest feed, Cavern gems, Icy catch progression, or Haunted incense according to the local biome and marks other loaded party members' item counts as unknown. Its title remains visible throughout the Safari, including the center, and shows the user-selected subset of mountain, snowflake, skull, and leaf completion symbols. Cavern completes 2.5 seconds after the authoritative Gemzie door message, Icy after Wumpa is caught, and Haunted after Doomspiral is caught or its terminal retreat line confirms that the failed encounter cannot be repeated. Forest uses a yellow `?` unless synchronized run-wide feed totals are authoritative; synchronized Forest completes after every run feed has produced its bird. The Icy detail rows show `Unique Catches N/8`, excluding Wumpa itself, followed by Wumpa's waiting, spawned, or caught state. Title entries measure each icon's visible pixels and distribute all gaps—including title-side and border-side gaps—evenly. These fixed-palette icons retain their semantic colors under the Special Rainbow theme. An optional provider may replace that panel with authoritative shared state. Keep public rendering and settings functional without a provider.
+The expected roster remains fixed for the visit. A party catch becomes newly shared only when everyone who needed that unique received it; cached ownership may prove that an absent original member already owned it. A newly recorded Sparkling delays API-import comparison until a response at least ten minutes later so stale profile data cannot trigger a false import prompt.
 
-Forest keeps its nine-drop line because every feed matters. Cavern and Haunted intentionally have no floor-drop count line. Their Sparkling Mode floor drops stop only after the objective is globally complete or this specific client personally holds every remaining gem or enough incense to finish; loose items split across multiple players never satisfy that local shortcut.
+Public builds provide manual Shared/Missing controls. The ignored private provider may add automatic party collection and player lookup through the API; the public UI and fallback behavior must remain complete without it.
 
-Objective consumption is chat-authoritative: each exact podium message sets its Gemzie placement bit, each incense-use message lights one candle, the chamber-rumbling line confirms all gems, and encounter/catch messages distinguish Wumpa and Doomspiral spawning from being caught or retreating. Inventory decreases from cursor movement, dropping, or loss never mark an objective as used. Gem rows always render purple, lime, then orange; objective icons retain semantic colors while their adjacent counts join the Special Rainbow gradient.
+Manual profile lookups have a ten-second request cooldown and a five-minute result cache. Automatic party caching does not consume the manual cooldown. Screen-facing provider state must be lock-free; opening a UI may never wait on an HTTP worker or rate-limit sleep.
 
-## Objective confirmation and Safe Mode
+Party Sync is public, opt-in, and party-chat-backed. Its transient setting resets off each launch. A client sends one compact visible verification token only after the complete Safari roster is present and stable; the token is derived from its displayed username, the current lobby ID, and its action. Parsed objective traffic remains disabled until every current member has confirmed the same protocol. Local state is tracked before confirmation, then sent as a coalesced authoritative snapshot with batched confirmed hives. Disabling sync during an active synchronized run sends the matching sender/lobby-bound shutdown token, immediately stopping transport for every client while preserving local state. Departures retain confirmed remaining members, while a newly added member requires a fresh readiness check on the next stable Safari visit. Solo has complete local state without sending messages. Any future remote transport remains deferred and must preserve the documented privacy design: short-lived end-to-end-encrypted rooms, no credentials or private account data, and no developer/user access to connection metadata beyond what a trusted provider must process.
 
-Safe Mode uses visible or otherwise player-observable evidence. Extra mode can use additional internal information. Optional synchronized facts are considered authoritative because another approved client observed them.
+Chat-message hiding is display-only. Selected Safari lines must pass through the complete tracker pipeline before `ALLOW_GAME` rejects them; never move the filter ahead of parsing or suppress player-written chat by keyword.
 
-Settings are live presentation controls, not permissions to discard run state. Trackers retain detected state and direct visual/authoritative evidence separately: switching to Extra immediately exposes already detected information, while switching back to Safe may expose only facts that were visually confirmed, locally confirmed by interaction/chat, or received through trusted synchronization. Render and HUD caches include the configuration revision so changes made during a run appear without a world reload.
+## UI and performance
 
-- Bee Nests accept left- or right-click interaction but clear only after a newly appearing Honeybug is confirmed within 12 blocks and five seconds
-- Floor drops, mounds, walls, and stationary critters retain their existing candidate-versus-confirmed distinction
-- Synchronized Forest completion may clear the corresponding Missing HUD entries and waypoints
-- A loaded absent Bee Nest candidate may be repaired as completed while synchronization is authoritative
+`SafariConfig` fields annotated with `@Expose` are persistent keys. Rename them only with `@SerializedName` aliases or explicit `ConfigManager` migration. Deliberately transient session settings such as Party Sync must remain unexposed and be reset explicitly on load. Existing run history and settings must remain forward-compatible.
 
-Do not let a catalog candidate become a completed objective solely because an unloaded chunk reports air.
+Use `ResponsiveUI` for fixed logical canvases and convert mouse coordinates for scaled widgets. `HudBox` is the source of truth for live/editor positioning. The HUD editor keeps outlines one pixel inside each screen edge and supports unsnapped one-pixel arrow adjustments.
 
-`RecatchSpots` records every ordinary-capsule attempt against a non-Common critter, including Doomspiral and Wumpa. Hideyho is excluded because it is not captured with capsules; Commons and Masterful Capsule attempts are excluded because they cannot escape. A confirmed catch clears its pin and pity state, while an escape can carry pity to the replacement entity ID.
+The Contest HUD's Show Everywhere option means all SkyBlock locations, including Dungeons and Kuudra. Show Outside SkyBlock is separate. SkyBlock detection uses the sidebar title and must not require an Area row.
 
-## Sparkling behavior
+Performance rules:
 
-`/sparkling` opens `SparklingScreen`; all edits and imports live in that UI. Public builds provide manual Shared/Missing imports. Optional providers add automatic party collection and Player Lookup. A private client entering with any non-whitelisted party member keeps the provider idle and exposes the public manual controls after the fresh party-list response confirms that roster.
+- `RainbowColours` supplies one frame-limited clock; `UIDraw` and `SpecialTheme` cache bounded geometry/text by phase and position
+- Chat rainbow components are immutable snapshots, not animated retained messages
+- `HudPanel` caches measured layouts and icon quads
+- `RunHistory` revisions invalidate dashboard caches only when history changes
+- `BazaarPrices` values runs once per price snapshot/source and totals once per history revision
+- `Markers` builds one marker list per tick/config revision
+- `WaypointRenderer` batches geometry, culls off-screen markers, and bounds label caches
+- `WorldEntities` provides one entity snapshot per tick; `CritterEntities` scans once every five ticks and spatially indexes pairing
+- Operational logging is asynchronous, bounded, deduplicated, and rolled at 1 MiB
+- Diagnostic logging is opt-in, buffered, and must aggregate high-volume packet streams
 
-`SparklingMode` keeps the visit's expected roster stable. A party catch becomes newly shared only when everyone who needed that unique received it. Optional providers may use cached ownership to prove that an absent original member already owned the species.
+Keep live entity interpolation at frame frequency. Safe Mode evidence, depth behavior, marker eligibility, and exact labels are logic constraints, not optimization opportunities.
 
-`SparklingStats` stores per-species counts, Rainbow Feathers, and an imported duplicate baseline. Tracked duplicate catches advance both the imported aggregate and its comparison baseline. Unique catches do not change duplicates.
+## Persistence and public boundary
 
-Player Lookup results are cached for five minutes. Manual Hypixel profile lookups are globally spaced by ten seconds in the private client; automatic party-cache requests run back-to-back and do not consume that manual cooldown. Automatic party loads happen on Safari entry; the same party refreshes only on a later Safari entry after five minutes have elapsed.
-
-Screen-facing API state must remain lock-free. In particular, Player Lookup's cooldown reads a volatile request timestamp and must never acquire the monitor held by a sleeping or in-flight HTTP request, or opening the tab can freeze the render thread during an automatic party refresh.
-
-## Optional private party synchronization
-
-The ignored private extension resolves the complete party from the fresh `/party list` response and enables transport only when every current party member is approved. Solo private runs are synchronized because the local client has complete information.
-
-The original run roster remains immutable. If an outsider enters the Minecraft party, outgoing hidden messages stop and queued internal messages are discarded. Already confirmed facts remain. Transport resumes only after a newer party-list capture proves that the party is approved again; the provider then resends aggregate state and every locally confirmed nest.
-
-Aggregate messages coalesce rapid inventory and objective changes. `ChatQueue` serializes outgoing lines with a 1.2-second gap. Distinct Bee Nest confirmations are retained and retried. A departed member's completed contributions remain, while unused feed still held by that member becomes unavailable after confirmed absence.
-
-The synchronized Forest is done only after all nine floor drops are known and every discovered feed has produced a bird. Only the client receiving the final bird-spawn line may send the completion chat alert. Cavern, Icy, and Haunted snapshots additionally preserve held items, placements, spawn states, terminal Wumpa/Doomspiral catches, and Doomspiral retreats; the Gemzie title waits 2.5 seconds after the first synchronized open confirmation. Full aggregate retries make rapid objective changes converge even when party chat is rate-limited, and the aggregate parser continues accepting the older payload lengths.
-
-Known party members with zero relevant held items are omitted from every objective-player list. Unknown public/fallback members may still display `?` because zero cannot be inferred without synchronization. A newly recorded Sparkling blocks API-import comparison until a profile response is fetched at least ten minutes later; this prevents Hypixel's pre-catch cached collection from immediately producing a false import prompt. The not-before timestamp persists with Sparkling stats and is cleared by an explicit API import.
-
-All user-facing party-member lists sort names case-insensitively from top to bottom or left to right. Sorting is applied only to display copies; immutable run rosters, synchronization identity, and transport ordering retain their established behavior.
-
-## UI and configuration
-
-`SafariConfig` fields annotated with `@Expose` are persistent JSON keys. Renames require `@SerializedName` migration aliases or explicit migration in `ConfigManager`. Party Objective HUD fields use `partyObjective...` storage names and accept both the former public `birdFeed...` and private `privateBirdFeed...` keys so existing positions and preferences survive the rename.
-
-`SafariSettingsScreen.visibleInThisBuild` hides fields prefixed with `private` from public builds and hides diagnostic/Safe Mode controls where appropriate. Public documentation and release notes must never mention private functionality.
-
-Custom screens use `ResponsiveUI` where a fixed reference canvas is required. Mouse events passed to scaled Minecraft widgets must be converted to logical coordinates as well as custom hit tests. `HudBox` is the single source for live and editor positioning. The HUD editor keeps its visible outline one pixel inside every edge and supports unsnapped one-pixel arrow-key adjustment.
-
-The Contest HUD distinguishes three settings:
-
-- ordinary Safari-only visibility
-- Show Everywhere inside SkyBlock, including Dungeons and Kuudra
-- Show Outside SkyBlock
-
-`SafariLocation.findSkyblock` uses the sidebar objective title; an Area row is not required for Dungeons or Kuudra.
-
-## Rendering and performance
-
-Animated rainbow rendering uses `RainbowColours` as one 25 FPS clock and palette source. `UIDraw` caches styled rainbow text by repeating animation phase and screen-space position, so changing text length never changes the gradient wavelength and old frames do not churn the cache forever. Editable-text carets sample that same gradient at their current cursor position. While enabled, `SpecialTheme.text` owns the complete text line before UUID-backed player-name styling so statuses do not retain fallback-colour fragments. `SpecialTheme` batches cached stars, borders, and bars through `GuiQuadBatchRenderState`; borders sample one horizontal screen-space gradient on both horizontal edges and hold each vertical edge at its corresponding x-position color. Semantic objective-item and bird colors remain unchanged by themes. The settings workspace uses the same special-theme clock, text cache, star batch, and in-place border buffers. The Advanced unlock constellation and Sparkling catch celebration also rebuild one bounded geometry batch only on that shared visual clock. History's outer Runs/Catches cells and Sparkling stars use fixed left/right anchors; variable-width values must grow inward rather than changing their panel-edge spacing.
-
-`ClientMessages` snapshots the shared rainbow phase once when a themed chat line is created and builds one immutable component spanning both the SafariUtils tag and body. Chat lines intentionally do not animate or rebuild after insertion; this keeps their retained rendering cost independent of the theme clock.
-
-`SparklingConfig.specialSparklingIntensity` stores the always-enabled catch celebration level from 0 through 3. Level 0 is the original gentle five-second celebration and jingle; levels 1–3 use the warned intense visuals and score. Older `specialSparklingCatch` Boolean values migrate to level 0 when false and level 1 when true. The settings picker previews the current level and requires the photosensitivity confirmation every time a level above 0 is selected, even when it is already active. Cancelling that confirmation resets the choice to level 0.
-
-`RunHistory.revision()` invalidates screen-facing history caches only when persisted run data changes. `SafariDashboardScreen` caches its filtered ordering, year dividers, formatted rows, column measurements, Sparkling summaries, and Bazaar totals by the relevant history/price revisions. Keep the render path proportional to the 15 visible rows rather than the full saved history.
-
-The Stats tab reads the in-memory Sparkling collection counters directly. Collected species retain their rarity-colored names and gain one rainbow star; a completed biome retains its biome-colored title and gains a rainbow star on each side. Nonzero run-catch totals are white and zero values remain dim.
-
-`BazaarPrices` keeps each immutable `RunRecord` valuation for the lifetime of one fetched price snapshot and selected price source. Its complete-history total is additionally keyed by `RunHistory.revision()`. Opening a screen must reuse these valuation caches; only a new Bazaar snapshot, a changed price source, or changed run history should trigger repricing.
-
-`HudPanel` caches its measured layout and immutable progress geometry. Objective sprites are converted to cached horizontal quads per icon/color. Do not replace these paths with repeated per-pixel `fill` calls or remeasure completed panels every frame.
-
-`WorldEntities` supplies one immutable rendered-entity snapshot per game tick to recurring trackers and render helpers. `WallTracker` likewise shares one state/visibility result per tracker and tick. Static waypoint/entity catalogs cache their decoded `BlockPos` sets until a learned position invalidates them; callers must not independently decode or rescan those sources.
-
-`SafariSession` maintains catch, unique, biome, attempt, failure, and Sparkling aggregates incrementally. Screen and HUD code should use those constant-time accessors instead of streaming the detailed catch maps. Settings text cleanup, display names, wrapping, and search results are cached because the reflection metadata is stable while a screen is open.
-
-`WaypointRenderBackend` uses Minecraft 26.1.2's immediate type buffers directly and pools Minecraft 26.2's deferred geometry into one submission per render type while preserving each element's copied pose. `WaypointRenderer` conservatively frustum-culls boxes, beams, faces, and labels; caches formatted labels; and keeps live entity interpolation at render-frame frequency. `CritterEntities` still scans only once every five ticks and uses four-block spatial buckets while preserving original entity-list order for equal-distance pairing. Safe Mode visibility, depth testing, marker eligibility, label text, and interpolation are behavior constraints rather than optimization opportunities.
-
-## Persistence
-
-`SafariPaths` owns every path:
+Normal installations keep:
 
 ```text
 config/safariutils/
 ├── safariutils.json
 ├── safariutils-runs.json
 ├── safariutils-sparkling.json
-├── safariutils-static-waypoints.json
-├── safariutils-static-entities.json
 └── logs/
     ├── safariutils.log
     └── safariutils.previous.log
 ```
 
-Settings, history, and learned catalogs use atomic writes. Migration never overwrites an existing destination. `OperationalLog` queues writes, flushes once per second, deduplicates repeated failures, and rolls at 1 MiB. Diagnostic settings reset each launch and are not lasting preferences.
+The optional static-entities JSON appears only when Hideonfloor research saves a new candidate. Settings, history, and research data use atomic replacement. Diagnostic and Party Sync settings reset each launch.
 
-## Public/private boundary
-
-Public jars must contain no private classes, service registrations, private-roster identities, UUIDs, API keys, or generated key payloads. The public author metadata naturally retains the project author's name; public source otherwise contains only provider interfaces and no-op facades for optional integrations.
-
-Never commit:
-
-- `private-api/`
-- any `api-key.txt`
-- generated private sources
-- Minecraft configuration, histories, logs, or copied jars
-
-Before release, inspect both the Git diff and jar contents. Confirm that only private jars contain `dev/serko/safariutils/privateapi`, provider service files, and `EmbeddedApiKey`.
+Public jars may contain only the public party-sync service. They must contain no private API classes or services, saved owner identities or UUIDs, API keys, or generated key payloads. Public documentation and release notes must not advertise private-only API behavior. Never commit `private-api/`, key files, generated private sources, user configuration/history/logs, or built jars.
 
 ## Release checklist
 
-1. Run `git diff --check`
-2. Build Safe and Extra public jars for Minecraft 26.1.2 and 26.2
-3. Build private jars for both profiles
-4. Inspect jar metadata, filenames, class lists, service files, and public-key absence
-5. Test the lifecycle, Starting Items, Party Objective HUD, objective confirmation, HUD editor, Sparkling UI, and Contest visibility in game
-6. Keep README, CHANGELOG, RELEASE_NOTES, and this handoff synchronized
-7. Push or publish only after the user explicitly requests it
+1. Run `git diff --check` and validate JSON/resources
+2. Build Safe, Extra, and private jars for every supported profile
+3. Inspect jar names, metadata, class lists, services, and public-key absence
+4. Test lifecycle, Starting Items, objectives, mode/settings toggles, HUD editing, Sparkling UI, and Contest visibility
+5. Synchronize README, CHANGELOG, RELEASE_NOTES, and this handoff
+6. Push or publish only after explicit user approval

@@ -3,6 +3,7 @@ package dev.serko.safariutils.client;
 import dev.serko.safariutils.data.Critters;
 import dev.serko.safariutils.session.SessionManager;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -47,6 +48,8 @@ public final class HideyhoSolver {
 
 	private static Phase phase = Phase.START;
 	private static BlockPos position;
+	private static Vec3 positionExact;
+	private static Vec3 lastSightingExact;
 	private static boolean live;
 	private static boolean alertedThisPhase;
 	private static boolean sparkling;
@@ -60,6 +63,7 @@ public final class HideyhoSolver {
 
 	/** A not-yet-confirmed end-phase sighting, held back until it repeats in place. */
 	private static BlockPos candidate;
+	private static Vec3 candidateExact;
 	private static long candidateSinceMillis;
 	private static long endPhaseSinceMillis;
 
@@ -79,11 +83,13 @@ public final class HideyhoSolver {
 			// worth keeping — start fresh next time it is sighted.
 			live = false;
 			candidate = null;
+			candidateExact = null;
 			return;
 		}
 
 		if (position != null) {
 			position = seen;
+			positionExact = lastSightingExact;
 			live = true;
 			visiblyConfirmed |= lastSightingVisible;
 			if (lastSightingVisible) unchecked.removeIf(pos -> matchesCandidate(pos, seen));
@@ -92,8 +98,7 @@ public final class HideyhoSolver {
 
 		if (phase == Phase.START) {
 			// Nothing to wait for yet — shown the instant it is seen.
-			DebugLog.line("HIDEYHO", "CONFIRM START pos=" + pos(seen));
-			confirm(seen);
+			confirm(seen, lastSightingExact);
 			startPosition = seen;
 			return;
 		}
@@ -110,6 +115,7 @@ public final class HideyhoSolver {
 		if (seen.equals(startPosition)) {
 			if (candidate != null) DebugLog.line("HIDEYHO", "DISCARD matches START pos=" + pos(seen));
 			candidate = null;
+			candidateExact = null;
 			return;
 		}
 		// A location inspected earlier may become the real end spot after teleporting.
@@ -117,27 +123,31 @@ public final class HideyhoSolver {
 		unchecked.add(seen);
 
 		long now = System.currentTimeMillis();
-		if (!seen.equals(candidate)) {
+		if (!seen.equals(candidate) || candidateExact == null
+			|| candidateExact.distanceToSqr(lastSightingExact) > 1.0 / 256.0) {
 			DebugLog.line("HIDEYHO", "CANDIDATE pos=" + pos(seen)
 				+ (candidate == null ? " (first sighting)" : " (was " + pos(candidate) + ")"));
 			candidate = seen;
+			candidateExact = lastSightingExact;
 			candidateSinceMillis = now;
 			return;
 		}
 		if (now - candidateSinceMillis < STABLE_MILLIS) return;
 
-		DebugLog.line("HIDEYHO", "CONFIRM END pos=" + pos(candidate)
-			+ " (held " + (now - candidateSinceMillis) + "ms)");
-		confirm(candidate);
+		DebugLog.line("HIDEYHO", "END held " + (now - candidateSinceMillis) + "ms");
+		confirm(candidate, candidateExact);
 		candidate = null;
+		candidateExact = null;
 	}
 
-	private static void confirm(BlockPos pos) {
+	private static void confirm(BlockPos pos, Vec3 exact) {
 		position = pos;
+		positionExact = exact;
 		live = true;
 		sparkling = seenSparkling;
 		visiblyConfirmed = lastSightingVisible;
-		StaticEntityCatalog.learn(NAME, pos);
+		DebugLog.line("HIDEYHO", "CONFIRM " + phase + " block=" + pos(pos)
+			+ " xyz=" + exact.x + "," + exact.y + "," + exact.z);
 		if (visiblyConfirmed) unchecked.clear();
 		if (alertedThisPhase) return;
 		alertedThisPhase = true;
@@ -207,9 +217,11 @@ public final class HideyhoSolver {
 			DebugLog.line("HIDEYHO", "CHAT HIDE_PENDING, " + phase + " -> PENDING raw=\"" + line + "\"");
 			phase = Phase.PENDING;
 			position = null;
+			positionExact = null;
 			live = false;
 			visiblyConfirmed = false;
 			candidate = null;
+			candidateExact = null;
 			alertedThisPhase = false;
 			return;
 		}
@@ -218,9 +230,11 @@ public final class HideyhoSolver {
 			DebugLog.line("HIDEYHO", "CHAT HIDE_STARTED, " + phase + " -> END raw=\"" + line + "\"");
 			phase = Phase.END;
 			position = null;
+			positionExact = null;
 			live = false;
 			visiblyConfirmed = false;
 			candidate = null;
+			candidateExact = null;
 			alertedThisPhase = false;
 			endPhaseSinceMillis = System.currentTimeMillis();
 			restoreCandidates();
@@ -236,9 +250,11 @@ public final class HideyhoSolver {
 			}
 			phase = Phase.DONE;
 			position = null;
+			positionExact = null;
 			live = false;
 			visiblyConfirmed = false;
 			candidate = null;
+			candidateExact = null;
 			startPosition = null;
 			alertedThisPhase = false;
 			unchecked.clear();
@@ -251,12 +267,14 @@ public final class HideyhoSolver {
 		}
 		phase = Phase.START;
 		position = null;
+		positionExact = null;
 		live = false;
 		sparkling = false;
 		seenSparkling = false;
 		visiblyConfirmed = false;
 		lastSightingVisible = false;
 		candidate = null;
+		candidateExact = null;
 		alertedThisPhase = false;
 		startPosition = null;
 		endPhaseSinceMillis = 0;
@@ -270,6 +288,7 @@ public final class HideyhoSolver {
 
 	private static BlockPos fromSightings() {
 		lastSightingVisible = false;
+		lastSightingExact = null;
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
 			if (!NAME.equals(sighting.critter().name())) continue;
 			// Hideyho's named entity is Hideyho itself. Generic body pairing can select
@@ -284,6 +303,7 @@ public final class HideyhoSolver {
 			if (SafeMode.hiddenCritter(sighting.critter(), sparkling)
 				&& !lastSightingVisible) continue;
 			seenSparkling = sparkling;
+			lastSightingExact = target.position();
 			return target.blockPosition();
 		}
 		return null;

@@ -52,6 +52,20 @@ public final class ChatParser {
 		return PLAYER_SAID.matcher(line).matches();
 	}
 
+	/** Server-reported entrant, including partymates who arrive before the local player. */
+	public static String safariEntrant(String line) {
+		Matcher entered = ENTERED.matcher(line);
+		return entered.matches() ? entered.group(1) : null;
+	}
+
+	/** Queue notices precede the Safari world load and provide a fallback timer origin. */
+	public static boolean safariQueueLine(String line) {
+		String lower = line.toLowerCase(java.util.Locale.ROOT);
+		return lower.startsWith("queuing...") || lower.startsWith("queueing...")
+			|| lower.contains("joining critter safari")
+			|| lower.contains("attempting to join") && lower.contains("safari");
+	}
+
 	/**
 	 * Strips §-colour codes and the trailing duplicate counter that chat-compacting
 	 * mods (chatpatches, enhanced_chat) append — {@code " (3)"}, {@code " (×3)"},
@@ -101,8 +115,8 @@ public final class ChatParser {
 			return new CritterEvent(CritterEvent.Type.FAILED, critter, null, 0, false);
 		}
 
-		Matcher entered = ENTERED.matcher(line);
-		if (entered.matches() && selfName != null && selfName.equals(entered.group(1))) {
+		String entrant = safariEntrant(line);
+		if (entrant != null && entrant.equals(selfName)) {
 			return new CritterEvent(CritterEvent.Type.ENTERED_SAFARI, null, selfName, 0, false);
 		}
 

@@ -101,6 +101,10 @@ public final class EncounterAlerts implements HudElement {
 			fire("Wumpa", Stage.DONE, "the cave has reopened", 1.2f);
 			return true;
 		}
+		if (line.contains("fainted by a Wumpa") && line.endsWith("lost some of your items!")) {
+			fire("Wumpa", Stage.DONE, "the attempt ended", 1.2f);
+			return true;
+		}
 
 		// --- Doomspiral ---
 		if (line.startsWith("You used the Soothing Incense to light the candle")) {

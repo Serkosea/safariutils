@@ -4,7 +4,6 @@ import dev.serko.safariutils.api.SharedSparklingProviders;
 import dev.serko.safariutils.api.SparklingPlayerLookup;
 import dev.serko.safariutils.api.PartyRefreshStatus;
 import dev.serko.safariutils.api.PartySparklingSnapshot;
-import dev.serko.safariutils.api.PartyItemSyncProviders;
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.Critters;
 import dev.serko.safariutils.data.SafariBiome;
@@ -512,7 +511,7 @@ public final class SparklingScreen extends Screen {
 		int columnWidth = Math.min(150, (panelWidth - 24) / 4);
 		int x = panelLeft + (panelWidth - columnWidth * 4) / 2 + 8;
 		Component name = Component.literal(lastLookup.username()).withStyle(style -> style.withColor(AQUA));
-		if (PartyItemSyncProviders.whitelistedName(lastLookup.username())) {
+		if (SharedSparklingProviders.specialName(lastLookup.username())) {
 			UIDraw.rainbowText(graphics, font, lastLookup.username(), x, y, 0.45f);
 		} else {
 			SpecialTheme.text(graphics, font, name, x, y, AQUA);
@@ -611,7 +610,7 @@ public final class SparklingScreen extends Screen {
 		graphics.fill(x, y, x + width, y + height, hovered ? HOVER : SURFACE);
 		themedOutline(graphics, x, y, width, height, recentLookupsOpen ? AQUA : BORDER);
 		String buttonText = trimToWidth(selected, width - 25) + (recentLookupsOpen ? "  ▴" : "  ▾");
-		if (lastLookup != null && PartyItemSyncProviders.whitelistedName(lastLookup.username())) {
+		if (lastLookup != null && SharedSparklingProviders.specialName(lastLookup.username())) {
 			centeredRainbowName(graphics, "Recent: ", lastLookup.username(),
 				recentLookupsOpen ? "  ▴" : "  ▾", x, width, centeredTextY(y, height),
 				recentLookupsOpen ? AQUA : LABEL);
@@ -628,7 +627,7 @@ public final class SparklingScreen extends Screen {
 			boolean itemHovered = contains(x, itemY, width, height, mouseX, mouseY);
 			graphics.fill(x, itemY, x + width, itemY + height, itemHovered ? HOVER : 0xFF141B25);
 			themedOutline(graphics, x, itemY, width, height, BORDER);
-			if (PartyItemSyncProviders.whitelistedName(saved.username())) {
+			if (SharedSparklingProviders.specialName(saved.username())) {
 				UIDraw.rainbowText(graphics, font, saved.username(),
 					x + (width - font.width(saved.username())) / 2,
 					centeredTextY(itemY, height), 0.45f);
@@ -869,7 +868,7 @@ public final class SparklingScreen extends Screen {
 				cursor += font.width(", ");
 			}
 			String name = members.get(i);
-			if (PartyItemSyncProviders.whitelistedName(name)) {
+			if (SharedSparklingProviders.specialName(name)) {
 				UIDraw.rainbowText(graphics, font, name, cursor, y, 0.45f);
 			} else {
 				text(graphics, name, cursor, y, WHITE);

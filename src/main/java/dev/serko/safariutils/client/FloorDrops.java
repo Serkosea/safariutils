@@ -168,7 +168,6 @@ public final class FloorDrops {
 			dev.serko.safariutils.data.SafariBiome resolved = confirmedBiome.get(pos);
 			if (resolved != null) {
 				everSeenByBiome.computeIfAbsent(resolved, b -> new java.util.HashSet<>()).add(pos);
-				StaticWaypointCatalog.learnFloorDrop(resolved, pos);
 			}
 		}
 		// In Safe Mode, a missing drop is only cleared once its empty spot can be seen.

@@ -28,10 +28,6 @@ public final class SafariPaths {
 		return ROOT.resolve("safariutils-sparkling.json");
 	}
 
-	public static Path staticWaypoints() {
-		return ROOT.resolve("safariutils-static-waypoints.json");
-	}
-
 	public static Path staticEntities() {
 		return ROOT.resolve("safariutils-static-entities.json");
 	}

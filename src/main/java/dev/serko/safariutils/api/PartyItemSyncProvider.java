@@ -5,9 +5,7 @@ import dev.serko.safariutils.data.SafariBiome;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 
-import java.util.Set;
-
-/** Optional private-build party item synchronization. Public builds use the no-op default. */
+/** Opt-in party objective synchronization over parsed party chat messages. */
 public interface PartyItemSyncProvider {
 	default boolean allowMessage(Component message, boolean overlay) {
 		return true;
@@ -37,16 +35,6 @@ public interface PartyItemSyncProvider {
 		return active();
 	}
 
-	default boolean whitelistedName(String name) {
-		return false;
-	}
-
-	default Set<String> whitelistedNames() {
-		return Set.of();
-	}
-
-	default void rememberIdentity(String uuid, String name) { }
-
 	default int feedRemaining() {
 		return -1;
 	}
@@ -59,7 +47,7 @@ public interface PartyItemSyncProvider {
 		return false;
 	}
 
-	/** Biome-specific party objective panel supplied by private synchronized builds. */
+	/** Biome-specific party objective panel supplied while synchronization is active. */
 	default HudPanel objectivePanel() {
 		return null;
 	}

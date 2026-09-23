@@ -126,6 +126,7 @@ public final class ConfigManager {
 
 	/** Output categories are diagnostic session state, not lasting preferences. */
 	private static void resetSessionDebugOptions(SafariConfig.AdvancedConfig advanced) {
+		advanced.enablePartySync = false;
 		advanced.debugLog = false;
 		advanced.outputLogPreset = 1; // Custom: every individual option starts disabled below.
 		for (var field : SafariConfig.AdvancedConfig.class.getFields()) {
@@ -139,7 +140,7 @@ public final class ConfigManager {
 
 	/** Writes atomically so an interrupted save cannot destroy a working config. */
 	public static synchronized void save() {
-		if (config == null || TestingMode.savingSuspended()) return;
+		if (config == null) return;
 		revision++;
 		Path path = SafariPaths.settings();
 		try {

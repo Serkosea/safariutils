@@ -1,6 +1,7 @@
 package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.BuildVersion;
+import dev.serko.safariutils.data.Critters;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
@@ -38,6 +39,11 @@ public final class SafariSettingsScreen extends Screen {
 	private static final int FOOTER_HEIGHT = 30;
 	private static final int THEME_BUTTON_WIDTH = 126;
 	private static final int[] CONSTELLATION_ORDER = {0, 4, 8, 3, 7, 2, 6, 1, 5};
+	private static final String[] CRITTER_CHOICES = Critters.selectionOrder().stream()
+		.map(critter -> critter.name()).toArray(String[]::new);
+	private static final String[] CRITTER_GROUPS = Critters.selectionBiomes().stream()
+		.map(biome -> biome.displayName()).toArray(String[]::new);
+	private static final int[] CRITTER_GROUP_STARTS = critterGroupStarts();
 	private static final String MOD_VERSION = FabricLoader.getInstance().getModContainer("safariutils")
 		.map(container -> releaseVersion(container.getMetadata().getVersion().getFriendlyString()))
 		.orElse("unknown");
@@ -100,6 +106,7 @@ public final class SafariSettingsScreen extends Screen {
 	private Object choiceOwner;
 	private SettingChoice choiceDropdown;
 	private SettingMultiChoice multiChoiceDropdown;
+	private int multiChoiceScroll;
 	private int scroll;
 	private int contentHeight;
 	private ScreenRectangle contentScissor;
@@ -114,6 +121,7 @@ public final class SafariSettingsScreen extends Screen {
 	private boolean unlockPanel;
 	private boolean customThemePanel;
 	private boolean specialSparklingConfirmation;
+	private boolean partySyncConfirmation;
 	private int pendingSparklingIntensity = -1;
 	private long signalCompletedAt;
 	private int constellationLeft = Integer.MIN_VALUE;
@@ -273,6 +281,7 @@ public final class SafariSettingsScreen extends Screen {
 			&& inside(mouseX, mouseY, editingSliderLeft, editingSliderTop,
 				editingSliderRight, editingSliderBottom);
 		boolean modalOpen = unlockPanel || customThemePanel || specialSparklingConfirmation
+			|| partySyncConfirmation
 			|| editor != null && !editingInlineText || choiceField != null || editingSameSlider;
 		int backgroundMouseX = modalOpen ? Integer.MIN_VALUE : mouseX;
 		int backgroundMouseY = modalOpen ? Integer.MIN_VALUE : mouseY;
@@ -306,6 +315,10 @@ public final class SafariSettingsScreen extends Screen {
 		if (specialSparklingConfirmation) {
 			modalHitStart = hits.size();
 			drawSpecialSparklingConfirmation(graphics, mouseX, mouseY);
+		}
+		if (partySyncConfirmation) {
+			modalHitStart = hits.size();
+			drawPartySyncConfirmation(graphics, mouseX, mouseY);
 		}
 		if (editor != null && !editingInlineText) {
 			modalHitStart = hits.size();
@@ -596,6 +609,9 @@ public final class SafariSettingsScreen extends Screen {
 			} else if (hasEditor(field)) {
 				y = drawSetting(graphics, owner, field, option, left + depth * 5, right, y,
 					mouseX, mouseY);
+				if (field.getName().equals("outputLogPreset")) {
+					y = drawEnabledLogOptions(graphics, left + depth * 5, right, y);
+				}
 			}
 		}
 		if (groups.isEmpty()) return y;
@@ -658,7 +674,7 @@ public final class SafariSettingsScreen extends Screen {
 			hits.add(new Hit(x, y, x + tabWidth, y + 23, () -> {
 				String parentPath = selectionKey.substring(0, selectionKey.lastIndexOf(':'));
 				collapseDescendants(parentPath);
-				if (depth == 0 && choice.equals(selectedGroups.get(selectionKey))) {
+				if (choice.equals(selectedGroups.get(selectionKey))) {
 					selectedGroups.remove(selectionKey);
 				} else {
 					selectedGroups.put(selectionKey, choice);
@@ -708,6 +724,23 @@ public final class SafariSettingsScreen extends Screen {
 			if (openGroups.remove(path)) collapseDescendants(path);
 			else openGroups.add(path);
 		}));
+		return y + height + 6;
+	}
+
+	/** Shows the resolved preset/custom selection without duplicating preset definitions. */
+	private int drawEnabledLogOptions(GuiGraphicsExtractor graphics, int left, int right, int y) {
+		List<String> enabled = OutputLogPresets.enabledOptionNames();
+		String joined = enabled.isEmpty() ? "None" : String.join("  •  ", enabled);
+		List<String> lines = wrap(joined, Math.max(40, right - left - 24));
+		int height = 30 + lines.size() * 11;
+		graphics.fill(left, y, right, y + height, CARD);
+		outline(graphics, left, y, right - left, height, BORDER);
+		drawText(graphics, "Enabled Debug Options (" + enabled.size() + ")", left + 12, y + 9, CYAN);
+		int lineY = y + 24;
+		for (String line : lines) {
+			drawText(graphics, line, left + 12, lineY, enabled.isEmpty() ? MUTED : TEXT);
+			lineY += 11;
+		}
 		return y + height + 6;
 	}
 
@@ -791,7 +824,8 @@ public final class SafariSettingsScreen extends Screen {
 	private static boolean visibleInThisBuild(Class<?> owner, Field field) {
 		if (field.getName().startsWith("private") && !BuildVersion.DEVELOPER) return false;
 		if (owner != SafariConfig.AdvancedConfig.class || BuildVersion.DEVELOPER) return true;
-		if (field.getName().equals("specialTheme")) return true;
+		if (field.getName().equals("specialTheme")
+			|| field.getName().equals("enablePartySync")) return true;
 		return !BuildVersion.SAFE && (field.getName().startsWith("safe")
 			|| field.getName().startsWith("SAFE_"));
 	}
@@ -880,10 +914,12 @@ public final class SafariSettingsScreen extends Screen {
 				hits.add(new Hit(x, controlY, x + controlWidth, controlY + 22,
 					() -> openChoicePicker(owner, field, dropdown)));
 			} else if (multiChoice != null) {
-				int selected = Integer.bitCount(field.getInt(owner));
-				String label = selected == multiChoice.values().length ? "All selected"
+				int total = multiChoiceLabels(multiChoice).length;
+				long validBits = total >= Long.SIZE ? -1L : (1L << total) - 1;
+				int selected = Long.bitCount(multiChoiceValue(owner, field) & validBits);
+				String label = selected == total ? "All selected"
 					: selected == 0 ? "None selected"
-					: selected + " of " + multiChoice.values().length + " selected";
+					: selected + " of " + total + " selected";
 				drawChoice(graphics, x, controlY, controlWidth, label);
 				hits.add(new Hit(x, controlY, x + controlWidth, controlY + 22,
 					() -> openMultiChoicePicker(owner, field, multiChoice)));
@@ -987,6 +1023,7 @@ public final class SafariSettingsScreen extends Screen {
 		choiceField = field;
 		choiceDropdown = null;
 		multiChoiceDropdown = dropdown;
+		multiChoiceScroll = 0;
 		setFocused(null);
 		if (search != null) search.visible = false;
 	}
@@ -1043,31 +1080,56 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private void drawMultiChoiceModal(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-		String[] labels = multiChoiceDropdown.values();
-		String[] groups = multiChoiceDropdown.groups();
-		int[] starts = multiChoiceDropdown.groupStarts();
-		int columns = width >= 560 ? 2 : 1;
-		int rows = (labels.length + columns - 1) / columns;
-		int w = Math.min(620, width - 30);
-		int h = Math.min(height - 30, 76 + rows * 31);
+		String[] labels = multiChoiceLabels(multiChoiceDropdown);
+		String[] groups = multiChoiceDropdown.critters() ? CRITTER_GROUPS : multiChoiceDropdown.groups();
+		int[] starts = multiChoiceDropdown.critters() ? CRITTER_GROUP_STARTS : multiChoiceDropdown.groupStarts();
+		int columns = multiChoiceColumns();
+		int rows = multiChoiceRows(labels.length, columns);
+		boolean biomeColumns = multiChoiceDropdown.biomeColumns() && columns == 4;
+		int w = Math.min(biomeColumns ? 760 : 620, width - 30);
+		int h = Math.min(height - 30, (biomeColumns ? 90 : 76) + rows * 31);
 		int x = (width - w) / 2;
 		int y = (height - h) / 2;
+		int itemsTop = y + (biomeColumns ? 58 : 44);
+		int itemsBottom = y + h - 32;
+		multiChoiceScroll = Math.clamp(multiChoiceScroll, 0,
+			Math.max(0, rows * 31 - (itemsBottom - itemsTop)));
 		graphics.fill(0, 0, width, height, 0xAA000000);
 		graphics.fill(x, y, x + w, y + h, SURFACE);
 		outline(graphics, x, y, w, h, CYAN);
 		SettingInfo option = choiceField.getAnnotation(SettingInfo.class);
 		drawText(graphics, "Choose " + displayName(option.name()), x + 14, y + 14, TEXT);
-		drawText(graphics, "Select every option that should be enabled", x + 14, y + 27, MUTED);
+		drawText(graphics, rows * 31 > itemsBottom - itemsTop
+			? "Select options · scroll for more" : "Select every option that should be enabled",
+			x + 14, y + 27, MUTED);
 		int cellWidth = (w - 28 - (columns - 1) * 8) / columns;
-		int selected = choiceValue();
+		long selected = multiChoiceValue(choiceOwner, choiceField);
+		if (biomeColumns) {
+			for (int column = 0; column < 4; column++) {
+				drawText(graphics, groups[column],
+					x + 20 + column * (cellWidth + 8), y + 44, CYAN);
+			}
+		}
+		graphics.enableScissor(x + 12, itemsTop, x + w - 12, itemsBottom);
 		for (int index = 0; index < labels.length; index++) {
-			int column = index % columns;
-			int row = index / columns;
+			int column;
+			int row;
+			if (biomeColumns) {
+				column = groupIndex(index, starts);
+				row = index - starts[column];
+			} else if (multiChoiceDropdown.biomeColumns() && columns == 2) {
+				// Cavern/Icy on the left, Haunted/Forest on the right.
+				column = index >= starts[2] ? 1 : 0;
+				row = index - (column == 1 ? starts[2] : 0);
+			} else {
+				column = index % columns;
+				row = index / columns;
+			}
 			int cellX = x + 14 + column * (cellWidth + 8);
-			int cellY = y + 44 + row * 31;
-			if (cellY + 26 > y + h - 30) continue;
+			int cellY = itemsTop + row * 31 - multiChoiceScroll;
+			if (cellY < itemsTop || cellY + 26 > itemsBottom) continue;
 			String group = groupFor(index, groups, starts);
-			boolean active = (selected & 1 << index) != 0;
+			boolean active = (selected & 1L << index) != 0;
 			boolean hovered = inside(mouseX, mouseY, cellX, cellY, cellX + cellWidth, cellY + 26);
 			graphics.fill(cellX, cellY, cellX + cellWidth, cellY + 26,
 				active ? SELECTED : hovered ? CARD_HOVER : CARD);
@@ -1075,12 +1137,14 @@ public final class SafariSettingsScreen extends Screen {
 			Component mark = Component.literal(active ? "✓" : "○")
 				.withStyle(style -> style.withBold(true));
 			drawText(graphics, mark, cellX + 8, cellY + 9, active ? GREEN : DIM);
-			drawText(graphics, trim(group + " · " + labels[index], cellWidth - 34),
+			drawText(graphics, trim(biomeColumns ? labels[index] : group + " · " + labels[index],
+				cellWidth - 34),
 				cellX + 24, cellY + 9, active ? TEXT : MUTED);
-			int bit = 1 << index;
+			long bit = 1L << index;
 			hits.add(new Hit(cellX, cellY, cellX + cellWidth, cellY + 26,
 				() -> toggleMultiChoice(bit)));
 		}
+		graphics.disableScissor();
 		drawButton(graphics, x + w - 74, y + h - 28, 60, "Done", mouseX, mouseY);
 		hits.add(new Hit(x + w - 74, y + h - 28, x + w - 14, y + h - 6,
 			this::closeChoicePicker));
@@ -1095,9 +1159,13 @@ public final class SafariSettingsScreen extends Screen {
 		return group;
 	}
 
-	private void toggleMultiChoice(int bit) {
+	private void toggleMultiChoice(long bit) {
 		try {
-			choiceField.setInt(choiceOwner, choiceField.getInt(choiceOwner) ^ bit);
+			if (choiceField.getType() == long.class) {
+				choiceField.setLong(choiceOwner, choiceField.getLong(choiceOwner) ^ bit);
+			} else {
+				choiceField.setInt(choiceOwner, choiceField.getInt(choiceOwner) ^ (int) bit);
+			}
 			ConfigManager.save();
 		} catch (IllegalAccessException ignored) {
 		}
@@ -1115,12 +1183,59 @@ public final class SafariSettingsScreen extends Screen {
 		return visibleIndex;
 	}
 
+	private static long multiChoiceValue(Object owner, Field field) {
+		try {
+			return field.getType() == long.class ? field.getLong(owner) : Integer.toUnsignedLong(field.getInt(owner));
+		} catch (IllegalAccessException ignored) {
+			return 0;
+		}
+	}
+
 	private int choiceValue() {
 		try {
 			return choiceField.getInt(choiceOwner);
 		} catch (IllegalAccessException ignored) {
 			return 0;
 		}
+	}
+
+	private static String[] multiChoiceLabels(SettingMultiChoice choice) {
+		return choice.critters() ? CRITTER_CHOICES : choice.values();
+	}
+
+	private static int[] critterGroupStarts() {
+		int[] starts = new int[CRITTER_GROUPS.length];
+		int offset = 0;
+		for (int index = 0; index < starts.length; index++) {
+			starts[index] = offset;
+			offset += Critters.totalIn(Critters.selectionBiomes().get(index));
+		}
+		return starts;
+	}
+
+	private int multiChoiceColumns() {
+		if (multiChoiceDropdown.biomeColumns()) return width >= 600 ? 4 : width >= 420 ? 2 : 1;
+		return width >= 560 ? 2 : 1;
+	}
+
+	private int multiChoiceRows(int count, int columns) {
+		if (!multiChoiceDropdown.biomeColumns() || columns == 1) return (count + columns - 1) / columns;
+		int[] starts = multiChoiceDropdown.critters()
+			? CRITTER_GROUP_STARTS : multiChoiceDropdown.groupStarts();
+		if (columns == 2) return Math.max(starts[2], count - starts[2]);
+		int maximum = 0;
+		for (int index = 0; index < starts.length; index++) {
+			int end = index + 1 < starts.length ? starts[index + 1] : count;
+			maximum = Math.max(maximum, end - starts[index]);
+		}
+		return maximum;
+	}
+
+	private static int groupIndex(int index, int[] starts) {
+		for (int group = starts.length - 1; group >= 0; group--) {
+			if (index >= starts[group]) return group;
+		}
+		return 0;
 	}
 
 	private void chooseDropdownValue(int value) {
@@ -1322,6 +1437,46 @@ public final class SafariSettingsScreen extends Screen {
 			if (search != null) search.visible = true;
 			ConfigManager.save();
 		}));
+	}
+
+	private void drawPartySyncConfirmation(GuiGraphicsExtractor graphics,
+			int mouseX, int mouseY) {
+		int w = Math.min(540, width - 40);
+		int h = 158;
+		int x = (width - w) / 2;
+		int y = (height - h) / 2;
+		graphics.fill(0, 0, width, height, 0xBB000000);
+		graphics.fill(x, y, x + w, y + h, SURFACE);
+		outline(graphics, x, y, w, h, GOLD);
+		graphics.centeredText(font, "ENABLE PARTY SYNC?", x + w / 2, y + 15, GOLD);
+		graphics.centeredText(font, "This sends one compact verification token in party chat.",
+			x + w / 2, y + 38, TEXT);
+		graphics.centeredText(font,
+			"Objective updates are then shared through parsed party messages.",
+			x + w / 2, y + 52, TEXT);
+		graphics.centeredText(font,
+			"It only activates when every party member has Safari Utils",
+			x + w / 2, y + 70, MUTED);
+		graphics.centeredText(font,
+			"and has Enable Party Sync turned on.", x + w / 2, y + 84, MUTED);
+		int cancelX = x + w / 2 - 112;
+		int enableX = x + w / 2 + 8;
+		drawButton(graphics, cancelX, y + 116, 104, "Cancel", mouseX, mouseY);
+		drawButton(graphics, enableX, y + 116, 104, "Enable", mouseX, mouseY);
+		hits.add(new Hit(cancelX, y + 116, cancelX + 104, y + 138,
+			this::cancelPartySync));
+		hits.add(new Hit(enableX, y + 116, enableX + 104, y + 138, () -> {
+			ConfigManager.get().advanced.enablePartySync = true;
+			partySyncConfirmation = false;
+			if (search != null) search.visible = true;
+			ConfigManager.save();
+		}));
+	}
+
+	private void cancelPartySync() {
+		ConfigManager.get().advanced.enablePartySync = false;
+		partySyncConfirmation = false;
+		if (search != null) search.visible = true;
 	}
 
 	private void drawFooter(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
@@ -2006,6 +2161,16 @@ public final class SafariSettingsScreen extends Screen {
 
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+		if (multiChoiceDropdown != null) {
+			int columns = multiChoiceColumns();
+			int rows = multiChoiceRows(multiChoiceLabels(multiChoiceDropdown).length, columns);
+			int margin = multiChoiceDropdown.biomeColumns() && columns == 4 ? 90 : 76;
+			int h = Math.min(height - 30, margin + rows * 31);
+			multiChoiceScroll = Math.clamp(multiChoiceScroll
+				+ (scrollY > 0 ? -31 : scrollY < 0 ? 31 : 0), 0,
+				Math.max(0, rows * 31 - (h - margin)));
+			return true;
+		}
 		if (mouseX < NAV_WIDTH && mouseY >= HEADER_HEIGHT && mouseY < height - FOOTER_HEIGHT) {
 			int viewport = height - HEADER_HEIGHT - FOOTER_HEIGHT - 8;
 			int max = Math.max(0, navigationContentHeight - viewport);
@@ -2026,6 +2191,10 @@ public final class SafariSettingsScreen extends Screen {
 	public boolean keyPressed(KeyEvent event) {
 		if (specialSparklingConfirmation && event.key() == 256) {
 			cancelSparklingIntensity();
+			return true;
+		}
+		if (partySyncConfirmation && event.key() == 256) {
+			cancelPartySync();
 			return true;
 		}
 		if (choiceField != null && event.key() == 256) {
@@ -2052,6 +2221,12 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private void setBoolean(Object owner, Field field, boolean value) {
+		if (field.getName().equals("enablePartySync") && value) {
+			partySyncConfirmation = true;
+			setFocused(null);
+			if (search != null) search.visible = false;
+			return;
+		}
 		try {
 			field.setBoolean(owner, value);
 			SettingToggle toggle = field.getAnnotation(SettingToggle.class);

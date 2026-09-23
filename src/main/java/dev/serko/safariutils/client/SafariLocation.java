@@ -2,6 +2,7 @@ package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.data.Critters;
 import dev.serko.safariutils.data.SafariBiome;
+import dev.serko.safariutils.parse.ChatParser;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.world.entity.Entity;
@@ -199,7 +200,10 @@ public final class SafariLocation {
 	 * arriving in the same tick as the banner is not treated as happening elsewhere.
 	 */
 	public static void onChatMessage(String line) {
-		if (line.endsWith("entered Critter Safari!")) markEntered();
+		// A partymate can enter first while this client is still at the entrance.
+		// Their announcement is a timing clue, not proof of our own location.
+		String entrant = ChatParser.safariEntrant(line);
+		if (entrant != null && entrant.equals(Minecraft.getInstance().getUser().getName())) markEntered();
 	}
 
 	/** Marks the player as being at the Safari on evidence other than the area line. */

@@ -1,6 +1,7 @@
 package dev.serko.safariutils.api;
 
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 /** Optional source for the Sparkling species shared by a party. */
@@ -26,6 +27,20 @@ public interface SharedSparklingProvider {
 	/** Earliest time another uncached authenticated profile request may begin. */
 	default long lookupAvailableAt() {
 		return 0L;
+	}
+
+	/** Whether a private build gives this UUID-backed player its special name style. */
+	default boolean specialName(String name) {
+		return false;
+	}
+
+	/** Normalized names currently known to use the private special style. */
+	default Set<String> specialNames() {
+		return Set.of();
+	}
+
+	/** Remembers a username resolved from a UUID-bearing profile response. */
+	default void rememberIdentity(String uuid, String name) {
 	}
 
 	/** Observes roster changes; public builds have no provider and never call an API. */

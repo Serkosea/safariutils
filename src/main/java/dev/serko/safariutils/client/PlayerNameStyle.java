@@ -1,6 +1,6 @@
 package dev.serko.safariutils.client;
 
-import dev.serko.safariutils.api.PartyItemSyncProviders;
+import dev.serko.safariutils.api.SharedSparklingProviders;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
@@ -12,11 +12,11 @@ import java.util.Set;
 final class PlayerNameStyle {
 	private PlayerNameStyle() { }
 
-	/** Draws mixed ordinary/rainbow text and returns whether a whitelisted name was present. */
+	/** Draws mixed ordinary/rainbow text and returns whether a special name was present. */
 	static boolean drawIfPresent(GuiGraphicsExtractor graphics, Font font, Component component,
 			int x, int y, int fallbackColour) {
 		String text = component.getString();
-		Set<String> names = PartyItemSyncProviders.whitelistedNames();
+		Set<String> names = SharedSparklingProviders.specialNames();
 		if (text.isEmpty() || names.isEmpty()) return false;
 		String lower = text.toLowerCase(Locale.ROOT);
 		int cursor = x;

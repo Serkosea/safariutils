@@ -4,6 +4,7 @@ import dev.serko.safariutils.client.OperationalLog;
 
 import java.util.Optional;
 import java.util.ServiceLoader;
+import java.util.Set;
 
 /** Loads the ignored private provider when it was explicitly included in a build. */
 public final class SharedSparklingProviders {
@@ -34,6 +35,18 @@ public final class SharedSparklingProviders {
 
 	public static void shutdown() {
 		PROVIDER.ifPresent(SharedSparklingProvider::shutdown);
+	}
+
+	public static boolean specialName(String name) {
+		return PROVIDER.map(provider -> provider.specialName(name)).orElse(false);
+	}
+
+	public static Set<String> specialNames() {
+		return PROVIDER.map(SharedSparklingProvider::specialNames).orElse(Set.of());
+	}
+
+	public static void rememberIdentity(String uuid, String name) {
+		PROVIDER.ifPresent(provider -> provider.rememberIdentity(uuid, name));
 	}
 
 	private static Optional<SharedSparklingProvider> load() {

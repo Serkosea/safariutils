@@ -1,5 +1,52 @@
 # Changelog
 
+## [2.1.0] - 2026-09-22
+
+### Fixes
+
+- Made solo objective tracking authoritative without enabling Party Sync or sending sync messages
+- Prevented Birdfeeder Empty and All Feed Done from firing before the tracked feeder stack is actually consumed
+- Completed Wumpa after either a catch or a fatal attempt, while allowing a later party catch to replace Retreated with Caught
+- Colored intermediate Gemzie, Wumpa, and Doomspiral states yellow and completed placed-gem checks green
+- Gave Party Objective rows consistent pale biome-relative colors
+- Kept hidden Safari chat messages fully available to trackers, alerts, history, and objective synchronization
+- Based Cavern completion on catching a Gemzie, while showing Door Open 2.5 seconds after its authoritative chat message
+- Collapsed completed biome details to their terminal objective state and kept Forest bird counts available after all feed is done
+- Matched Party Objective player-name colors to their live tab-list rank colors
+- Cached player-name colors on player-list and world changes instead of rescanning the tab list during rendering
+- Excluded two manually rejected, transition-only Hideyho positions from learned locations
+- Drew mound waypoints above solid supporting blocks instead of boxing the floor, including the mound anchored at `-80,57,61`
+- Let selected settings subtabs collapse when clicked again, at any nesting depth
+- Kept nearby, simultaneously present critters as separate remembered individuals instead of repeatedly replacing each other's waypoints
+- Kept passive packet debug toggles inside Debug Logging instead of showing them in Safe Mode
+- Started the pre-ticket Join countdown from the earliest relevant queue or party-entry notice, and changed its zero-state label to Closing
+- Kept a partymate's early entry announcement from marking the local player as inside Safari before their own transfer
+- Ended failed-join timing samples when the server reports a kick instead of carrying their timeline into a later lobby
+
+### Changes & Additions
+
+- Added a Hide Chat Messages checker for catches, loot shares, floor drops, objective messages, and Safari Manager dialogue
+- Sorted every bundled static coordinate list by horizontal distance from the Safari center at `-49.5, 0.5`
+- Renamed the terminal objective rows to Gemzie and Doomspiral, and made completed Forest progress read All Feed Done
+- Stored static catalog keys at cube centers—including the upper cube of Hideyho's two-block box—migrated older local keys automatically, and made static waypoint rendering independent of local decimal observations
+- Stopped saving redundant decimal observations and creating empty local static-catalog files when the bundled assets are sufficient
+- Bundled four player-verified Hideonfloor locations from the opt-in research data
+- Added an opt-in Show Learned Candidates overlay below Save Learned Locations; bright red-orange review waypoints show only new Hideonfloor blocks across the whole Safari
+- Added four-column Always Active Critters and grouped Always Active Waypoints checkers, keeping selected critter hitboxes or objective waypoints visible through Sparkling Mode's ordinary filtering
+- Limited opt-in location research to conservative Hideonfloor block centers in any stable Safari party size
+- Made stationary objective catalogs bundled-only so obsolete local waypoint files cannot affect rendering
+- Added opt-in party objective synchronization through parsed party chat, with compact sender/lobby-bound verification tokens and an all-members confirmation gate
+- Reset Party Sync to off every Minecraft launch and added an activation warning explaining its party-wide requirement
+- Preserved complete pre-confirmation run state, coalesced queued snapshots, batched hive coordinates, and announced mid-run sync shutdowns to the party
+- Added change-only objective diagnostics and broadened the Safari Run Research preset for solo and party runs while keeping high-volume packet and particle streams off
+- Buffered debug-log writes with bounded flush timing and prevented quick log toggles from overwriting an earlier file
+- Rejected moved Hideonfloor sightings from location learning
+- Added expanded developer diagnostics for measuring the complete pre-ticket Safari join window
+- Reorganized output-log presets around focused debugging situations, including combined solo-run research, and added a live list of every enabled category
+- Removed the obsolete isolated Testing Session mode
+- Added independently selectable, read-only inbound server-packet diagnostics for transitions, HUD state, inventories, entities, world state, and custom channel identifiers
+- Made each Runs-tab scroll input move through one full 15-row history page
+
 ## [2.0.0] - 2026-09-20
 
 ### Performance

@@ -7,6 +7,7 @@ import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -18,9 +19,14 @@ public final class DebugLog {
 
 	private static final DateTimeFormatter FILE_STAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd-HHmmss");
 	private static final DateTimeFormatter LINE_STAMP = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
+	private static final long FLUSH_INTERVAL_MILLIS = 1_000L;
+	private static final int FLUSH_LINE_LIMIT = 128;
 
 	private static PrintWriter writer;
 	private static boolean wasEnabled;
+	private static int pendingLines;
+	private static long lastFlushAt;
+	private static long retryAt;
 
 	private DebugLog() {
 	}
@@ -28,7 +34,12 @@ public final class DebugLog {
 	/** Opens or closes the file to match the setting; cheap enough to call every tick. */
 	public static void tick() {
 		boolean enabled = isEnabled();
-		if (enabled == wasEnabled) return;
+		if (enabled == wasEnabled) {
+			if (enabled && writer == null && System.currentTimeMillis() >= retryAt) open();
+			if (enabled && writer != null && pendingLines > 0
+				&& System.currentTimeMillis() - lastFlushAt >= FLUSH_INTERVAL_MILLIS) flush();
+			return;
+		}
 		wasEnabled = enabled;
 		if (enabled) open();
 		else close();
@@ -44,11 +55,18 @@ public final class DebugLog {
 		try {
 			Path dir = SafariPaths.logs();
 			Files.createDirectories(dir);
-			Path file = dir.resolve("debug-" + LocalDateTime.now().format(FILE_STAMP) + ".log");
-			writer = new PrintWriter(Files.newBufferedWriter(file, StandardCharsets.UTF_8));
+			String base = "debug-" + LocalDateTime.now().format(FILE_STAMP);
+			Path file = dir.resolve(base + ".log");
+			for (int suffix = 2; Files.exists(file); suffix++) file = dir.resolve(base + "-" + suffix + ".log");
+			writer = new PrintWriter(Files.newBufferedWriter(file, StandardCharsets.UTF_8,
+				StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE));
+			retryAt = 0;
+			lastFlushAt = System.currentTimeMillis();
+			pendingLines = 0;
 			line("LOG", "started, writing to " + file);
 		} catch (IOException e) {
 			writer = null;
+			retryAt = System.currentTimeMillis() + 5_000L;
 			OperationalLog.error("DEBUG_LOG/OPEN", e);
 		}
 	}
@@ -56,8 +74,14 @@ public final class DebugLog {
 	private static void close() {
 		if (writer == null) return;
 		line("LOG", "stopped");
-		writer.close();
+		flush();
+		if (writer != null) writer.close();
 		writer = null;
+	}
+
+	/** Flush the final partial buffer when Minecraft exits normally. */
+	public static void shutdown() {
+		close();
 	}
 
 	/**
@@ -71,7 +95,20 @@ public final class DebugLog {
 		if (writer == null) return;
 		if (!categoryEnabled(category)) return;
 		writer.println("[" + LocalDateTime.now().format(LINE_STAMP) + "] " + pad(category) + message);
+		if (++pendingLines >= FLUSH_LINE_LIMIT) flush();
+	}
+
+	private static void flush() {
+		if (writer == null) return;
 		writer.flush();
+		pendingLines = 0;
+		lastFlushAt = System.currentTimeMillis();
+		if (writer.checkError()) {
+			writer.close();
+			writer = null;
+			retryAt = System.currentTimeMillis() + 5_000L;
+			OperationalLog.error("DEBUG_LOG/WRITE", new IOException("Could not write debug log"));
+		}
 	}
 
 	/**
@@ -86,10 +123,13 @@ public final class DebugLog {
 			case "RAW" -> advanced.logRaw;
 			case "CHAT" -> advanced.logChat;
 			case "RUN" -> advanced.logRun;
-			case "ACTIVATE" -> advanced.logActivation;
+			case "OBJECTIVE" -> advanced.logObjectives;
+			case "ACTIVATE", "JOINTIME" -> advanced.logActivation;
 			case "LOCATION" -> advanced.logLocation;
 			case "PARTY" -> advanced.logPartyRoster;
 			case "PARTYTIME" -> advanced.logPartyTiming;
+			case "SYNC" -> advanced.logPartySync;
+			case "PARTYAPI" -> advanced.logPartyApi;
 			case "INTERACT" -> advanced.logInterfaces;
 			case "TABLIST" -> advanced.logTabList;
 			case "SCORE" -> advanced.logScoreboard;
@@ -110,6 +150,12 @@ public final class DebugLog {
 			case "WAYPOINT" -> advanced.logStaticWaypoints;
 			case "PARTICLE" -> advanced.logParticles;
 			case "SPARKLING" -> advanced.logSparkling;
+			case "PKT-TRANS" -> advanced.logPacketTransitions;
+			case "PKT-HUD" -> advanced.logPacketHud;
+			case "PKT-INV" -> advanced.logPacketInventory;
+			case "PKT-ENTITY" -> advanced.logPacketEntities;
+			case "PKT-WORLD" -> advanced.logPacketWorld;
+			case "PKT-CHANNEL" -> advanced.logPacketChannels;
 			default -> true;
 		};
 	}

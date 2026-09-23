@@ -3,6 +3,7 @@ package dev.serko.safariutils;
 import dev.serko.safariutils.client.BazaarPrices;
 import dev.serko.safariutils.client.AlertSounds;
 import dev.serko.safariutils.client.ChatQueue;
+import dev.serko.safariutils.client.ChatMessageFilter;
 import dev.serko.safariutils.client.SafariCommands;
 import dev.serko.safariutils.client.ProgressHud;
 import dev.serko.safariutils.client.ConfigManager;
@@ -24,6 +25,7 @@ import dev.serko.safariutils.client.PartyRosterWatch;
 import dev.serko.safariutils.client.TicketProtection;
 import dev.serko.safariutils.client.StillCritters;
 import dev.serko.safariutils.client.HotspotWatch;
+import dev.serko.safariutils.client.JoinWindowDiagnostics;
 import dev.serko.safariutils.client.BirdfeederWatch;
 import dev.serko.safariutils.client.ShiningCoinWatch;
 import dev.serko.safariutils.client.MissingHud;
@@ -34,8 +36,8 @@ import dev.serko.safariutils.client.RecatchSpots;
 import dev.serko.safariutils.client.SafariLocation;
 import dev.serko.safariutils.client.SafariPartyWatch;
 import dev.serko.safariutils.client.SafariPaths;
+import dev.serko.safariutils.client.ServerPacketDiagnostics;
 import dev.serko.safariutils.client.OperationalLog;
-import dev.serko.safariutils.client.StaticWaypointCatalog;
 import dev.serko.safariutils.client.StaticEntityCatalog;
 import dev.serko.safariutils.client.FullScreenAlert;
 import dev.serko.safariutils.client.SparklingWatch;
@@ -64,6 +66,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.minecraft.resources.Identifier;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -93,55 +96,30 @@ public class SafariUtils implements ClientModInitializer {
 			return OperationalLog.get("CHAT/FILTER", () -> {
 				// Log before optional automation hides a clickable server prompt.
 				InteractionDebugLog.onGameMessage(message, overlay);
-				return PartyRosterWatch.allow(message, overlay)
+				boolean allowed = PartyRosterWatch.allow(message, overlay)
 					&& PartyErrorSuppressor.allow(message, overlay)
 					&& HideyhoAutoAccept.allow(message, overlay)
 					&& PartyItemSyncProviders.allowMessage(message, overlay);
+				if (!allowed) return false;
+				if (!ChatMessageFilter.shouldHide(message, overlay)) return true;
+				// Fabric does not emit GAME after ALLOW_GAME rejects a line. Process the
+				// selected server message here first so hiding remains display-only.
+				handleGameMessage(message, overlay);
+				return false;
 			}, true);
 		});
 		// Hypixel sends catch messages as system chat, which is what GAME covers.
 		// This fires upstream of chat-compacting mods, so the duplicate counters
 		// they append never reach the parser.
-		ClientReceiveMessageEvents.GAME.register((message, overlay) -> OperationalLog.run("CHAT/HANDLE", () -> {
-			if (overlay) return;
-			// Hypixel sends banners such as the "entered Critter Safari!" notice as a
-			// single multi-line component, so each line has to be handled separately
-			// or the interesting one never matches on its own.
-			for (String part : message.getString().split("\\r?\\n|\\\\n")) {
-				String line = ChatParser.clean(part);
-				if (line.isEmpty()) continue;
-
-				// Player-written lines may quote server text, so trackers ignore them.
-				if (ChatParser.playerSaid(line)) {
-					continue;
-				}
-
-				// Log server messages before parsing so an unknown format remains
-				// diagnosable. Player chat was filtered out above.
-				DebugLog.line("RAW", "\"" + line + "\"");
-				PartyItemSyncProviders.onServerMessage(line);
-
-				SafariLocation.onChatMessage(line);
-				SparklingMode.onChatMessage(line);
-				SessionManager.onChatMessage(line);
-				EncounterAlerts.onChatMessage(line);
-				RecatchSpots.onChatMessage(line);
-				BirdfeederWatch.onChatMessage(line);
-				ShiningCoinWatch.onChatMessage(line);
-				SafariObjectives.onChatMessage(line);
-				HotspotWatch.onChatMessage(line);
-				HideyhoSolver.onChatMessage(line);
-				StillCritters.onChatMessage(line);
-				FloorDrops.onChatMessage(line);
-				MoundSpotter.onChatMessage(line);
-			}
-		}));
+		ClientReceiveMessageEvents.GAME.register((message, overlay) ->
+			handleGameMessage(message, overlay));
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			tickSafely("alerts", AlertSounds::tick);
 			if (BuildVersion.DEVELOPER) tickSafely("debug-log", DebugLog::tick);
 			// Next, and only here: everything below asks it where the player is.
 			tickSafely("location", SafariLocation::tick);
+			if (BuildVersion.DEVELOPER) tickSafely("join-window", () -> JoinWindowDiagnostics.tick(client));
 			tickSafely("birdfeeder-menu", BirdfeederWatch::tickMenu);
 			tickSafely("party-roster", PartyRosterWatch::tick);
 			tickSafely("safari-party", SafariPartyWatch::tick);
@@ -152,6 +130,7 @@ public class SafariUtils implements ClientModInitializer {
 			// Sync snapshots consume the inventory caches refreshed immediately above.
 			tickSafely("party-objectives", PartyItemSyncProviders::tick);
 			if (BuildVersion.DEVELOPER) tickSafely("debug-state", DebugStateLog::tick);
+			if (BuildVersion.DEVELOPER) tickSafely("server-packet-debug", ServerPacketDiagnostics::tick);
 			if (BuildVersion.DEVELOPER) tickSafely("interaction-debug", InteractionDebugLog::tick);
 			tickSafely("contest", ContestTracker::tick);
 			// One sweep of the world's critters, for everything below that wants them.
@@ -167,7 +146,6 @@ public class SafariUtils implements ClientModInitializer {
 			tickSafely("sparkling-watch", SparklingWatch::tick);
 			tickSafely("floor-drops", FloorDrops::tick);
 			tickSafely("mounds", MoundSpotter::tick);
-			tickSafely("static-waypoints", StaticWaypointCatalog::tick);
 			tickSafely("static-entities", StaticEntityCatalog::tick);
 			tickSafely("recatch", RecatchSpots::tick);
 			tickSafely("darkness", DarknessFilter::tick);
@@ -183,8 +161,8 @@ public class SafariUtils implements ClientModInitializer {
 			ConfigManager.save();
 			BazaarPrices.shutdown();
 			SharedSparklingProviders.shutdown();
-			StaticWaypointCatalog.shutdown();
 			StaticEntityCatalog.shutdown();
+			if (BuildVersion.DEVELOPER) DebugLog.shutdown();
 			OperationalLog.shutdown();
 		});
 
@@ -192,6 +170,7 @@ public class SafariUtils implements ClientModInitializer {
 		// this is the one moment the chat-driven flag is known to be stale.
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> OperationalLog.run("CONNECTION/JOIN", () -> {
 			OperationalLog.info("LIFECYCLE", "Joined a server world");
+			if (BuildVersion.DEVELOPER) JoinWindowDiagnostics.onConnectionJoin();
 			SafariLocation.onWorldChange();
 			SessionManager.onWorldChange();
 		}));
@@ -271,6 +250,33 @@ public class SafariUtils implements ClientModInitializer {
 		SparklingStats.load(SafariPaths.sparklingStats());
 
 		LOGGER.info("Critter Safari tracker ready");
+	}
+
+	private static void handleGameMessage(Component message, boolean overlay) {
+		OperationalLog.run("CHAT/HANDLE", () -> {
+			if (overlay) return;
+			// Multi-line server components must be split before matching individual events.
+			for (String part : message.getString().split("\\r?\\n|\\\\n")) {
+				String line = ChatParser.clean(part);
+				if (line.isEmpty() || ChatParser.playerSaid(line)) continue;
+				DebugLog.line("RAW", "\"" + line + "\"");
+				PartyItemSyncProviders.onServerMessage(line);
+				SafariLocation.onChatMessage(line);
+				SparklingMode.onChatMessage(line);
+				SessionManager.onChatMessage(line);
+				if (BuildVersion.DEVELOPER) JoinWindowDiagnostics.onChatMessage(line);
+				EncounterAlerts.onChatMessage(line);
+				RecatchSpots.onChatMessage(line);
+				BirdfeederWatch.onChatMessage(line);
+				ShiningCoinWatch.onChatMessage(line);
+				SafariObjectives.onChatMessage(line);
+				HotspotWatch.onChatMessage(line);
+				HideyhoSolver.onChatMessage(line);
+				StillCritters.onChatMessage(line);
+				FloorDrops.onChatMessage(line);
+				MoundSpotter.onChatMessage(line);
+			}
+		});
 	}
 
 	private static void tickSafely(String tracker, Runnable action) {

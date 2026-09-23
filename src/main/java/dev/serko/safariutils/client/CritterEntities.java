@@ -48,6 +48,12 @@ public final class CritterEntities {
 	public static void tick() {
 		if (++ticks < SCAN_INTERVAL_TICKS) return;
 		ticks = 0;
+		if (!DebugLog.isEnabled()) {
+			lastPairFailureLogged.clear();
+		} else if (!lastPairFailureLogged.isEmpty()) {
+			long cutoff = System.currentTimeMillis() - PAIR_FAILURE_LOG_INTERVAL_MILLIS * 2;
+			lastPairFailureLogged.values().removeIf(time -> time < cutoff);
+		}
 
 		Minecraft client = Minecraft.getInstance();
 		scannedAt = System.currentTimeMillis();

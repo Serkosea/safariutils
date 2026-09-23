@@ -5,6 +5,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -62,6 +63,9 @@ public final class MoundSpotter {
 
 	private MoundSpotter() {
 	}
+
+	/** Exact body coordinates from the latest scan, keyed by the displayed mound block. */
+	private static final Map<BlockPos, Vec3> exactMounds = new java.util.HashMap<>();
 
 	/** Loads the Cavern bounds once; a failed load is not retried every call. */
 	private static int[] loadCavernBounds() {
@@ -139,6 +143,11 @@ public final class MoundSpotter {
 		return cached;
 	}
 
+	/** Latest interaction-entity position; the catalog key may be its supporting block. */
+	public static Vec3 exactMound(BlockPos catalogPos) {
+		return exactMounds.get(catalogPos);
+	}
+
 	/** Refreshes mound state once per scheduled tick for every display consumer. */
 	private static void refresh() {
 		long now = System.currentTimeMillis();
@@ -197,7 +206,7 @@ public final class MoundSpotter {
 			absentSince.remove(pos);
 			detectedLive.add(pos);
 			if (VisibilityCheck.canInspectCandidate(pos)) confirmedVisible.add(pos);
-			if (everSeen.add(pos)) StaticWaypointCatalog.learnMound(pos);
+			everSeen.add(pos);
 		}
 		Set<BlockPos> liveSet = new HashSet<>(liveNow);
 		for (BlockPos pos : List.copyOf(everSeen)) {
@@ -247,6 +256,7 @@ public final class MoundSpotter {
 	}
 
 	public static void reset() {
+		exactMounds.clear();
 		everSeen.clear();
 		everSeen.addAll(StaticWaypointCatalog.mounds());
 		detectedLive.clear();
@@ -299,6 +309,7 @@ public final class MoundSpotter {
 	}
 
 	private static List<BlockPos> scan() {
+		exactMounds.clear();
 		Minecraft client = Minecraft.getInstance();
 		List<BlockPos> found = new ArrayList<>();
 		if (client.level == null || client.player == null) return found;
@@ -347,7 +358,9 @@ public final class MoundSpotter {
 			BlockPos catalogPos = nearestCatalog(candidate.blockPosition(), catalog,
 				claimedCatalogPositions);
 			if (catalogPos != null) claimedCatalogPositions.add(catalogPos);
-			found.add(catalogPos == null ? candidate.blockPosition() : catalogPos);
+			BlockPos foundPos = catalogPos == null ? candidate.blockPosition() : catalogPos;
+			found.add(foundPos);
+			exactMounds.putIfAbsent(foundPos, candidate.position());
 		}
 		return found;
 	}

@@ -44,6 +44,12 @@ public final class ChatQueue {
 		enqueueDelayed(line, true, 0L, true);
 	}
 
+	/** Places an urgent party-state notice ahead of ordinary queued messages. */
+	public static void enqueueVerifiedPartyFirst(String line) {
+		String trimmed = line.length() > MAX_LENGTH ? line.substring(0, MAX_LENGTH) : line;
+		pending.addFirst(new Queued("/" + trimmed, System.currentTimeMillis(), true));
+	}
+
 	private static void enqueueDelayed(String line, boolean command, long delayMillis,
 			boolean verifiedParty) {
 		String trimmed = line.length() > MAX_LENGTH ? line.substring(0, MAX_LENGTH) : line;
@@ -63,6 +69,19 @@ public final class ChatQueue {
 	public static void discardContaining(String marker) {
 		if (marker == null || marker.isEmpty()) return;
 		pending.removeIf(queued -> queued.line().contains(marker));
+	}
+
+	/** Removes queued lines only when every supplied fragment is present. */
+	public static void discardContainingAll(String... fragments) {
+		if (fragments == null || fragments.length == 0) return;
+		pending.removeIf(queued -> {
+			for (String fragment : fragments) {
+				if (fragment == null || fragment.isEmpty() || !queued.line().contains(fragment)) {
+					return false;
+				}
+			}
+			return true;
+		});
 	}
 
 	/** Drains at most one queued line per call; wired to the client tick. */

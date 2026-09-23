@@ -68,7 +68,6 @@ public final class NestTracker {
 		BlockPos immutable = pos.immutable();
 		known.add(immutable);
 		present.add(immutable);
-		StaticWaypointCatalog.learnNest(immutable);
 		pending.computeIfAbsent(immutable, ignored -> new PendingInteraction(
 			System.currentTimeMillis(), currentHoneybugIds()));
 		cachedTick = Long.MIN_VALUE;
@@ -166,7 +165,6 @@ public final class NestTracker {
 			boolean isNew = known.add(pos.immutable());
 			present.add(pos.immutable());
 			if (isNew) {
-				StaticWaypointCatalog.learnNest(pos.immutable());
 				DebugLog.line("NEST", "found " + pos.getX() + "," + pos.getY() + "," + pos.getZ()
 					+ " (top-up sweep, " + known.size() + " known so far)");
 			}

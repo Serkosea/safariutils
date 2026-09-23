@@ -9,11 +9,20 @@ import dev.serko.safariutils.api.SharedSparklingProviders;
 
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.HashMap;
 
 /** Public/manual shared-Sparkling state and the decisions derived from it. */
 public final class SparklingMode {
+	/** Ordinals match the grouped Always Active Waypoints setting picker. */
+	private enum WaypointKind {
+		CAVERN_FLOOR, MOUNDS, SNOOZLE_WALLS, ICY_FLOOR, TROODON_WALLS,
+		HAUNTED_FLOOR, FOREST_FLOOR, BEE_NESTS
+	}
+
 	private static final Set<Critter> shared = new LinkedHashSet<>();
+	private static final Map<Critter, Integer> ALWAYS_ACTIVE_BITS = alwaysActiveBits();
 	/** Distinguishes an intentionally empty list from one that was never supplied. */
 	private static boolean sharedConfigured;
 	private static int expectedPlayers = 1;
@@ -110,25 +119,57 @@ public final class SparklingMode {
 		return shared.contains(critter);
 	}
 
+	/** A user-selected species bypasses Sparkling Mode's ordinary-species suppression. */
+	public static boolean alwaysActive(Critter critter) {
+		Integer bit = ALWAYS_ACTIVE_BITS.get(critter);
+		return enabled() && bit != null
+			&& (ConfigManager.get().sparkling.sparklingAlwaysActiveCritters & (1L << bit)) != 0;
+	}
+
+	private static Map<Critter, Integer> alwaysActiveBits() {
+		Map<Critter, Integer> bits = new HashMap<>();
+		List<Critter> ordered = Critters.selectionOrder();
+		for (int index = 0; index < ordered.size(); index++) bits.put(ordered.get(index), index);
+		return Map.copyOf(bits);
+	}
+
+	private static boolean alwaysActiveWaypoint(WaypointKind kind) {
+		return enabled() && (ConfigManager.get().sparkling.sparklingAlwaysActiveWaypoints
+			& (1 << kind.ordinal())) != 0;
+	}
+
+	public static boolean showHideyhoLocations() {
+		return !onlyShowSparkling() || alwaysActive(Critters.byName("Hideyho"));
+	}
+
 	/** Ignore Uniques hides ordinary shared critters, never a Sparkling duplicate. */
 	public static boolean hideOrdinaryHitbox(Critter critter, boolean sparkling) {
-		return !sparkling && (onlyShowSparkling() || ignoreUniques() && isShared(critter));
+		return !sparkling && !alwaysActive(critter)
+			&& (onlyShowSparkling() || ignoreUniques() && isShared(critter));
 	}
 
 	/** Ordinary recatch markers disappear after the run unique; live hitboxes remain. */
 	public static boolean hideOrdinarySpecies(Critter critter, SafariSession session) {
-		return onlyShowSparkling() || enabled() && isShared(critter)
-			&& (ignoreUniques() || session != null && session.caughtByParty(critter));
+		return !alwaysActive(critter) && (onlyShowSparkling() || enabled() && isShared(critter)
+			&& (ignoreUniques() || session != null && session.caughtByParty(critter)));
 	}
 
 	/** Tracked ordinary waypoints stop helping after the run unique is secured. */
 	public static boolean hideOrdinaryWaypoint(Critter critter, SafariSession session) {
-		return onlyShowSparkling() || enabled() && (ignoreUniques() && isShared(critter)
-			|| session != null && session.caughtByParty(critter));
+		return !alwaysActive(critter) && (onlyShowSparkling() || enabled()
+			&& (ignoreUniques() && isShared(critter)
+				|| session != null && session.caughtByParty(critter)));
 	}
 
 	public static boolean hideFloorDrops(SafariBiome biome, SafariSession session) {
 		if (!enabled() || session == null) return false;
+		WaypointKind floorKind = switch (biome) {
+			case CAVERN -> WaypointKind.CAVERN_FLOOR;
+			case ICY -> WaypointKind.ICY_FLOOR;
+			case HAUNTED -> WaypointKind.HAUNTED_FLOOR;
+			case FOREST -> WaypointKind.FOREST_FLOOR;
+		};
+		if (alwaysActiveWaypoint(floorKind)) return false;
 		return switch (biome) {
 			case FOREST -> forestFloorDropsExhausted()
 				|| allSharedFinished(session, "Bluebird", "Parakeet", "Macaw");
@@ -169,19 +210,19 @@ public final class SparklingMode {
 	}
 
 	public static boolean hideNests(SafariSession session) {
-		return sharedFinished(session, "Honeybug");
+		return !alwaysActiveWaypoint(WaypointKind.BEE_NESTS) && sharedFinished(session, "Honeybug");
 	}
 
 	public static boolean hideMounds(SafariSession session) {
-		return sharedFinished(session, "Rockmite");
+		return !alwaysActiveWaypoint(WaypointKind.MOUNDS) && sharedFinished(session, "Rockmite");
 	}
 
 	public static boolean hideSnoozleWalls(SafariSession session) {
-		return sharedFinished(session, "Snoozle");
+		return !alwaysActiveWaypoint(WaypointKind.SNOOZLE_WALLS) && sharedFinished(session, "Snoozle");
 	}
 
 	public static boolean hideTroodonWalls(SafariSession session) {
-		return sharedFinished(session, "Troodon");
+		return !alwaysActiveWaypoint(WaypointKind.TROODON_WALLS) && sharedFinished(session, "Troodon");
 	}
 
 	private static boolean sharedFinished(SafariSession session, String name) {

@@ -12,6 +12,7 @@ import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -45,9 +46,9 @@ public final class StillCritters {
 
 	private static final Map<UUID, Entry> remembered = new HashMap<>();
 	private static final Set<UUID> cataloguedIds = new java.util.HashSet<>();
-	private static final Map<UUID, BlockPos> hideonfloorOrigins = new HashMap<>();
-	private static final Map<UUID, Integer> hideonfloorStableScans = new HashMap<>();
-	private static final Set<UUID> movedHideonfloors = new java.util.HashSet<>();
+	private static final Map<UUID, Vec3> learningOrigins = new HashMap<>();
+	private static final Map<UUID, Integer> learningStableScans = new HashMap<>();
+	private static final Set<UUID> movedForLearning = new java.util.HashSet<>();
 	/** Consecutive stationary scans before a Duplico pairing may confirm a spawn. */
 	private static final Map<UUID, BlockPos> duplicoPairOrigins = new HashMap<>();
 	private static final Map<UUID, UUID> duplicoPairLabels = new HashMap<>();
@@ -84,7 +85,15 @@ public final class StillCritters {
 		if (scan == lastScan) return;
 		lastScan = scan;
 
-		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
+		List<CritterEntities.Sighting> sightings = CritterEntities.all();
+		// Snapshot all paired bodies before processing either one. Otherwise the first
+		// nearby critter can evict the second, which then evicts the first on this scan.
+		Set<UUID> liveBodies = new HashSet<>();
+		for (CritterEntities.Sighting sighting : sightings) {
+			if (sighting.mob() != null) liveBodies.add(sighting.mob().getUUID());
+		}
+
+		for (CritterEntities.Sighting sighting : sightings) {
 			if (!TRACKED.contains(sighting.critter().name())) continue;
 
 			Entity entity = sighting.mob();
@@ -131,7 +140,7 @@ public final class StillCritters {
 			if (!remembered.containsKey(id)) {
 				DebugLog.line("STILL", "REMEMBER " + sighting.critter().name() + " id=" + shortId(id)
 					+ " pos=" + pos(pos));
-				supersedeNearby(sighting.critter(), id, pos, now);
+				supersedeNearby(sighting.critter(), id, pos, liveBodies);
 			}
 			Entry previous = remembered.get(id);
 			boolean stationary = entity.getDeltaMovement().lengthSqr() < 1.0e-4;
@@ -313,16 +322,16 @@ public final class StillCritters {
 	}
 
 	/**
-	 * Drops any other entry of the same species close enough to {@code pos} to be the
-	 * same individual reappearing under {@code newId} — see the class doc for why a
-	 * punch specifically needs this and chat-driven clearing alone does not catch it.
+	 * Replaces a nearby old ID only when its body is absent from the current scan.
+	 * Two distinct critters standing together must retain separate remembered entries.
 	 */
-	private static void supersedeNearby(Critter critter, UUID newId, BlockPos pos, long now) {
+	private static void supersedeNearby(Critter critter, UUID newId, BlockPos pos, Set<UUID> liveBodies) {
 		double distSq = SUPERSEDE_DISTANCE * SUPERSEDE_DISTANCE;
 		Iterator<Map.Entry<UUID, Entry>> it = remembered.entrySet().iterator();
 		while (it.hasNext()) {
 			Map.Entry<UUID, Entry> entry = it.next();
 			if (entry.getKey().equals(newId)) continue;
+			if (liveBodies.contains(entry.getKey())) continue;
 			if (!critter.equals(entry.getValue().critter())) continue;
 			if (entry.getValue().pos().distSqr(pos) > distSq) continue;
 
@@ -460,9 +469,9 @@ public final class StillCritters {
 	public static void reset() {
 		remembered.clear();
 		cataloguedIds.clear();
-		hideonfloorOrigins.clear();
-		hideonfloorStableScans.clear();
-		movedHideonfloors.clear();
+		learningOrigins.clear();
+		learningStableScans.clear();
+		movedForLearning.clear();
 		duplicoPairOrigins.clear();
 		duplicoPairLabels.clear();
 		duplicoStableScans.clear();
@@ -504,42 +513,35 @@ public final class StillCritters {
 	}
 
 	private static void learnInitialPosition(CritterEntities.Sighting sighting, Entity entity) {
-		// Persistent spawn catalogs are curated from confirmed solo runs only. Party
-		// members may wake or move these critters before the local client encounters
-		// them, which would make a moved position look like an initial spawn.
-		boolean activeLearningContext = dev.serko.safariutils.session.SessionManager.current() != null
-			|| TestingMode.saveLearnedLocations() && SafariLocation.inside();
-		if (!activeLearningContext || !SafariPartyWatch.confirmedSoloForLearning()) return;
+		if (!"Hideonfloor".equals(sighting.critter().name())) return;
 		if (catalogClosed.contains(sighting.critter())) return;
 		// Labels and bodies can arrive on different entity scans. A label by itself is
-		// not enough to learn a physical spawn location, especially for Hideonfloor.
+		// not enough to learn a physical spawn location.
 		if (entity == null) return;
-		if (!"Hideonfloor".equals(sighting.critter().name())) {
-			if (cataloguedIds.add(entity.getUUID())
-				&& entity.getDeltaMovement().lengthSqr() < 1.0e-4) {
-				StaticEntityCatalog.learn(sighting.critter().name(), entity.blockPosition());
-			}
-			return;
-		}
-
 		UUID id = entity.getUUID();
-		if (movedHideonfloors.contains(id) || cataloguedIds.contains(id)) return;
-		BlockPos pos = entity.blockPosition();
-		BlockPos origin = hideonfloorOrigins.putIfAbsent(id, pos);
+		if (movedForLearning.contains(id) || cataloguedIds.contains(id)) return;
+		Vec3 exact = entity.position();
+		Vec3 origin = learningOrigins.putIfAbsent(id, exact);
 		if (origin == null) {
-			hideonfloorStableScans.put(id, 1);
+			learningStableScans.put(id, 1);
 			return;
 		}
-		if (!origin.equals(pos)) {
-			movedHideonfloors.add(id);
-			hideonfloorStableScans.remove(id);
+		// Track from the first observed scan, even before the instance roster settles.
+		// A later stopped position after a hit is not evidence of the original spawn.
+		if (origin.distanceToSqr(exact) > 1.0 / 256.0
+			|| entity.getDeltaMovement().lengthSqr() >= 1.0e-4) {
+			movedForLearning.add(id);
+			learningStableScans.remove(id);
+			DebugLog.line("WAYPOINT", "skip moved entity/" + sighting.critter().name()
+				+ " first=" + origin.x + "," + origin.y + "," + origin.z
+				+ " now=" + exact.x + "," + exact.y + "," + exact.z);
 			return;
 		}
-		int stable = hideonfloorStableScans.merge(id, 1, Integer::sum);
-		if (stable >= 2) {
-			StaticEntityCatalog.learn(sighting.critter().name(), origin);
-			cataloguedIds.add(id);
-		}
+		int stable = learningStableScans.merge(id, 1, Integer::sum);
+		if (stable < 3 || !ConfigManager.get().advanced.testingSaveLearnedLocations
+			|| !SafariPartyWatch.readyForLocationLearning()) return;
+		StaticEntityCatalog.learn(sighting.critter().name(), BlockPos.containing(origin));
+		cataloguedIds.add(id);
 	}
 
 	/** Hidden bodies and their labels can sit a few blocks apart vertically. */

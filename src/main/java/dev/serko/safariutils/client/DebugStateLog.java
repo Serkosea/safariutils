@@ -17,6 +17,8 @@ public final class DebugStateLog {
 	private static List<String> lastTabList = List.of();
 	private static List<String> lastScoreboard = List.of();
 	private static List<String> lastInventory = List.of();
+	private static String lastObjectives;
+	private static int objectiveScanTicks;
 	private static boolean wasLogging;
 
 	private DebugStateLog() {
@@ -77,6 +79,35 @@ public final class DebugStateLog {
 				DebugLog.line("INVENTORY", snapshot(inventory));
 			}
 		} else lastInventory = List.of();
+
+		// Objective state is sampled at inventory cadence and written only on change.
+		if (options.logObjectives && ++objectiveScanTicks >= 5) {
+			objectiveScanTicks = 0;
+			String objective = objectiveSnapshot();
+			if (!Objects.equals(objective, lastObjectives)) {
+				lastObjectives = objective;
+				DebugLog.line("OBJECTIVE", objective);
+			}
+		} else if (!options.logObjectives) {
+			lastObjectives = null;
+			objectiveScanTicks = 0;
+		}
+	}
+
+	private static String objectiveSnapshot() {
+		if (dev.serko.safariutils.session.SessionManager.current() == null) return "no active run";
+		return "gems=" + SafariObjectives.purpleGemsHeld() + "/" + SafariObjectives.limeGemsHeld()
+			+ "/" + SafariObjectives.orangeGemsHeld() + " placed=" + SafariObjectives.placedGemMask()
+			+ " door=" + SafariObjectives.gemzieDoorOpened()
+			+ " incense=" + SafariObjectives.incenseHeld() + " lit=" + SafariObjectives.incenseUsed()
+			+ " doom=" + SafariObjectives.doomspiralSpawned() + "/"
+			+ SafariObjectives.doomspiralCaught() + "/" + SafariObjectives.doomspiralRetreated()
+			+ " icy=" + PartyObjectiveHud.icyUniqueCatches() + "/" + SafariObjectives.wumpaSpawned()
+			+ "/" + SafariObjectives.wumpaCaught() + "/" + SafariObjectives.wumpaRetreated()
+			+ " feed held=" + SafariObjectives.yogiBerriesHeld() + "/"
+			+ SafariObjectives.wrigglewormsHeld() + "/" + SafariObjectives.bagOfSeedsHeld()
+			+ " found=" + BirdfeederWatch.feedFound() + " used=" + BirdfeederWatch.feedUsed()
+			+ " feeder=" + BirdfeederWatch.feederType() + "/" + BirdfeederWatch.feederCount();
 	}
 
 	private static List<String> rosterSnapshot() {
@@ -116,5 +147,7 @@ public final class DebugStateLog {
 		lastTabList = List.of();
 		lastScoreboard = List.of();
 		lastInventory = List.of();
+		lastObjectives = null;
+		objectiveScanTicks = 0;
 	}
 }

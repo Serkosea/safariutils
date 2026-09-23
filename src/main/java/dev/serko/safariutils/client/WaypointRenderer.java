@@ -115,7 +115,8 @@ public final class WaypointRenderer {
 			List<VisibleMarker> visibleMarkers = new java.util.ArrayList<>(markers.size());
 			for (Markers.Marker marker : markers) {
 				double distanceSq = distanceSquared(marker.box(), camera);
-				if (distanceSq > MAX_DISTANCE * MAX_DISTANCE || !visible(marker.box())) continue;
+				float maxDistance = marker.researchCandidate() ? 512.0f : MAX_DISTANCE;
+				if (distanceSq > maxDistance * maxDistance || !visible(marker.box())) continue;
 
 				// A highlight is drawn with the vanilla line type, which is
 				// depth-tested, so it only shows where the thing itself would be
@@ -676,7 +677,7 @@ public final class WaypointRenderer {
 					: Colours.argb(display.hitboxColour, 0xFFFFFFFF)
 				: configuredColour;
 			for (BlockPos possible : display.hideyhoSolver && !display.hidePossibleWaypoints
-				&& !SparklingMode.onlyShowSparkling()
+				&& SparklingMode.showHideyhoLocations()
 				? HideyhoSolver.candidates() : java.util.Set.<BlockPos>of()) {
 				AABB box = new AABB(
 					possible.getX(), possible.getY() - 2, possible.getZ(),

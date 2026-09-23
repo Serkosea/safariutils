@@ -175,7 +175,7 @@ public final class BirdfeederWatch {
 
 	/** Best local-client account of feed discovered this run. */
 	public static int feedFound() {
-		return feedFound;
+		return observedFeedTotal();
 	}
 
 	/** Birdfeeder spawn lines observed by this client during the run. */
@@ -185,7 +185,9 @@ public final class BirdfeederWatch {
 
 	/** Whether every feed found this run has produced a spawn event. */
 	public static boolean allFeedUsed() {
-		boolean foundFeedResolved = feedFound > 0 && spawnEventsObserved >= feedFound;
+		int total = observedFeedTotal();
+		boolean foundFeedResolved = total > 0 && spawnEventsObserved >= total
+			&& feederCount == 0 && java.util.Arrays.stream(lastHeld).sum() == 0;
 		// When this player is the only feeder user, accepted personal deposits and the
 		// later spawn lines form a second complete account even if pickup tracking missed
 		// a starting item. In a shared stack this remains only a fallback, never a reason
@@ -196,6 +198,13 @@ public final class BirdfeederWatch {
 			&& personalSpawnBaseline >= 0
 			&& spawnEventsObserved - personalSpawnBaseline >= personalFeedDeposited;
 		return foundFeedResolved || personalDepositsResolved;
+	}
+
+	/** Combines discovery with later inventory/feeder evidence when startup was late. */
+	private static int observedFeedTotal() {
+		int held = java.util.Arrays.stream(lastHeld).sum();
+		return Math.max(feedFound, Math.max(spawnEventsObserved + held + feederCount,
+			personalFeedDeposited + held));
 	}
 
 	/** Only a full nine-feed Forest clear can prove that an unspawned bird is absent. */

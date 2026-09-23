@@ -6,12 +6,14 @@ import dev.serko.safariutils.session.SafariSession;
 import dev.serko.safariutils.session.SessionManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /** The positions worth highlighting, each behind its own setting. */
 public final class Markers {
+	private static final int LEARNED_CANDIDATE_COLOUR = 0xFFFF6B1A;
 	private static Object cachedLevel;
 	private static long cachedTick = Long.MIN_VALUE;
 	private static long cachedConfigRevision = Long.MIN_VALUE;
@@ -26,9 +28,14 @@ public final class Markers {
 	}
 
 	/** A labeled box to render. Only waypoint boxes can ignore depth. */
-	public record Marker(AABB box, String label, int colour, Style style, boolean seeThrough) {
+	public record Marker(AABB box, String label, int colour, Style style,
+			boolean seeThrough, boolean researchCandidate) {
+		public Marker(AABB box, String label, int colour, Style style, boolean seeThrough) {
+			this(box, label, colour, style, seeThrough, false);
+		}
+
 		public Marker(AABB box, String label, int colour, Style style) {
-			this(box, label, colour, style, true);
+			this(box, label, colour, style, true, false);
 		}
 	}
 
@@ -50,11 +57,15 @@ public final class Markers {
 
 	/** Builds the current marker set once; render frames in the same game tick reuse it. */
 	private static List<Marker> collectFresh() {
-		if (SessionManager.current() == null) return List.of();
+		net.minecraft.client.Minecraft client = net.minecraft.client.Minecraft.getInstance();
+		List<Marker> markers = new ArrayList<>();
+		if (SessionManager.current() == null) {
+			addLearnedCandidates(markers);
+			return markers;
+		}
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
 		SafariBiome biome = SafariLocation.biome();
 		SafariSession session = SessionManager.current();
-		List<Marker> markers = new ArrayList<>();
 
 		// Each objective is only marked in its own biome.
 		if (display.highlightSnooperWalls) {
@@ -93,7 +104,8 @@ public final class Markers {
 				if (possible && display.hidePossibleWaypoints) continue;
 				String label = possible
 					? "Mound (Possible)" : "Mound";
-				markers.add(block(pos, label, Colours.argb(display.moundColour, 0xFFCC7744)));
+				markers.add(block(moundDisplayPos(client, pos), label,
+					Colours.argb(display.moundColour, 0xFFCC7744)));
 			}
 		}
 
@@ -135,7 +147,19 @@ public final class Markers {
 			}
 			logRenderDiagnostic("FLOOR", drops.size(), shown, biome, SafeMode.floorDrops());
 		}
+		addLearnedCandidates(markers);
 		return markers;
+	}
+
+	/** Review overlay ignores ordinary biome, completion, Safe Mode, and Sparkling filters. */
+	private static void addLearnedCandidates(List<Marker> markers) {
+		if (!ConfigManager.get().advanced.testingShowLearnedCandidates || !SafariLocation.inside()) return;
+		for (StaticEntityCatalog.Candidate candidate : StaticEntityCatalog.learnedCandidates()) {
+			if (!"Hideonfloor".equals(candidate.critter())) continue;
+			BlockPos pos = candidate.pos();
+			markers.add(new Marker(new AABB(pos).inflate(0.06), "New " + candidate.critter() + " (Review)",
+				LEARNED_CANDIDATE_COLOUR, Style.WAYPOINT, true, true));
+		}
 	}
 
 	/** Logs marker eligibility once per second while output logging is enabled. */
@@ -178,6 +202,21 @@ public final class Markers {
 
 	private static Marker block(BlockPos pos, String label, int colour) {
 		return new Marker(new AABB(pos), label, colour, Style.WAYPOINT);
+	}
+
+	/** Catalog keys can name the solid floor below a mound rather than its airspace. */
+	private static BlockPos moundDisplayPos(net.minecraft.client.Minecraft client, BlockPos catalogPos) {
+		// This reviewed catalog anchor is the supporting block even before its chunk loads.
+		if (catalogPos.equals(new BlockPos(-80, 57, 61))) return catalogPos.above();
+		if (client.level != null && client.level.isLoaded(catalogPos)
+			&& !client.level.getBlockState(catalogPos)
+				.getCollisionShape(client.level, catalogPos).isEmpty()
+			&& client.level.getBlockState(catalogPos.above())
+				.getCollisionShape(client.level, catalogPos.above()).isEmpty()) {
+			return catalogPos.above();
+		}
+		Vec3 exact = MoundSpotter.exactMound(catalogPos);
+		return exact == null ? catalogPos : BlockPos.containing(exact);
 	}
 
 	/**

@@ -10,6 +10,7 @@ import dev.serko.safariutils.client.DebugLog;
 import dev.serko.safariutils.client.HideyhoSolver;
 import dev.serko.safariutils.client.StillCritters;
 import dev.serko.safariutils.client.HotspotWatch;
+import dev.serko.safariutils.client.JoinWindowDiagnostics;
 import dev.serko.safariutils.client.SafariLocation;
 import dev.serko.safariutils.client.BirdfeederWatch;
 import dev.serko.safariutils.client.ShiningCoinWatch;
@@ -26,7 +27,6 @@ import dev.serko.safariutils.client.OperationalLog;
 import dev.serko.safariutils.api.PartyItemSyncProviders;
 import dev.serko.safariutils.client.WallTracker;
 import dev.serko.safariutils.client.SafeMode;
-import dev.serko.safariutils.client.TestingMode;
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.parse.ChatParser;
 import dev.serko.safariutils.data.Critters;
@@ -47,8 +47,9 @@ public final class SessionManager {
 		"[NPC] Safari Manager: I already saw your ticket, so you're free to go.";
 	private static final String TICKET_LOCKOUT =
 		"[NPC] Safari Manager: Dude, if you're not gonna pay, you're not gonna play.";
-	/** Conservative against the fastest observed 33.548-second server lockout. */
+	/** Conservative against the fastest observed 33.153-second solo lockout. */
 	private static final long TICKET_WINDOW_MILLIS = 33_000L;
+	private static final long JOIN_SIGNAL_MAX_AGE_MILLIS = 45_000L;
 	private static final Set<String> MEMBER_RUN_STARTS = Set.of(
 		"[NPC] Safari Manager: Looks good to me. Have fun out there!"
 	);
@@ -85,7 +86,8 @@ public final class SessionManager {
 	private static int runExpectedPlayers = 1;
 	private static long visitEnteredAt;
 	private static boolean visitRosterLocked;
-	private static long entryChatAt;
+	/** First queue or party-entry signal, retained across the entrance-to-instance transfer. */
+	private static long pendingJoinStartedAt;
 	private static long ticketWindowStartedAt;
 	private static boolean ticketWindowLocked;
 
@@ -115,6 +117,7 @@ public final class SessionManager {
 			}
 			visitPrepared = false;
 			visitLobbyId = null;
+			ticketWindowStartedAt = 0L;
 			StartingItemsWatch.cancelPendingRun();
 			waitingLobbyId = null;
 			completedSummaryLobbyId = null;
@@ -193,6 +196,7 @@ public final class SessionManager {
 		String line = ChatParser.clean(rawText);
 		if (line.isEmpty()) return;
 		long now = System.currentTimeMillis();
+		observeJoinSignal(line, now);
 		if (line.equals("SAFARI REWARD SUMMARY")) {
 			rewardSummaryOpen = true;
 			DebugLog.line("RUN", "Safari reward summary opened");
@@ -215,7 +219,10 @@ public final class SessionManager {
 			}
 		}
 		if (line.contains("Safari Manager")) {
-			if (line.equals(TICKET_LOCKOUT)) ticketWindowLocked = true;
+			if (line.equals(TICKET_LOCKOUT)) {
+				ticketWindowLocked = true;
+				pendingJoinStartedAt = 0L;
+			}
 			DebugLog.line("ACTIVATE", "Manager line matched=" + isRunStart(line)
 				+ " inside=" + SafariLocation.inside()
 				+ " visitElapsed=" + formatElapsed(visitElapsedMillis(now))
@@ -244,7 +251,7 @@ public final class SessionManager {
 		if (ChatParser.bonusRainbowFeather(line)) {
 			if (current != null) {
 				current.recordBonusRainbowFeather(now);
-				if (!TestingMode.enabled()) SparklingStats.recordRainbowFeather();
+				SparklingStats.recordRainbowFeather();
 			}
 			return;
 		}
@@ -253,8 +260,10 @@ public final class SessionManager {
 		if (event == null) return;
 
 		if (event.type() == CritterEvent.Type.ENTERED_SAFARI) {
-			entryChatAt = now;
 			ticketWindowLocked = false;
+			if (dev.serko.safariutils.BuildVersion.DEVELOPER) {
+				JoinWindowDiagnostics.onSelfEntry(line);
+			}
 			DebugLog.line("ACTIVATE", "self entry chat received at visitElapsed="
 				+ formatElapsed(visitElapsedMillis(now)) + " raw=\"" + line + "\"");
 			SafariLocation.markEntered();
@@ -268,6 +277,27 @@ public final class SessionManager {
 		}
 
 		recordEvent(event, now);
+	}
+
+	/** Uses the earliest server-visible party entry or local queue notice for this attempt. */
+	private static void observeJoinSignal(String line, long now) {
+		if (line.equals("You were kicked while joining that server!")
+			|| line.startsWith("You tried to rejoin too fast")) {
+			pendingJoinStartedAt = 0L;
+			if (current == null) ticketWindowStartedAt = 0L;
+			return;
+		}
+		String entrant = ChatParser.safariEntrant(line);
+		boolean partyEntry = entrant != null
+			&& (entrant.equals(selfName()) || PartyRosterWatch.isListedMember(entrant));
+		if (current != null || !ChatParser.safariQueueLine(line) && !partyEntry) return;
+		if (ticketWindowLocked && !visitPrepared) ticketWindowLocked = false;
+		if (pendingJoinStartedAt <= 0L || now - pendingJoinStartedAt > JOIN_SIGNAL_MAX_AGE_MILLIS
+			|| ticketWindowLocked) pendingJoinStartedAt = now;
+		if (visitPrepared && SafariLocation.inside() && current == null
+			&& (ticketWindowStartedAt <= 0L || pendingJoinStartedAt < ticketWindowStartedAt)) {
+			ticketWindowStartedAt = pendingJoinStartedAt;
+		}
 	}
 
 	private static boolean isRunStart(String line) {
@@ -284,7 +314,7 @@ public final class SessionManager {
 			SparklingWatch.onCaptureInteraction(event.critter());
 		}
 		current.record(event, now);
-		if (event.sparkling() && !TestingMode.enabled()) SparklingStats.recordRainbowFeather();
+		if (event.sparkling()) SparklingStats.recordRainbowFeather();
 		if (!event.isCatch()) return;
 		SafariObjectives.onCatch(event.critter().name());
 		EncounterAlerts.onCatch(event.critter().name());
@@ -332,6 +362,10 @@ public final class SessionManager {
 	/** Opens a fresh run, then safely files the previous one. */
 	public static void startSession(String trigger) {
 		if (!visitPrepared) beginVisit(SafariLocation.lobbyId());
+		if (dev.serko.safariutils.BuildVersion.DEVELOPER) {
+			JoinWindowDiagnostics.onRunStarted(trigger);
+		}
+		pendingJoinStartedAt = 0L;
 		DebugLog.line("RUN", "==== new run started (" + trigger + ") ====");
 		OperationalLog.info("RUN", "Started Safari run via " + trigger);
 		SafariSession finished = current;
@@ -365,11 +399,11 @@ public final class SessionManager {
 		visitPrepared = true;
 		visitLobbyId = lobbyId;
 		visitEnteredAt = now;
-		// The entry chat precedes stable area detection by several seconds and was the
-		// most consistent origin across repeated lockout samples. A visit detected
-		// without that line still receives a conservative local fallback.
-		ticketWindowStartedAt = entryChatAt > 0L && now - entryChatAt <= 15_000L
-			? entryChatAt : now;
+		// The first queue/party-entry notice can precede the local world load. This
+		// also bounds a late-joining party member's timer to the earliest visible start.
+		ticketWindowStartedAt = pendingJoinStartedAt > 0L
+			&& now - pendingJoinStartedAt <= JOIN_SIGNAL_MAX_AGE_MILLIS
+			? pendingJoinStartedAt : now;
 		ticketWindowLocked = false;
 		visitRosterLocked = false;
 		visitPeakPlayers = Math.max(1, SafariPartyWatch.joinedPlayers());
@@ -417,8 +451,8 @@ public final class SessionManager {
 	}
 
 	private static void recordLifetimeSparkling(Critter critter) {
-		if (!TestingMode.enabled()) SparklingStats.recordSparkling(critter);
-		int total = SparklingStats.count(critter) + (TestingMode.enabled() ? 1 : 0);
+		SparklingStats.recordSparkling(critter);
+		int total = SparklingStats.count(critter);
 		var sparklingConfig = ConfigManager.get().sparkling;
 		String message = AlertText.format(total == 1
 				? sparklingConfig.sparklingFirstCaughtChatText
@@ -450,13 +484,6 @@ public final class SessionManager {
 		if (finished == null || finished.isEmpty()) return;
 		finished.finish(System.currentTimeMillis());
 		OperationalLog.info("RUN", "Finished Safari run");
-		if (TestingMode.enabled()) {
-			// Keep the completed session available to the live Run panel, but never add
-			// an Alpha/test run to history or lifetime totals.
-			lastSession = finished;
-			DebugLog.line("RUN", "testing session finished without archiving");
-			return;
-		}
 		try {
 			archive(finished);
 		} catch (RuntimeException failed) {
@@ -502,18 +529,6 @@ public final class SessionManager {
 
 	public static SafariSession lastSession() {
 		return lastSession;
-	}
-
-	/** Drops transient run state when an isolated test begins, without archiving it. */
-	public static void discardForTesting() {
-		current = null;
-		runLobbyId = null;
-		waitingLobbyId = null;
-		StartingItemsWatch.cancelPendingRun();
-		rewardSummaryOpen = false;
-		visitPrepared = false;
-		visitLobbyId = null;
-		SparklingWatch.reset();
 	}
 
 	public static List<SafariSession> history() {

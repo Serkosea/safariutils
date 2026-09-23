@@ -18,16 +18,22 @@ import java.util.Set;
 
 /** Bundled master and locally learned spawn positions for initially stationary critters. */
 public final class StaticEntityCatalog {
-	private static final int CURRENT_SCHEMA = 5;
+	private static final int CURRENT_SCHEMA = 9;
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 	private static final Type DATA_TYPE = new TypeToken<Data>() { }.getType();
 	private static final String BUNDLED = "/assets/safariutils/static-entities.json";
+	/** Reviewed sightings that occur only while Hideyho transitions, not hiding spots. */
+	private static final Set<BlockPos> TRANSIENT_HIDEYHO = Set.of(
+		new BlockPos(-21, 79, -52), new BlockPos(1, 78, -83));
 	private static final long SAVE_DELAY_MILLIS = 1_000;
 	private static Data local;
 	private static Data bundled;
 	private static boolean dirty;
 	private static long dirtyAt;
 	private static final Map<String, Set<BlockPos>> positionCache = new LinkedHashMap<>();
+	private static java.util.List<Candidate> candidateCache;
+
+	public record Candidate(String critter, BlockPos pos) { }
 
 	private StaticEntityCatalog() {
 	}
@@ -37,22 +43,50 @@ public final class StaticEntityCatalog {
 			Set<String> encoded = new LinkedHashSet<>();
 			encoded.addAll(getBundled().positions.getOrDefault(name, Set.of()));
 			encoded.addAll(getLocal().positions.getOrDefault(name, Set.of()));
-			return Set.copyOf(decode(encoded));
+			return Set.copyOf(decode(name, encoded));
 		});
 	}
 
+	/** Locally learned blocks not in the shipped catalog, cached until a new block arrives. */
+	public static java.util.List<Candidate> learnedCandidates() {
+		if (candidateCache != null) return candidateCache;
+		java.util.List<Candidate> result = new java.util.ArrayList<>();
+		Data saved = getLocal();
+		Data shipped = getBundled();
+		for (var entry : saved.positions.entrySet()) {
+			Set<String> existing = shipped.positions.getOrDefault(entry.getKey(), Set.of());
+			for (String encoded : entry.getValue()) {
+				if (existing.contains(encoded)) continue;
+				BlockPos pos = decodeOne(entry.getKey(), encoded);
+				if (pos != null) result.add(new Candidate(entry.getKey(), pos));
+			}
+		}
+		candidateCache = java.util.List.copyOf(result);
+		return candidateCache;
+	}
+
 	public static void learn(String critter, BlockPos pos) {
-		if (!TestingMode.saveLearnedLocations()
+		if (!"Hideonfloor".equals(critter)
+			|| !ConfigManager.get().advanced.testingSaveLearnedLocations
 			|| !SafariLocation.inside()
-			|| !SafariPartyWatch.confirmedSoloForLearning()) return;
+			|| !SafariPartyWatch.readyForLocationLearning() || pos == null) return;
 		var species = dev.serko.safariutils.data.Critters.byName(critter);
 		if (species == null || SafariAreaMap.biomeAt(pos.getX(), pos.getY(), pos.getZ()) != species.biome()) return;
-		String encoded = encode(pos);
-		if (getBundled().positions.getOrDefault(critter, Set.of()).contains(encoded)) return;
-		Set<String> positions = getLocal().positions.computeIfAbsent(critter, ignored -> new LinkedHashSet<>());
-		if (!positions.add(encoded)) return;
-		positionCache.remove(critter);
-		DebugLog.line("WAYPOINT", "learned entity/" + critter + " at " + encoded);
+		if ("Hideyho".equals(critter) && TRANSIENT_HIDEYHO.contains(pos)) return;
+		String encoded = encode(critter, pos);
+		Data data = getLocal();
+		Set<String> positions = data.positions.computeIfAbsent(critter, ignored -> new LinkedHashSet<>());
+		boolean newBlock = !getBundled().positions.getOrDefault(critter, Set.of()).contains(encoded)
+			&& positions.add(encoded);
+		if (newBlock) {
+			positionCache.remove(critter);
+			candidateCache = null;
+			DebugLog.line("WAYPOINT", "learned entity/" + critter + " at " + encoded);
+			markDirty();
+		}
+	}
+
+	private static void markDirty() {
 		dirty = true;
 		dirtyAt = System.currentTimeMillis();
 	}
@@ -67,8 +101,9 @@ public final class StaticEntityCatalog {
 
 	private static Data getLocal() {
 		if (local != null) return local;
+		boolean hasSavedCatalog = Files.isRegularFile(SafariPaths.staticEntities());
 		try {
-			if (Files.isRegularFile(SafariPaths.staticEntities())) {
+			if (hasSavedCatalog) {
 				local = GSON.fromJson(Files.readString(SafariPaths.staticEntities()), DATA_TYPE);
 			}
 		} catch (IOException | RuntimeException unreadable) {
@@ -76,6 +111,10 @@ public final class StaticEntityCatalog {
 		}
 		if (local == null) local = new Data();
 		normalize(local);
+		if (!hasSavedCatalog) {
+			local.schema = CURRENT_SCHEMA;
+			return local;
+		}
 		// Schema 2 discards Hideonfloor positions learned after the dormant critter moved.
 		if (local.schema < 2) {
 			local.positions.remove("Hideonfloor");
@@ -88,13 +127,22 @@ public final class StaticEntityCatalog {
 				Set<String> corrected = new LinkedHashSet<>();
 				for (String encoded : old) {
 					BlockPos pos = decodeOne(encoded);
-					if (pos != null) corrected.add(encode(pos.below()));
+					if (pos != null) corrected.add(encode("Hideonfloor", pos.below()));
 				}
 				local.positions.put("Hideonfloor", corrected);
 			}
 		}
+		boolean recentered = normalizePositionKeys(local, local.schema < CURRENT_SCHEMA);
+		if (recentered) {
+			dirty = true;
+			dirtyAt = 0;
+		}
 		if (local.schema < CURRENT_SCHEMA) {
 			local.schema = CURRENT_SCHEMA;
+			dirty = true;
+			dirtyAt = 0;
+		}
+		if (local.positions.keySet().removeIf(name -> !"Hideonfloor".equals(name))) {
 			dirty = true;
 			dirtyAt = 0;
 		}
@@ -114,6 +162,7 @@ public final class StaticEntityCatalog {
 		}
 		if (bundled == null) bundled = new Data();
 		normalize(bundled);
+		normalizePositionKeys(bundled, false);
 		sanitize(bundled);
 		return bundled;
 	}
@@ -121,8 +170,7 @@ public final class StaticEntityCatalog {
 	private static void save() {
 		var path = SafariPaths.staticEntities();
 		try {
-			AtomicFiles.writeString(path, GSON.toJson(getLocal(), DATA_TYPE),
-				TestingMode.saveLearnedLocations());
+			AtomicFiles.writeString(path, GSON.toJson(getLocal(), DATA_TYPE));
 			dirty = false;
 		} catch (IOException failed) {
 			// Keep retrying, but no faster than the normal coalesced-save interval.
@@ -135,6 +183,24 @@ public final class StaticEntityCatalog {
 		if (data.positions == null) data.positions = new LinkedHashMap<>();
 	}
 
+	/** Schema 9 keys Hideyho by the center of its upper cube, not its old Y anchor. */
+	private static boolean normalizePositionKeys(Data data, boolean oldHideyhoY) {
+		boolean changed = false;
+		for (var entry : data.positions.entrySet()) {
+			Set<String> canonical = new LinkedHashSet<>();
+			for (String stored : entry.getValue()) {
+				BlockPos pos = oldHideyhoY ? StaticLocationKeys.decode(stored)
+					: decodeOne(entry.getKey(), stored);
+				canonical.add(pos == null ? stored : encode(entry.getKey(), pos));
+			}
+			if (canonical.equals(entry.getValue())) continue;
+			entry.getValue().clear();
+			entry.getValue().addAll(canonical);
+			changed = true;
+		}
+		return changed;
+	}
+
 	private static boolean sanitize(Data data) {
 		boolean changed = false;
 		Set<BlockPos> otherStaticPositions = new LinkedHashSet<>();
@@ -143,7 +209,7 @@ public final class StaticEntityCatalog {
 		for (var entry : data.positions.entrySet()) {
 			var species = dev.serko.safariutils.data.Critters.byName(entry.getKey());
 			changed |= entry.getValue().removeIf(encoded -> {
-				BlockPos pos = decodeOne(encoded);
+				BlockPos pos = decodeOne(entry.getKey(), encoded);
 				if (species == null || pos == null
 					|| SafariAreaMap.biomeAt(pos.getX(), pos.getY(), pos.getZ()) != species.biome()) return true;
 				if ("Hideonwall".equals(entry.getKey()) && pos.distSqr(new BlockPos(16, 78, -69)) <= 4.0) return true;
@@ -152,6 +218,7 @@ public final class StaticEntityCatalog {
 				// spawn; the lower position remains valid.
 				if ("Bloodbat".equals(entry.getKey()) && pos.equals(new BlockPos(-11, 85, -79))) return true;
 				if ("Hideyho".equals(entry.getKey()) && pos.distSqr(new BlockPos(-7, 79, -90)) <= 4.0) return true;
+				if ("Hideyho".equals(entry.getKey()) && TRANSIENT_HIDEYHO.contains(pos)) return true;
 				return "Hideyho".equals(entry.getKey()) && (pos.getY() < 68
 					|| otherStaticPositions.stream().anyMatch(other -> other.distSqr(pos) <= 5.0));
 			});
@@ -169,27 +236,25 @@ public final class StaticEntityCatalog {
 		}
 	}
 
-	private static String encode(BlockPos pos) {
-		return pos.getX() + "," + pos.getY() + "," + pos.getZ();
+	private static String encode(String critter, BlockPos pos) {
+		return StaticLocationKeys.encode(pos, "Hideyho".equals(critter) ? -1 : 0);
 	}
 
-	private static Set<BlockPos> decode(Set<String> encoded) {
+	private static Set<BlockPos> decode(String critter, Set<String> encoded) {
 		Set<BlockPos> result = new LinkedHashSet<>();
 		for (String value : encoded) {
-			BlockPos pos = decodeOne(value);
+			BlockPos pos = decodeOne(critter, value);
 			if (pos != null) result.add(pos);
 		}
 		return result;
 	}
 
+	private static BlockPos decodeOne(String critter, String value) {
+		return StaticLocationKeys.decode(value, "Hideyho".equals(critter) ? -1 : 0);
+	}
+
 	private static BlockPos decodeOne(String value) {
-		String[] parts = value.split(",", -1);
-		if (parts.length != 3) return null;
-		try {
-			return new BlockPos(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
-		} catch (NumberFormatException ignored) {
-			return null;
-		}
+		return StaticLocationKeys.decode(value);
 	}
 
 	private static final class Data {

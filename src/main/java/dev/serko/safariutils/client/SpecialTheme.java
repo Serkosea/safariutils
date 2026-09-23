@@ -66,7 +66,7 @@ public final class SpecialTheme {
 	public static void text(GuiGraphicsExtractor graphics, Font font, Component component,
 						int x, int y, int fallbackColour) {
 		if (rainbow()) {
-			// The global theme owns the complete line. Splitting out a whitelisted
+			// The global theme owns the complete line. Splitting out a special
 			// player name first would leave status prefixes/suffixes in fallback colours.
 			rainbowText(graphics, font, component, x, y);
 			return;

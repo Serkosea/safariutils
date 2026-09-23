@@ -18,6 +18,7 @@
 ## Changes & Additions
 
 - Added a five-column Hide Chat Messages checker for general chat and independently selectable Cavern, Icy, Haunted, and Forest objectives
+- Added an independent Haunted option for hiding Hideyho dialogue
 - Expanded the Party Objective HUD with clearer Cavern, Icy, Haunted, and Forest terminal states
 - Added pale biome-relative objective colors, green placed-gem checks, and yellow intermediate encounter states
 - Added opt-in Party Sync with sender/lobby-bound verification, all-member confirmation, compact state snapshots, and queued recovery

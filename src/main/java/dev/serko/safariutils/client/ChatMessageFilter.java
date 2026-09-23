@@ -16,8 +16,9 @@ public final class ChatMessageFilter {
 	private static final int COLD = 1 << 6;
 	private static final int WUMPA = 1 << 7;
 	private static final int DOOMSPIRAL = 1 << 8;
-	private static final int EMPTY_NESTS = 1 << 9;
-	private static final int BIRD_SPAWNS = 1 << 10;
+	private static final int HIDEYHO_DIALOGUE = 1 << 9;
+	private static final int EMPTY_NESTS = 1 << 10;
+	private static final int BIRD_SPAWNS = 1 << 11;
 	private static final java.util.Set<String> MOUND_MESSAGES = java.util.Set.of(
 		"Small cracks begin to form in the mound...",
 		"The cracks seem to be getting larger, keep hitting it!",
@@ -46,6 +47,7 @@ public final class ChatMessageFilter {
 			if ((selected & COLD) != 0 && coldMessage(line)) return true;
 			if ((selected & WUMPA) != 0 && wumpaMessage(line)) return true;
 			if ((selected & DOOMSPIRAL) != 0 && doomspiralMessage(line)) return true;
+			if ((selected & HIDEYHO_DIALOGUE) != 0 && line.startsWith("[MOB] Hideyho:")) return true;
 			if ((selected & EMPTY_NESTS) != 0 && line.equals("Looks like the hive is empty now...")) return true;
 			if ((selected & BIRD_SPAWNS) != 0 && BirdfeederWatch.isBirdSpawnMessage(line)) return true;
 		}

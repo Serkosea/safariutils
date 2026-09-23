@@ -26,7 +26,7 @@
 
 ### Changes & Additions
 
-- Added a Hide Chat Messages checker for catches, loot shares, floor drops, objective messages, and Safari Manager dialogue
+- Added a five-column Hide Chat Messages checker for general chat and independently selectable Cavern, Icy, Haunted, and Forest objectives
 - Sorted every bundled static coordinate list by horizontal distance from the Safari center at `-49.5, 0.5`
 - Renamed the terminal objective rows to Gemzie and Doomspiral, and made completed Forest progress read All Feed Done
 - Stored static catalog keys at cube centers—including the upper cube of Hideyho's two-block box—migrated older local keys automatically, and made static waypoint rendering independent of local decimal observations

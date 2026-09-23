@@ -1085,12 +1085,12 @@ public final class SafariSettingsScreen extends Screen {
 		int[] starts = multiChoiceDropdown.critters() ? CRITTER_GROUP_STARTS : multiChoiceDropdown.groupStarts();
 		int columns = multiChoiceColumns();
 		int rows = multiChoiceRows(labels.length, columns);
-		boolean biomeColumns = multiChoiceDropdown.biomeColumns() && columns == 4;
-		int w = Math.min(biomeColumns ? 760 : 620, width - 30);
-		int h = Math.min(height - 30, (biomeColumns ? 90 : 76) + rows * 31);
+		boolean groupedColumns = multiChoiceDropdown.biomeColumns() && columns == groups.length;
+		int w = Math.min(groupedColumns ? 760 : 620, width - 30);
+		int h = Math.min(height - 30, (groupedColumns ? 90 : 76) + rows * 31);
 		int x = (width - w) / 2;
 		int y = (height - h) / 2;
-		int itemsTop = y + (biomeColumns ? 58 : 44);
+		int itemsTop = y + (groupedColumns ? 58 : 44);
 		int itemsBottom = y + h - 32;
 		multiChoiceScroll = Math.clamp(multiChoiceScroll, 0,
 			Math.max(0, rows * 31 - (itemsBottom - itemsTop)));
@@ -1104,8 +1104,8 @@ public final class SafariSettingsScreen extends Screen {
 			x + 14, y + 27, MUTED);
 		int cellWidth = (w - 28 - (columns - 1) * 8) / columns;
 		long selected = multiChoiceValue(choiceOwner, choiceField);
-		if (biomeColumns) {
-			for (int column = 0; column < 4; column++) {
+		if (groupedColumns) {
+			for (int column = 0; column < groups.length; column++) {
 				drawText(graphics, groups[column],
 					x + 20 + column * (cellWidth + 8), y + 44, CYAN);
 			}
@@ -1114,13 +1114,13 @@ public final class SafariSettingsScreen extends Screen {
 		for (int index = 0; index < labels.length; index++) {
 			int column;
 			int row;
-			if (biomeColumns) {
+			if (groupedColumns) {
 				column = groupIndex(index, starts);
 				row = index - starts[column];
 			} else if (multiChoiceDropdown.biomeColumns() && columns == 2) {
-				// Cavern/Icy on the left, Haunted/Forest on the right.
-				column = index >= starts[2] ? 1 : 0;
-				row = index - (column == 1 ? starts[2] : 0);
+				int split = starts[(groups.length + 1) / 2];
+				column = index >= split ? 1 : 0;
+				row = index - (column == 1 ? split : 0);
 			} else {
 				column = index % columns;
 				row = index / columns;
@@ -1137,7 +1137,7 @@ public final class SafariSettingsScreen extends Screen {
 			Component mark = Component.literal(active ? "✓" : "○")
 				.withStyle(style -> style.withBold(true));
 			drawText(graphics, mark, cellX + 8, cellY + 9, active ? GREEN : DIM);
-			drawText(graphics, trim(biomeColumns ? labels[index] : group + " · " + labels[index],
+			drawText(graphics, trim(groupedColumns ? labels[index] : group + " · " + labels[index],
 				cellWidth - 34),
 				cellX + 24, cellY + 9, active ? TEXT : MUTED);
 			long bit = 1L << index;
@@ -1214,7 +1214,12 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private int multiChoiceColumns() {
-		if (multiChoiceDropdown.biomeColumns()) return width >= 600 ? 4 : width >= 420 ? 2 : 1;
+		if (multiChoiceDropdown.biomeColumns()) {
+			int groups = multiChoiceDropdown.critters()
+				? CRITTER_GROUPS.length : multiChoiceDropdown.groups().length;
+			if (width >= (groups >= 5 ? 720 : 600)) return groups;
+			return width >= 420 ? 2 : 1;
+		}
 		return width >= 560 ? 2 : 1;
 	}
 
@@ -1222,7 +1227,12 @@ public final class SafariSettingsScreen extends Screen {
 		if (!multiChoiceDropdown.biomeColumns() || columns == 1) return (count + columns - 1) / columns;
 		int[] starts = multiChoiceDropdown.critters()
 			? CRITTER_GROUP_STARTS : multiChoiceDropdown.groupStarts();
-		if (columns == 2) return Math.max(starts[2], count - starts[2]);
+		if (columns == 2) {
+			String[] groups = multiChoiceDropdown.critters()
+				? CRITTER_GROUPS : multiChoiceDropdown.groups();
+			int split = starts[(groups.length + 1) / 2];
+			return Math.max(split, count - split);
+		}
 		int maximum = 0;
 		for (int index = 0; index < starts.length; index++) {
 			int end = index + 1 < starts.length ? starts[index + 1] : count;

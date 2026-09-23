@@ -11,7 +11,7 @@ Safari Utils is a Fabric mod made for Hypixel SkyBlock's Critter Safari. It keep
 - Helpful markers for Safari objectives and encounters.
 - Party-ready alerts and ticket protection while waiting for everyone to arrive.
 - Optional Party Sync for sharing objective state through parsed party chat when every member uses Safari Utils and explicitly enables it.
-- Selective hiding for processed catch, loot-share, floor-drop, objective, and Safari Manager messages.
+- Selective hiding for processed general chat and independently grouped Cavern, Icy, Haunted, and Forest objective messages.
 - Automatic Hideyho acceptance, Birdfeeder inventory/empty alerts, and configurable starting-item party messages.
 - A real-time Miria's Contest timer with bracket, score, and ticket tracking.
 - A custom settings screen with search, themes, sounds, colors, and editable alert text.

@@ -57,6 +57,11 @@ public final class BirdfeederWatch {
 	private BirdfeederWatch() {
 	}
 
+	/** Exact server-message shape used both for tracking and optional chat hiding. */
+	public static boolean isBirdSpawnMessage(String line) {
+		return line != null && BIRDFEEDER.matcher(line).matches();
+	}
+
 	/** Slot 22 is the feeder's contents, not the player's inventory or feed buttons. */
 	public static void tickMenu() {
 		var screen = ClientCompat.screen();

@@ -868,8 +868,11 @@ public class SafariConfig {
 
 		@SettingInfo(name = "Hide Chat Messages",
 			desc = "Hides selected Safari server messages after Safari Utils processes them")
-		@SettingMultiChoice(values = {"Critter Catches", "Loot Shared Critters", "Floor Drops",
-			"Objective Messages", "Manager Dialogue"})
+		@SettingMultiChoice(
+			values = {"Critter Catches", "Loot Shares", "Floor Drops", "Manager Dialogue",
+				"Mounds", "Gemzie", "Cold Messages", "Wumpa", "Doomspiral", "Empty Nests", "Bird Spawns"},
+			groups = {"General", "Cavern", "Icy", "Haunted", "Forest"},
+			groupStarts = {0, 4, 6, 8, 9}, biomeColumns = true)
 		@Expose
 		public int hiddenChatMessages = 0;
 

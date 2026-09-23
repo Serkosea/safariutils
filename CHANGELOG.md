@@ -10,6 +10,7 @@
 - Colored intermediate Gemzie, Wumpa, and Doomspiral states yellow and completed placed-gem checks green
 - Gave Party Objective rows consistent pale biome-relative colors
 - Kept hidden Safari chat messages fully available to trackers, alerts, history, and objective synchronization
+- Limited Rockmite objective hiding to its six exact mound-progress and outcome messages
 - Based Cavern completion on catching a Gemzie, while showing Door Open 2.5 seconds after its authoritative chat message
 - Collapsed completed biome details to their terminal objective state and kept Forest bird counts available after all feed is done
 - Matched Party Objective player-name colors to their live tab-list rank colors

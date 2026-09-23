@@ -9,6 +9,7 @@
 - Kept completed objective details concise while preserving useful Forest bird counts
 - Matched objective player names to their tab-list colors
 - Kept hidden Safari messages available to every tracker, alert, history, and objective feature
+- Limited Rockmite objective hiding to its six exact mound messages
 - Corrected mound waypoint height and removed rejected transition-only Hideyho positions
 - Kept nearby critters paired to separate remembered positions
 - Kept debug packet settings in their correct category and improved failed-join timing cleanup

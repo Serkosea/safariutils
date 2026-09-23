@@ -12,6 +12,14 @@ public final class ChatMessageFilter {
 	private static final int FLOOR_DROPS = 1 << 2;
 	private static final int OBJECTIVES = 1 << 3;
 	private static final int MANAGER = 1 << 4;
+	private static final java.util.Set<String> MOUND_MESSAGES = java.util.Set.of(
+		"Small cracks begin to form in the mound...",
+		"The cracks seem to be getting larger, keep hitting it!",
+		"Chunks of the mound begin falling away...",
+		"The mound is about to fall to pieces! Keep going!",
+		"The mound falls apart, but nothing is inside...",
+		"The mound fell apart, revealing a Rockmite hidden inside!"
+	);
 
 	private ChatMessageFilter() { }
 
@@ -48,7 +56,6 @@ public final class ChatMessageFilter {
 			|| line.startsWith("The darkness in the Haunted Biome fades away")
 			|| line.startsWith("The Doomspiral retreats back underground")
 			|| line.contains("attracted to the Birdfeeder!")
-			|| lower.contains("mound")
-			|| lower.contains("rockmite");
+			|| MOUND_MESSAGES.contains(line);
 	}
 }

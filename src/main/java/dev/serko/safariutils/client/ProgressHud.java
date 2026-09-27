@@ -71,7 +71,8 @@ public final class ProgressHud implements HudElement {
 				HudBorderStyle.progressTitle(), joined >= expected ? 0xFF55FF55 : 0xFFFF5555);
 			long remaining = SessionManager.ticketWindowRemainingMillis();
 			if (remaining >= 0L) {
-				String value = remaining == 0L ? "Closing" : formatCountdown(remaining);
+				String value = SessionManager.ticketWindowLocked() ? "Closed"
+					: remaining == 0L ? "Closing" : formatCountdown(remaining);
 				panel.pair("Join", value, LABEL, joinTimerColour(remaining));
 			}
 		} else {
@@ -103,38 +104,40 @@ public final class ProgressHud implements HudElement {
 			panel.compactPair("Hotspot", hotspot.displayName(), 0xFF000000 | hotspot.colour(),
 				0xFF000000 | hotspot.colour());
 		}
-		if (config.profit.enabled && config.display.shardProfit
-			&& (session.totalShards() > 0 || session.safariEssence() > 0
-				|| session.rainbowFeathers() > 0) && BazaarPrices.known()) {
-			panel.compactPair("Profit", BazaarPrices.coinsText(session), COINS, COINS);
+		if (config.profit.enabled && config.display.shardProfit) {
+			boolean hasRewards = session.totalShards() > 0 || session.safariEssence() > 0
+				|| session.rainbowFeathers() > 0;
+			String profit = hasRewards && !BazaarPrices.known()
+				? "Loading…" : BazaarPrices.coinsText(session);
+			panel.compactPair("Profit", profit, COINS, COINS);
 		}
-		panel.blank();
-		if (session.dexComplete()) {
-			panel.checkedBar("Total", session.partyUnique(), total, WHITE, WHITE);
-		} else {
-			panel.bar("Total", session.partyUnique(), total, WHITE, WHITE);
+		if (config.display.showTotalProgress || config.display.showBiomeProgress) panel.blank();
+		if (config.display.showTotalProgress) {
+			if (session.dexComplete()) {
+				panel.checkedBar("Total", session.partyUnique(), total, WHITE, WHITE);
+			} else {
+				panel.bar("Total", session.partyUnique(), total, WHITE, WHITE);
+			}
 		}
 
-		for (SafariBiome biome : SafariBiome.values()) {
-			int max = Critters.totalIn(biome);
-			boolean complete = session.partyUnique(biome) == max;
-			if (complete) {
-				panel.checkedBar(biome.displayName(), session.partyUnique(biome), max,
-					0xFF000000 | biome.colour(), 0xFF000000 | biome.colour());
-			} else {
-				panel.bar(biome.displayName(), session.partyUnique(biome), max,
-					0xFF000000 | biome.colour(), 0xFF000000 | biome.colour());
+		if (config.display.showBiomeProgress) {
+			for (SafariBiome biome : SafariBiome.values()) {
+				int max = Critters.totalIn(biome);
+				boolean complete = session.partyUnique(biome) == max;
+				if (complete) {
+					panel.checkedBar(biome.displayName(), session.partyUnique(biome), max,
+						0xFF000000 | biome.colour(), 0xFF000000 | biome.colour());
+				} else {
+					panel.bar(biome.displayName(), session.partyUnique(biome), max,
+						0xFF000000 | biome.colour(), 0xFF000000 | biome.colour());
+				}
 			}
 		}
 
 		if (config.display.showPerPlayer) {
 			Map<String, Map<SafariBiome, Integer>> perPlayer = session.uniquePerPlayer();
 			if (perPlayer.size() > 1) {
-				// Always exactly one gap here, whatever came right before it — the
-				// bars directly, or Profit's own line if that rendered too. Adding a
-				// second blank after Profit specifically would have doubled the gap
-				// on any run where both are showing, since blank() always adds a row
-				// rather than collapsing consecutive calls into one.
+				// Separate player details from whichever optional summary rows remain.
 				panel.blank();
 				perPlayer.forEach((player, counts) ->
 					panel.pair(player, describe(counts), 0xFF55FFFF, DIM));
@@ -165,7 +168,7 @@ public final class ProgressHud implements HudElement {
 
 	/** Contest-style green-to-dark-red progression across the entire join window. */
 	private static int joinTimerColour(long remaining) {
-		double progress = 1.0 - Math.clamp(remaining / 33_000.0, 0.0, 1.0);
+		double progress = 1.0 - Math.clamp(remaining / 30_000.0, 0.0, 1.0);
 		double scaled = progress * (JOIN_TIMER_COLOURS.length - 1);
 		int index = Math.min(JOIN_TIMER_COLOURS.length - 2, (int) scaled);
 		return blend(JOIN_TIMER_COLOURS[index], JOIN_TIMER_COLOURS[index + 1], scaled - index);

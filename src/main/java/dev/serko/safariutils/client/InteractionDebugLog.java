@@ -1,5 +1,6 @@
 package dev.serko.safariutils.client;
 
+import dev.serko.safariutils.BuildVersion;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.minecraft.client.Minecraft;
@@ -22,6 +23,7 @@ import java.util.List;
 public final class InteractionDebugLog {
 	private static Screen lastScreen;
 	private static String lastContainerState;
+	private static int ticks;
 
 	private InteractionDebugLog() {
 	}
@@ -81,6 +83,9 @@ public final class InteractionDebugLog {
 			lastContainerState = null;
 			return;
 		}
+		// Container reflection is useful but comparatively expensive; ten ticks is
+		// responsive enough to capture server changes without polling it every frame.
+		if (++ticks % 10 != 0) return;
 		Screen screen = ClientCompat.screen();
 		if (screen == null) {
 			lastScreen = null;
@@ -202,8 +207,7 @@ public final class InteractionDebugLog {
 	}
 
 	private static boolean active() {
-		return DebugLog.isEnabled() && ConfigManager.get().advanced.logInterfaces
-			&& SafariLocation.inSafari();
+		return BuildVersion.DEVELOPER && SafariLocation.inSafari();
 	}
 
 	private static String decimal(double value) {

@@ -47,6 +47,8 @@ public final class SparklingScreen extends Screen {
 	private static final int LINE = 13;
 	private static final int SUMMARY_EDGE_MARGIN = 16;
 	private static final long LOOKUP_CACHE_MILLIS = 5 * 60_000L;
+	private static final String LOOKUP_HINT = "Minecraft username";
+	private static final Component LOOKUP_HINT_COMPONENT = Component.literal(LOOKUP_HINT);
 
 	private enum Tab { COLLECTION, PARTY, LOOKUP }
 	private record Hit(int x, int y, int width, int height, String label, Runnable action) {
@@ -83,6 +85,7 @@ public final class SparklingScreen extends Screen {
 	private boolean editingFeathers;
 	private int editingOriginal;
 	private EditBox lookupName;
+	private int lookupHintPhase = -1;
 	private boolean lookupLoading;
 	private static SparklingPlayerLookup lastLookup;
 	private static String lastLookupName = "";
@@ -104,11 +107,16 @@ public final class SparklingScreen extends Screen {
 
 	@Override
 	protected void init() {
+		boolean lookupFocused = lookupName != null && lookupName.isFocused();
+		boolean editorFocused = editor != null && editor.isFocused();
 		clearWidgets();
 		hits.clear();
 		numberHits.clear();
 		updatePanelBounds();
 		if (tab == Tab.LOOKUP && SharedSparklingProviders.available()) addLookupField();
+		if (editor != null) addRenderableWidget(editor);
+		if (editorFocused && editor != null) setFocused(editor);
+		else if (lookupFocused && lookupName != null) setFocused(lookupName);
 		checkCachedLocalCollection();
 	}
 
@@ -131,7 +139,7 @@ public final class SparklingScreen extends Screen {
 		lookupName.setMaxLength(16);
 		lookupName.setValue(lastLookupName);
 		lookupName.setResponder(value -> lastLookupName = value);
-		lookupName.setHint(Component.literal("Minecraft username"));
+		lookupName.setHint(LOOKUP_HINT_COMPONENT);
 		lookupName.setTextColor(WHITE);
 		lookupName.setTextColorUneditable(DIM);
 		UIDraw.rainbowEditBox(lookupName, font);
@@ -167,6 +175,7 @@ public final class SparklingScreen extends Screen {
 				editingBounds.x() + editingBounds.width(), editingBounds.y() + editingBounds.height(),
 				SURFACE);
 		}
+		updateLookupHint();
 		UIDraw.updateRainbowCaret(lookupName, WHITE);
 		UIDraw.updateRainbowCaret(editor, 0xFFFFE08A);
 		super.extractRenderState(graphics, mx, my, partialTick);
@@ -181,6 +190,12 @@ public final class SparklingScreen extends Screen {
 		checkCachedLocalCollection();
 		if (pendingImport != null) drawImportConfirmation(graphics, mx, my);
 		graphics.pose().popMatrix();
+	}
+
+	private void updateLookupHint() {
+		if (lookupName == null) return;
+		lookupHintPhase = UIDraw.updateRainbowHint(lookupName, font, LOOKUP_HINT,
+			LOOKUP_HINT_COMPONENT, lookupHintPhase);
 	}
 
 	private void drawTitle(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
@@ -230,15 +245,22 @@ public final class SparklingScreen extends Screen {
 		String suffix = summary.suffix();
 		int summaryWidth = font.width(summary.fullText());
 		int summaryX = panelLeft + (panelWidth - summaryWidth) / 2;
-		text(graphics, prefix, summaryX, top, 0xFFFFE08A);
 		int featherX = summaryX + font.width(prefix);
 		int featherWidth = Math.max(font.width("00000") + 8, font.width(feathers) + 4);
 		int featherHitX = featherX - (featherWidth - font.width(feathers)) / 2;
 		if (contains(featherHitX, top - 2, featherWidth, 12, mouseX, mouseY)) {
 			graphics.fill(featherHitX, top - 2, featherHitX + featherWidth, top + 10, HOVER);
 		}
-		text(graphics, feathers, featherX, top, 0xFFFFE08A);
-		text(graphics, suffix, featherX + font.width(feathers), top, 0xFFFFE08A);
+		boolean collectionComplete = totalSpecies > 0 && SparklingStats.unique() == totalSpecies;
+		if (collectionComplete) {
+			// Completion uses the same screen-positioned gradient as the special theme,
+			// keeping one continuous wavelength across the entire summary line.
+			SpecialTheme.rainbowText(graphics, font, summary.fullText(), summaryX, top);
+		} else {
+			text(graphics, prefix, summaryX, top, 0xFFFFE08A);
+			text(graphics, feathers, featherX, top, 0xFFFFE08A);
+			text(graphics, suffix, featherX + font.width(feathers), top, 0xFFFFE08A);
+		}
 		numberHits.add(new NumberHit(featherHitX, top - 2, featherWidth, 12, top, null, true));
 
 		int barLeft = panelLeft + 24;
@@ -247,7 +269,9 @@ public final class SparklingScreen extends Screen {
 		graphics.fill(barLeft, barY, barRight, barY + 4, 0x553A2A10);
 		int filled = totalSpecies == 0 ? 0
 			: (barRight - barLeft) * SparklingStats.unique() / totalSpecies;
-		if (SpecialTheme.rainbow()) SpecialTheme.bar(graphics, barLeft, barY, filled, 4);
+		if (SpecialTheme.rainbow() || collectionComplete) {
+			SpecialTheme.bar(graphics, barLeft, barY, filled, 4);
+		}
 		else graphics.fill(barLeft, barY, barLeft + filled, barY + 4, 0xFFFFC83D);
 		drawSpeciesColumns(graphics, barY + 12, mouseX, mouseY, null, true);
 	}
@@ -510,11 +534,14 @@ public final class SparklingScreen extends Screen {
 	private void drawLookupNameAndTickets(GuiGraphicsExtractor graphics, int y) {
 		int columnWidth = Math.min(150, (panelWidth - 24) / 4);
 		int x = panelLeft + (panelWidth - columnWidth * 4) / 2 + 8;
-		Component name = Component.literal(lastLookup.username()).withStyle(style -> style.withColor(AQUA));
+		int rankColour = SharedSparklingProviders.nameColour(lastLookup.username());
+		int nameColour = rankColour == -1 ? AQUA : rankColour;
+		Component name = Component.literal(lastLookup.username())
+			.withStyle(style -> style.withColor(nameColour));
 		if (SharedSparklingProviders.specialName(lastLookup.username())) {
 			UIDraw.rainbowText(graphics, font, lastLookup.username(), x, y, 0.45f);
 		} else {
-			SpecialTheme.text(graphics, font, name, x, y, AQUA);
+			SpecialTheme.text(graphics, font, name, x, y, nameColour);
 		}
 		String[] keys = {"Basic", "Economy", "Premium", "First Class"};
 		String[] labels = {"Basic", "Economy", "Premium", "First-Class"};
@@ -571,8 +598,12 @@ public final class SparklingScreen extends Screen {
 				else {
 					lastLookup = result;
 					rememberLookup(result);
-					lastLookupName = result.username();
-					if (lookupName != null) lookupName.setValue(result.username());
+					lastLookupName = "";
+					if (lookupName != null) {
+						lookupName.setValue("");
+						lookupName.setFocused(false);
+					}
+					setFocused(null);
 					setStatus("Loaded " + result.username() + "'s Profile", GREEN);
 					offerImportIfLocal(result);
 				}
@@ -614,6 +645,11 @@ public final class SparklingScreen extends Screen {
 			centeredRainbowName(graphics, "Recent: ", lastLookup.username(),
 				recentLookupsOpen ? "  ▴" : "  ▾", x, width, centeredTextY(y, height),
 				recentLookupsOpen ? AQUA : LABEL);
+		} else if (lastLookup != null) {
+			int rankColour = SharedSparklingProviders.nameColour(lastLookup.username());
+			centeredColouredName(graphics, "Recent: ", lastLookup.username(),
+				recentLookupsOpen ? "  ▴" : "  ▾", x, width, centeredTextY(y, height),
+				recentLookupsOpen ? AQUA : LABEL, rankColour == -1 ? LABEL : rankColour);
 		} else {
 			centered(graphics, buttonText, x, width, centeredTextY(y, height),
 				recentLookupsOpen ? AQUA : LABEL);
@@ -632,8 +668,9 @@ public final class SparklingScreen extends Screen {
 					x + (width - font.width(saved.username())) / 2,
 					centeredTextY(itemY, height), 0.45f);
 			} else {
+				int rankColour = SharedSparklingProviders.nameColour(saved.username());
 				centered(graphics, saved.username(), x, width, centeredTextY(itemY, height),
-					itemHovered ? WHITE : LABEL);
+					rankColour == -1 ? (itemHovered ? WHITE : LABEL) : rankColour);
 			}
 			hits.add(new Hit(x, itemY, width, height, "Recent Player", () -> selectRecent(saved)));
 		}
@@ -742,6 +779,11 @@ public final class SparklingScreen extends Screen {
 	public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
 		double mouseX = event.x() / scale;
 		double mouseY = event.y() / scale;
+		if (lookupName != null && lookupName.isFocused()
+				&& !lookupName.isMouseOver(mouseX, mouseY)) {
+			lookupName.setFocused(false);
+			setFocused(null);
+		}
 		MouseButtonEvent scaledEvent = scale == 1f ? event
 			: new MouseButtonEvent(mouseX, mouseY, event.buttonInfo());
 		if (pendingImport != null) {
@@ -795,6 +837,8 @@ public final class SparklingScreen extends Screen {
 		}
 		if (tab == Tab.LOOKUP && lookupName != null && lookupName.isFocused()
 				&& (event.key() == 257 || event.key() == 335)) {
+			lookupName.setFocused(false);
+			setFocused(null);
 			lookupPlayer();
 			return true;
 		}
@@ -856,6 +900,16 @@ public final class SparklingScreen extends Screen {
 		text(graphics, suffix, cursor, y, colour);
 	}
 
+	private void centeredColouredName(GuiGraphicsExtractor graphics, String prefix, String name,
+			String suffix, int x, int width, int y, int colour, int nameColour) {
+		int cursor = x + (width - font.width(prefix + name + suffix)) / 2;
+		text(graphics, prefix, cursor, y, colour);
+		cursor += font.width(prefix);
+		text(graphics, name, cursor, y, nameColour);
+		cursor += font.width(name);
+		text(graphics, suffix, cursor, y, colour);
+	}
+
 	private void drawPartyMembers(GuiGraphicsExtractor graphics, List<String> members, int y) {
 		String prefix = "Party   ✦   ";
 		String joined = String.join(", ", members);
@@ -871,7 +925,8 @@ public final class SparklingScreen extends Screen {
 			if (SharedSparklingProviders.specialName(name)) {
 				UIDraw.rainbowText(graphics, font, name, cursor, y, 0.45f);
 			} else {
-				text(graphics, name, cursor, y, WHITE);
+				int rankColour = SharedSparklingProviders.nameColour(name);
+				text(graphics, name, cursor, y, rankColour == -1 ? WHITE : rankColour);
 			}
 			cursor += font.width(name);
 		}
@@ -925,7 +980,7 @@ public final class SparklingScreen extends Screen {
 	private static String defaultStatus(Tab target) {
 		return switch (target) {
 			case COLLECTION -> "Click any critter count number or rainbow feathers number to change it";
-			case PARTY -> "This shared list controls the missing HUD while Sparkling Mode is enabled";
+			case PARTY -> "This shared list controls the Missing HUD while Sparkling Mode is enabled";
 			case LOOKUP -> "Loads unique sparklings, duplicates, and ticket amounts";
 		};
 	}

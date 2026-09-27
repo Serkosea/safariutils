@@ -2,13 +2,12 @@ package dev.serko.safariutils.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.scores.DisplaySlot;
 import dev.serko.safariutils.parse.ChatParser;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
 /**
  * Measures the complete pre-ticket transition without making any event part of
@@ -22,16 +21,21 @@ public final class JoinWindowDiagnostics {
 	private static final long EXPIRE_NANOS = 120_000_000_000L;
 
 	private static final List<Mark> marks = new ArrayList<>();
-	private static final Map<String, Integer> packetCounts = new HashMap<>();
 	private static long originNanos;
 	private static long originMillis;
 	private static boolean active;
 	private static boolean connectionSeen;
 	private static boolean worldTickSeen;
+	private static boolean sidebarSeen;
 	private static boolean insideSeen;
 	private static boolean areaSeen;
 	private static boolean lobbySeen;
 	private static boolean managerSeen;
+	private static long connectionNanos = -1L;
+	private static long worldTickNanos = -1L;
+	private static long sidebarNanos = -1L;
+	private static long insideNanos = -1L;
+	private static long lobbyNanos = -1L;
 	private static String latestReport = "No Safari join-window sample has been recorded yet\n";
 
 	private JoinWindowDiagnostics() {
@@ -71,21 +75,8 @@ public final class JoinWindowDiagnostics {
 	public static void onConnectionJoin() {
 		if (!active) return;
 		connectionSeen = true;
+		connectionNanos = elapsedNanos();
 		mark("play connection joined", null);
-	}
-
-	/** Records a bounded number of passive inbound packet observations. */
-	public static void onInboundPacket(String packet, int limit) {
-		if (!active) return;
-		int count = packetCounts.merge(packet, 1, Integer::sum);
-		if (count <= limit) mark("inbound " + packet, "#" + count);
-	}
-
-	/** A login or respawn packet replaces the client world once its handler completes. */
-	public static void onWorldBoundaryPacket(String packet) {
-		if (!active) return;
-		mark("inbound " + packet, "world boundary");
-		connectionSeen = true;
 	}
 
 	/** Captures destination state as each independently observable signal appears. */
@@ -102,10 +93,18 @@ public final class JoinWindowDiagnostics {
 		if (!connectionSeen) return;
 		if (!worldTickSeen && client.level != null && client.player != null) {
 			worldTickSeen = true;
+			worldTickNanos = elapsedNanos();
 			mark("first playable world tick", position(client.player));
+		}
+		if (!sidebarSeen && client.level != null
+			&& client.level.getScoreboard().getDisplayObjective(DisplaySlot.SIDEBAR) != null) {
+			sidebarSeen = true;
+			sidebarNanos = elapsedNanos();
+			mark("first sidebar objective", null);
 		}
 		if (!insideSeen && SafariLocation.inside()) {
 			insideSeen = true;
+			insideNanos = elapsedNanos();
 			mark("first inside-Safari recognition", "source=" + SafariLocation.source());
 		}
 		if (!areaSeen && SafariLocation.area() != null) {
@@ -114,6 +113,7 @@ public final class JoinWindowDiagnostics {
 		}
 		if (!lobbySeen && SafariLocation.lobbyId() != null) {
 			lobbySeen = true;
+			lobbyNanos = elapsedNanos();
 			mark("first lobby id", SafariLocation.lobbyId());
 		}
 		if (!managerSeen && client.level != null) {
@@ -145,19 +145,24 @@ public final class JoinWindowDiagnostics {
 		originNanos = System.nanoTime();
 		originMillis = System.currentTimeMillis();
 		marks.clear();
-		packetCounts.clear();
 		active = true;
 		connectionSeen = false;
 		worldTickSeen = false;
+		sidebarSeen = false;
 		insideSeen = false;
 		areaSeen = false;
 		lobbySeen = false;
 		managerSeen = false;
+		connectionNanos = -1L;
+		worldTickNanos = -1L;
+		sidebarNanos = -1L;
+		insideNanos = -1L;
+		lobbyNanos = -1L;
 		mark(label, detail);
 	}
 
 	private static void mark(String label, String detail) {
-		long elapsedNanos = Math.max(0L, System.nanoTime() - originNanos);
+		long elapsedNanos = elapsedNanos();
 		marks.add(new Mark(elapsedNanos, label, detail));
 		DebugLog.line("JOINTIME", formatMark(marks.getLast()));
 	}
@@ -175,7 +180,26 @@ public final class JoinWindowDiagnostics {
 		text.append("  outcome  ").append(outcome).append('\n');
 		text.append("  started  ").append(originMillis).append(" epoch ms\n");
 		for (Mark mark : marks) text.append("  ").append(formatMark(mark)).append('\n');
+		if (!marks.isEmpty()) {
+			long end = marks.getLast().elapsedNanos();
+			text.append("  lockout/finish deltas\n");
+			appendDelta(text, "play connection", connectionNanos, end);
+			appendDelta(text, "playable world", worldTickNanos, end);
+			appendDelta(text, "sidebar objective", sidebarNanos, end);
+			appendDelta(text, "Safari recognition", insideNanos, end);
+			appendDelta(text, "lobby id", lobbyNanos, end);
+		}
 		return text.toString();
+	}
+
+	private static long elapsedNanos() {
+		return Math.max(0L, System.nanoTime() - originNanos);
+	}
+
+	private static void appendDelta(StringBuilder text, String label, long anchor, long end) {
+		text.append("    ").append(label).append(" -> ")
+			.append(anchor < 0L ? "not observed" : seconds(Math.max(0L, end - anchor)))
+			.append('\n');
 	}
 
 	private static String formatMark(Mark mark) {

@@ -1,7 +1,6 @@
 package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.data.Critters;
-import dev.serko.safariutils.session.SessionManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
 
@@ -159,6 +158,11 @@ public final class HideyhoSolver {
 		return displayAllowed() ? position : null;
 	}
 
+	/** Exact centre of the confirmed entity, preserving half-block hiding positions. */
+	public static Vec3 positionExact() {
+		return displayAllowed() ? positionExact : null;
+	}
+
 	/** Whether it is loaded right now, as opposed to only remembered. */
 	public static boolean live() {
 		return live && displayAllowed();
@@ -243,11 +247,8 @@ public final class HideyhoSolver {
 
 		if (line.contains(CAUGHT)) {
 			DebugLog.line("HIDEYHO", "CHAT CAUGHT, " + phase + " -> DONE raw=\"" + line + "\"");
-			// Hideyho completes through dialogue rather than a capsule, so Hypixel does
-			// not emit the ordinary species-bearing Sparkling catch line.
-			if (sparkling || seenSparkling) {
-				SessionManager.onInteractionSparklingCaught(Critters.byName(NAME));
-			}
+			// The authoritative CAPTURE/SPARKLING lines arrive after the remaining
+			// dialogue. SessionManager records the catch and starts its celebration then.
 			phase = Phase.DONE;
 			position = null;
 			positionExact = null;

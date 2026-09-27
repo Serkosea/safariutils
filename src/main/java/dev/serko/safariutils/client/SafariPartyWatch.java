@@ -18,6 +18,8 @@ public final class SafariPartyWatch {
 		"^(?:\\[\\d+\\]\\s*)?([A-Za-z0-9_]{1,16})(?:\\s.*)?$");
 	private static final long INSTANCE_GRACE_MILLIS = 500L;
 	private static final long ROSTER_STABLE_MILLIS = 350L;
+	/** A roster first appearing after this is biome re-entry noise, not an entry alert. */
+	private static final long FULL_PARTY_ALERT_WINDOW_MILLIS = 30_000L;
 	/** Let stale tab data settle before persistent location learning in any party size. */
 	private static final long LEARNING_STABLE_MILLIS = 3_000L;
 	private static String lobbyId;
@@ -77,7 +79,8 @@ public final class SafariPartyWatch {
 		// Manager activation must not suppress this: a player can turn in their ticket
 		// before the tab-list roster has remained stable long enough to announce it.
 		int expected = PartyRosterWatch.expectedPlayers();
-		if (PartyRosterWatch.known() && expected > 1 && joinedPlayers >= expected && !fullPartyAnnounced) {
+		if (PartyRosterWatch.known() && expected > 1 && joinedPlayers >= expected && !fullPartyAnnounced
+			&& now - instanceObservedAt <= FULL_PARTY_ALERT_WINDOW_MILLIS) {
 			fullPartyAnnounced = true;
 			DebugLog.line("PARTYTIME", "announced " + expected + "/" + expected + " at +"
 				+ (now - instanceObservedAt) + "ms");

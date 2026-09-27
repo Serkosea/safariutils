@@ -1,5 +1,59 @@
 # Changelog
 
+## [2.2.0] - 2026-09-27
+
+### Performance
+
+- Kept animated Sparkling visuals on a shared 40 FPS clock with cached geometry, colors, labels, and alert state
+- Reduced automatic diagnostic overhead through buffered, event-driven logging and a persistent developer-only disable option
+- Reused critter pairing, marker geometry, and visibility state across world rendering and HUD consumers
+
+### Changes & Additions
+
+- Added an extensive Sparkling catch-alert editor with responsive previews, saved named presets, configurable effects, songs, intensity, duration, volume, text, and layered visual controls
+- Added distinct escalating Sparkling discovery songs and compact bundled audio assets
+- Added animated gradient Sparkling hitboxes, through-wall beacons in Extra Mode, world-space labels, and provisional markers before bodies finish loading
+- Added Eagle rarity handling for guaranteed catches, pity labels, and recatch markers
+- Added spawn-range data to conservatively retire exhausted Safe Mode candidate waypoints
+- Added always-visible Progress HUD profit and independent total/biome progress toggles
+- Added developer-only run-saving and learned-location controls plus optional automatic-log disabling
+- Anchored the Join countdown to the destination play connection, displaying `Closing` at zero and `Closed` once the Safari Manager begins the lockout dialogue
+- Added opt-in Ticket Trading with a 20-second one-command multi-invite, joined-player-only warping from 27–29 seconds, host-departure cleanup, exact-name invitation acceptance, and provisional late-arrival roster confirmation
+- Limited routine `DeployBuilds` development deployment to Minecraft 26.2 while retaining an explicit 26.1.2 compatibility-build task
+
+### Fixes
+
+- Stabilized moving and far-away critter pairing, including Hideons, Duplico, Billygoat, Cavernfish, and capture transitions
+- Kept static waypoints until their locations are authoritatively cleared and removed caught markers without requiring the player to approach them
+- Prevented capture entities and nearby same-species bodies from stealing Sparkling or ordinary hitboxes
+- Hid vanilla critter nametags only while that exact critter has a rendered mod hitbox
+- Kept custom Hideon and Hideyho geometry consistent for movement, Sparkling states, and recatch pins
+- Delayed Sparkling Hideyho completion alerts until the authoritative completion message
+- Corrected player lookup casing, rank colors, focus behavior, and Ticket Trading text input
+- Kept successfully warped Ticket Trading parties together until the host leaves the ticketed Safari instance
+- Kept custom alert fields and preview state stable through focus changes and window switching
+
+## [2.1.1] - 2026-09-23
+
+### Fixes
+
+- Kept remembered Duplico, Hideonwall, and Hideonfloor markers until their nearby loaded location is directly verified empty
+- Removed a locally caught Hideonfloor marker through its exact aimed-at capsule target instead of waiting for a later inspection
+- Retired one unverified static marker after a loot-shared catch without hiding matching critters currently detectable in Extra Mode or visible in Safe Mode
+- Preserved Sparkling particle evidence while a named label pairs with or replaces its critter body
+- Prevented temporary capture-animation labels from becoming provisional critter markers
+- Kept Safari-only chat filtering and Hideyho auto-accept from affecting messages outside Safari
+- Centered Hideyho markers on exact half-block and block-edge positions
+
+### Changes & Additions
+
+- Added animated multi-color gradients to Sparkling hitboxes, beacon beams, and world-space names
+- Applied the complete Sparkling gradient and cached star treatment to every visible HUD while a Sparkling is active
+- Added provisional moving hitboxes and names for detected critters before their bodies finish pairing
+- Removed the hitbox distance limit so every currently detected critter can render
+- Added independent Progress HUD toggles for total and biome progress bars
+- Added a selectable Drop Items chat-hiding group
+
 ## [2.1.0] - 2026-09-22
 
 ### Fixes
@@ -19,7 +73,6 @@
 - Drew mound waypoints above solid supporting blocks instead of boxing the floor, including the mound anchored at `-80,57,61`
 - Let selected settings subtabs collapse when clicked again, at any nesting depth
 - Kept nearby, simultaneously present critters as separate remembered individuals instead of repeatedly replacing each other's waypoints
-- Kept passive packet debug toggles inside Debug Logging instead of showing them in Safe Mode
 - Started the pre-ticket Join countdown from the earliest relevant queue or party-entry notice, and changed its zero-state label to Closing
 - Kept a partymate's early entry announcement from marking the local player as inside Safari before their own transfer
 - Ended failed-join timing samples when the server reports a kick instead of carrying their timeline into a later lobby

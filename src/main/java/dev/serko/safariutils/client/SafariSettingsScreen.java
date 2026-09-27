@@ -79,11 +79,14 @@ public final class SafariSettingsScreen extends Screen {
 			return size() > 512;
 		}
 	};
-	private Class<?> cachedSearchType;
 	private String cachedSearchQuery;
 	private List<SearchItem> cachedSearchResults = List.of();
 	private SettingCategoryView selected;
 	private EditBox search;
+	private int searchFrameX, searchFrameY, searchFrameWidth, searchFrameHeight;
+	private String searchHintText = "Search";
+	private Component searchHintNormal = Component.literal("Search");
+	private int searchHintPhase = -1;
 	private EditBox editor;
 	private Field editingField;
 	private Object editingOwner;
@@ -121,8 +124,39 @@ public final class SafariSettingsScreen extends Screen {
 	private boolean unlockPanel;
 	private boolean customThemePanel;
 	private boolean specialSparklingConfirmation;
+	private boolean customSparklingPanel;
+	private int customSparklingPage;
+	private EditBox customCalloutEditor;
+	private EditBox customDurationEditor;
+	private boolean customDurationDragging;
+	private int customDurationSliderLeft;
+	private int customDurationSliderWidth;
+	private int customDurationSliderTop;
+	private EditBox customVolumeEditor;
+	private EditBox customPresetNameEditor;
+	private boolean customPresetMenu;
+	private boolean customPresetNaming;
+	private boolean customPresetRenaming;
+	private int customPresetPage;
+	private int customPresetHitStart = -1;
+	private int customSavedPresetIndex = -1;
+	private String customPresetStatus = "";
+	private boolean customVolumeDragging;
+	private int customVolumeSliderLeft;
+	private int customVolumeSliderWidth;
+	private int customVolumeSliderTop;
+	private int previewSong = Integer.MIN_VALUE;
+	private int previewTheme = Integer.MIN_VALUE;
+	private float previewDuration = Float.NaN;
+	private int previewVolume = Integer.MIN_VALUE;
+	private long previewSongStartedAt;
+	private boolean customPreviewResuming;
+	private long customResetArmedUntil;
+	private long customDeleteArmedUntil;
+	private int customDeleteArmedIndex = -1;
 	private boolean partySyncConfirmation;
 	private int pendingSparklingIntensity = -1;
+	private int pendingSparklingSourcePreset = -1;
 	private long signalCompletedAt;
 	private int constellationLeft = Integer.MIN_VALUE;
 	private int constellationTop;
@@ -180,7 +214,7 @@ public final class SafariSettingsScreen extends Screen {
 	private static final List<String> THEME_LABELS = THEMES.stream().map(ThemeChoice::label).toList();
 	private static final List<String> SOUND_LABELS = AlertSounds.alphabetical().stream()
 		.map(AlertSounds.Choice::label).toList();
-	private record SearchItem(Field field, List<SettingInfo> context) { }
+	private record SearchItem(Object owner, Field field, String context) { }
 	private record WrapKey(String text, int width) { }
 	private record SoundPreviewHit(int left, int top, int right, int bottom, int soundId) {
 		boolean contains(double x, double y) {
@@ -196,8 +230,7 @@ public final class SafariSettingsScreen extends Screen {
 	private static String releaseVersion(String version) {
 		int profileSuffix = version.indexOf("+mc");
 		String release = profileSuffix < 0 ? version : version.substring(0, profileSuffix);
-		return release.endsWith("-extra")
-			? release.substring(0, release.length() - "-extra".length()) : release;
+		return release.replaceFirst("-(?:extra|private|developer)$", "");
 	}
 
 	public SafariSettingsScreen(Screen parent) {
@@ -215,6 +248,8 @@ public final class SafariSettingsScreen extends Screen {
 
 	private void loadCategories() {
 		categories.clear();
+		cachedSearchQuery = null;
+		cachedSearchResults = List.of();
 		SafariConfig config = ConfigManager.get();
 		for (Field field : SafariConfig.class.getFields()) {
 			SettingCategory category = field.getAnnotation(SettingCategory.class);
@@ -232,22 +267,58 @@ public final class SafariSettingsScreen extends Screen {
 
 	@Override
 	protected void init() {
+		String preservedSearch = search == null ? "" : search.getValue();
+		boolean searchFocused = search != null && search.isFocused();
+		boolean editorFocused = editor != null && editor.isFocused();
+		boolean calloutFocused = customCalloutEditor != null && customCalloutEditor.isFocused();
+		boolean durationFocused = customDurationEditor != null && customDurationEditor.isFocused();
+		boolean volumeFocused = customVolumeEditor != null && customVolumeEditor.isFocused();
+		boolean presetNameFocused = customPresetNameEditor != null
+			&& customPresetNameEditor.isFocused();
 		clearWidgets();
 		int searchX = NAV_WIDTH + 24;
 		int themeLeft = width - 20 - THEME_BUTTON_WIDTH;
 		int searchWidth = Math.max(24, themeLeft - 8 - searchX);
-		search = new EditBox(font, searchX, 18, searchWidth, 20,
+		searchFrameX = searchX;
+		searchFrameY = 18;
+		searchFrameWidth = searchWidth;
+		searchFrameHeight = 20;
+		// The native unbordered control puts text at its own top-left. Inset the
+		// widget itself while Safari Utils draws the themed outer shell.
+		search = new EditBox(font, searchX + 4, 24, Math.max(8, searchWidth - 8), 9,
 			Component.literal("Search Settings"));
-		String hint = font.width("Search settings, descriptions, and tags...") <= searchWidth - 10
+		String hint = font.width("Search settings, descriptions, and tags...") <= searchWidth - 18
 			? "Search settings, descriptions, and tags..."
-			: font.width("Search settings...") <= searchWidth - 10 ? "Search settings..." : "Search";
-		search.setHint(Component.literal(hint));
+			: font.width("Search settings...") <= searchWidth - 18 ? "Search settings..." : "Search";
+		searchHintText = hint;
+		searchHintNormal = Component.literal(hint);
+		searchHintPhase = -1;
+		search.setHint(searchHintNormal);
 		search.setMaxLength(80);
+		search.setValue(preservedSearch);
+		search.setBordered(false);
 		search.setResponder(value -> {
 			scroll = 0;
 		});
 		UIDraw.rainbowEditBox(search, font);
 		addRenderableWidget(search);
+		if (editor != null) addRenderableWidget(editor);
+		if (customSparklingPanel) {
+			if (customCalloutEditor != null) addRenderableWidget(customCalloutEditor);
+			if (customDurationEditor != null) addRenderableWidget(customDurationEditor);
+			if (customVolumeEditor != null) addRenderableWidget(customVolumeEditor);
+			if (customPresetNaming && customPresetNameEditor != null) {
+				addRenderableWidget(customPresetNameEditor);
+			}
+			search.visible = false;
+			search.active = false;
+		}
+		if (presetNameFocused && customPresetNameEditor != null) setFocused(customPresetNameEditor);
+		else if (calloutFocused && customCalloutEditor != null) setFocused(customCalloutEditor);
+		else if (durationFocused && customDurationEditor != null) setFocused(customDurationEditor);
+		else if (volumeFocused && customVolumeEditor != null) setFocused(customVolumeEditor);
+		else if (editorFocused && editor != null) setFocused(editor);
+		else if (searchFocused && search.visible) setFocused(search);
 	}
 
 	@Override
@@ -259,6 +330,7 @@ public final class SafariSettingsScreen extends Screen {
 
 	@Override
 	public void removed() {
+		if (customSparklingPanel) AlertSounds.stopSparklingPreview(Minecraft.getInstance());
 		rememberUIState();
 		ConfigManager.save();
 		super.removed();
@@ -280,7 +352,8 @@ public final class SafariSettingsScreen extends Screen {
 		boolean editingSameSlider = editingInlineText && editingNumber && editor != null
 			&& inside(mouseX, mouseY, editingSliderLeft, editingSliderTop,
 				editingSliderRight, editingSliderBottom);
-		boolean modalOpen = unlockPanel || customThemePanel || specialSparklingConfirmation
+		boolean modalOpen = unlockPanel || customThemePanel || customSparklingPanel
+			|| specialSparklingConfirmation
 			|| partySyncConfirmation
 			|| editor != null && !editingInlineText || choiceField != null || editingSameSlider;
 		int backgroundMouseX = modalOpen ? Integer.MIN_VALUE : mouseX;
@@ -300,6 +373,8 @@ public final class SafariSettingsScreen extends Screen {
 		hits.clear();
 		soundPreviewHits.clear();
 		modalHitStart = -1;
+		customPresetHitStart = -1;
+		drawSearchFieldFrame(graphics);
 		drawThemeControl(graphics, backgroundMouseX, backgroundMouseY);
 		drawNavigation(graphics, backgroundMouseX, backgroundMouseY);
 		drawContent(graphics, backgroundMouseX, backgroundMouseY);
@@ -316,6 +391,10 @@ public final class SafariSettingsScreen extends Screen {
 			modalHitStart = hits.size();
 			drawSpecialSparklingConfirmation(graphics, mouseX, mouseY);
 		}
+		if (customSparklingPanel) {
+			modalHitStart = hits.size();
+			drawCustomSparklingPanel(graphics, mouseX, mouseY);
+		}
 		if (partySyncConfirmation) {
 			modalHitStart = hits.size();
 			drawPartySyncConfirmation(graphics, mouseX, mouseY);
@@ -329,12 +408,30 @@ public final class SafariSettingsScreen extends Screen {
 			drawChoiceModal(graphics, mouseX, mouseY);
 		}
 		if (search != null) {
+			updateSearchHint();
 			search.setTextColor(TEXT);
 			search.setTextColorUneditable(MUTED);
 			UIDraw.updateRainbowCaret(search, TEXT);
 		}
 		UIDraw.updateRainbowCaret(editor, TEXT);
 		super.extractRenderState(graphics, mouseX, mouseY, partialTick);
+	}
+
+	/** Animates the placeholder only when the special theme is active. */
+	private void updateSearchHint() {
+		searchHintPhase = UIDraw.updateRainbowHint(search, font, searchHintText,
+			searchHintNormal, searchHintPhase);
+	}
+
+	/** Replaces the native textbox shell so search follows every settings theme. */
+	private void drawSearchFieldFrame(GuiGraphicsExtractor graphics) {
+		if (search == null || !search.visible) return;
+		int x = searchFrameX;
+		int y = searchFrameY;
+		int w = searchFrameWidth;
+		int h = searchFrameHeight;
+		graphics.fill(x, y, x + w, y + h, CARD);
+		outline(graphics, x, y, w, h, BORDER);
 	}
 
 	private void applyTheme() {
@@ -472,7 +569,8 @@ public final class SafariSettingsScreen extends Screen {
 		drawText(graphics, safariTitle, titleLeft, Math.round(11f / titleScale), safariColour);
 		drawText(graphics, utilsTitle, titleLeft + font.width(safariTitle), Math.round(11f / titleScale), utilsColour);
 		graphics.pose().popMatrix();
-		drawScaledCenteredText(graphics, "VERSION " + MOD_VERSION, NAV_WIDTH / 2, 32, 1.08f, MUTED);
+		drawScaledCenteredText(graphics, "VERSION " + MOD_VERSION + BuildVersion.titleSuffix(),
+			NAV_WIDTH / 2, 32, 1.08f, MUTED);
 	}
 
 	/** Header-only theme picker kept out of Display's ordinary setting cards. */
@@ -551,7 +649,10 @@ public final class SafariSettingsScreen extends Screen {
 		unlockPanel = false;
 		unlockProgress = 0;
 		signalCompletedAt = 0;
-		if (search != null) search.visible = true;
+		if (search != null) {
+			search.visible = true;
+			search.active = true;
+		}
 	}
 
 	private void select(SettingCategoryView category) {
@@ -567,6 +668,7 @@ public final class SafariSettingsScreen extends Screen {
 
 	private void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
 		if (selected == null) return;
+		if (selected.key.equals("advanced") && !AdvancedUnlock.isUnlocked()) return;
 		visibleSettings.clear();
 		int left = NAV_WIDTH + 20;
 		int right = width - 20;
@@ -580,8 +682,7 @@ public final class SafariSettingsScreen extends Screen {
 			y = drawNormalFields(graphics, selected.value, selected.value.getClass(), null,
 				selected.key, left, right, y, 0, mouseX, mouseY);
 		} else {
-			y = drawSearchResults(graphics, selected.value, selected.value.getClass(), query,
-				left, right, y, mouseX, mouseY);
+			y = drawSearchResults(graphics, query, left, right, y, mouseX, mouseY);
 		}
 		contentHeight = Math.max(0, y + scroll - top);
 		graphics.disableScissor();
@@ -609,9 +710,6 @@ public final class SafariSettingsScreen extends Screen {
 			} else if (hasEditor(field)) {
 				y = drawSetting(graphics, owner, field, option, left + depth * 5, right, y,
 					mouseX, mouseY);
-				if (field.getName().equals("outputLogPreset")) {
-					y = drawEnabledLogOptions(graphics, left + depth * 5, right, y);
-				}
 			}
 		}
 		if (groups.isEmpty()) return y;
@@ -727,43 +825,28 @@ public final class SafariSettingsScreen extends Screen {
 		return y + height + 6;
 	}
 
-	/** Shows the resolved preset/custom selection without duplicating preset definitions. */
-	private int drawEnabledLogOptions(GuiGraphicsExtractor graphics, int left, int right, int y) {
-		List<String> enabled = OutputLogPresets.enabledOptionNames();
-		String joined = enabled.isEmpty() ? "None" : String.join("  •  ", enabled);
-		List<String> lines = wrap(joined, Math.max(40, right - left - 24));
-		int height = 30 + lines.size() * 11;
-		graphics.fill(left, y, right, y + height, CARD);
-		outline(graphics, left, y, right - left, height, BORDER);
-		drawText(graphics, "Enabled Debug Options (" + enabled.size() + ")", left + 12, y + 9, CYAN);
-		int lineY = y + 24;
-		for (String line : lines) {
-			drawText(graphics, line, left + 12, lineY, enabled.isEmpty() ? MUTED : TEXT);
-			lineY += 11;
-		}
-		return y + height + 6;
-	}
-
-	private int drawSearchResults(GuiGraphicsExtractor graphics, Object owner, Class<?> type,
-			String query, int left, int right, int y, int mouseX, int mouseY) {
-		if (cachedSearchType != type || !query.equals(cachedSearchQuery)) {
+	private int drawSearchResults(GuiGraphicsExtractor graphics, String query,
+			int left, int right, int y, int mouseX, int mouseY) {
+		if (!query.equals(cachedSearchQuery)) {
 			List<SearchItem> results = new ArrayList<>();
-			collectSearchResults(type, null, List.of(), query, false, results);
-			cachedSearchType = type;
+			for (SettingCategoryView category : categories) {
+				collectSearchResults(category.value, category.value.getClass(), null, List.of(),
+					query, false, category.info.name(), results);
+			}
 			cachedSearchQuery = query;
 			cachedSearchResults = List.copyOf(results);
 		}
 		List<SearchItem> results = cachedSearchResults;
 		String previousContext = null;
 		for (SearchItem result : results) {
-			String context = result.context.stream().map(SettingInfo::name)
-				.map(SafariSettingsScreen::displayName).reduce((a, b) -> a + "  ›  " + b).orElse("");
+			String context = result.context;
 			if (!context.equals(previousContext) && !context.isBlank()) {
 				y = drawSearchContext(graphics, context, left, right, y);
 				previousContext = context;
 			}
 			SettingInfo option = result.field.getAnnotation(SettingInfo.class);
-			y = drawSetting(graphics, owner, result.field, option, left + 5, right, y, mouseX, mouseY);
+			y = drawSetting(graphics, result.owner, result.field, option,
+				left + 5, right, y, mouseX, mouseY);
 		}
 		if (results.isEmpty()) {
 			drawCenteredText(graphics, "No matching settings", (left + right) / 2, y + 30, MUTED);
@@ -772,8 +855,9 @@ public final class SafariSettingsScreen extends Screen {
 		return y;
 	}
 
-	private void collectSearchResults(Class<?> type, Integer parentId, List<SettingInfo> context,
-			String query, boolean ancestorMatches, List<SearchItem> results) {
+	private void collectSearchResults(Object owner, Class<?> type, Integer parentId,
+			List<SettingInfo> context, String query, boolean ancestorMatches,
+			String category, List<SearchItem> results) {
 		for (Field field : publicFields(type)) {
 			SettingInfo option = field.getAnnotation(SettingInfo.class);
 			if (option == null || isHeaderOnly(field) || !belongsTo(field, parentId)) continue;
@@ -782,10 +866,14 @@ public final class SafariSettingsScreen extends Screen {
 			if (accordion != null) {
 				List<SettingInfo> nested = new ArrayList<>(context);
 				nested.add(option);
-				collectSearchResults(type, accordion.id(), nested, query,
-					ancestorMatches || matches, results);
+				collectSearchResults(owner, type, accordion.id(), nested, query,
+					ancestorMatches || matches, category, results);
 			} else if (hasEditor(field) && (ancestorMatches || matches)) {
-				results.add(new SearchItem(field, List.copyOf(context)));
+				StringBuilder path = new StringBuilder(displayName(category));
+				for (SettingInfo level : context) {
+					path.append("  ›  ").append(displayName(level.name()));
+				}
+				results.add(new SearchItem(owner, field, path.toString()));
 			}
 		}
 	}
@@ -822,7 +910,7 @@ public final class SafariSettingsScreen extends Screen {
 
 	/** Keeps developer tools private and hides Safe Mode controls in Safe Mode jars. */
 	private static boolean visibleInThisBuild(Class<?> owner, Field field) {
-		if (field.getName().startsWith("private") && !BuildVersion.DEVELOPER) return false;
+		if (field.getName().startsWith("private") && !BuildVersion.PRIVATE) return false;
 		if (owner != SafariConfig.AdvancedConfig.class || BuildVersion.DEVELOPER) return true;
 		if (field.getName().equals("specialTheme")
 			|| field.getName().equals("enablePartySync")) return true;
@@ -1253,6 +1341,9 @@ public final class SafariSettingsScreen extends Screen {
 		boolean customTheme = isThemeChoice(choiceField) && value == 34;
 		if (choiceField != null && choiceField.getName().equals("specialSparklingIntensity")
 			&& value > 0) {
+			int current = ConfigManager.get().sparkling.specialSparklingIntensity;
+			pendingSparklingSourcePreset = value == SparklingAlertStyle.CUSTOM_INDEX
+				&& current >= 0 && current < SparklingAlertStyle.CUSTOM_INDEX ? current : -1;
 			pendingSparklingIntensity = value;
 			closeChoicePicker();
 			specialSparklingConfirmation = true;
@@ -1261,7 +1352,6 @@ public final class SafariSettingsScreen extends Screen {
 		}
 		try {
 			choiceField.setInt(choiceOwner, value);
-			applyChoiceSideEffect(choiceField, value);
 			ConfigManager.save();
 		} catch (IllegalAccessException ignored) {
 		}
@@ -1307,7 +1397,999 @@ public final class SafariSettingsScreen extends Screen {
 	private void closeCustomThemePanel() {
 		customThemePanel = false;
 		ConfigManager.save();
+		if (search != null) {
+			search.visible = true;
+			search.active = true;
+		}
+	}
+
+	private void closeCustomSparklingPanel() {
+		customSparklingPanel = false;
+		AlertSounds.stopSparklingPreview(Minecraft.getInstance());
+		previewSong = Integer.MIN_VALUE;
+		applyCustomDurationEditor();
+		applyCustomVolumeEditor();
+		if (customCalloutEditor != null) {
+			removeWidget(customCalloutEditor);
+			customCalloutEditor = null;
+		}
+		if (customDurationEditor != null) {
+			removeWidget(customDurationEditor);
+			customDurationEditor = null;
+		}
+		if (customVolumeEditor != null) {
+			removeWidget(customVolumeEditor);
+			customVolumeEditor = null;
+		}
+		if (customPresetNameEditor != null) {
+			removeWidget(customPresetNameEditor);
+			customPresetNameEditor = null;
+		}
+		customPresetMenu = false;
+		customPresetNaming = false;
+		ConfigManager.save();
 		if (search != null) search.visible = true;
+	}
+
+	private void openCustomSparklingPanel() {
+		customSparklingPanel = true;
+		customSparklingPage = Math.max(0, customSparklingPage);
+		customCalloutEditor = new EditBox(font, 0, 0, 120, 9,
+			Component.literal("Capture callout text"));
+		customCalloutEditor.setBordered(false);
+		customCalloutEditor.setMaxLength(48);
+		customCalloutEditor.setValue(ConfigManager.get().sparkling.customAlertCalloutText);
+		customCalloutEditor.setResponder(value -> {
+			ConfigManager.get().sparkling.customAlertCalloutText = value;
+			SparklingAlertStyle.invalidateCustom();
+		});
+		UIDraw.rainbowEditBox(customCalloutEditor, font);
+		addRenderableWidget(customCalloutEditor);
+		customDurationEditor = new EditBox(font, 0, 0, 38, 9,
+			Component.literal("Catch alert duration in seconds"));
+		customDurationEditor.setBordered(false);
+		customDurationEditor.setMaxLength(5);
+		customDurationEditor.setValue(formatDuration(
+			ConfigManager.get().sparkling.customAlertDuration));
+		customDurationEditor.setCursorPosition(customDurationEditor.getValue().length());
+		customDurationEditor.setResponder(this::previewCustomDuration);
+		UIDraw.rainbowEditBox(customDurationEditor, font);
+		addRenderableWidget(customDurationEditor);
+		customVolumeEditor = new EditBox(font, 0, 0, 38, 9,
+			Component.literal("Catch alert sound volume percent"));
+		customVolumeEditor.setBordered(false);
+		customVolumeEditor.setMaxLength(3);
+		customVolumeEditor.setValue(Integer.toString(
+			ConfigManager.get().sparkling.customAlertSoundVolume));
+		customVolumeEditor.setCursorPosition(customVolumeEditor.getValue().length());
+		customVolumeEditor.setResponder(this::previewCustomVolume);
+		UIDraw.rainbowEditBox(customVolumeEditor, font);
+		addRenderableWidget(customVolumeEditor);
+		customPresetMenu = false;
+		customPresetNaming = false;
+		ConfigManager.get().sparkling.customAlertPerformanceBudget = 2;
+		ConfigManager.get().sparkling.customAlertPreviewScale = 2;
+		ConfigManager.get().sparkling.customAlertPreviewBackground = 0;
+		ConfigManager.get().sparkling.customAlertPreviewLoop = true;
+		FullScreenAlert.restartPreviewPaused();
+		AlertSounds.stopSparklingPreview(Minecraft.getInstance());
+		previewSong = Integer.MIN_VALUE;
+		customPreviewResuming = false;
+		setFocused(null);
+		if (search != null) {
+			search.setFocused(false);
+			search.visible = false;
+			search.active = false;
+		}
+	}
+
+	/** Live alert editor; every control feeds the same bounded renderer used in-game. */
+	private void drawCustomSparklingPanel(GuiGraphicsExtractor graphics,
+			int mouseX, int mouseY) {
+		updateCustomPreviewSong();
+		if (search != null) {
+			search.setFocused(false);
+			search.visible = false;
+			search.active = false;
+		}
+		int w = Math.min(720, width - 24);
+		int h = Math.min(520, height - 24);
+		int x = (width - w) / 2;
+		int y = (height - h) / 2;
+		graphics.fill(0, 0, width, height, 0xBB000000);
+		graphics.fill(x, y, x + w, y + h, SURFACE);
+		outline(graphics, x, y, w, h, CYAN);
+		drawText(graphics, trim("CUSTOM SPARKLING CATCH ALERT", w - 28), x + 14, y + 13, TEXT);
+		drawText(graphics,
+			"Changes preview live · Higher intensities can increase flashing and motion",
+			x + 14, y + 27, RED);
+		if (w >= 620) {
+			String load = customEffectLoadLabel();
+			drawText(graphics, "Estimated load: " + load,
+				x + w - 14 - font.width("Estimated load: " + load), y + 27,
+				load.equals("Extreme") ? RED : load.equals("Heavy") ? GOLD : MUTED);
+		}
+
+		int previewX = x + 14;
+		int previewY = y + 43;
+		int previewW = w - 28;
+		boolean compactHeight = h < 360;
+		boolean tinyHeight = h < 280;
+		int effectsPerPage = tinyHeight ? 4
+			: compactHeight ? 8 : SparklingAlertStyle.EFFECTS_PER_PAGE;
+		int pageCount = 0;
+		for (int categoryIndex = 0;
+				categoryIndex < SparklingAlertStyle.EFFECT_PAGE_NAMES.length; categoryIndex++) {
+			pageCount += (customEffectCategoryCount(categoryIndex) + effectsPerPage - 1)
+				/ effectsPerPage;
+		}
+		customSparklingPage = Math.clamp(customSparklingPage, 0, pageCount - 1);
+		int category = 0;
+		int subPage = customSparklingPage;
+		while (category < SparklingAlertStyle.EFFECT_PAGE_NAMES.length - 1) {
+			int pages = (customEffectCategoryCount(category) + effectsPerPage - 1)
+				/ effectsPerPage;
+			if (subPage < pages) break;
+			subPage -= pages;
+			category++;
+		}
+		int categoryStart = category * SparklingAlertStyle.EFFECTS_PER_PAGE;
+		int firstEffect = categoryStart + subPage * effectsPerPage;
+		int lastEffect = Math.min(SparklingAlertStyle.EFFECTS.size(),
+			Math.min(categoryStart + SparklingAlertStyle.EFFECTS_PER_PAGE,
+				firstEffect + effectsPerPage));
+		int effectCount = lastEffect - firstEffect;
+		boolean globalControls = customSparklingPage == 0;
+		int columns = 3;
+		int rows = (effectCount + columns - 1) / columns;
+		int rowHeight = compactHeight ? 24 : h >= 43 + 12 + rows * 27 + 34 + 48 ? 27 : 24;
+		int editorHeight = globalControls ? (compactHeight ? 23 : 28) : 0;
+		int durationHeight = globalControls ? (compactHeight ? 69 : 88) : 0;
+		int previewH = tinyHeight ? 0 : Math.clamp(h - 43 - 38 - editorHeight - durationHeight
+			- rows * rowHeight - 34, compactHeight ? 28 : 36, 150);
+		if (previewH > 0) {
+			graphics.fill(previewX, previewY, previewX + previewW, previewY + previewH, 0xEE080B13);
+			FullScreenAlert.preview(graphics, previewX, previewY, previewW, previewH);
+			outline(graphics, previewX, previewY, previewW, previewH, BORDER);
+			boolean previewPaused = FullScreenAlert.previewPaused();
+			drawButton(graphics, previewX + 6, previewY + 6, 24, "", mouseX, mouseY);
+			if (previewPaused) {
+				// Pixel geometry avoids the font glyph's asymmetric side bearings.
+				int playX = previewX + 14;
+				int playY = previewY + 13;
+				int[] widths = {1, 3, 5, 7, 9, 7, 5, 3, 1};
+				for (int row = 0; row < widths.length; row++) {
+					graphics.fill(playX + 1, playY + row + 1,
+						playX + widths[row] + 1, playY + row + 2, 0xAA000000);
+					graphics.fill(playX, playY + row,
+						playX + widths[row], playY + row + 1, TEXT);
+				}
+			} else {
+				// Draw the pause mark ourselves so it matches Play's weight and shadow.
+				int pauseX = previewX + 14;
+				int pauseY = previewY + 13;
+				graphics.fill(pauseX + 1, pauseY + 1, pauseX + 4, pauseY + 10, 0xAA000000);
+				graphics.fill(pauseX + 7, pauseY + 1, pauseX + 10, pauseY + 10, 0xAA000000);
+				graphics.fill(pauseX, pauseY, pauseX + 3, pauseY + 9, TEXT);
+				graphics.fill(pauseX + 6, pauseY, pauseX + 9, pauseY + 9, TEXT);
+			}
+			hits.add(new Hit(previewX + 6, previewY + 6, previewX + 30, previewY + 28,
+				this::toggleCustomPreview));
+			int timelineX = previewX + 5;
+			int timelineY = previewY + previewH - 7;
+			int timelineW = previewW - 10;
+			graphics.fill(timelineX, timelineY, timelineX + timelineW, timelineY + 3, BORDER);
+			int elapsedW = Math.round(timelineW * FullScreenAlert.previewProgress(
+				SparklingAlertStyle.custom().displayMillis()));
+			graphics.fill(timelineX, timelineY, timelineX + elapsedW, timelineY + 3, CYAN);
+		}
+
+		int pageY = previewY + previewH + (previewH > 0 ? 8 : 0);
+		int pageHeight = compactHeight ? 18 : 20;
+		if (compactHeight) {
+			int navWidth = Math.min(72, (w - 40) / 3);
+			int centreX = x + w / 2 - navWidth / 2;
+			drawButton(graphics, centreX - navWidth - 5, pageY, navWidth, "Previous", mouseX, mouseY);
+			graphics.fill(centreX, pageY, centreX + navWidth, pageY + pageHeight, SELECTED);
+			outline(graphics, centreX, pageY, navWidth, pageHeight, CYAN);
+			drawCenteredText(graphics, (customSparklingPage + 1) + "/" + pageCount,
+				centreX + navWidth / 2, pageY + 5, TEXT);
+			drawButton(graphics, centreX + navWidth + 5, pageY, navWidth, "Next", mouseX, mouseY);
+			if (customSparklingPage > 0) hits.add(new Hit(centreX - navWidth - 5, pageY,
+				centreX - 5, pageY + pageHeight, () -> customSparklingPage--));
+			if (customSparklingPage + 1 < pageCount) hits.add(new Hit(centreX + navWidth + 5,
+				pageY, centreX + navWidth * 2 + 5, pageY + pageHeight,
+				() -> customSparklingPage++));
+			drawText(graphics, customEffectPageName(customSparklingPage, effectsPerPage),
+				x + 14, pageY + pageHeight + 2, MUTED);
+		} else {
+			int pageGap = 6;
+			int pageWidth = (w - 28 - pageGap * (pageCount - 1)) / pageCount;
+			for (int page = 0; page < pageCount; page++) {
+				int pageX = x + 14 + page * (pageWidth + pageGap);
+				boolean active = page == customSparklingPage;
+				boolean hovered = inside(mouseX, mouseY, pageX, pageY,
+					pageX + pageWidth, pageY + pageHeight);
+				graphics.fill(pageX, pageY, pageX + pageWidth, pageY + pageHeight,
+					active ? SELECTED : hovered ? CARD_HOVER : CARD);
+				outline(graphics, pageX, pageY, pageWidth, pageHeight, active ? CYAN : BORDER);
+				drawCenteredText(graphics, customEffectPageName(page, effectsPerPage),
+					pageX + pageWidth / 2, pageY + 6, active ? TEXT : MUTED);
+				int selectedPage = page;
+				hits.add(new Hit(pageX, pageY, pageX + pageWidth, pageY + pageHeight,
+					() -> customSparklingPage = selectedPage));
+			}
+		}
+
+		int controlsTop = pageY + (compactHeight ? 32 : 26);
+		customDurationSliderWidth = 0;
+		customVolumeSliderWidth = 0;
+		boolean globalEditorsVisible = globalControls && !customPresetMenu;
+		if (customDurationEditor != null) {
+			customDurationEditor.visible = globalEditorsVisible;
+			customDurationEditor.active = globalEditorsVisible;
+			if (!globalEditorsVisible) customDurationEditor.setFocused(false);
+		}
+		if (customVolumeEditor != null) {
+			customVolumeEditor.visible = globalEditorsVisible;
+			customVolumeEditor.active = globalEditorsVisible;
+			if (!globalEditorsVisible) customVolumeEditor.setFocused(false);
+		}
+		if (globalControls) {
+		int durationY = controlsTop;
+		int durationFieldWidth = 46;
+		customDurationSliderLeft = x + 82;
+		customDurationSliderWidth = w - 82 - 14 - durationFieldWidth - 10;
+		customDurationSliderTop = durationY;
+		drawText(graphics, "Duration", x + 14, durationY + 5, TEXT);
+		float duration = ConfigManager.get().sparkling.customAlertDuration;
+		graphics.fill(customDurationSliderLeft, durationY + 9,
+			customDurationSliderLeft + customDurationSliderWidth, durationY + 12, BORDER);
+		int durationChoice = AlertSounds.nearestSparklingDurationChoice(duration);
+		int durationProgress = Math.round(customDurationSliderWidth * durationChoice
+			/ (float) (AlertSounds.sparklingDurationChoiceCount() - 1));
+		graphics.fill(customDurationSliderLeft, durationY + 9,
+			customDurationSliderLeft + durationProgress, durationY + 12, BLUE);
+		int handleX = customDurationSliderLeft + durationProgress;
+		graphics.fill(handleX - 2, durationY + 6, handleX + 2, durationY + 15, CYAN);
+		int durationFieldX = x + w - 14 - durationFieldWidth;
+		drawInlineEditorFrame(graphics, durationFieldX, durationY, durationFieldWidth, 20);
+		if (customDurationEditor != null) {
+			customDurationEditor.visible = globalEditorsVisible;
+			customDurationEditor.setX(durationFieldX + 5);
+			customDurationEditor.setY(durationY + 6);
+			customDurationEditor.setWidth(durationFieldWidth - 18);
+			customDurationEditor.setTextColor(TEXT);
+			customDurationEditor.setTextColorUneditable(MUTED);
+			UIDraw.updateRainbowCaret(customDurationEditor, TEXT);
+			drawText(graphics, "s", durationFieldX + durationFieldWidth - 10,
+				durationY + 6, MUTED);
+		}
+
+		int volumeY = durationY + (compactHeight ? 23 : 30);
+		int volumeFieldWidth = 52;
+		customVolumeSliderLeft = x + 82;
+		customVolumeSliderWidth = w - 82 - 14 - volumeFieldWidth - 10;
+		customVolumeSliderTop = volumeY;
+		drawText(graphics, "Volume", x + 14, volumeY + 5, TEXT);
+		int volume = Math.clamp(ConfigManager.get().sparkling.customAlertSoundVolume,
+			0, SparklingAlertStyle.VOLUME_SLIDER_MAX);
+		graphics.fill(customVolumeSliderLeft, volumeY + 9,
+			customVolumeSliderLeft + customVolumeSliderWidth, volumeY + 12, BORDER);
+		int volumeProgress = Math.round(customVolumeSliderWidth * volume
+			/ (float) SparklingAlertStyle.VOLUME_SLIDER_MAX);
+		graphics.fill(customVolumeSliderLeft, volumeY + 9,
+			customVolumeSliderLeft + volumeProgress, volumeY + 12, BLUE);
+		int volumeHandleX = customVolumeSliderLeft + volumeProgress;
+		graphics.fill(volumeHandleX - 2, volumeY + 6,
+			volumeHandleX + 2, volumeY + 15, CYAN);
+		int volumeFieldX = x + w - 14 - volumeFieldWidth;
+		drawInlineEditorFrame(graphics, volumeFieldX, volumeY, volumeFieldWidth, 20);
+		if (customVolumeEditor != null) {
+			customVolumeEditor.visible = globalEditorsVisible;
+			customVolumeEditor.setX(volumeFieldX + 5);
+			customVolumeEditor.setY(volumeY + 6);
+			customVolumeEditor.setWidth(volumeFieldWidth - 20);
+			customVolumeEditor.setTextColor(TEXT);
+			customVolumeEditor.setTextColorUneditable(MUTED);
+			UIDraw.updateRainbowCaret(customVolumeEditor, TEXT);
+			drawText(graphics, "%", volumeFieldX + volumeFieldWidth - 12,
+				volumeY + 6, MUTED);
+		}
+		int timingY = volumeY + (compactHeight ? 23 : 30);
+		drawText(graphics, "Timing", x + 14, timingY + 5, TEXT);
+		String[] timings = {"Designed", "Opening", "Reveal", "Sustain", "Finale"};
+		int timingMode = Math.clamp(ConfigManager.get().sparkling.customAlertTimingMode, 0, 4);
+		int timingWidth = (w - 96 - 4 * 4) / 5;
+		for (int index = 0; index < timings.length; index++) {
+			int buttonX = x + 82 + index * (timingWidth + 4);
+			boolean selected = timingMode == index;
+			graphics.fill(buttonX, timingY, buttonX + timingWidth, timingY + 20,
+				selected ? SELECTED : CARD);
+			outline(graphics, buttonX, timingY, timingWidth, 20, selected ? CYAN : BORDER);
+			drawCenteredText(graphics, trim(timings[index], timingWidth - 6),
+				buttonX + timingWidth / 2, timingY + 6, selected ? TEXT : MUTED);
+			int choice = index;
+			hits.add(new Hit(buttonX, timingY, buttonX + timingWidth, timingY + 20,
+				() -> ConfigManager.get().sparkling.customAlertTimingMode = choice));
+		}
+		}
+		controlsTop += durationHeight;
+		if (customCalloutEditor != null) {
+			customCalloutEditor.visible = globalEditorsVisible;
+			customCalloutEditor.active = globalEditorsVisible;
+			if (!globalEditorsVisible) customCalloutEditor.setFocused(false);
+			if (globalControls) {
+				int fieldX = x + 112;
+				int fieldWidth = w - 126;
+				drawText(graphics, "Callout Text", x + 14, controlsTop + 5, TEXT);
+				drawInlineEditorFrame(graphics, fieldX, controlsTop, fieldWidth, 18);
+				customCalloutEditor.setX(fieldX + 4);
+				customCalloutEditor.setY(controlsTop + 5);
+				customCalloutEditor.setWidth(Math.max(8, fieldWidth - 8));
+				customCalloutEditor.setTextColor(TEXT);
+				customCalloutEditor.setTextColorUneditable(MUTED);
+				UIDraw.updateRainbowCaret(customCalloutEditor, TEXT);
+				controlsTop += editorHeight;
+			}
+		}
+		int gap = 12;
+		int cellWidth = (w - 28 - gap * (columns - 1)) / columns;
+		boolean compact = cellWidth < 180;
+		for (int index = firstEffect; index < lastEffect; index++) {
+			SparklingAlertStyle.Effect effect = SparklingAlertStyle.EFFECTS.get(index);
+			int pageIndex = index - firstEffect;
+			int column = columns == 1 ? 0 : pageIndex / rows;
+			int row = columns == 1 ? pageIndex : pageIndex % rows;
+			int cellX = x + 14 + column * (cellWidth + gap);
+			int cellY = controlsTop + row * rowHeight;
+			int value = customAlertValue(effect);
+			String level = effect.soundSong() ? AlertSounds.sparklingSongShortLabel(
+				value == 0 ? AlertSounds.SPARKLING_SONG_OFF : value - 1)
+				: effect.soundIntensity() ? AlertSounds.sparklingIntensityShortLabel(value)
+				: effect.gradientSpeed() ? gradientSpeedLevel(value) : effectLevel(value);
+			drawText(graphics, trim(effect.label(), compact
+				? Math.max(24, cellWidth - 58)
+				: Math.max(28, cellWidth - 64 - font.width(level))), cellX, cellY + 4, TEXT);
+			if (!compact) drawText(graphics, level,
+				cellX + cellWidth - 54 - font.width(level), cellY + 4,
+				value == 0 ? DIM : CYAN);
+			int plusX = cellX + cellWidth - 22;
+			int minusX = plusX - 26;
+			drawSmallEffectButton(graphics, minusX, cellY, "−", mouseX, mouseY,
+				value > 0);
+			drawSmallEffectButton(graphics, plusX, cellY, "+", mouseX, mouseY,
+				value < effect.maximum());
+			if (value > 0) hits.add(new Hit(minusX, cellY, minusX + 22, cellY + 22,
+				() -> setCustomAlertValue(effect, value - 1)));
+			if (value < effect.maximum()) hits.add(new Hit(plusX, cellY, plusX + 22, cellY + 22,
+				() -> setCustomAlertValue(effect, value + 1)));
+			int meterX = cellX;
+			int meterY = cellY + rowHeight - 4;
+			int meterW = Math.max(24, cellWidth - 58);
+			for (int levelIndex = 1; levelIndex <= effect.maximum(); levelIndex++) {
+				int left = meterX + meterW * (levelIndex - 1) / effect.maximum();
+				int right = meterX + meterW * levelIndex / effect.maximum() - 2;
+				graphics.fill(left, meterY, right, meterY + 4,
+					levelIndex <= value ? BLUE : BORDER);
+				int chosen = levelIndex;
+				hits.add(new Hit(left, meterY - 2, right, meterY + 7,
+					() -> setCustomAlertValue(effect, chosen)));
+			}
+		}
+
+		int buttonY = y + h - 29;
+		boolean resetArmed = System.currentTimeMillis() < customResetArmedUntil;
+		drawButton(graphics, x + 14, buttonY, 88,
+			resetArmed ? "Confirm Reset" : "New / Reset", mouseX, mouseY);
+		drawButton(graphics, x + 108, buttonY, 112, "Saved Presets", mouseX, mouseY);
+		hits.add(new Hit(x + 108, buttonY, x + 220, buttonY + 22,
+			this::openCustomPresetMenu));
+		if (!customPresetStatus.isEmpty()) drawCenteredText(graphics, customPresetStatus,
+			x + w / 2, buttonY + 7, MUTED);
+		drawButton(graphics, x + w - 74, buttonY, 60, "Done", mouseX, mouseY);
+		hits.add(new Hit(x + 14, buttonY, x + 102, buttonY + 22,
+			this::resetCustomSparklingAlert));
+		hits.add(new Hit(x + w - 74, buttonY, x + w - 14, buttonY + 22,
+			this::closeCustomSparklingPanel));
+		if (customPresetMenu) {
+			customPresetHitStart = hits.size();
+			drawCustomPresetMenu(graphics, mouseX, mouseY, x, y, w, h);
+		}
+	}
+
+	private void updateCustomPreviewSong() {
+		if (!customSparklingPanel) return;
+		if (FullScreenAlert.previewPaused()) {
+			AlertSounds.stopSparklingPreview(Minecraft.getInstance());
+			return;
+		}
+		SparklingAlertStyle style = SparklingAlertStyle.custom();
+		int song = style.soundSong();
+		int theme = style.soundTheme();
+		float duration = style.durationSeconds();
+		int volume = style.soundVolumePercent();
+		long now = System.currentTimeMillis();
+		if (song == AlertSounds.SPARKLING_SONG_OFF) {
+			if (previewSong != song) AlertSounds.stopSparklingPreview(Minecraft.getInstance());
+			previewSong = song;
+			return;
+		}
+		long loopMillis = Math.max(1_000L, Math.round(duration * 1_000f));
+		if (song != previewSong || theme != previewTheme || duration != previewDuration
+				|| volume != previewVolume || now - previewSongStartedAt >= loopMillis) {
+			if (!customPreviewResuming) FullScreenAlert.restartPreview();
+			long resumeOffset = customPreviewResuming
+				? Math.floorMod(FullScreenAlert.previewAgeMillis(), loopMillis) : 0;
+			AlertSounds.playSparklingPreview(Minecraft.getInstance(), song, theme, duration,
+				volume, resumeOffset);
+			previewSong = song;
+			previewTheme = theme;
+			previewDuration = duration;
+			previewVolume = volume;
+			previewSongStartedAt = customPreviewResuming ? now - resumeOffset : now;
+			customPreviewResuming = false;
+		}
+	}
+
+	private void drawSmallEffectButton(GuiGraphicsExtractor graphics, int x, int y,
+			String label, int mouseX, int mouseY, boolean enabled) {
+		boolean hovered = enabled && inside(mouseX, mouseY, x, y, x + 22, y + 22);
+		graphics.fill(x, y, x + 22, y + 22, hovered ? SELECTED : CARD);
+		outline(graphics, x, y, 22, 22, enabled ? (hovered ? CYAN : BLUE) : BORDER);
+		drawCenteredText(graphics, label, x + 11, y + 7, enabled ? TEXT : DIM);
+	}
+
+	private void drawCustomPresetMenu(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
+			int parentX, int parentY, int parentWidth, int parentHeight) {
+		SafariConfig.SparklingConfig config = ConfigManager.get().sparkling;
+		if (config.customAlertSavedPresets == null) config.customAlertSavedPresets = new ArrayList<>();
+		List<Integer> order = customPresetDisplayOrder(config);
+		int width = Math.min(520, parentWidth - 28);
+		int presetsPerPage = parentHeight < 390 ? 4 : 6;
+		int pageCount = Math.max(1, (order.size() + presetsPerPage - 1) / presetsPerPage);
+		customPresetPage = Math.clamp(customPresetPage, 0, pageCount - 1);
+		int first = customPresetPage * presetsPerPage;
+		int visible = Math.min(presetsPerPage, order.size() - first);
+		boolean validSelection = customSavedPresetIndex >= 0
+			&& customSavedPresetIndex < config.customAlertSavedPresets.size();
+		int selectedVisibleRow = -1;
+		for (int row = 0; row < visible; row++) {
+			if (order.get(first + row) == customSavedPresetIndex) selectedVisibleRow = row;
+		}
+		int listHeight = Math.max(36, visible * 36);
+		int actionHeight = selectedVisibleRow >= 0 && !customPresetNaming ? 52 : 0;
+		int namingHeight = customPresetNaming ? 28 : 0;
+		int height = Math.min(parentHeight - 18,
+			68 + listHeight + actionHeight + namingHeight);
+		int x = parentX + (parentWidth - width) / 2;
+		int y = parentY + (parentHeight - height) / 2;
+		graphics.fill(parentX, parentY, parentX + parentWidth, parentY + parentHeight, 0xCC000000);
+		graphics.fill(x, y, x + width, y + height, SURFACE);
+		outline(graphics, x, y, width, height, CYAN);
+		drawText(graphics, "SAVED SPARKLING ALERTS", x + 12, y + 12, TEXT);
+		drawButton(graphics, x + width - 66, y + 6, 54, "Close", mouseX, mouseY);
+		hits.add(new Hit(x + width - 66, y + 6, x + width - 12, y + 28,
+			this::closeCustomPresetMenu));
+
+		int rowY = y + 34;
+		if (config.customAlertSavedPresets.isEmpty()) {
+			drawCenteredText(graphics, "No saved presets", x + width / 2, rowY + 8, MUTED);
+			rowY += 36;
+		} else {
+			for (int row = 0; row < visible; row++) {
+				int index = order.get(first + row);
+				SafariConfig.SavedAlertPreset preset = config.customAlertSavedPresets.get(index);
+				boolean selected = customSavedPresetIndex == index;
+				boolean matchesCurrent = preset.recipe.equals(SparklingAlertStyle.exportCustom());
+				boolean modified = selected && !matchesCurrent;
+				graphics.fill(x + 10, rowY, x + width - 10, rowY + 32,
+					selected ? SELECTED : CARD);
+				outline(graphics, x + 10, rowY, width - 20, 32, selected ? CYAN : BORDER);
+				String star = preset.favorite ? "★ " : "";
+				drawText(graphics, trim(star + preset.name, width - 88), x + 17, rowY + 5,
+					preset.favorite ? GOLD : TEXT);
+				drawText(graphics,
+					trim(SparklingAlertStyle.describeCustomPreset(preset.recipe), width - 42),
+					x + 17, rowY + 18, MUTED);
+				if (modified) drawText(graphics, "Modified", x + width - 70, rowY + 5, GOLD);
+				else if (matchesCurrent) drawScaledCenteredText(graphics, "✔",
+					x + width - 25, rowY + 11, 1.3f, CYAN);
+				int chosenIndex = index;
+				hits.add(new Hit(x + 10, rowY, x + width - 10, rowY + 32,
+					() -> customSavedPresetIndex = customSavedPresetIndex == chosenIndex
+						? -1 : chosenIndex));
+				rowY += 36;
+				if (selected && !customPresetNaming) {
+					drawPresetActions(graphics, mouseX, mouseY, x, rowY, width,
+						chosenIndex, preset);
+					rowY += 52;
+				}
+			}
+		}
+
+		if (customPresetNaming) {
+			drawText(graphics, "Preset Name", x + 12, rowY + 7, TEXT);
+			int fieldX = x + 88;
+			drawInlineEditorFrame(graphics, fieldX, rowY, width - 190, 20);
+			if (customPresetNameEditor != null) {
+				customPresetNameEditor.visible = true;
+				customPresetNameEditor.active = true;
+				customPresetNameEditor.setX(fieldX + 5);
+				customPresetNameEditor.setY(rowY + 6);
+				customPresetNameEditor.setWidth(width - 200);
+				UIDraw.updateRainbowCaret(customPresetNameEditor, TEXT);
+			}
+			drawButton(graphics, x + width - 94, rowY, 38,
+				customPresetRenaming ? "Rename" : "Save", mouseX, mouseY);
+			drawButton(graphics, x + width - 52, rowY, 40, "Cancel", mouseX, mouseY);
+			hits.add(new Hit(x + width - 94, rowY, x + width - 56, rowY + 22,
+				this::finishPresetSave));
+			hits.add(new Hit(x + width - 52, rowY, x + width - 12, rowY + 22,
+				this::cancelPresetNaming));
+		} else {
+			drawButton(graphics, x + 10, rowY, 90, "Save Current", mouseX, mouseY);
+			drawButton(graphics, x + 106, rowY, 70, "Import", mouseX, mouseY);
+			if (pageCount > 1) {
+				drawButton(graphics, x + width - 148, rowY, 42, "Prev", mouseX, mouseY);
+				drawCenteredText(graphics, (customPresetPage + 1) + "/" + pageCount,
+					x + width - 83, rowY + 7, MUTED);
+				drawButton(graphics, x + width - 52, rowY, 40, "Next", mouseX, mouseY);
+				if (customPresetPage > 0) hits.add(new Hit(x + width - 148, rowY,
+					x + width - 106, rowY + 22, () -> customPresetPage--));
+				if (customPresetPage + 1 < pageCount) hits.add(new Hit(x + width - 52, rowY,
+					x + width - 12, rowY + 22, () -> customPresetPage++));
+			}
+			hits.add(new Hit(x + 10, rowY, x + 100, rowY + 22, this::beginPresetSave));
+			hits.add(new Hit(x + 106, rowY, x + 176, rowY + 22,
+				() -> customPresetAction(4)));
+		}
+	}
+
+	private void drawPresetActions(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
+			int x, int y, int width, int index, SafariConfig.SavedAlertPreset preset) {
+		String deleteLabel = customDeleteArmedIndex == index
+			&& System.currentTimeMillis() < customDeleteArmedUntil ? "Confirm Delete" : "Delete";
+		String[][] labels = {
+			{"Load", "Update", "Rename", preset.favorite ? "Unfavorite" : "Favorite"},
+			{"Copy", "Duplicate", deleteLabel}
+		};
+		int[][] actions = {{0, 1, 2, 3}, {4, 5, 6}};
+		for (int row = 0; row < labels.length; row++) {
+			int gap = 5;
+			int available = width - 20 - gap * (labels[row].length - 1);
+			int buttonWidth = available / labels[row].length;
+			int buttonX = x + 10;
+			for (int column = 0; column < labels[row].length; column++) {
+				int actualWidth = column == labels[row].length - 1
+					? x + width - 10 - buttonX : buttonWidth;
+				drawButton(graphics, buttonX, y + row * 26, actualWidth,
+					labels[row][column], mouseX, mouseY);
+				int action = actions[row][column];
+				hits.add(new Hit(buttonX, y + row * 26, buttonX + actualWidth,
+					y + row * 26 + 22, () -> savedPresetRowAction(index, action)));
+				buttonX += actualWidth + gap;
+			}
+		}
+	}
+
+	private static List<Integer> customPresetDisplayOrder(SafariConfig.SparklingConfig config) {
+		List<Integer> order = new ArrayList<>();
+		for (int index = 0; index < config.customAlertSavedPresets.size(); index++) order.add(index);
+		order.sort((left, right) -> Boolean.compare(
+			config.customAlertSavedPresets.get(right).favorite,
+			config.customAlertSavedPresets.get(left).favorite));
+		return order;
+	}
+
+	private void openCustomPresetMenu() {
+		customDeleteArmedIndex = -1;
+		customDeleteArmedUntil = 0;
+		customSavedPresetIndex = -1;
+		customPresetMenu = true;
+	}
+
+	private void beginPresetSave() {
+		beginPresetNaming("Custom Alert", false);
+	}
+
+	private void beginPresetRename() {
+		SafariConfig.SparklingConfig config = ConfigManager.get().sparkling;
+		if (customSavedPresetIndex < 0
+				|| customSavedPresetIndex >= config.customAlertSavedPresets.size()) return;
+		beginPresetNaming(config.customAlertSavedPresets.get(customSavedPresetIndex).name, true);
+	}
+
+	private void beginPresetNaming(String initialValue, boolean renaming) {
+		cancelPresetNaming();
+		customPresetNaming = true;
+		customPresetRenaming = renaming;
+		customPresetNameEditor = new EditBox(font, 0, 0, 150, 9,
+			Component.literal("Saved preset name"));
+		customPresetNameEditor.setBordered(false);
+		customPresetNameEditor.setMaxLength(40);
+		customPresetNameEditor.setValue(initialValue);
+		customPresetNameEditor.setCursorPosition(customPresetNameEditor.getValue().length());
+		UIDraw.rainbowEditBox(customPresetNameEditor, font);
+		addRenderableWidget(customPresetNameEditor);
+		setFocused(customPresetNameEditor);
+		customPresetNameEditor.setFocused(true);
+	}
+
+	private void finishPresetSave() {
+		SafariConfig.SparklingConfig config = ConfigManager.get().sparkling;
+		if (customPresetRenaming && customSavedPresetIndex >= 0
+				&& customSavedPresetIndex < config.customAlertSavedPresets.size()) {
+			SafariConfig.SavedAlertPreset preset =
+				config.customAlertSavedPresets.get(customSavedPresetIndex);
+			String requested = customPresetNameEditor == null ? preset.name
+				: customPresetNameEditor.getValue();
+			preset.name = uniquePresetName(config, requested, customSavedPresetIndex);
+			customPresetStatus = "Renamed preset to " + preset.name;
+			ConfigManager.save();
+		} else {
+			customPresetAction(0);
+		}
+		List<Integer> order = customPresetDisplayOrder(config);
+		int displayIndex = order.indexOf(customSavedPresetIndex);
+		customPresetPage = Math.max(0, displayIndex / 6);
+		cancelPresetNaming();
+	}
+
+	private void cancelPresetNaming() {
+		customPresetNaming = false;
+		customPresetRenaming = false;
+		if (customPresetNameEditor != null) {
+			customPresetNameEditor.setFocused(false);
+			removeWidget(customPresetNameEditor);
+			customPresetNameEditor = null;
+		}
+		setFocused(null);
+	}
+
+	private void closeCustomPresetMenu() {
+		cancelPresetNaming();
+		customSavedPresetIndex = -1;
+		customPresetMenu = false;
+	}
+
+	private void savedPresetRowAction(int index, int action) {
+		SafariConfig.SparklingConfig config = ConfigManager.get().sparkling;
+		if (config.customAlertSavedPresets == null || index < 0
+				|| index >= config.customAlertSavedPresets.size()) return;
+		customSavedPresetIndex = index;
+		SafariConfig.SavedAlertPreset preset = config.customAlertSavedPresets.get(index);
+		switch (action) {
+			case 0 -> {
+				if (SparklingAlertStyle.importCustom(preset.recipe)) {
+					customPresetStatus = "Loaded " + preset.name;
+					refreshCustomEditors();
+				}
+			}
+			case 1 -> {
+				preset.recipe = SparklingAlertStyle.exportCustom();
+				customPresetStatus = "Updated " + preset.name;
+				ConfigManager.save();
+			}
+			case 2 -> beginPresetRename();
+			case 3 -> {
+				preset.favorite = !preset.favorite;
+				customPresetStatus = preset.favorite ? "Favorited " + preset.name
+					: "Unfavorited " + preset.name;
+				ConfigManager.save();
+			}
+			case 4 -> {
+				Minecraft.getInstance().keyboardHandler.setClipboard(preset.recipe);
+				customPresetStatus = "Copied " + preset.name;
+			}
+			case 5 -> {
+				String copyName = uniquePresetName(config, preset.name + " Copy");
+				SafariConfig.SavedAlertPreset copy =
+					new SafariConfig.SavedAlertPreset(copyName, preset.recipe);
+				copy.favorite = preset.favorite;
+				config.customAlertSavedPresets.add(copy);
+				ConfigManager.save();
+				customSavedPresetIndex = config.customAlertSavedPresets.size() - 1;
+				customPresetStatus = "Duplicated " + preset.name;
+			}
+			case 6 -> {
+				long now = System.currentTimeMillis();
+				if (customDeleteArmedIndex != index || now >= customDeleteArmedUntil) {
+					customDeleteArmedIndex = index;
+					customDeleteArmedUntil = now + 5_000L;
+					customPresetStatus = "Select Delete again to confirm";
+					return;
+				}
+				String removed = config.customAlertSavedPresets.remove(index).name;
+				customSavedPresetIndex = -1;
+				customDeleteArmedIndex = -1;
+				customDeleteArmedUntil = 0;
+				customPresetStatus = "Deleted " + removed;
+				ConfigManager.save();
+			}
+			default -> { }
+		}
+	}
+
+	private static String uniquePresetName(SafariConfig.SparklingConfig config,
+			String requestedName) {
+		return uniquePresetName(config, requestedName, -1);
+	}
+
+	private static String uniquePresetName(SafariConfig.SparklingConfig config,
+			String requestedName, int ignoredIndex) {
+		String base = requestedName == null || requestedName.isBlank()
+			? "Custom Alert" : requestedName.trim();
+		String candidate = base;
+		for (int suffix = 2; ; suffix++) {
+			boolean used = false;
+			for (int index = 0; index < config.customAlertSavedPresets.size(); index++) {
+				if (index == ignoredIndex) continue;
+				SafariConfig.SavedAlertPreset preset = config.customAlertSavedPresets.get(index);
+				if (preset.name.equalsIgnoreCase(candidate)) {
+					used = true;
+					break;
+				}
+			}
+			if (!used) return candidate;
+			candidate = base + " (" + suffix + ")";
+		}
+	}
+
+	private static String customEffectPageName(int page, int effectsPerPage) {
+		int group = 0;
+		int within = page;
+		int pages = 1;
+		while (group < SparklingAlertStyle.EFFECT_PAGE_NAMES.length) {
+			pages = (customEffectCategoryCount(group) + effectsPerPage - 1) / effectsPerPage;
+			if (within < pages) break;
+			within -= pages;
+			group++;
+		}
+		group = Math.min(group, SparklingAlertStyle.EFFECT_PAGE_NAMES.length - 1);
+		return SparklingAlertStyle.EFFECT_PAGE_NAMES[group]
+			+ (pages == 1 ? "" : " " + (within + 1));
+	}
+
+	private static int customEffectCategoryCount(int category) {
+		int start = category * SparklingAlertStyle.EFFECTS_PER_PAGE;
+		return Math.clamp(SparklingAlertStyle.EFFECTS.size() - start, 0,
+			SparklingAlertStyle.EFFECTS_PER_PAGE);
+	}
+
+	private int customAlertValue(SparklingAlertStyle.Effect effect) {
+		int value = effect.value(ConfigManager.get().sparkling);
+		return effect.soundSong()
+			? value == AlertSounds.SPARKLING_SONG_OFF ? 0 : value + 1
+			: value;
+	}
+
+	private void setCustomAlertValue(SparklingAlertStyle.Effect effect, int value) {
+		int stored = effect.soundSong()
+			? value == 0 ? AlertSounds.SPARKLING_SONG_OFF : value - 1
+			: value;
+		effect.set(ConfigManager.get().sparkling, stored);
+		SparklingAlertStyle.invalidateCustom();
+	}
+
+	private void previewCustomDuration(String value) {
+		if (value == null || value.isBlank()) return;
+		try {
+			float seconds = Float.parseFloat(value);
+			if (seconds < 1 || seconds > 999) return;
+			ConfigManager.get().sparkling.customAlertDuration = seconds;
+			SparklingAlertStyle.invalidateCustom();
+		} catch (NumberFormatException ignored) {
+		}
+	}
+
+	private static String formatDuration(float seconds) {
+		return seconds == Math.round(seconds)
+			? Integer.toString(Math.round(seconds))
+			: String.format(java.util.Locale.ROOT, "%.1f", seconds);
+	}
+
+	private void applyCustomDurationEditor() {
+		if (customDurationEditor == null) return;
+		float current = Math.clamp(ConfigManager.get().sparkling.customAlertDuration, 1f, 999f);
+		try {
+			current = Math.clamp(Float.parseFloat(customDurationEditor.getValue()), 1f, 999f);
+		} catch (NumberFormatException ignored) {
+		}
+		ConfigManager.get().sparkling.customAlertDuration = current;
+		customDurationEditor.setValue(formatDuration(current));
+		SparklingAlertStyle.invalidateCustom();
+	}
+
+	private void updateCustomDuration(double mouseX) {
+		float progress = (float) ((mouseX - customDurationSliderLeft)
+			/ Math.max(1, customDurationSliderWidth));
+		int choice = Math.round(Math.clamp(progress, 0f, 1f)
+			* (AlertSounds.sparklingDurationChoiceCount() - 1));
+		float seconds = AlertSounds.sparklingDurationChoice(choice);
+		ConfigManager.get().sparkling.customAlertDuration = seconds;
+		if (customDurationEditor != null
+				&& !formatDuration(seconds).equals(customDurationEditor.getValue())) {
+			customDurationEditor.setValue(formatDuration(seconds));
+		}
+		SparklingAlertStyle.invalidateCustom();
+	}
+
+	private void previewCustomVolume(String value) {
+		if (value == null || value.isBlank()) return;
+		try {
+			int percent = Integer.parseInt(value);
+			if (percent < 0 || percent > SparklingAlertStyle.VOLUME_MANUAL_MAX) return;
+			ConfigManager.get().sparkling.customAlertSoundVolume = percent;
+			SparklingAlertStyle.invalidateCustom();
+		} catch (NumberFormatException ignored) {
+		}
+	}
+
+	private void applyCustomVolumeEditor() {
+		if (customVolumeEditor == null) return;
+		int current = Math.clamp(ConfigManager.get().sparkling.customAlertSoundVolume,
+			0, SparklingAlertStyle.VOLUME_MANUAL_MAX);
+		try {
+			current = Math.clamp(Integer.parseInt(customVolumeEditor.getValue()), 0,
+				SparklingAlertStyle.VOLUME_MANUAL_MAX);
+		} catch (NumberFormatException ignored) {
+		}
+		ConfigManager.get().sparkling.customAlertSoundVolume = current;
+		customVolumeEditor.setValue(Integer.toString(current));
+		SparklingAlertStyle.invalidateCustom();
+	}
+
+	private void updateCustomVolume(double mouseX) {
+		float progress = (float) ((mouseX - customVolumeSliderLeft)
+			/ Math.max(1, customVolumeSliderWidth));
+		int percent = Math.round(Math.clamp(progress, 0f, 1f)
+			* SparklingAlertStyle.VOLUME_SLIDER_MAX);
+		ConfigManager.get().sparkling.customAlertSoundVolume = percent;
+		if (customVolumeEditor != null
+				&& !Integer.toString(percent).equals(customVolumeEditor.getValue())) {
+			customVolumeEditor.setValue(Integer.toString(percent));
+		}
+		SparklingAlertStyle.invalidateCustom();
+	}
+
+	private void resetCustomSparklingAlert() {
+		long now = System.currentTimeMillis();
+		if (now >= customResetArmedUntil) {
+			customResetArmedUntil = now + 5_000L;
+			customPresetStatus = "Select Reset again to confirm";
+			return;
+		}
+		customResetArmedUntil = 0;
+		SparklingAlertStyle.resetCustom();
+		customSavedPresetIndex = -1;
+		customPresetStatus = "New custom alert";
+		if (customCalloutEditor != null) {
+			customCalloutEditor.setValue(ConfigManager.get().sparkling.customAlertCalloutText);
+		}
+		if (customDurationEditor != null) {
+			customDurationEditor.setValue(formatDuration(
+				ConfigManager.get().sparkling.customAlertDuration));
+		}
+		if (customVolumeEditor != null) {
+			customVolumeEditor.setValue(Integer.toString(
+				ConfigManager.get().sparkling.customAlertSoundVolume));
+		}
+	}
+
+	private void customPresetAction(int action) {
+		SafariConfig.SparklingConfig config = ConfigManager.get().sparkling;
+		if (config.customAlertSavedPresets == null) config.customAlertSavedPresets = new ArrayList<>();
+		switch (action) {
+			case 0 -> {
+				String name = customPresetNameEditor == null ? "Custom Alert"
+					: customPresetNameEditor.getValue();
+				SparklingAlertStyle.saveCustomPreset(name);
+				customSavedPresetIndex = config.customAlertSavedPresets.size() - 1;
+				customPresetStatus = "Saved "
+					+ config.customAlertSavedPresets.get(customSavedPresetIndex).name;
+			}
+			case 1 -> {
+				if (config.customAlertSavedPresets.isEmpty()) {
+					customPresetStatus = "No saved presets";
+					return;
+				}
+				customSavedPresetIndex = Math.floorMod(customSavedPresetIndex + 1,
+					config.customAlertSavedPresets.size());
+				SafariConfig.SavedAlertPreset preset =
+					config.customAlertSavedPresets.get(customSavedPresetIndex);
+				if (SparklingAlertStyle.importCustom(preset.recipe)) {
+					customPresetNameEditor.setValue(preset.name);
+					customPresetStatus = "Loaded " + preset.name;
+					refreshCustomEditors();
+				}
+			}
+			case 2 -> {
+				if (customSavedPresetIndex >= 0
+						&& customSavedPresetIndex < config.customAlertSavedPresets.size()) {
+					String removed = config.customAlertSavedPresets
+						.remove(customSavedPresetIndex).name;
+					customSavedPresetIndex = -1;
+					customPresetStatus = "Deleted " + removed;
+					ConfigManager.save();
+				}
+			}
+			case 3 -> {
+				Minecraft.getInstance().keyboardHandler.setClipboard(
+					SparklingAlertStyle.exportCustom());
+				customPresetStatus = "Copied preset";
+			}
+			case 4 -> {
+				boolean imported = SparklingAlertStyle.importCustom(
+					Minecraft.getInstance().keyboardHandler.getClipboard().trim());
+				customPresetStatus = imported ? "Imported preset" : "Invalid preset";
+				if (imported) {
+					customSavedPresetIndex = -1;
+					refreshCustomEditors();
+				}
+			}
+			case 5 -> {
+				String name = customPresetNameEditor == null ? "Custom Alert Copy"
+					: customPresetNameEditor.getValue() + " Copy";
+				SparklingAlertStyle.saveCustomPreset(name);
+				customSavedPresetIndex = config.customAlertSavedPresets.size() - 1;
+				customPresetNameEditor.setValue(
+					config.customAlertSavedPresets.get(customSavedPresetIndex).name);
+				customPresetStatus = "Duplicated preset";
+			}
+			default -> { }
+		}
+	}
+
+	private void toggleCustomPreview() {
+		FullScreenAlert.togglePreview();
+		if (FullScreenAlert.previewPaused()) {
+			AlertSounds.stopSparklingPreview(Minecraft.getInstance());
+		} else {
+			previewSong = Integer.MIN_VALUE;
+			customPreviewResuming = true;
+			updateCustomPreviewSong();
+		}
+	}
+
+	private static String customEffectLoadLabel() {
+		SafariConfig.SparklingConfig config = ConfigManager.get().sparkling;
+		int load = 0;
+		for (SparklingAlertStyle.Effect effect : SparklingAlertStyle.EFFECTS) {
+			if (!effect.soundSong() && !effect.soundIntensity()) load += effect.value(config);
+		}
+		return load < 34 ? "Light" : load < 85 ? "Moderate" : load < 165 ? "Heavy" : "Extreme";
+	}
+
+	private void refreshCustomEditors() {
+		SafariConfig.SparklingConfig config = ConfigManager.get().sparkling;
+		if (customCalloutEditor != null) customCalloutEditor.setValue(config.customAlertCalloutText);
+		if (customDurationEditor != null) customDurationEditor.setValue(
+			formatDuration(config.customAlertDuration));
+		if (customVolumeEditor != null) customVolumeEditor.setValue(
+			Integer.toString(config.customAlertSoundVolume));
+	}
+
+	private static String effectLevel(int value) {
+		return switch (value) {
+			case 0 -> "Off";
+			case 1 -> "Subtle";
+			case 2 -> "Gentle";
+			case 3 -> "Moderate";
+			case 4 -> "Strong";
+			case 5 -> "Intense";
+			default -> "Maximum";
+		};
+	}
+
+	private static String gradientSpeedLevel(int value) {
+		return switch (value) {
+			case 0 -> "Still";
+			case 1 -> "Slow";
+			case 2 -> "Normal";
+			case 3 -> "Fast";
+			default -> "Rapid";
+		};
 	}
 
 	/** Role-based palette editor; every change is reflected by the screen behind it. */
@@ -1418,7 +2500,7 @@ public final class SafariSettingsScreen extends Screen {
 	private void drawSpecialSparklingConfirmation(GuiGraphicsExtractor graphics,
 			int mouseX, int mouseY) {
 		int w = Math.min(500, width - 40);
-		int h = 132;
+		int h = 150;
 		int x = (width - w) / 2;
 		int y = (height - h) / 2;
 		graphics.fill(0, 0, width, height, 0xBB000000);
@@ -1429,25 +2511,55 @@ public final class SafariSettingsScreen extends Screen {
 		graphics.centeredText(font, "EPILEPSY WARNING", x + w / 2, y + 15, RED);
 		graphics.centeredText(font, "This option may affect photosensitive players.",
 			x + w / 2, y + 40, RED);
-		graphics.centeredText(font, "Please confirm that you want to enable it.",
+		graphics.centeredText(font,
+			pendingSparklingIntensity == SparklingAlertStyle.CUSTOM_INDEX
+				? "The editor includes effect intensities that can increase flashing and motion."
+				: "Higher effect intensities can increase flashing and motion.",
 			x + w / 2, y + 54, RED);
-		String intensity = new String[]{"Special", "Intense", "Extreme", "Maximum"}
-			[Math.clamp(pendingSparklingIntensity, 0, 3)];
-		drawCenteredText(graphics, "Use " + intensity + " intensity?", x + w / 2, y + 72, GOLD);
-		int cancelX = x + w / 2 - 112;
-		int enableX = x + w / 2 + 8;
-		drawButton(graphics, cancelX, y + 96, 104, "Cancel", mouseX, mouseY);
-		drawButton(graphics, enableX, y + 96, 104, "Enable", mouseX, mouseY);
-		hits.add(new Hit(cancelX, y + 96, cancelX + 104, y + 118,
+		graphics.centeredText(font, "Please confirm that you want to continue.",
+			x + w / 2, y + 68, RED);
+		String intensity = SparklingAlertStyle.NAMES[
+			Math.clamp(pendingSparklingIntensity, 0, SparklingAlertStyle.CUSTOM_INDEX)];
+		drawCenteredText(graphics,
+			pendingSparklingIntensity == SparklingAlertStyle.CUSTOM_INDEX
+				? "Open Custom Alert Editor?" : "Use " + intensity + " intensity?",
+			x + w / 2, y + 88, GOLD);
+		boolean customChoice = pendingSparklingIntensity == SparklingAlertStyle.CUSTOM_INDEX;
+		boolean canCustomizePreset = customChoice && pendingSparklingSourcePreset >= 0;
+		int buttonY = y + 114;
+		int cancelX = canCustomizePreset ? x + w / 2 - 192 : x + w / 2 - 108;
+		int enableX = cancelX + 112;
+		drawButton(graphics, cancelX, buttonY, 104, "Cancel", mouseX, mouseY);
+		drawButton(graphics, enableX, buttonY, 104,
+			customChoice ? "Open Editor" : "Use Preset", mouseX, mouseY);
+		hits.add(new Hit(cancelX, buttonY, cancelX + 104, buttonY + 22,
 			this::cancelSparklingIntensity));
-			hits.add(new Hit(enableX, y + 96, enableX + 104, y + 118, () -> {
+		hits.add(new Hit(enableX, buttonY, enableX + 104, buttonY + 22, () -> {
 			ConfigManager.get().sparkling.specialSparklingIntensity =
-				Math.clamp(pendingSparklingIntensity, 1, 3);
+				Math.clamp(pendingSparklingIntensity, 1, SparklingAlertStyle.CUSTOM_INDEX);
+			boolean custom = pendingSparklingIntensity == SparklingAlertStyle.CUSTOM_INDEX;
 			specialSparklingConfirmation = false;
 			pendingSparklingIntensity = -1;
-			if (search != null) search.visible = true;
+			if (custom) openCustomSparklingPanel();
+			else if (search != null) search.visible = true;
 			ConfigManager.save();
 		}));
+		if (canCustomizePreset) {
+			int customizeX = enableX + 112;
+			drawButton(graphics, customizeX, buttonY, 160,
+				"Customize Current Preset", mouseX, mouseY);
+			hits.add(new Hit(customizeX, buttonY, customizeX + 160, buttonY + 22, () -> {
+				int preset = Math.clamp(pendingSparklingSourcePreset, 0,
+					SparklingAlertStyle.CUSTOM_INDEX - 1);
+				SparklingAlertStyle.copyToCustom(SparklingAlertStyle.preset(preset));
+				ConfigManager.get().sparkling.specialSparklingIntensity =
+					SparklingAlertStyle.CUSTOM_INDEX;
+				specialSparklingConfirmation = false;
+				pendingSparklingIntensity = -1;
+				openCustomSparklingPanel();
+				ConfigManager.save();
+			}));
+		}
 	}
 
 	private void drawPartySyncConfirmation(GuiGraphicsExtractor graphics,
@@ -1891,7 +3003,7 @@ public final class SafariSettingsScreen extends Screen {
 		editingNumberOriginal = null;
 		inlineEditorLeft = inlineEditorTop = inlineEditorRight = inlineEditorBottom = 0;
 		editingSliderLeft = editingSliderTop = editingSliderRight = editingSliderBottom = 0;
-		if (search != null) search.visible = !customThemePanel;
+		if (search != null) search.visible = !customThemePanel && !customSparklingPanel;
 	}
 
 	private void drawUnlockPanel(GuiGraphicsExtractor graphics) {
@@ -2010,7 +3122,7 @@ public final class SafariSettingsScreen extends Screen {
 		}
 
 		// Orbiting sparks make the unlock feel distinct without creating independent
-		// widgets; all geometry is rebuilt together on the shared 25 FPS clock.
+		// widgets; all geometry is rebuilt together on the shared 40 FPS clock.
 		int orbit = Math.max(26, constellationSize / 3);
 		float phase = (now % 4_000L) / 4_000f;
 		for (int i = 0; i < 24; i++) {
@@ -2106,6 +3218,18 @@ public final class SafariSettingsScreen extends Screen {
 
 	@Override
 	public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
+		if (event.button() == 0) blurInlineFieldsOutside(event.x(), event.y());
+		if (event.button() == 0 && search != null && search.visible
+				&& inside(event.x(), event.y(), searchFrameX, searchFrameY,
+					searchFrameX + searchFrameWidth, searchFrameY + searchFrameHeight)
+				&& !search.isMouseOver(event.x(), event.y())) {
+			search.setFocused(true);
+			if (event.x() < search.getX()) search.setCursorPosition(0);
+			else if (event.x() >= search.getX() + search.getWidth()) {
+				search.setCursorPosition(search.getValue().length());
+			}
+			return true;
+		}
 		if (choiceField != null && isSoundChoice(choiceField) && event.button() == 1) {
 			for (SoundPreviewHit hit : soundPreviewHits) {
 				if (!hit.contains(event.x(), event.y())) continue;
@@ -2135,8 +3259,49 @@ public final class SafariSettingsScreen extends Screen {
 		if (editor != null && editor.isMouseOver(event.x(), event.y())) {
 			return super.mouseClicked(event, doubled);
 		}
+		if (customSparklingPanel && !customPresetMenu && customCalloutEditor != null
+				&& customCalloutEditor.visible
+				&& customCalloutEditor.isMouseOver(event.x(), event.y())) {
+			return super.mouseClicked(event, doubled);
+		}
+		if (customSparklingPanel && !customPresetMenu && customDurationEditor != null
+				&& customDurationEditor.visible && customDurationEditor.active
+				&& customDurationEditor.isMouseOver(event.x(), event.y())) {
+			return super.mouseClicked(event, doubled);
+		}
+		if (customSparklingPanel && !customPresetMenu && customVolumeEditor != null
+				&& customVolumeEditor.visible && customVolumeEditor.active
+				&& customVolumeEditor.isMouseOver(event.x(), event.y())) {
+			return super.mouseClicked(event, doubled);
+		}
+		if (customSparklingPanel && customPresetNameEditor != null
+				&& customPresetNameEditor.visible && customPresetNameEditor.active
+				&& customPresetNameEditor.isMouseOver(event.x(), event.y())) {
+			return super.mouseClicked(event, doubled);
+		}
+		if (customSparklingPanel && !customPresetMenu && event.button() == 0
+				&& inside(event.x(), event.y(), customDurationSliderLeft,
+					customDurationSliderTop + 3,
+					customDurationSliderLeft + customDurationSliderWidth,
+					customDurationSliderTop + 18)) {
+			customDurationDragging = true;
+			customVolumeDragging = false;
+			updateCustomDuration(event.x());
+			return true;
+		}
+		if (customSparklingPanel && !customPresetMenu && event.button() == 0
+				&& inside(event.x(), event.y(), customVolumeSliderLeft,
+					customVolumeSliderTop + 3,
+					customVolumeSliderLeft + customVolumeSliderWidth,
+					customVolumeSliderTop + 18)) {
+			customVolumeDragging = true;
+			customDurationDragging = false;
+			updateCustomVolume(event.x());
+			return true;
+		}
 		if (event.button() == 0) {
-			int minimum = modalHitStart >= 0 ? modalHitStart : 0;
+			int minimum = customPresetHitStart >= 0 ? customPresetHitStart
+				: modalHitStart >= 0 ? modalHitStart : 0;
 			for (int i = hits.size() - 1; i >= minimum; i--) {
 				Hit hit = hits.get(i);
 				if (!hit.contains(event.x(), event.y())) continue;
@@ -2144,13 +3309,78 @@ public final class SafariSettingsScreen extends Screen {
 				return true;
 			}
 		}
-		if (modalHitStart >= 0) return true;
+		if (customPresetHitStart >= 0 || modalHitStart >= 0) return true;
 		return super.mouseClicked(event, doubled);
+	}
+
+	private void blurInlineFieldsOutside(double mouseX, double mouseY) {
+		if (search != null && search.isFocused()
+				&& !inside(mouseX, mouseY, searchFrameX, searchFrameY,
+					searchFrameX + searchFrameWidth, searchFrameY + searchFrameHeight)) {
+			search.setFocused(false);
+		}
+		if (customCalloutEditor != null && customCalloutEditor.isFocused()
+				&& !customCalloutEditor.isMouseOver(mouseX, mouseY)) {
+			customCalloutEditor.setFocused(false);
+		}
+		if (customDurationEditor != null && customDurationEditor.isFocused()
+				&& !customDurationEditor.isMouseOver(mouseX, mouseY)) {
+			applyCustomDurationEditor();
+			customDurationEditor.setFocused(false);
+		}
+		if (customVolumeEditor != null && customVolumeEditor.isFocused()
+				&& !customVolumeEditor.isMouseOver(mouseX, mouseY)) {
+			applyCustomVolumeEditor();
+			customVolumeEditor.setFocused(false);
+		}
+		if (customPresetNameEditor != null && customPresetNameEditor.isFocused()
+				&& !customPresetNameEditor.isMouseOver(mouseX, mouseY)) {
+			customPresetNameEditor.setFocused(false);
+		}
+	}
+
+	private boolean blurFocusedInlineField() {
+		if (customPresetNameEditor != null && customPresetNameEditor.isFocused()) {
+			customPresetNameEditor.setFocused(false);
+			setFocused(null);
+			return true;
+		}
+		if (customCalloutEditor != null && customCalloutEditor.isFocused()) {
+			customCalloutEditor.setFocused(false);
+			setFocused(null);
+			return true;
+		}
+		if (customDurationEditor != null && customDurationEditor.isFocused()) {
+			applyCustomDurationEditor();
+			customDurationEditor.setFocused(false);
+			setFocused(null);
+			return true;
+		}
+		if (customVolumeEditor != null && customVolumeEditor.isFocused()) {
+			applyCustomVolumeEditor();
+			customVolumeEditor.setFocused(false);
+			setFocused(null);
+			return true;
+		}
+		if (search != null && search.isFocused()) {
+			search.setFocused(false);
+			setFocused(null);
+			return true;
+		}
+		return false;
 	}
 
 	@Override
 	public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
 		if (updateColourControl(event.x(), event.y())) return true;
+		if (customDurationDragging) {
+			updateCustomDuration(event.x());
+			return true;
+		}
+		if (customVolumeDragging) {
+			updateCustomVolume(event.x());
+			return true;
+		}
 		if (draggingSlider != null) {
 			updateSlider(event.x());
 			return true;
@@ -2160,6 +3390,16 @@ public final class SafariSettingsScreen extends Screen {
 
 	@Override
 	public boolean mouseReleased(MouseButtonEvent event) {
+		if (customDurationDragging) {
+			customDurationDragging = false;
+			ConfigManager.save();
+			return true;
+		}
+		if (customVolumeDragging) {
+			customVolumeDragging = false;
+			ConfigManager.save();
+			return true;
+		}
 		if (draggingSlider != null) {
 			draggingSlider = null;
 			draggingOwner = null;
@@ -2200,6 +3440,18 @@ public final class SafariSettingsScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(KeyEvent event) {
+		if (customSparklingPanel && customPresetNaming && event.key() == 257) {
+			finishPresetSave();
+			return true;
+		}
+		if (event.key() == 257 && blurFocusedInlineField()) return true;
+		// Alt+Tab can deliver the Tab key before Windows removes focus. Do not let
+		// Minecraft cycle focus into hidden widgets behind this modal.
+		if (customSparklingPanel && event.key() == 258) return true;
+		if (customSparklingPanel && customPresetMenu && event.key() == 256) {
+			closeCustomPresetMenu();
+			return true;
+		}
 		if (specialSparklingConfirmation && event.key() == 256) {
 			cancelSparklingIntensity();
 			return true;
@@ -2222,6 +3474,10 @@ public final class SafariSettingsScreen extends Screen {
 		}
 		if (customThemePanel && event.key() == 256) {
 			closeCustomThemePanel();
+			return true;
+		}
+		if (customSparklingPanel && event.key() == 256) {
+			closeCustomSparklingPanel();
 			return true;
 		}
 		if (unlockPanel && event.key() == 256) {
@@ -2262,25 +3518,13 @@ public final class SafariSettingsScreen extends Screen {
 			} else {
 				field.setInt(owner, Math.floorMod(current + direction, dropdown.values().length));
 			}
-			applyChoiceSideEffect(field, field.getInt(owner));
 			ConfigManager.save();
 		} catch (IllegalAccessException ignored) {
 		}
 	}
 
-	private static void applyChoiceSideEffect(Field field, int value) {
-		if (field != null && field.getName().equals("outputLogPreset")) {
-			OutputLogPresets.apply(value);
-		}
-	}
-
 	private String dropdownLabel(Field field, SettingChoice dropdown, int value) {
 		if (isSoundChoice(field)) return AlertSounds.label(value);
-		if (field.getName().equals("outputLogPreset")) {
-			int matchedPreset = OutputLogPresets.syncSelection();
-			return matchedPreset >= 0 && matchedPreset < dropdown.values().length
-				? dropdown.values()[matchedPreset] : dropdown.values()[0];
-		}
 		if (isThemeChoice(field)) return THEMES.stream().filter(theme -> theme.id == value)
 			.findFirst().map(ThemeChoice::label).orElse("Default");
 		return value >= 0 && value < dropdown.values().length ? dropdown.values()[value] : dropdown.values()[0];

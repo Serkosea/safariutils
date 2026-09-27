@@ -1,7 +1,9 @@
 package dev.serko.safariutils.client;
 
 import com.mojang.blaze3d.pipeline.DepthStencilState;
+import com.mojang.blaze3d.pipeline.ColorTargetState;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
+import com.mojang.blaze3d.pipeline.BlendFunction;
 import com.mojang.blaze3d.platform.CompareOp;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -51,7 +53,10 @@ public final class WaypointRenderer {
 	private static final float LABEL_SCALE = 0.025f;
 	/** Shared by every live box submitted during the current render pass. */
 	private static float framePartialTick;
+	private static Set<java.util.UUID> replacedVanillaNames = new java.util.HashSet<>();
+	private static Set<java.util.UUID> nextReplacedVanillaNames = new java.util.HashSet<>();
 	private static final int LABEL_CACHE_LIMIT = 512;
+	private static final int PROVISIONAL_SHAPE_CACHE_LIMIT = 256;
 	private static final Map<LabelKey, CachedLabel> LABEL_CACHE =
 		new LinkedHashMap<>(LABEL_CACHE_LIMIT, 0.75f, true) {
 			@Override
@@ -59,9 +64,18 @@ public final class WaypointRenderer {
 				return size() > LABEL_CACHE_LIMIT;
 			}
 		};
+	/** Last exact label-to-body geometry, reused only while that same label is bodyless. */
+	private static final Map<java.util.UUID, ProvisionalShape> PROVISIONAL_SHAPES =
+		new LinkedHashMap<>(PROVISIONAL_SHAPE_CACHE_LIMIT, 0.75f, true) {
+			@Override
+			protected boolean removeEldestEntry(Map.Entry<java.util.UUID, ProvisionalShape> eldest) {
+				return size() > PROVISIONAL_SHAPE_CACHE_LIMIT;
+			}
+		};
 	private record LabelKey(String label, long distance, long rainbowFrame) { }
 	private record CachedLabel(FormattedCharSequence sequence, int width) { }
 	private record VisibleMarker(Markers.Marker marker, double distance, boolean seeThrough) { }
+	private record ProvisionalShape(Vec3 bodyOffset, double width, double height) { }
 
 	/**
 	 * The lines pipeline with the depth test disabled, so the box shows through terrain.
@@ -80,6 +94,37 @@ public final class WaypointRenderer {
 		RenderSetup.builder(LINES_THROUGH_WALLS)
 			.setLayeringTransform(LayeringTransform.VIEW_OFFSET_Z_LAYERING)
 			.setOutputTarget(OutputTarget.ITEM_ENTITY_TARGET)
+			.createRenderSetup());
+
+	/** Textured translucent beacon pipeline that remains visible through terrain. */
+	private static final RenderPipeline BEACON_THROUGH_WALLS_PIPELINE = RenderPipelines.register(
+		RenderPipeline.builder(RenderPipelines.BEACON_BEAM_SNIPPET)
+			.withLocation(Identifier.fromNamespaceAndPath(SafariUtils.MOD_ID,
+				"pipeline/beacon_through_walls"))
+			.withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
+			.withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
+			.build());
+
+	private static final RenderType BEACON_THROUGH_WALLS = RenderType.create(
+		SafariUtils.MOD_ID + ":beacon_through_walls",
+		RenderSetup.builder(BEACON_THROUGH_WALLS_PIPELINE)
+			.withTexture("Sampler0", BeaconRenderer.BEAM_LOCATION)
+			.sortOnUpload()
+			.createRenderSetup());
+
+	/** Ordinary depth-tested beam used when Safe Mode requires visual confirmation. */
+	private static final RenderPipeline BEACON_DEPTH_TESTED_PIPELINE = RenderPipelines.register(
+		RenderPipeline.builder(RenderPipelines.BEACON_BEAM_SNIPPET)
+			.withLocation(Identifier.fromNamespaceAndPath(SafariUtils.MOD_ID,
+				"pipeline/beacon_depth_tested"))
+			.withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
+			.build());
+
+	private static final RenderType BEACON_DEPTH_TESTED = RenderType.create(
+		SafariUtils.MOD_ID + ":beacon_depth_tested",
+		RenderSetup.builder(BEACON_DEPTH_TESTED_PIPELINE)
+			.withTexture("Sampler0", BeaconRenderer.BEAM_LOCATION)
+			.sortOnUpload()
 			.createRenderSetup());
 
 	/** Depth-tested fill used for the visible top face of a floor drop. */
@@ -102,6 +147,7 @@ public final class WaypointRenderer {
 		Minecraft client = Minecraft.getInstance();
 		if (client.player == null || ClientCompat.hudHidden()) return;
 		if (!SafariLocation.inside()) return;
+		nextReplacedVanillaNames.clear();
 		framePartialTick = client.getDeltaTracker().getGameTimeDeltaPartialTick(false);
 
 		List<Markers.Marker> markers = Markers.collect();
@@ -133,11 +179,16 @@ public final class WaypointRenderer {
 				RenderType lineType = seeThrough ? LINES : RenderTypes.LINES;
 
 				AABB box = marker.box();
-				poses.pushPose();
-				poses.translate(box.minX - camera.x, box.minY - camera.y, box.minZ - camera.z);
-				backend.geometry(lineType, (pose, lines) -> box(pose, lines, (float) box.getXsize(),
-					(float) box.getYsize(), (float) box.getZsize(), marker.colour()));
-				poses.popPose();
+				if (marker.label().startsWith("SPARKLING ")) {
+					drawRainbowBox(poses, backend, lineType, box, camera);
+				} else {
+					poses.pushPose();
+					poses.translate(box.minX - camera.x, box.minY - camera.y, box.minZ - camera.z);
+					backend.geometry(lineType, (pose, lines) -> box(pose, lines,
+						(float) box.getXsize(), (float) box.getYsize(),
+						(float) box.getZsize(), marker.colour()));
+					poses.popPose();
+				}
 			}
 			// Flushed here rather than left to the end of the frame, so every box is
 			// drawn before the first label and a waypoint reads as one thing.
@@ -158,6 +209,77 @@ public final class WaypointRenderer {
 		renderTrackedWaypoints(context, backend, camera);
 		renderFloorDropFaces(context, backend, camera);
 		renderDiagnosticHitboxes(context, backend, camera);
+		// Publish only after the complete pass. Vanilla entity names may be extracted
+		// before or after this callback, so they use one stable frame snapshot.
+		Set<java.util.UUID> previous = replacedVanillaNames;
+		replacedVanillaNames = nextReplacedVanillaNames;
+		nextReplacedVanillaNames = previous;
+	}
+
+	/** Rendering-only test used by the entity-name mixin. */
+	public static boolean replacesVanillaName(Entity entity) {
+		if (!ConfigManager.get().display.enableHitboxes || !SafariLocation.inside()) return false;
+		if (replacedVanillaNames.contains(entity.getUUID())) return true;
+		// Entity render states may be extracted before this frame's waypoint pass.
+		// Evaluate the shared hitbox conditions directly instead of depending only on
+		// the previous published render snapshot.
+		CritterEntities.Sighting sighting = CritterEntities.sightingFor(entity.getUUID());
+		if (sighting != null && rendersLiveHitbox(sighting)) return true;
+		Critter bodyless = CritterEntities.bodylessLabelCritter(entity.getUUID());
+		if (bodyless != null && captureTransitionReplacesName(bodyless)) return true;
+		return sighting != null && captureTransitionReplacesName(sighting.critter());
+	}
+
+	/** Only dedicated waypoint species replace their vanilla name during a recatch pin. */
+	private static boolean captureTransitionReplacesName(Critter critter) {
+		SafariConfig.DisplayConfig display = ConfigManager.get().display;
+		return display.recatchHelper
+			&& EXCLUDED_FROM_HITBOXES.contains(critter.name())
+			&& trackedWaypointEnabled(critter.name(), display)
+			&& RecatchSpots.captureInProgress(critter);
+	}
+
+	/** Mirrors live-render eligibility without relying on render-pass ordering. */
+	private static boolean rendersLiveHitbox(CritterEntities.Sighting sighting) {
+		SafariConfig.DisplayConfig display = ConfigManager.get().display;
+		Critter critter = sighting.critter();
+		Entity body = sighting.mob();
+		boolean sparkling = SparklingWatch.presentsAsSparkling(sighting);
+
+		if (body != null && RecatchSpots.isCaptureArtifact(critter, body)) return false;
+		if (sparkling && SparklingWatch.isOutstanding(sighting)) {
+			if (body == null && !"Hideyho".equals(critter.name())
+				&& (!SparklingWatch.provisionalMarkerAllowed(critter)
+					|| RecatchSpots.captureInProgress(critter))) return false;
+			if (SafeMode.sparklingCritters()
+				&& (body == null || !VisibilityCheck.canSee(body))
+				&& !VisibilityCheck.canSeeVisibleName(sighting.label())) return false;
+			return body == null || !isRecatchPinned(body.getUUID());
+		}
+
+		if (body == null) {
+			if ("Hideyho".equals(critter.name()) || RecatchSpots.captureInProgress(critter)) return false;
+			if (EXCLUDED_FROM_HITBOXES.contains(critter.name())
+				&& !trackedWaypointEnabled(critter.name(), display)) return false;
+			if (SparklingMode.hideOrdinaryHitbox(critter, sparkling)) return false;
+			return !SafeMode.hiddenCritter(critter, sparkling)
+				|| VisibilityCheck.canSeeVisibleName(sighting.label());
+		}
+
+		if (EntityTypeIds.is(body, "player") || isRecatchPinned(body.getUUID())
+			|| SparklingMode.hideOrdinaryHitbox(critter, sparkling)) return false;
+		if (!EXCLUDED_FROM_HITBOXES.contains(critter.name())) return true;
+		if (SafariLocation.biome() != critter.biome() || StillCritters.isResolved(body.getUUID())) {
+			return false;
+		}
+		return !SafeMode.hiddenCritter(critter, sparkling)
+			|| StillCritters.isVisiblyConfirmed(body.getUUID());
+	}
+
+	/** Both the floating label and some critter bodies can independently render a name. */
+	private static void markVanillaNameReplaced(CritterEntities.Sighting sighting) {
+		nextReplacedVanillaNames.add(sighting.label().getUUID());
+		if (sighting.mob() != null) nextReplacedVanillaNames.add(sighting.mob().getUUID());
 	}
 
 	/** Animated colour shared by every Sparkling world-space element. */
@@ -167,6 +289,7 @@ public final class WaypointRenderer {
 	private static final double SPARKLING_BEAM_WIDTH = 0.56;
 	private static final double SPARKLING_BEAM_CORE_WIDTH = 0.22;
 	private static final double SPARKLING_BEAM_TOP = 320.0;
+	private static final int SPARKLING_BEAM_GRADIENT_SEGMENTS = 24;
 
 	/** Species with their own dedicated waypoint further down. */
 	private static final Set<String> EXCLUDED_FROM_HITBOXES =
@@ -220,8 +343,6 @@ public final class WaypointRenderer {
 		// would not otherwise have, and a diagnostic tool the player deliberately
 		// turned on is the opposite of that, so it takes precedence unconditionally.
 		int colour = 0xFFFF00FF;
-		double maxDistanceSq = (double) ConfigManager.get().display.hitboxDistance
-			* ConfigManager.get().display.hitboxDistance;
 		boolean anyDrawn = false;
 
 		record Found(Markers.Marker marker, double distance) {
@@ -238,7 +359,6 @@ public final class WaypointRenderer {
 			if (!wanted) continue;
 
 			AABB box = hitboxFor(entity);
-			if (distanceSquared(box, camera) > maxDistanceSq) continue;
 			if (!drawBox(poses, backend, LINES, box, camera, colour)) continue;
 			anyDrawn = true;
 
@@ -295,7 +415,6 @@ public final class WaypointRenderer {
 		// worth spotting through a wall the same way, whereas an ordinary hitbox
 		// staying depth-tested is deliberate: see the class doc.
 		int fixedColour = Colours.argb(display.hitboxColour, 0xFFFFFFFF);
-		double maxDistanceSq = (double) display.hitboxDistance * display.hitboxDistance;
 		boolean anyDrawn = false;
 		boolean anyThroughWalls = false;
 
@@ -305,17 +424,50 @@ public final class WaypointRenderer {
 
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
 			String name = sighting.critter().name();
-			if (EXCLUDED_FROM_HITBOXES.contains(name)) continue;
-
+			boolean sparkling = SparklingWatch.presentsAsSparkling(sighting);
+			// Outstanding Sparklings use the dedicated renderer below so their box,
+			// name, and beacon remain one continuous marker.
+			if (sparkling && SparklingWatch.isOutstanding(sighting)) continue;
 			Entity entity = sighting.mob();
-			if (entity == null) continue;
+			if (entity != null && RecatchSpots.isCaptureArtifact(sighting.critter(), entity)) continue;
+			if (entity == null) {
+				// Hideyho's named player is its real body and has its own exact solver.
+				// Other bodyless labels receive a moving approximate box while pairing.
+				if ("Hideyho".equals(name) || RecatchSpots.captureInProgress(sighting.critter())) continue;
+				if (EXCLUDED_FROM_HITBOXES.contains(name)
+					&& !trackedWaypointEnabled(name, display)) continue;
+				if (SparklingMode.hideOrdinaryHitbox(sighting.critter(), sparkling)) continue;
+				if (SafeMode.hiddenCritter(sighting.critter(), sparkling)
+					&& !VisibilityCheck.canSeeVisibleName(sighting.label())) continue;
+
+				boolean diagnostic = BuildVersion.DEVELOPER && AdvancedUnlock.isUnlocked()
+					&& ConfigManager.get().advanced.showAllCritterHitboxes;
+				int colour = critterHitboxColour(sighting.critter(), sparkling);
+				AABB box = provisionalCritterHitbox(sighting.critter(), sighting.label());
+				boolean seeThrough = !SafeMode.critterHitboxes(sparkling) || diagnostic;
+				if (seeThrough) {
+					if (!(sparkling ? drawRainbowBox(poses, backend, LINES, box, camera)
+						: drawBox(poses, backend, LINES, box, camera, colour))) continue;
+					anyThroughWalls = true;
+				} else {
+					if (!(sparkling ? drawRainbowBox(poses, backend, RenderTypes.LINES, box, camera)
+						: drawBox(poses, backend, RenderTypes.LINES, box, camera, colour))) continue;
+					anyDrawn = true;
+				}
+				drawn.add(new Found(new Markers.Marker(box,
+					(sparkling ? "SPARKLING " : "") + name, colour, Markers.Style.HIGHLIGHT),
+					Math.sqrt(distanceSquared(box, camera)), seeThrough));
+				markVanillaNameReplaced(sighting);
+				continue;
+			}
+			if (EXCLUDED_FROM_HITBOXES.contains(name)) continue;
 			if (EntityTypeIds.is(entity, "player")) continue;
+			rememberProvisionalShape(sighting.label(), entity);
 
 			// A recatch pin replaces only that individual's ordinary hitbox.
 			if (isRecatchPinned(entity.getUUID())) continue;
 
 			// Diagnostic, Sparkling, unique-status, and configured colors apply in that order.
-			boolean sparkling = SparklingWatch.isSparkling(sighting);
 			if (SparklingMode.hideOrdinaryHitbox(sighting.critter(), sparkling)) continue;
 			boolean diagnostic = BuildVersion.DEVELOPER && AdvancedUnlock.isUnlocked()
 				&& ConfigManager.get().advanced.showAllCritterHitboxes;
@@ -327,14 +479,15 @@ public final class WaypointRenderer {
 				: display.hitboxRarityColour ? 0xFF000000 | sighting.critter().rarity().colour() : fixedColour;
 
 			AABB box = hitboxFor(entity);
-			if (distanceSquared(box, camera) > maxDistanceSq) continue;
 			// Diagnostics override Safe Mode depth testing; ordinary hitboxes do not.
 			boolean seeThrough = !SafeMode.critterHitboxes(sparkling) || diagnostic;
 			if (seeThrough) {
-				if (!drawBox(poses, backend, LINES, box, camera, colour)) continue;
+				if (!(sparkling ? drawRainbowBox(poses, backend, LINES, box, camera)
+					: drawBox(poses, backend, LINES, box, camera, colour))) continue;
 				anyThroughWalls = true;
 			} else {
-				if (!drawBox(poses, backend, RenderTypes.LINES, box, camera, colour)) continue;
+				if (!(sparkling ? drawRainbowBox(poses, backend, RenderTypes.LINES, box, camera)
+					: drawBox(poses, backend, RenderTypes.LINES, box, camera, colour))) continue;
 				anyDrawn = true;
 			}
 
@@ -342,6 +495,7 @@ public final class WaypointRenderer {
 				+ (display.hitboxPityTitle ? Markers.pityLabel(sighting.critter(), entity.getUUID()) : "");
 			drawn.add(new Found(new Markers.Marker(box, label, colour, Markers.Style.HIGHLIGHT),
 				Math.sqrt(distanceSquared(box, camera)), seeThrough));
+			markVanillaNameReplaced(sighting);
 		}
 
 		Minecraft client = Minecraft.getInstance();
@@ -360,7 +514,6 @@ public final class WaypointRenderer {
 				double height = wrapper.getBbHeight();
 				AABB box = new AABB(pos.x - halfWidth, pos.y, pos.z - halfWidth,
 					pos.x + halfWidth, pos.y + height, pos.z + halfWidth);
-				if (distanceSquared(box, camera) > maxDistanceSq) continue;
 				if (drawBox(poses, backend, RenderTypes.LINES, box, camera, fixedColour)) {
 					anyDrawn = true;
 				}
@@ -374,6 +527,15 @@ public final class WaypointRenderer {
 		for (Found found : drawn) {
 			label(poses, backend, found.marker(), camera, found.distance(), found.seeThrough());
 		}
+	}
+
+	/** Keeps provisional tracked-species boxes under the same toggle as their exact box. */
+	private static boolean trackedWaypointEnabled(String critterName,
+			SafariConfig.DisplayConfig display) {
+		for (TrackedWaypoint tracked : TRACKED_WAYPOINTS) {
+			if (tracked.critterName().equals(critterName)) return tracked.enabled().test(display);
+		}
+		return false;
 	}
 
 	/** One entity sweep per game tick supplies every render frame's fish pairing. */
@@ -393,51 +555,118 @@ public final class WaypointRenderer {
 	/** Marks every detected Sparkling independently of the ordinary hitbox setting. */
 	private static void renderSparklingMarkers(LevelRenderContext context,
 			WaypointRenderBackend backend, Vec3 camera) {
+		SafariConfig.DisplayConfig display = ConfigManager.get().display;
 		PoseStack poses = context.poseStack();
-		boolean drawn = false;
-		RenderType beamCore = RenderTypes.beaconBeam(BeaconRenderer.BEAM_LOCATION, false);
-		RenderType beamGlow = RenderTypes.beaconBeam(BeaconRenderer.BEAM_LOCATION, true);
+		boolean beamsDrawn = false;
+		boolean throughBoxesDrawn = false;
+		boolean depthBoxesDrawn = false;
+		RenderType beamCore = SafeMode.sparklingCritters()
+			? BEACON_DEPTH_TESTED : BEACON_THROUGH_WALLS;
+		RenderType beamGlow = beamCore;
+		record Found(Markers.Marker marker, double distance, boolean seeThrough) { }
+		List<Found> labels = new java.util.ArrayList<>();
 
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-			if (!SparklingWatch.isOutstanding(sighting) || sighting.mob() == null) continue;
-			// Extra mode may remember a Sparkling before it is in view. Safe Mode
-			// must not turn that retained knowledge into a beam through terrain.
-			if (SafeMode.sparklingCritters()
-				&& !VisibilityCheck.canSee(sighting.mob())
-				&& !VisibilityCheck.canSeeVisibleName(sighting.label())) continue;
-			AABB body = hitboxFor(sighting.mob());
-			if (distanceSquared(body, camera) > MAX_DISTANCE * MAX_DISTANCE) continue;
+			if (!SparklingWatch.isOutstanding(sighting)) continue;
+			Entity body = sighting.mob();
+			if (body != null && RecatchSpots.isCaptureArtifact(sighting.critter(), body)) continue;
+			boolean labelIsBody = "Hideyho".equals(sighting.critter().name());
+			if (body == null && !labelIsBody
+				&& (!SparklingWatch.provisionalMarkerAllowed(sighting.critter())
+					|| RecatchSpots.captureInProgress(sighting.critter()))) continue;
+			// Safe Mode retains a confirmed marker but depth-tests its beacon; Extra Mode
+			// may continue using the beacon as a through-terrain guide.
+			if (body != null) rememberProvisionalShape(sighting.label(), body);
+			AABB box = labelIsBody
+				? hideyhoHitbox(renderPosition(sighting.label()), sighting.label().blockPosition())
+				: "Duplico".equals(sighting.critter().name())
+					? duplicoHitbox(sighting.label())
+				: body != null ? presentedHitbox(sighting.critter(), body)
+				: provisionalCritterHitbox(sighting.critter(), sighting.label());
+			double distanceSq = distanceSquared(box, camera);
+			int colour = sparklingColour();
 
-			double centreX = (body.minX + body.maxX) * 0.5;
-			double centreZ = (body.minZ + body.maxZ) * 0.5;
+			if (display.enableHitboxes && (body == null || !isRecatchPinned(body.getUUID()))) {
+				boolean seeThrough = !SafeMode.critterHitboxes(true);
+				if (drawRainbowBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
+						box, camera)) {
+					if (seeThrough) throughBoxesDrawn = true;
+					else depthBoxesDrawn = true;
+					String pity = display.hitboxPityTitle && body != null
+						? Markers.pityLabel(sighting.critter(), body.getUUID()) : "";
+					labels.add(new Found(new Markers.Marker(box,
+						"SPARKLING " + sighting.critter().name() + pity, colour,
+						Markers.Style.HIGHLIGHT), Math.sqrt(distanceSq), seeThrough));
+					markVanillaNameReplaced(sighting);
+				}
+			}
+
+			// Hitboxes follow every loaded detection; the tall beacon keeps its normal
+			// 200-block budget because its geometry is much larger than a small box.
+			if (distanceSq > MAX_DISTANCE * MAX_DISTANCE) continue;
+			double centreX = (box.minX + box.maxX) * 0.5;
+			double centreZ = (box.minZ + box.maxZ) * 0.5;
 			double half = SPARKLING_BEAM_WIDTH * 0.5;
-			double top = Math.max(SPARKLING_BEAM_TOP, body.maxY + 64.0);
-			AABB beam = new AABB(centreX - half, body.maxY, centreZ - half,
+			double top = Math.max(SPARKLING_BEAM_TOP, box.maxY + 64.0);
+			AABB beam = new AABB(centreX - half, box.maxY, centreZ - half,
 				centreX + half, top, centreZ + half);
 			if (!visible(beam)) continue;
-			int colour = sparklingColour();
-			drawBeaconBeam(poses, backend, beamGlow, beam, camera,
-				(0x4C << 24) | (colour & 0xFFFFFF));
+			drawRainbowBeaconBeam(poses, backend, beamGlow, beam, camera, 0x4C / 255f);
 			double coreHalf = SPARKLING_BEAM_CORE_WIDTH * 0.5;
-			AABB core = new AABB(centreX - coreHalf, body.maxY, centreZ - coreHalf,
+			AABB core = new AABB(centreX - coreHalf, box.maxY, centreZ - coreHalf,
 				centreX + coreHalf, top, centreZ + coreHalf);
-			drawBeaconBeam(poses, backend, beamCore, core, camera,
-				(0xD0 << 24) | (colour & 0xFFFFFF));
-			drawn = true;
+			drawRainbowBeaconBeam(poses, backend, beamCore, core, camera, 0xD0 / 255f);
+			beamsDrawn = true;
 		}
 
-		if (!drawn) return;
-		backend.flush(beamCore);
-		backend.flush(beamGlow);
+		if (throughBoxesDrawn) backend.flush(LINES);
+		if (depthBoxesDrawn) backend.flush(RenderTypes.LINES);
+		if (beamsDrawn) {
+			backend.flush(beamCore);
+			if (beamGlow != beamCore) backend.flush(beamGlow);
+		}
+		for (Found found : labels) {
+			label(poses, backend, found.marker(), camera, found.distance(), found.seeThrough());
+		}
 	}
 
-	/** Uses Minecraft's own beacon texture and pipelines for a continuous animated beam. */
-	private static void drawBeaconBeam(PoseStack poses, WaypointRenderBackend backend,
-			RenderType type, AABB beam, Vec3 camera, int colour) {
+	/** Duplico's named label follows its movement more smoothly than its swapped bodies. */
+	private static AABB duplicoHitbox(Entity label) {
+		Vec3 pos = renderPosition(label).add(0.0, -1.25, 0.0);
+		return CritterMarkerGeometry.blockSized(pos);
+	}
+
+	/** Temporary body-sized anchor until the named label pairs with its real mob. */
+	private static AABB provisionalCritterHitbox(Critter critter, Entity label) {
+		ProvisionalShape shape = PROVISIONAL_SHAPES.get(label.getUUID());
+		if (shape == null) {
+			// First-scan fallback only. Once paired, this label retains the body's exact
+			// dimensions and offset through short wake/movement transitions.
+			shape = new ProvisionalShape(new Vec3(0.0, -1.25, 0.0), 1.0, 1.0);
+		}
+		Vec3 pos = renderPosition(label).add(shape.bodyOffset());
+		if (CritterMarkerGeometry.usesBlockSize(critter)) {
+			return CritterMarkerGeometry.blockSized(pos);
+		}
+		double halfWidth = shape.width() * 0.5;
+		return new AABB(pos.x - halfWidth, pos.y, pos.z - halfWidth,
+			pos.x + halfWidth, pos.y + shape.height(), pos.z + halfWidth);
+	}
+
+	private static void rememberProvisionalShape(Entity label, Entity body) {
+		Vec3 labelPos = renderPosition(label);
+		Vec3 bodyPos = renderPosition(body);
+		PROVISIONAL_SHAPES.put(label.getUUID(), new ProvisionalShape(
+			bodyPos.subtract(labelPos), body.getBbWidth(), body.getBbHeight()));
+	}
+
+	/** Uses Minecraft's beacon texture with a vertically animated rainbow. */
+	private static void drawRainbowBeaconBeam(PoseStack poses, WaypointRenderBackend backend,
+			RenderType type, AABB beam, Vec3 camera, float alpha) {
 		poses.pushPose();
 		poses.translate(beam.minX - camera.x, beam.minY - camera.y, beam.minZ - camera.z);
-		backend.geometry(type, (pose, quads) -> beaconSides(pose, quads,
-			(float) beam.getXsize(), (float) beam.getYsize(), (float) beam.getZsize(), colour));
+		backend.geometry(type, (pose, quads) -> rainbowBeaconSides(pose, quads,
+			(float) beam.getXsize(), (float) beam.getYsize(), (float) beam.getZsize(), alpha));
 		poses.popPose();
 	}
 
@@ -480,13 +709,17 @@ public final class WaypointRenderer {
 		DebugLog.line("DRAW", critter.name() + " id=" + id.toString().substring(0, 8) + " -> " + state);
 	}
 
-	/** The box to draw for one sighting — its real size at this rendered frame. */
+	/** The vanilla bounding box translated to this render frame's interpolated position. */
 	private static AABB hitboxFor(Entity entity) {
-		Vec3 pos = renderPosition(entity);
-		double halfWidth = entity.getBbWidth() / 2.0;
-		double height = entity.getBbHeight();
-		return new AABB(pos.x - halfWidth, pos.y, pos.z - halfWidth,
-			pos.x + halfWidth, pos.y + height, pos.z + halfWidth);
+		Vec3 offset = renderPosition(entity).subtract(entity.position());
+		return entity.getBoundingBox().move(offset);
+	}
+
+	/** Applies presentation geometry consistently in ordinary and Sparkling paths. */
+	private static AABB presentedHitbox(Critter critter, Entity entity) {
+		return CritterMarkerGeometry.usesBlockSize(critter)
+			? CritterMarkerGeometry.blockSized(renderPosition(entity))
+			: hitboxFor(entity);
 	}
 
 	/**
@@ -497,11 +730,8 @@ public final class WaypointRenderer {
 			CritterEntities.Sighting sighting) {
 		Entity body = sighting.mob();
 		if (tracked.useRealHitbox()) return hitboxFor(body);
-		Vec3 pos = "Duplico".equals(tracked.critterName())
-			? renderPosition(sighting.label()).add(0.0, -1.25, 0.0)
-			: renderPosition(body);
-		return new AABB(pos.x - 0.5, pos.y, pos.z - 0.5,
-			pos.x + 0.5, pos.y + 1.0, pos.z + 0.5);
+		if ("Duplico".equals(tracked.critterName())) return duplicoHitbox(sighting.label());
+		return CritterMarkerGeometry.blockSized(renderPosition(body));
 	}
 
 	/** Matches vanilla entity rendering instead of stepping between 20 tick positions. */
@@ -590,10 +820,15 @@ public final class WaypointRenderer {
 				// drawing whichever the scan happened to reach first that frame.
 				for (CritterEntities.Sighting sighting : CritterEntities.all()) {
 					if (!tracked.critterName().equals(sighting.critter().name())) continue;
-					boolean sparkling = SparklingWatch.isSparkling(sighting);
-					if (SparklingMode.hideOrdinaryHitbox(critter, sparkling)) continue;
+					boolean sparkling = SparklingWatch.presentsAsSparkling(sighting);
 					Entity entity = sighting.mob();
 					if (entity == null) continue;
+					if (RecatchSpots.isCaptureArtifact(critter, entity)) continue;
+					if (sparkling && SparklingWatch.isOutstanding(sighting)) {
+						liveIds.add(entity.getUUID());
+						continue;
+					}
+					if (SparklingMode.hideOrdinaryHitbox(critter, sparkling)) continue;
 					if (StillCritters.isResolved(entity.getUUID())) continue;
 					if (SafeMode.hiddenCritter(critter, sparkling)
 						&& !StillCritters.isVisiblyConfirmed(entity.getUUID())) continue;
@@ -619,8 +854,11 @@ public final class WaypointRenderer {
 					AABB box = trackedHitboxFor(tracked, sighting);
 					boolean seeThrough = StillCritters.persistentThroughWalls(entity.getUUID())
 						|| !SafeMode.hiddenCritter(critter, sparkling);
-					if (!drawBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
-							box, camera, colour)) continue;
+					if (!(sparkling
+						? drawRainbowBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
+							box, camera)
+						: drawBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
+							box, camera, colour))) continue;
 					anyDrawn = true;
 					if (seeThrough) anyThroughWalls = true;
 					else anyDepthTested = true;
@@ -629,11 +867,11 @@ public final class WaypointRenderer {
 						+ Markers.pityLabel(critter, entity.getUUID());
 					drawn.add(new Found(new Markers.Marker(box, label, colour, Markers.Style.WAYPOINT),
 						Math.sqrt(distanceSquared(box, camera)), seeThrough));
+					markVanillaNameReplaced(sighting);
 				}
 
-				// Every remembered individual not already covered by a live sighting
-				// above — the ones out of range right now but seen recently enough to
-				// still trust, per StillCritters.
+				// Every remembered individual not already covered by a live sighting.
+				// Static sightings remain trusted until their location is checked empty.
 				for (StillCritters.Sighted remembered : StillCritters.entriesFor(critter)) {
 					if (hideOrdinary && !remembered.sparkling()
 						|| SparklingMode.hideOrdinaryHitbox(critter, remembered.sparkling())) continue;
@@ -655,8 +893,11 @@ public final class WaypointRenderer {
 						: uniqueColour != 0 ? uniqueColour : baseColour;
 					boolean seeThrough = remembered.persistentThroughWalls()
 						|| !SafeMode.hiddenCritter(critter, remembered.sparkling());
-					if (!drawBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
-							box, camera, colour)) continue;
+					if (!(remembered.sparkling()
+						? drawRainbowBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
+							box, camera)
+						: drawBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
+							box, camera, colour))) continue;
 					anyDrawn = true;
 					if (seeThrough) anyThroughWalls = true;
 					else anyDepthTested = true;
@@ -689,14 +930,16 @@ public final class WaypointRenderer {
 					Markers.Style.WAYPOINT, true), Math.sqrt(distanceSquared(box, camera)), true));
 			}
 			BlockPos hideyho = HideyhoSolver.position();
-			if (display.enableHitboxes && hideyho != null
+			if (display.enableHitboxes && hideyho != null && !HideyhoSolver.sparkling()
 				&& !SparklingMode.hideOrdinaryHitbox(hideyhoCritter, HideyhoSolver.sparkling())) {
-				// Two blocks tall, shifted down so the top lands where a single-block
-				// box would have sat — Hideyho is player-sized, and one block only ever
-				// covered its lower half.
-				AABB box = new AABB(
-					hideyho.getX(), hideyho.getY() - 2, hideyho.getZ(),
-					hideyho.getX() + 1, hideyho.getY(), hideyho.getZ() + 1);
+				// Confirmed Hideyhos can stand on a block edge. Preserve the entity's
+				// exact horizontal centre instead of snapping its box to blockPosition().
+				Vec3 exact = HideyhoSolver.positionExact();
+				double centreX = exact == null ? hideyho.getX() + 0.5 : exact.x;
+				double centreZ = exact == null ? hideyho.getZ() + 0.5 : exact.z;
+				// Keep the established vertical placement: two blocks tall, with its top
+				// at the catalog's Hideyho position.
+				AABB box = hideyhoHitbox(new Vec3(centreX, hideyho.getY(), centreZ), hideyho);
 				// This phase's position was directly confirmed already and Hideyho cannot
 				// move again until its explicit chat transition changes the phase.
 				boolean seeThrough = true;
@@ -715,6 +958,11 @@ public final class WaypointRenderer {
 						? "Hideyho (END)" : "Hideyho (START)");
 					drawn.add(new Found(new Markers.Marker(box, hideyhoLabel, liveColour,
 						Markers.Style.WAYPOINT), Math.sqrt(distanceSquared(box, camera)), seeThrough));
+					for (CritterEntities.Sighting sighting : CritterEntities.all()) {
+						if ("Hideyho".equals(sighting.critter().name())) {
+							markVanillaNameReplaced(sighting);
+						}
+					}
 				}
 			}
 		}
@@ -728,6 +976,14 @@ public final class WaypointRenderer {
 		}
 	}
 
+	/** Hideyho's label is its body, but its entity box is not the desired 1x2 solver box. */
+	private static AABB hideyhoHitbox(Vec3 exact, BlockPos upperBlock) {
+		double centreX = exact == null ? upperBlock.getX() + 0.5 : exact.x;
+		double centreZ = exact == null ? upperBlock.getZ() + 0.5 : exact.z;
+		return new AABB(centreX - 0.5, upperBlock.getY() - 2, centreZ - 0.5,
+			centreX + 0.5, upperBlock.getY(), centreZ + 0.5);
+	}
+
 	/** Draws one box already positioned in world space, relative to the camera. */
 	private static boolean drawBox(PoseStack poses, WaypointRenderBackend backend, RenderType lineType,
 							AABB box, Vec3 camera, int colour) {
@@ -736,6 +992,19 @@ public final class WaypointRenderer {
 		poses.translate(box.minX - camera.x, box.minY - camera.y, box.minZ - camera.z);
 		backend.geometry(lineType, (pose, lines) -> box(pose, lines, (float) box.getXsize(),
 			(float) box.getYsize(), (float) box.getZsize(), colour));
+		poses.popPose();
+		return true;
+	}
+
+	/** Draws one animated multi-colour Sparkling box without creating per-frame geometry objects. */
+	private static boolean drawRainbowBox(PoseStack poses, WaypointRenderBackend backend,
+			RenderType lineType, AABB box, Vec3 camera) {
+		if (!visible(box)) return false;
+		float phase = RainbowColours.phase(RainbowColours.frameId());
+		poses.pushPose();
+		poses.translate(box.minX - camera.x, box.minY - camera.y, box.minZ - camera.z);
+		backend.geometry(lineType, (pose, lines) -> rainbowBox(pose, lines,
+			(float) box.getXsize(), (float) box.getYsize(), (float) box.getZsize(), phase));
 		poses.popPose();
 		return true;
 	}
@@ -780,37 +1049,47 @@ public final class WaypointRenderer {
 		quad.addVertex(pose, 0, y, zSize).setColor(red, green, blue, alpha);
 	}
 
-	/** Four textured vertical faces, matching the structure of vanilla's beacon beam. */
-	private static void beaconSides(PoseStack.Pose stackPose, VertexConsumer quad,
-			float xSize, float ySize, float zSize, int colour) {
+	/** Four segmented faces let the beacon interpolate smoothly through several hues. */
+	private static void rainbowBeaconSides(PoseStack.Pose stackPose, VertexConsumer quad,
+			float xSize, float ySize, float zSize, float alpha) {
 		float scroll = -(System.currentTimeMillis() % 2_000L) / 2_000f;
-		float vBottom = scroll;
-		float vTop = scroll + ySize / 4f;
-		beaconFace(stackPose, quad, colour, vBottom, vTop,
-			0, 0, 0, xSize, 0, 0, xSize, ySize, 0, 0, ySize, 0);
-		beaconFace(stackPose, quad, colour, vBottom, vTop,
-			xSize, 0, 0, xSize, 0, zSize, xSize, ySize, zSize, xSize, ySize, 0);
-		beaconFace(stackPose, quad, colour, vBottom, vTop,
-			xSize, 0, zSize, 0, 0, zSize, 0, ySize, zSize, xSize, ySize, zSize);
-		beaconFace(stackPose, quad, colour, vBottom, vTop,
-			0, 0, zSize, 0, 0, 0, 0, ySize, 0, 0, ySize, zSize);
+		float phase = RainbowColours.phase(RainbowColours.frameId());
+		for (int segment = 0; segment < SPARKLING_BEAM_GRADIENT_SEGMENTS; segment++) {
+			float fraction0 = segment / (float) SPARKLING_BEAM_GRADIENT_SEGMENTS;
+			float fraction1 = (segment + 1) / (float) SPARKLING_BEAM_GRADIENT_SEGMENTS;
+			float y0 = ySize * fraction0;
+			float y1 = ySize * fraction1;
+			float v0 = scroll + y0 / 4f;
+			float v1 = scroll + y1 / 4f;
+			// Two complete gradients keep several colours visible even on a short beam.
+			int colour0 = RainbowColours.phased(phase, fraction0 * 2f, 0.55f, alpha);
+			int colour1 = RainbowColours.phased(phase, fraction1 * 2f, 0.55f, alpha);
+			beaconFace(stackPose, quad, colour0, colour1, v0, v1,
+				0, y0, 0, xSize, y0, 0, xSize, y1, 0, 0, y1, 0);
+			beaconFace(stackPose, quad, colour0, colour1, v0, v1,
+				xSize, y0, 0, xSize, y0, zSize, xSize, y1, zSize, xSize, y1, 0);
+			beaconFace(stackPose, quad, colour0, colour1, v0, v1,
+				xSize, y0, zSize, 0, y0, zSize, 0, y1, zSize, xSize, y1, zSize);
+			beaconFace(stackPose, quad, colour0, colour1, v0, v1,
+				0, y0, zSize, 0, y0, 0, 0, y1, 0, 0, y1, zSize);
+		}
 	}
 
 	private static void beaconFace(PoseStack.Pose stackPose, VertexConsumer quad,
-			int colour, float vBottom, float vTop,
+			int bottomColour, int topColour, float vBottom, float vTop,
 			float x0, float y0, float z0, float x1, float y1, float z1,
 			float x2, float y2, float z2, float x3, float y3, float z3) {
 		var pose = stackPose.pose();
-		quad.addVertex(pose, x0, y0, z0).setColor(colour).setUv(0, vBottom)
+		quad.addVertex(pose, x0, y0, z0).setColor(bottomColour).setUv(0, vBottom)
 			.setOverlay(OverlayTexture.NO_OVERLAY).setLight(LightCoordsUtil.FULL_BRIGHT)
 			.setNormal(stackPose, 0, 1, 0);
-		quad.addVertex(pose, x1, y1, z1).setColor(colour).setUv(1, vBottom)
+		quad.addVertex(pose, x1, y1, z1).setColor(bottomColour).setUv(1, vBottom)
 			.setOverlay(OverlayTexture.NO_OVERLAY).setLight(LightCoordsUtil.FULL_BRIGHT)
 			.setNormal(stackPose, 0, 1, 0);
-		quad.addVertex(pose, x2, y2, z2).setColor(colour).setUv(1, vTop)
+		quad.addVertex(pose, x2, y2, z2).setColor(topColour).setUv(1, vTop)
 			.setOverlay(OverlayTexture.NO_OVERLAY).setLight(LightCoordsUtil.FULL_BRIGHT)
 			.setNormal(stackPose, 0, 1, 0);
-		quad.addVertex(pose, x3, y3, z3).setColor(colour).setUv(0, vTop)
+		quad.addVertex(pose, x3, y3, z3).setColor(topColour).setUv(0, vTop)
 			.setOverlay(OverlayTexture.NO_OVERLAY).setLight(LightCoordsUtil.FULL_BRIGHT)
 			.setNormal(stackPose, 0, 1, 0);
 	}
@@ -842,6 +1121,56 @@ public final class WaypointRenderer {
 		line(pose, lines, x1, y0, z0, x1, y1, z0, red, green, blue, alpha);
 		line(pose, lines, x1, y0, z1, x1, y1, z1, red, green, blue, alpha);
 		line(pose, lines, x0, y0, z1, x0, y1, z1, red, green, blue, alpha);
+	}
+
+	/** One full animated gradient around each half of the Sparkling box. */
+	private static void rainbowBox(PoseStack.Pose pose, VertexConsumer lines,
+			float xSize, float ySize, float zSize, float phase) {
+		float o = 0.005f;
+		float x0 = -o;
+		float y0 = -o;
+		float z0 = -o;
+		float x1 = xSize + o;
+		float y1 = ySize + o;
+		float z1 = zSize + o;
+		int c0 = RainbowColours.phased(phase, 0.00f, 0.55f, 1f);
+		int c1 = RainbowColours.phased(phase, 0.25f, 0.55f, 1f);
+		int c2 = RainbowColours.phased(phase, 0.50f, 0.55f, 1f);
+		int c3 = RainbowColours.phased(phase, 0.75f, 0.55f, 1f);
+		int c4 = RainbowColours.phased(phase, 1.00f, 0.55f, 1f);
+		int c5 = RainbowColours.phased(phase, 1.25f, 0.55f, 1f);
+		int c6 = RainbowColours.phased(phase, 1.50f, 0.55f, 1f);
+		int c7 = RainbowColours.phased(phase, 1.75f, 0.55f, 1f);
+
+		gradientLine(pose, lines, x0, y0, z0, x1, y0, z0, c0, c1);
+		gradientLine(pose, lines, x1, y0, z0, x1, y0, z1, c1, c2);
+		gradientLine(pose, lines, x1, y0, z1, x0, y0, z1, c2, c3);
+		gradientLine(pose, lines, x0, y0, z1, x0, y0, z0, c3, c4);
+		gradientLine(pose, lines, x0, y1, z0, x1, y1, z0, c4, c5);
+		gradientLine(pose, lines, x1, y1, z0, x1, y1, z1, c5, c6);
+		gradientLine(pose, lines, x1, y1, z1, x0, y1, z1, c6, c7);
+		gradientLine(pose, lines, x0, y1, z1, x0, y1, z0, c7, c0);
+		gradientLine(pose, lines, x0, y0, z0, x0, y1, z0, c0, c4);
+		gradientLine(pose, lines, x1, y0, z0, x1, y1, z0, c1, c5);
+		gradientLine(pose, lines, x1, y0, z1, x1, y1, z1, c2, c6);
+		gradientLine(pose, lines, x0, y0, z1, x0, y1, z1, c3, c7);
+	}
+
+	private static void gradientLine(PoseStack.Pose pose, VertexConsumer lines,
+			float x1, float y1, float z1, float x2, float y2, float z2,
+			int colour1, int colour2) {
+		float nx = x2 - x1;
+		float ny = y2 - y1;
+		float nz = z2 - z1;
+		float length = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+		if (length == 0) return;
+		nx /= length;
+		ny /= length;
+		nz /= length;
+		lines.addVertex(pose, x1, y1, z1).setColor(colour1)
+			.setNormal(pose, nx, ny, nz).setLineWidth(LINE_WIDTH);
+		lines.addVertex(pose, x2, y2, z2).setColor(colour2)
+			.setNormal(pose, nx, ny, nz).setLineWidth(LINE_WIDTH);
 	}
 
 	private static void line(PoseStack.Pose pose, VertexConsumer lines,
@@ -882,7 +1211,7 @@ public final class WaypointRenderer {
 		long roundedDistance = showDistance ? Math.round(distance) : -1;
 		boolean sparkling = marker.label().startsWith("SPARKLING ");
 		LabelKey key = new LabelKey(marker.label(), roundedDistance,
-			sparkling ? RainbowColours.frameId() : -1);
+			sparkling ? RainbowColours.phaseBucket(100) : -1);
 		CachedLabel cached = LABEL_CACHE.computeIfAbsent(key, ignored -> {
 			Component text = sparkling ? rainbowLabel(marker.label()) : Component.literal(marker.label());
 			if (showDistance) {
@@ -908,7 +1237,8 @@ public final class WaypointRenderer {
 		// the label to the same wall the box now respects under Safe Mode.
 		backend.text(poses, cached.sequence(), x,
 			seeThrough ? Font.DisplayMode.SEE_THROUGH : Font.DisplayMode.NORMAL,
-			marker.colour() | 0xFF000000, 0x40000000, LightCoordsUtil.FULL_BRIGHT);
+			sparkling ? 0xFFFFFFFF : marker.colour() | 0xFF000000,
+			0x40000000, LightCoordsUtil.FULL_BRIGHT);
 		poses.popPose();
 	}
 

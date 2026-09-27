@@ -1,8 +1,10 @@
 package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.data.Critter;
+import dev.serko.safariutils.data.CritterSpawnRanges;
 import dev.serko.safariutils.parse.ChatParser;
 import dev.serko.safariutils.parse.CritterEvent;
+import dev.serko.safariutils.session.SessionManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Display;
@@ -20,7 +22,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Keeps last-confirmed positions for Duplico, Hideonwall, Hideonfloor and Bloodbat.
+ * Keeps last-detected positions for Duplico, Hideonwall, Hideonfloor and Bloodbat.
  * Capture attempts bind species-only chat outcomes to the best known individual.
  * Nearby replacements absorb entity-ID changes, while caught Hideonwall perches
  * remain closed until the current Safari instance ends.
@@ -28,10 +30,17 @@ import java.util.UUID;
 public final class StillCritters {
 
 	private static final Set<String> TRACKED = Set.of("Duplico", "Hideonwall", "Hideonfloor", "Bloodbat");
-	/** How long an entry can go unconfirmed before it is dropped as likely orphaned. */
+	private static final Set<String> STATIC_TRACKED = Set.of("Duplico", "Hideonwall", "Hideonfloor");
+	private static final List<Critter> TRACKED_CRITTERS = TRACKED.stream()
+		.map(dev.serko.safariutils.data.Critters::byName)
+		.filter(java.util.Objects::nonNull)
+		.toList();
+	/** How long a mobile, unconfirmed entry can go unseen before it is dropped. */
 	private static final long STALE_MILLIS = 20_000;
-	/** Two entity sweeps must miss a loaded Hideonfloor before its marker is retired. */
-	private static final long HIDEONFLOOR_ABSENCE_MILLIS = 500;
+	/** Several loaded entity sweeps must agree before a remembered static location is retired. */
+	private static final long STATIC_ABSENCE_MILLIS = 1_500;
+	/** Stay well inside entity-tracking range before treating a static location as empty. */
+	private static final double STATIC_INSPECTION_DISTANCE_SQ = 12.0 * 12.0;
 	/**
 	 * How close a fresh sighting has to land to an existing entry of the same species
 	 * to be treated as that same individual under a new id, not a genuinely different
@@ -43,8 +52,11 @@ public final class StillCritters {
 	private record Entry(Critter critter, BlockPos pos, boolean sparkling,
 			long millis, boolean visiblyConfirmed, boolean persistentThroughWalls) {
 	}
+	private record LiveStatic(UUID id, BlockPos pos) { }
 
 	private static final Map<UUID, Entry> remembered = new HashMap<>();
+	/** First continuous loaded-and-empty observation for each remembered static critter. */
+	private static final Map<UUID, Long> staticAbsenceSince = new HashMap<>();
 	private static final Set<UUID> cataloguedIds = new java.util.HashSet<>();
 	private static final Map<UUID, Vec3> learningOrigins = new HashMap<>();
 	private static final Map<UUID, Integer> learningStableScans = new HashMap<>();
@@ -59,8 +71,12 @@ public final class StillCritters {
 	private static final Map<Critter, BlockPos> resolvingPositions = new HashMap<>();
 	/** Canonical Hideonwall perches caught during this run; those spawns cannot return. */
 	private static final Set<BlockPos> caughtHideonwallPositions = new java.util.HashSet<>();
+	/** Other one-use static spawns confirmed caught during this run. */
+	private static final Map<Critter, Set<BlockPos>> caughtStaticPositions = new HashMap<>();
 	/** Bodies resolved by a catch but still lingering in the client entity list. */
 	private static final Set<UUID> suppressedBodies = new java.util.HashSet<>();
+	/** Moving Hideon IDs visually confirmed directly or inherited from their concealed body. */
+	private static final Set<UUID> confirmedMovingBodies = new java.util.HashSet<>();
 	private static long lastScan = Long.MIN_VALUE;
 	private static String preparedLobby;
 
@@ -76,11 +92,19 @@ public final class StillCritters {
 		if (!SafariLocation.inSafari()) return;
 		long now = System.currentTimeMillis();
 		resolveHideonwallCapsules(now);
-		remembered.values().removeIf(entry -> {
-			boolean stale = !entry.visiblyConfirmed() && now - entry.millis() > STALE_MILLIS;
-			if (stale) DebugLog.line("STILL", "EXPIRE " + entry.critter().name() + " (unconfirmed " + STALE_MILLIS + "ms)");
-			return stale;
-		});
+		Iterator<Map.Entry<UUID, Entry>> staleIterator = remembered.entrySet().iterator();
+		while (staleIterator.hasNext()) {
+			Map.Entry<UUID, Entry> rememberedEntry = staleIterator.next();
+			Entry entry = rememberedEntry.getValue();
+			// Static locations remain valid knowledge until their loaded position is
+			// positively observed empty. Only mobile Bloodbats use a time-based expiry.
+			if (STATIC_TRACKED.contains(entry.critter().name()) || entry.visiblyConfirmed()
+				|| now - entry.millis() <= STALE_MILLIS) continue;
+			DebugLog.line("STILL", "EXPIRE " + entry.critter().name()
+				+ " (unconfirmed " + STALE_MILLIS + "ms)");
+			staticAbsenceSince.remove(rememberedEntry.getKey());
+			staleIterator.remove();
+		}
 		long scan = CritterEntities.scannedAt();
 		if (scan == lastScan) return;
 		lastScan = scan;
@@ -97,8 +121,29 @@ public final class StillCritters {
 			if (!TRACKED.contains(sighting.critter().name())) continue;
 
 			Entity entity = sighting.mob();
+			// A Hideon sheds its stationary shulker body when disturbed and moves as a
+			// silverfish. That mobile form is rendered live and must never become another
+			// remembered static spawn.
+			if (mobileHideon(sighting, entity)) {
+				boolean confirmed = VisibilityCheck.canSee(entity)
+					|| remembered.values().stream().anyMatch(entry ->
+						entry.critter().equals(sighting.critter()) && entry.visiblyConfirmed()
+							&& sameSpawn(entry.pos(), entity.blockPosition()));
+				supersedeNearby(sighting.critter(), entity.getUUID(), entity.blockPosition(), liveBodies);
+				if (confirmed && confirmedMovingBodies.add(entity.getUUID())) {
+					DebugLog.line("STILL", "CONFIRM moving " + sighting.critter().name()
+						+ " id=" + shortId(entity.getUUID()));
+				}
+				continue;
+			}
+			if (STATIC_TRACKED.contains(sighting.critter().name())
+				&& RecatchSpots.captureInProgress(sighting.critter())) continue;
+			// Capsule animations briefly reuse the critter label without a body. Never
+			// turn that moving label into a new static Hideon marker.
+			if (entity == null && RecatchSpots.captureInProgress(sighting.critter())) continue;
+			if (entity != null && RecatchSpots.isCaptureArtifact(sighting.critter(), entity)) continue;
 			if (entity != null && suppressedBodies.contains(entity.getUUID())) continue;
-			if (caughtHideonwall(sighting)) {
+			if (caughtStatic(sighting)) {
 				if (entity != null) suppressedBodies.add(entity.getUUID());
 				continue;
 			}
@@ -149,42 +194,84 @@ public final class StillCritters {
 			remembered.put(id, new Entry(sighting.critter(), pos, sparkling, now,
 				directlyVisible || previous != null && previous.visiblyConfirmed(), persistent));
 		}
-		pruneMissingHideonfloors(now);
+		pruneMissingStaticCritters(now);
 		pruneVisibleEmptyCandidates();
+		staticAbsenceSince.keySet().removeIf(id -> !remembered.containsKey(id));
 	}
 
-	private static boolean caughtHideonwall(CritterEntities.Sighting sighting) {
-		if (!"Hideonwall".equals(sighting.critter().name())) return false;
+	private static boolean mobileHideon(CritterEntities.Sighting sighting, Entity entity) {
+		if (sighting == null || entity == null || !EntityTypeIds.is(entity, "silverfish")) return false;
+		String name = sighting.critter().name();
+		return "Hideonfloor".equals(name) || "Hideonwall".equals(name);
+	}
+
+	private static boolean caughtStatic(CritterEntities.Sighting sighting) {
 		BlockPos actual = sighting.mob() != null
 			? sighting.mob().blockPosition() : sighting.label().blockPosition();
-		return caughtHideonwallPositions.stream().anyMatch(pos -> sameSpawn(pos, actual));
+		if ("Hideonwall".equals(sighting.critter().name())
+			&& caughtHideonwallPositions.stream().anyMatch(pos -> sameSpawn(pos, actual))) return true;
+		return caughtStaticPositions.getOrDefault(sighting.critter(), Set.of()).stream()
+			.anyMatch(pos -> sameSpawn(pos, actual));
 	}
 
 	/**
-	 * Hideonfloor chat does not identify which individual was caught. Resolve markers
-	 * from the world instead: Extra Mode trusts a loaded, absent body while Safe Mode
-	 * additionally requires the old location to be inspected.
+	 * Keeps static sightings while unloaded or while the player is elsewhere. A marker
+	 * is retired only after its location is loaded in the correct biome, directly
+	 * inspected, and repeatedly absent.
 	 */
-	private static void pruneMissingHideonfloors(long now) {
+	private static void pruneMissingStaticCritters(long now) {
 		var client = net.minecraft.client.Minecraft.getInstance();
 		if (client.level == null) return;
-		Critter hideonfloor = dev.serko.safariutils.data.Critters.byName("Hideonfloor");
-		if (hideonfloor == null) return;
-		Set<UUID> live = CritterEntities.all().stream()
-			.filter(sighting -> hideonfloor.equals(sighting.critter()) && sighting.mob() != null)
-			.map(sighting -> sighting.mob().getUUID())
-			.collect(java.util.stream.Collectors.toSet());
-		boolean requiresSight = SafeMode.hiddenCritter(hideonfloor, false);
-		remembered.entrySet().removeIf(entry -> {
-			Entry value = entry.getValue();
-			if (!hideonfloor.equals(value.critter()) || live.contains(entry.getKey())) return false;
-			if (now - value.millis() < HIDEONFLOOR_ABSENCE_MILLIS
-				|| !client.level.isLoaded(value.pos())) return false;
-			if (requiresSight && !VisibilityCheck.canInspectCandidate(value.pos())) return false;
-			DebugLog.line("STILL", "REMOVE absent Hideonfloor id=" + shortId(entry.getKey())
-				+ " pos=" + pos(value.pos()));
-			return true;
-		});
+		Map<Critter, List<LiveStatic>> liveByCritter = new HashMap<>();
+		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
+			if (!STATIC_TRACKED.contains(sighting.critter().name())) continue;
+			Entity body = sighting.mob();
+			if (body == null && RecatchSpots.captureInProgress(sighting.critter())) continue;
+			if (body != null && RecatchSpots.isCaptureArtifact(sighting.critter(), body)) continue;
+			if (body != null && suppressedBodies.contains(body.getUUID())) continue;
+			liveByCritter.computeIfAbsent(sighting.critter(), ignored -> new ArrayList<>())
+				.add(new LiveStatic(body == null ? sighting.label().getUUID() : body.getUUID(),
+					body == null ? sighting.label().blockPosition() : body.blockPosition()));
+		}
+		Iterator<Map.Entry<UUID, Entry>> iterator = remembered.entrySet().iterator();
+		while (iterator.hasNext()) {
+			Map.Entry<UUID, Entry> rememberedEntry = iterator.next();
+			UUID id = rememberedEntry.getKey();
+			Entry entry = rememberedEntry.getValue();
+			if (!STATIC_TRACKED.contains(entry.critter().name())) continue;
+			if (RecatchSpots.captureInProgress(entry.critter())) {
+				staticAbsenceSince.remove(id);
+				continue;
+			}
+
+			boolean live = liveByCritter.getOrDefault(entry.critter(), List.of()).stream()
+				.anyMatch(current -> id.equals(current.id()) || sameSpawn(entry.pos(), current.pos()));
+			if (live) {
+				staticAbsenceSince.remove(id);
+				continue;
+			}
+
+			boolean correctBiome = SafariLocation.biome() == entry.critter().biome();
+			boolean loaded = correctBiome && client.level.isLoaded(entry.pos());
+			boolean nearby = client.player != null && client.player.position()
+				.distanceToSqr(Vec3.atCenterOf(entry.pos())) <= STATIC_INSPECTION_DISTANCE_SQ;
+			// A loaded, visible chunk can outlive its entity-tracking range. Require the
+			// player to be nearby and directly inspect the location in every mode.
+			boolean inspected = "Hideonwall".equals(entry.critter().name())
+				? VisibilityCheck.canInspectPaintingCandidate(entry.pos())
+				: VisibilityCheck.canInspectCandidate(entry.pos());
+			if (!loaded || !nearby || !inspected) {
+				staticAbsenceSince.remove(id);
+				continue;
+			}
+
+			long absentSince = staticAbsenceSince.computeIfAbsent(id, ignored -> now);
+			if (now - absentSince < STATIC_ABSENCE_MILLIS) continue;
+			DebugLog.line("STILL", "REMOVE absent " + entry.critter().name()
+				+ " id=" + shortId(id) + " pos=" + pos(entry.pos()));
+			staticAbsenceSince.remove(id);
+			iterator.remove();
+		}
 	}
 
 	/**
@@ -282,32 +369,15 @@ public final class StillCritters {
 				&& live.stream().noneMatch(actual -> sameSpawn(pos, actual)));
 		}
 
-		// A previously confirmed Duplico can outlive its actual interaction entity in
-		// the client tracker. Preserve it while out of range, but retire the remembered
-		// marker once its loaded position is directly inspected and is genuinely empty.
-		List<BlockPos> liveDuplicos = CritterEntities.all().stream()
-			.filter(sighting -> "Duplico".equals(sighting.critter().name()))
-			.map(CritterEntities.Sighting::mob)
-			.filter(java.util.Objects::nonNull)
-			.map(Entity::blockPosition)
-			.toList();
-		Iterator<Map.Entry<UUID, Entry>> rememberedIterator = remembered.entrySet().iterator();
-		while (rememberedIterator.hasNext()) {
-			Map.Entry<UUID, Entry> rememberedEntry = rememberedIterator.next();
-			Entry entry = rememberedEntry.getValue();
-			if (!"Duplico".equals(entry.critter().name()) || !entry.visiblyConfirmed()) continue;
-			if (!client.level.isLoaded(entry.pos())
-				|| !VisibilityCheck.canInspectCandidate(entry.pos())) continue;
-			if (liveDuplicos.stream().anyMatch(pos -> sameSpawn(entry.pos(), pos))) continue;
-			DebugLog.line("STILL", "REMOVE stale Duplico id=" + shortId(rememberedEntry.getKey())
-				+ " pos=" + pos(entry.pos()));
-			rememberedIterator.remove();
-		}
 	}
 
 	/** Unchecked Safe Mode candidates; a confirmed real location is rendered separately. */
 	public static Set<BlockPos> candidatesFor(Critter critter) {
 		if (!SafeMode.hiddenCritterCandidates(critter)) return Set.of();
+		var session = SessionManager.current();
+		if (session != null && session.partyCatches(critter) >= CritterSpawnRanges.maximum(critter)) {
+			return Set.of();
+		}
 		Set<BlockPos> result = new java.util.LinkedHashSet<>(unchecked.getOrDefault(critter, Set.of()));
 		if ("Hideonwall".equals(critter.name())) {
 			result.removeIf(candidate -> caughtHideonwallPositions.stream()
@@ -319,6 +389,17 @@ public final class StillCritters {
 			result.removeIf(candidate -> sameSpawn(candidate, entry.pos()));
 		}
 		return Set.copyOf(result);
+	}
+
+	/** Clears only unresolved catalog candidates after every possible spawn was caught. */
+	public static void onConfirmedCatchTotal(Critter critter, int catches) {
+		if (critter == null || catches < CritterSpawnRanges.maximum(critter)) return;
+		Set<BlockPos> candidates = unchecked.get(critter);
+		if (candidates == null || candidates.isEmpty()) return;
+		int cleared = candidates.size();
+		candidates.clear();
+		DebugLog.line("STILL", "MAX-CATCH " + critter.name() + "=" + catches
+			+ " cleared=" + cleared + " unresolved candidates");
 	}
 
 	/**
@@ -346,6 +427,10 @@ public final class StillCritters {
 		List<Sighted> result = new ArrayList<>();
 		for (Map.Entry<UUID, Entry> entry : remembered.entrySet()) {
 			if (!critter.equals(entry.getValue().critter())) continue;
+			// The remembered marker and live body represent the same individual. Hide
+			// both while a capsule attempt is resolving; a failed attempt releases the
+			// suppression, while a successful one removes the remembered entry.
+			if (suppressedBodies.contains(entry.getKey())) continue;
 			if (SafeMode.hiddenCritter(critter, entry.getValue().sparkling())
 				&& !entry.getValue().visiblyConfirmed()) continue;
 			result.add(new Sighted(entry.getKey(), entry.getValue().pos(), entry.getValue().sparkling(),
@@ -361,7 +446,7 @@ public final class StillCritters {
 
 	public static boolean isVisiblyConfirmed(UUID id) {
 		Entry entry = remembered.get(id);
-		return entry != null && entry.visiblyConfirmed();
+		return entry != null && entry.visiblyConfirmed() || confirmedMovingBodies.contains(id);
 	}
 
 	/** Whether a caught body is merely lingering in the client's entity list. */
@@ -383,12 +468,20 @@ public final class StillCritters {
 			return;
 		}
 		catalogClosed.add(event.critter());
-		// Hideonfloor messages do not identify an individual. Its loaded body disappearing
-		// is the only reliable evidence that a particular marker should be removed.
-		if ("Hideonfloor".equals(event.critter().name())) return;
+		// A loot share proves that one static individual is gone, but carries no
+		// location. Retire only a marker the local client cannot currently verify.
+		if (event.type() == CritterEvent.Type.SHARED_CATCH
+			&& STATIC_TRACKED.contains(event.critter().name())) {
+			retireSharedStaticCatch(event.critter());
+			return;
+		}
 		if (event.type() == CritterEvent.Type.ATTEMPT) {
 			UUID id = RecatchSpots.pendingCatchEntity(event.critter());
-			if (id == null) id = nearestRemembered(event.critter());
+			// A Hideonfloor throw has an exact aimed-at body when available. Without
+			// one, leave its marker for nearby world-state inspection instead of guessing.
+			if (id == null && !"Hideonfloor".equals(event.critter().name())) {
+				id = nearestRemembered(event.critter());
+			}
 			Entry target = id == null ? null : remembered.get(id);
 			BlockPos targetPos = target != null ? target.pos()
 				: id == null ? null : sightingPosition(event.critter(), id);
@@ -398,9 +491,6 @@ public final class StillCritters {
 			}
 			if (targetPos != null) {
 				resolvingPositions.put(event.critter(), targetPos);
-				BlockPos finalTargetPos = targetPos;
-				remembered.entrySet().removeIf(entry -> event.critter().equals(entry.getValue().critter())
-					&& sameSpawn(finalTargetPos, entry.getValue().pos()));
 			}
 			if (id != null) {
 				resolving.put(event.critter(), id);
@@ -415,7 +505,10 @@ public final class StillCritters {
 			UUID id = resolving.remove(event.critter());
 			BlockPos resolvedPos = resolvingPositions.remove(event.critter());
 			if (id == null) {
-				id = nearestRemembered(event.critter());
+				// A distant catch can unload the body before chat confirms it. The most
+				// recently observed marker is the strongest remaining identity evidence.
+				id = "Hideonfloor".equals(event.critter().name())
+					? newestRemembered(event.critter()) : nearestRemembered(event.critter());
 				Entry target = id == null ? null : remembered.get(id);
 				if (target != null) resolvedPos = target.pos();
 			}
@@ -423,10 +516,52 @@ public final class StillCritters {
 				suppressedBodies.add(id);
 				remembered.remove(id);
 			}
-			if ("Hideonwall".equals(event.critter().name()) && resolvedPos != null) {
-				suppressCaughtHideonwall(event.critter(), resolvedPos);
+			if (resolvedPos != null && STATIC_TRACKED.contains(event.critter().name())) {
+				if ("Hideonwall".equals(event.critter().name())) {
+					suppressCaughtHideonwall(event.critter(), resolvedPos);
+				} else {
+					suppressCaughtStatic(event.critter(), resolvedPos);
+				}
 			}
 		}
+	}
+
+	/** Retires one unverified marker when a partymate catches the same static species. */
+	private static void retireSharedStaticCatch(Critter critter) {
+		Map.Entry<UUID, Entry> candidate = remembered.entrySet().stream()
+			.filter(entry -> critter.equals(entry.getValue().critter()))
+			.filter(entry -> !locallyVerified(entry.getKey(), entry.getValue()))
+			.min(java.util.Comparator
+				.comparingLong((Map.Entry<UUID, Entry> entry) -> entry.getValue().millis())
+				.thenComparing(entry -> entry.getKey().toString()))
+			.orElse(null);
+		if (candidate == null) {
+			DebugLog.line("STILL", "KEEP shared " + critter.name()
+				+ " (all remembered instances locally verified)");
+			return;
+		}
+		remembered.remove(candidate.getKey());
+		staticAbsenceSince.remove(candidate.getKey());
+		DebugLog.line("STILL", "SHARED-CATCH retire " + critter.name()
+			+ " id=" + shortId(candidate.getKey()) + " pos=" + pos(candidate.getValue().pos()));
+	}
+
+	/** Extra Mode protects detected entities; Safe Mode protects only entities currently seen. */
+	private static boolean locallyVerified(UUID rememberedId, Entry entry) {
+		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
+			if (!entry.critter().equals(sighting.critter())) continue;
+			Entity body = sighting.mob();
+			if (body != null && suppressedBodies.contains(body.getUUID())) continue;
+			UUID liveId = body == null ? sighting.label().getUUID() : body.getUUID();
+			BlockPos livePos = body == null ? sighting.label().blockPosition() : body.blockPosition();
+			if (!rememberedId.equals(liveId) && !sameSpawn(entry.pos(), livePos)) continue;
+			if (!SafeMode.hiddenCritter(entry.critter(), entry.sparkling())) return true;
+			if (body == null) return VisibilityCheck.canSeeVisibleName(sighting.label());
+			return "Duplico".equals(entry.critter().name())
+				? VisibilityCheck.canSeeDecoratedEntity(body)
+				: VisibilityCheck.canSee(body);
+		}
+		return false;
 	}
 
 	private static BlockPos sightingPosition(Critter critter, UUID id) {
@@ -457,6 +592,24 @@ public final class StillCritters {
 		DebugLog.line("STILL", "CAUGHT Hideonwall perch closed pos=" + pos(caughtPos));
 	}
 
+	/** Removes every transient ID at a caught one-use static spawn. */
+	private static void suppressCaughtStatic(Critter critter, BlockPos pos) {
+		BlockPos caughtPos = pos.immutable();
+		caughtStaticPositions.computeIfAbsent(critter, ignored -> new HashSet<>()).add(caughtPos);
+		remembered.entrySet().removeIf(entry -> critter.equals(entry.getValue().critter())
+			&& sameSpawn(caughtPos, entry.getValue().pos()));
+		staticAbsenceSince.entrySet().removeIf(entry -> !remembered.containsKey(entry.getKey()));
+		Set<BlockPos> candidates = unchecked.get(critter);
+		if (candidates != null) candidates.removeIf(candidate -> sameSpawn(caughtPos, candidate));
+		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
+			if (!critter.equals(sighting.critter()) || sighting.mob() == null) continue;
+			if (sameSpawn(caughtPos, sighting.mob().blockPosition())) {
+				suppressedBodies.add(sighting.mob().getUUID());
+			}
+		}
+		DebugLog.line("STILL", "CAUGHT " + critter.name() + " spawn closed pos=" + pos(caughtPos));
+	}
+
 	/** Normalizes an observed body/label position to its fixed catalog perch. */
 	private static BlockPos canonicalHideonwallPerch(BlockPos observed) {
 		return StaticEntityCatalog.positions("Hideonwall").stream()
@@ -468,6 +621,7 @@ public final class StillCritters {
 	/** A spot from the last run says nothing about this one. */
 	public static void reset() {
 		remembered.clear();
+		staticAbsenceSince.clear();
 		cataloguedIds.clear();
 		learningOrigins.clear();
 		learningStableScans.clear();
@@ -478,7 +632,9 @@ public final class StillCritters {
 		resolving.clear();
 		resolvingPositions.clear();
 		caughtHideonwallPositions.clear();
+		caughtStaticPositions.clear();
 		suppressedBodies.clear();
+		confirmedMovingBodies.clear();
 		catalogClosed.clear();
 		unchecked.clear();
 		for (Critter critter : trackedCritters()) {
@@ -495,6 +651,15 @@ public final class StillCritters {
 			.min(java.util.Comparator.comparingDouble(entry -> player.distanceToSqr(
 				entry.getValue().pos().getX() + 0.5, entry.getValue().pos().getY() + 0.5,
 				entry.getValue().pos().getZ() + 0.5)))
+			.map(Map.Entry::getKey).orElse(null);
+	}
+
+	private static UUID newestRemembered(Critter critter) {
+		return remembered.entrySet().stream()
+			.filter(entry -> critter.equals(entry.getValue().critter()))
+			.max(java.util.Comparator
+				.comparingLong((Map.Entry<UUID, Entry> entry) -> entry.getValue().millis())
+				.thenComparing(entry -> entry.getKey().toString()))
 			.map(Map.Entry::getKey).orElse(null);
 	}
 
@@ -552,8 +717,7 @@ public final class StillCritters {
 	}
 
 	private static List<Critter> trackedCritters() {
-		return TRACKED.stream().map(dev.serko.safariutils.data.Critters::byName)
-			.filter(java.util.Objects::nonNull).toList();
+		return TRACKED_CRITTERS;
 	}
 
 	private static String shortId(UUID id) {

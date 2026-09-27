@@ -3,8 +3,10 @@
   "package": "dev.serko.safariutils.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
+    "ArmorStandRendererMixin",
     "GuiGraphicsExtractorAccessor",
     "GuiMixin",
+    "EntityRendererMixin",
     "SoundEngineMixin",
     "ClientPacketListenerMixin"
   ],

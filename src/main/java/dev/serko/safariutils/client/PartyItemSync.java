@@ -162,7 +162,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		boolean currentPartyConfirmed = !currentParty.isEmpty()
 			&& currentParty.stream().allMatch(member -> capableMembers.contains(member.uuid()));
 		transportAllowed = active && currentRosterFresh && currentPartyConfirmed;
-		if (DebugLog.isEnabled() && ConfigManager.get().advanced.logPartySync) {
+		if (DebugLog.isEnabled()) {
 			String transportState = "roster=" + roster.size() + " active=" + active
 				+ " rosterFresh=" + currentRosterFresh + " confirmed=" + transportAllowed;
 			if (!transportState.equals(lastDebugTransport)) {

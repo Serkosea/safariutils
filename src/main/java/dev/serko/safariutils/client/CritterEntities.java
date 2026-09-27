@@ -12,6 +12,8 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 /** Scans loaded critter labels once and shares the paired bodies with every tracker. */
 public final class CritterEntities {
@@ -25,8 +27,40 @@ public final class CritterEntities {
 	private static final double LABEL_TO_MOB_RADIUS = 4.0;
 	/** The word a rare variant is assumed to carry in its name. */
 	private static final String SPARKLING = "Sparkling";
+	/** Body types repeatedly verified in research logs; unlisted species retain generic pairing. */
+	private static final Map<String, Set<String>> EXPECTED_BODY_TYPES = Map.ofEntries(
+		Map.entry("Foxtrot", Set.of("fox")),
+		Map.entry("Bluebird", Set.of("parrot")),
+		Map.entry("Honeybug", Set.of("bee")),
+		Map.entry("Treefrog", Set.of("frog")),
+		Map.entry("Woodchucker", Set.of("creaking")),
+		Map.entry("Fluffling", Set.of("panda")),
+		Map.entry("Hideonfloor", Set.of("shulker", "silverfish")),
+		Map.entry("Parakeet", Set.of("parrot")),
+		Map.entry("Macaw", Set.of("parrot")),
+		Map.entry("Cavernfish", Set.of("tropical_fish")),
+		Map.entry("Flitter", Set.of("bat")),
+		Map.entry("Shyworm", Set.of("slime", "zombie")),
+		Map.entry("Driftling", Set.of("silverfish")),
+		Map.entry("Chuckwalla", Set.of("silverfish")),
+		Map.entry("Rockmite", Set.of("silverfish")),
+		Map.entry("Scrappy", Set.of("armadillo")),
+		Map.entry("Mantis Shrimp", Set.of("tropical_fish")),
+		Map.entry("Nozzlenose", Set.of("dolphin")),
+		Map.entry("Strongarm", Set.of("snow_golem")),
+		Map.entry("Areita", Set.of("cave_spider")),
+		Map.entry("Bloodbat", Set.of("bat")),
+		Map.entry("Litterbug", Set.of("endermite")),
+		Map.entry("Solsnatcher", Set.of("phantom")),
+		Map.entry("Hideonwall", Set.of("shulker", "silverfish")),
+		Map.entry("Duplico", Set.of("interaction", "silverfish")),
+		Map.entry("Doomspiral", Set.of("warden"))
+	);
 
 	private static List<Sighting> sightings = List.of();
+	private static Map<UUID, Critter> bodylessLabels = Map.of();
+	/** Constant-time reverse lookup shared by render hooks for this scan snapshot. */
+	private static Map<UUID, Sighting> sightingsByEntity = Map.of();
 	private static long scannedAt;
 	private static int ticks;
 
@@ -60,6 +94,8 @@ public final class CritterEntities {
 		if (client.level == null || !SafariLocation.inSafari()) {
 			logDiff(List.of());
 			sightings = List.of();
+			bodylessLabels = Map.of();
+			sightingsByEntity = Map.of();
 			ballCandidates.clear();
 			ballCandidatePositions.clear();
 			return;
@@ -68,6 +104,17 @@ public final class CritterEntities {
 		logDiff(result);
 		checkBallCandidates(client, result);
 		sightings = result;
+		Map<UUID, Critter> nextBodylessLabels = new HashMap<>();
+		Map<UUID, Sighting> nextSightingsByEntity = new HashMap<>(Math.max(16, result.size() * 2));
+		for (Sighting sighting : result) {
+			nextSightingsByEntity.put(sighting.label().getUUID(), sighting);
+			if (sighting.mob() != null) nextSightingsByEntity.put(sighting.mob().getUUID(), sighting);
+			if (sighting.mob() == null) {
+				nextBodylessLabels.put(sighting.label().getUUID(), sighting.critter());
+			}
+		}
+		bodylessLabels = Map.copyOf(nextBodylessLabels);
+		sightingsByEntity = Map.copyOf(nextSightingsByEntity);
 	}
 
 	/** Correlates debug-only capsule candidates with nearby reappearing critters. */
@@ -275,17 +322,63 @@ public final class CritterEntities {
 			}
 		}
 
-		List<Sighting> result = new ArrayList<>(labels.size());
 		EntityGrid candidateGrid = new EntityGrid(candidates);
 		EntityGrid interactionGrid = new EntityGrid(interactions);
 		EntityGrid armorStandGrid = new EntityGrid(unnamedArmorStands);
-		for (Label label : labels) {
-			result.add(new Sighting(label.critter(), label.entity(),
-				nearest(candidates, candidateGrid, interactionGrid,
-					label.entity(), label.critter(), armorStandGrid),
-				label.sparkling()));
+
+		Map<UUID, UUID> previousBodies = new HashMap<>();
+		for (Sighting sighting : previous) {
+			if (sighting.mob() != null) {
+				previousBodies.put(sighting.label().getUUID(), sighting.mob().getUUID());
+			}
 		}
+		Set<UUID> claimedBodies = new java.util.HashSet<>();
+		Map<UUID, Sighting> pairedByLabel = new HashMap<>();
+		List<Label> pairingOrder = new ArrayList<>(labels);
+		// Existing pairs stay stable. New labels then compete by actual proximity, so
+		// a capsule label cannot steal a newly spawned nearby critter's body.
+		Map<UUID, PairingRank> pairingRanks = new HashMap<>();
+		for (Label label : pairingOrder) {
+			pairingRanks.put(label.entity().getUUID(), pairingRank(label, candidateGrid,
+				interactionGrid, armorStandGrid, previousBodies.get(label.entity().getUUID())));
+		}
+		pairingOrder.sort(Comparator.comparing(
+			label -> pairingRanks.get(label.entity().getUUID())));
+		for (Label label : pairingOrder) {
+			Entity body = nearest(candidates, candidateGrid, interactionGrid,
+				label.entity(), label.critter(), armorStandGrid, claimedBodies,
+				previousBodies.get(label.entity().getUUID()));
+			if (body != null) claimedBodies.add(body.getUUID());
+			pairedByLabel.put(label.entity().getUUID(),
+				new Sighting(label.critter(), label.entity(), body, label.sparkling()));
+		}
+
+		List<Sighting> result = new ArrayList<>(labels.size());
+		for (Label label : labels) result.add(pairedByLabel.get(label.entity().getUUID()));
 		return result;
+	}
+
+	private static int pairingPriority(Label label) {
+		String name = label.critter().name();
+		return EXPECTED_BODY_TYPES.containsKey(name) || "Duplico".equals(name) || "Gazer".equals(name) ? 0 : 1;
+	}
+
+	private static PairingRank pairingRank(Label label, EntityGrid candidateGrid,
+			EntityGrid interactionGrid, EntityGrid armorStandGrid, UUID previousBodyId) {
+		if (retainedBody(candidateGrid, interactionGrid, armorStandGrid, label.entity(),
+			label.critter(), Set.of(), previousBodyId) != null) {
+			return new PairingRank(0, 0.0);
+		}
+		List<Entity> pool;
+		if ("Duplico".equals(label.critter().name())) pool = interactionGrid.near(label.entity());
+		else if ("Gazer".equals(label.critter().name())) pool = armorStandGrid.near(label.entity());
+		else pool = candidateGrid.near(label.entity());
+		double nearestSq = LABEL_TO_MOB_RADIUS * LABEL_TO_MOB_RADIUS;
+		for (Entity candidate : pool) {
+			if (!isExpectedBody(label.critter(), candidate)) continue;
+			nearestSq = Math.min(nearestSq, distanceSquared(candidate, label.entity()));
+		}
+		return new PairingRank(1 + pairingPriority(label), nearestSq);
 	}
 
 	private static boolean startsWithSparkling(String name) {
@@ -313,6 +406,8 @@ public final class CritterEntities {
 			&& !EntityTypeIds.is(type, "falling_block")
 			&& !EntityTypeIds.is(type, "lightning_bolt")
 			&& !EntityTypeIds.is(type, "marker")
+			// Hypixel's floating Icy props use tiny happy ghasts near Nozzlenose labels.
+			&& !EntityTypeIds.is(type, "happy_ghast")
 			&& !EntityTypeIds.is(type, "arrow")
 			&& !EntityTypeIds.is(type, "spectral_arrow")
 			&& !EntityTypeIds.is(type, "trident")
@@ -335,13 +430,17 @@ public final class CritterEntities {
 	/** Returns the nearest qualifying body and logs throttled pairing diagnostics. */
 	private static Entity nearest(List<Entity> candidates, EntityGrid candidateGrid,
 					EntityGrid interactionGrid,
-					Entity label, Critter critter, EntityGrid armorStandGrid) {
+					Entity label, Critter critter, EntityGrid armorStandGrid,
+					Set<UUID> claimedBodies, UUID previousBodyId) {
 		Entity best = null;
 		double bestSq = LABEL_TO_MOB_RADIUS * LABEL_TO_MOB_RADIUS;
 
 		Entity closestAnyDistance = null;
 		double closestAnyDistanceSq = Double.MAX_VALUE;
 		boolean diagnostics = DebugLog.isEnabled();
+		Entity retained = retainedBody(candidateGrid, interactionGrid, armorStandGrid,
+			label, critter, claimedBodies, previousBodyId);
+		if (retained != null) return retained;
 
 		// Duplico's persistent body is an interaction entity; its armor stand is only
 		// the name label. Resolve that body independently so an unrelated nearby mob
@@ -350,6 +449,7 @@ public final class CritterEntities {
 			Entity interactionBest = null;
 			double interactionBestSq = LABEL_TO_MOB_RADIUS * LABEL_TO_MOB_RADIUS;
 			for (Entity interaction : interactionGrid.near(label)) {
+				if (claimedBodies.contains(interaction.getUUID())) continue;
 				double distanceSq = distanceSquared(interaction, label);
 				if (distanceSq >= interactionBestSq) continue;
 				interactionBestSq = distanceSq;
@@ -360,11 +460,13 @@ public final class CritterEntities {
 
 		List<Entity> nearbyCandidates = candidateGrid.near(label);
 		for (Entity candidate : nearbyCandidates) {
+			if (claimedBodies.contains(candidate.getUUID())) continue;
 			double distanceSq = distanceSquared(candidate, label);
 			if (diagnostics && distanceSq < closestAnyDistanceSq) {
 				closestAnyDistanceSq = distanceSq;
 				closestAnyDistance = candidate;
 			}
+			if (!isExpectedBody(critter, candidate)) continue;
 			if (distanceSq >= bestSq) continue;
 			bestSq = distanceSq;
 			best = candidate;
@@ -373,6 +475,7 @@ public final class CritterEntities {
 		// outside the pairing grid's radius.
 		if (diagnostics && best == null) {
 			for (Entity candidate : candidates) {
+				if (claimedBodies.contains(candidate.getUUID())) continue;
 				double distanceSq = distanceSquared(candidate, label);
 				if (distanceSq >= closestAnyDistanceSq) continue;
 				closestAnyDistanceSq = distanceSq;
@@ -385,6 +488,7 @@ public final class CritterEntities {
 		if (best == null && "Gazer".equals(critter.name())) {
 			double gazerBestSq = GAZER_BODY_RADIUS * GAZER_BODY_RADIUS;
 			for (Entity candidate : armorStandGrid.near(label)) {
+				if (claimedBodies.contains(candidate.getUUID())) continue;
 				double distanceSq = distanceSquared(candidate, label);
 				if (distanceSq >= gazerBestSq) continue;
 				gazerBestSq = distanceSq;
@@ -410,6 +514,60 @@ public final class CritterEntities {
 		}
 
 		return best;
+	}
+
+	/** Keeps an established label/body relationship stable while both entities remain valid. */
+	private static Entity retainedBody(EntityGrid candidateGrid, EntityGrid interactionGrid,
+					EntityGrid armorStandGrid, Entity label, Critter critter,
+					Set<UUID> claimedBodies, UUID previousBodyId) {
+		if (previousBodyId == null || claimedBodies.contains(previousBodyId)) return null;
+		List<Entity> pool;
+		if ("Duplico".equals(critter.name())) pool = interactionGrid.near(label);
+		else if ("Gazer".equals(critter.name())) pool = armorStandGrid.near(label);
+		else pool = candidateGrid.near(label);
+		double maxSq = ("Gazer".equals(critter.name()) ? GAZER_BODY_RADIUS : LABEL_TO_MOB_RADIUS);
+		maxSq *= maxSq;
+		for (Entity candidate : pool) {
+			if (!candidate.getUUID().equals(previousBodyId)) continue;
+			if (distanceSquared(candidate, label) >= maxSq) return null;
+			if (!"Duplico".equals(critter.name()) && !"Gazer".equals(critter.name())
+				&& !isExpectedBody(critter, candidate)) return null;
+			return candidate;
+		}
+		return null;
+	}
+
+	/** Whether this entity is a positively identified body rather than a proximity guess. */
+	static boolean isVerifiedBody(Critter critter, Entity candidate) {
+		if ("Duplico".equals(critter.name())) {
+			return EntityTypeIds.is(candidate, "interaction") || EntityTypeIds.is(candidate, "silverfish");
+		}
+		if ("Gazer".equals(critter.name())) return EntityTypeIds.is(candidate, "armor_stand");
+		Set<String> expected = EXPECTED_BODY_TYPES.get(critter.name());
+		return expected != null && expected.contains(EntityTypeIds.path(candidate));
+	}
+
+	/** The bodyless label's species, used to hide capsule nametags during capture. */
+	static Critter bodylessLabelCritter(UUID labelId) {
+		return bodylessLabels.get(labelId);
+	}
+
+	/** The current paired sighting represented by either this label or body id. */
+	static Sighting sightingFor(UUID entityId) {
+		return sightingsByEntity.get(entityId);
+	}
+
+	/** Whether this sighting is temporary capsule/capture scaffolding, not a live critter. */
+	static boolean isCaptureScaffolding(Sighting sighting) {
+		return sighting.mob() == null
+			? RecatchSpots.captureInProgress(sighting.critter())
+			: RecatchSpots.isCaptureArtifact(sighting.critter(), sighting.mob());
+	}
+
+	/** Prevents nearby wildlife and capture helpers from stealing verified critter labels. */
+	private static boolean isExpectedBody(Critter critter, Entity candidate) {
+		Set<String> expected = EXPECTED_BODY_TYPES.get(critter.name());
+		return expected == null || expected.contains(EntityTypeIds.path(candidate));
 	}
 
 	private static double distanceSquared(Entity first, Entity second) {
@@ -458,4 +616,11 @@ public final class CritterEntities {
 
 	private record Cell(int x, int y, int z) { }
 	private record IndexedEntity(int index, Entity entity) { }
+	private record PairingRank(int priority, double distanceSq) implements Comparable<PairingRank> {
+		@Override
+		public int compareTo(PairingRank other) {
+			int compared = Integer.compare(priority, other.priority);
+			return compared != 0 ? compared : Double.compare(distanceSq, other.distanceSq);
+		}
+	}
 }

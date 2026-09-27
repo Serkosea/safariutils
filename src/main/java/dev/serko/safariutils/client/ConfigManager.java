@@ -39,6 +39,11 @@ public final class ConfigManager {
 		return revision;
 	}
 
+	/** Read-only, non-loading probe used by logging during config initialization. */
+	public static boolean automaticLoggingDisabled() {
+		return config != null && config.advanced.disableAutomaticLogging;
+	}
+
 	private static SafariConfig load() {
 		Path path = SafariPaths.settings();
 		if (!Files.isRegularFile(path)) return new SafariConfig();
@@ -52,7 +57,7 @@ public final class ConfigManager {
 				loaded.display.uniqueHitboxColours = true;
 				loaded.sparkling.sparklingUniqueHitboxColours = false;
 			}
-			resetSessionDebugOptions(loaded.advanced);
+			resetSessionOptions(loaded);
 			return loaded;
 		} catch (RuntimeException | IOException malformed) {
 			OperationalLog.error("CONFIG/LOAD", malformed);
@@ -71,6 +76,43 @@ public final class ConfigManager {
 				&& sparkling.get("specialSparklingCatch").getAsBoolean();
 			sparkling.addProperty("specialSparklingIntensity", intense ? 1 : 0);
 		}
+		int presetVersion = sparkling.has("sparklingAlertPresetVersion")
+			? sparkling.get("sparklingAlertPresetVersion").getAsInt() : 0;
+		if (presetVersion == 0) {
+			// The first custom-editor test build used slot 18 for Custom. Preserve it
+			// when loading that schema after the preset sequence expands.
+			if (sparkling.has("customAlertHorizonFlares")
+					&& sparkling.get("specialSparklingIntensity").getAsInt() == 18) {
+				sparkling.addProperty("specialSparklingIntensity", SparklingAlertStyle.CUSTOM_INDEX);
+			}
+		} else if (presetVersion == 2
+				&& sparkling.get("specialSparklingIntensity").getAsInt() == 28) {
+			// Version two placed Custom immediately after its 28 presets.
+			sparkling.addProperty("specialSparklingIntensity", SparklingAlertStyle.CUSTOM_INDEX);
+		} else if (presetVersion == 3
+				&& sparkling.get("specialSparklingIntensity").getAsInt() == 36) {
+			// Version three placed Custom immediately after its 36 presets.
+			sparkling.addProperty("specialSparklingIntensity", SparklingAlertStyle.CUSTOM_INDEX);
+		}
+		if (presetVersion < 5 && sparkling.has("customAlertSoundTheme")
+				&& sparkling.get("customAlertSoundTheme").getAsInt() == 5) {
+			// Apotheosis moved from the sixth slot to the final slot when two longer
+			// scores were added; preserve existing custom-alert sound choices.
+			sparkling.addProperty("customAlertSoundTheme", 7);
+		}
+		if (presetVersion < 5 && sparkling.has("customAlertDuration")) {
+			int oldLevel = Math.clamp(sparkling.get("customAlertDuration").getAsInt(), 0, 7);
+			int[] oldDurations = {5, 6, 7, 8, 10, 12, 15, 20};
+			sparkling.addProperty("customAlertDuration", oldDurations[oldLevel]);
+		}
+		if (presetVersion < 9 && sparkling.has("customAlertSong")) {
+			int oldSong = sparkling.get("customAlertSong").getAsInt();
+			// Preserve Off and map the former eighteen-song range proportionally onto
+			// the cleaner seven-composition set.
+			sparkling.addProperty("customAlertSong", oldSong >= 18 ? 7
+				: Math.clamp(Math.round(oldSong * 6f / 17f), 0, 6));
+		}
+		sparkling.addProperty("sparklingAlertPresetVersion", 9);
 		sparkling.remove("specialSparklingCatch");
 	}
 
@@ -124,18 +166,10 @@ public final class ConfigManager {
 		}
 	}
 
-	/** Output categories are diagnostic session state, not lasting preferences. */
-	private static void resetSessionDebugOptions(SafariConfig.AdvancedConfig advanced) {
-		advanced.enablePartySync = false;
-		advanced.debugLog = false;
-		advanced.outputLogPreset = 1; // Custom: every individual option starts disabled below.
-		for (var field : SafariConfig.AdvancedConfig.class.getFields()) {
-			if (field.getType() != boolean.class || !field.getName().startsWith("log")) continue;
-			try {
-				field.setBoolean(advanced, false);
-			} catch (IllegalAccessException ignored) {
-			}
-		}
+	/** Party sync must be explicitly acknowledged again after every launch. */
+	private static void resetSessionOptions(SafariConfig loaded) {
+		loaded.advanced.enablePartySync = false;
+		loaded.sparkling.ticketTradingEnabled = false;
 	}
 
 	/** Writes atomically so an interrupted save cannot destroy a working config. */

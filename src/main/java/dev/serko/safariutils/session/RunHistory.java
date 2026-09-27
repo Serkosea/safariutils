@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.Critters;
+import dev.serko.safariutils.data.CritterSpawnRanges;
 import dev.serko.safariutils.io.AtomicFiles;
 import dev.serko.safariutils.client.OperationalLog;
 
@@ -76,6 +77,7 @@ public final class RunHistory {
 			runs.clear();
 			OperationalLog.error("HISTORY/LOAD", unreadable);
 		}
+		validateExpectedRanges("load", runs);
 		rebuildStats();
 	}
 
@@ -93,9 +95,33 @@ public final class RunHistory {
 			&& (record.sparklings == null || record.sparklings.isEmpty())) return;
 
 		runs.add(record);
+		validateExpectedRanges("save", List.of(record));
 		while (runs.size() > MAX_RUNS) runs.removeFirst();
 		rebuildStats();
 		save();
+	}
+
+	/** Reports suspicious counts without rewriting or rejecting historical data. */
+	private static void validateExpectedRanges(String source, List<RunRecord> records) {
+		int outliers = 0;
+		StringBuilder examples = new StringBuilder();
+		for (int runIndex = 0; runIndex < records.size(); runIndex++) {
+			RunRecord run = records.get(runIndex);
+			for (Critter critter : Critters.all()) {
+				int caught = run.caught(critter);
+				int maximum = CritterSpawnRanges.maximum(critter);
+				if (caught <= maximum) continue;
+				outliers++;
+				if (examples.length() >= 240) continue;
+				if (!examples.isEmpty()) examples.append("; ");
+				examples.append('#').append(runIndex + 1).append(' ').append(critter.name())
+					.append('=').append(caught).append('>').append(maximum);
+			}
+		}
+		if (outliers > 0) {
+			OperationalLog.debug("RANGE/HISTORY", source + " outliers=" + outliers
+				+ " examples=" + examples);
+		}
 	}
 
 	/** Saved runs, oldest first. */

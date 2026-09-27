@@ -40,6 +40,11 @@ public final class SafariPaths {
 		return LOGS.resolve("safariutils.log");
 	}
 
+	public static Path operationalLog(String sessionName, int part) {
+		String suffix = part <= 1 ? "" : "_P" + part;
+		return LOGS.resolve(sessionName + suffix + ".log");
+	}
+
 	/** Moves legacy files into the organized layout without overwriting any destination. */
 	public static void migrateLegacyFiles() {
 		try {

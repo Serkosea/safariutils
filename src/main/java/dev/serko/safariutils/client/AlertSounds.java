@@ -1,19 +1,34 @@
 package dev.serko.safariutils.client;
 
+import com.google.gson.Gson;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.sounds.AbstractTickableSoundInstance;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
+import net.minecraft.client.resources.sounds.SoundInstance;
+import net.minecraft.resources.Identifier;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.RandomSource;
 
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 
 /** Stable sound IDs with an independently alphabetized presentation order. */
 public final class AlertSounds {
 	public record Choice(int id, String label) { }
 	private record Note(SoundEvent sound, int delay, float pitch) { }
-	private record Pending(SoundEvent sound, long dueTick, float volume, float pitch) { }
+	private record Pending(SoundEvent sound, long dueTick, float volume, float pitch, int layers) {
+		private Pending(SoundEvent sound, long dueTick, float volume, float pitch) {
+			this(sound, dueTick, volume, pitch, 1);
+		}
+	}
 
 	private static final List<Choice> CHOICES = List.of(
 		new Choice(0, "Challenge Complete"),
@@ -77,7 +92,143 @@ public final class AlertSounds {
 		.sorted(Comparator.comparing(Choice::label, String.CASE_INSENSITIVE_ORDER)).toList();
 	private static final String[] LABELS = labelsById();
 	private static final List<Pending> PENDING = new ArrayList<>();
-	private static final List<Pending> SPARKLING_PENDING = new ArrayList<>();
+	private static final Deque<Pending> SPARKLING_PENDING = new ArrayDeque<>();
+	private static final float SPARKLING_BASE_VOLUME_GAIN = 3.75f;
+	public static final int SPARKLING_SONG_COUNT = 11;
+	public static final int SPARKLING_SONG_OFF = SPARKLING_SONG_COUNT;
+	private static final float[] SPARKLING_DURATION_CHOICES = {
+		5f, 5.5f, 6f, 6.5f, 7f, 7.5f, 8f, 8.5f, 9f, 9.5f,
+		10f, 10.5f, 11f, 11.5f, 12f, 12.5f, 13f, 13.5f, 14f, 14.5f,
+		15f, 15.5f, 16f, 16.5f, 17f, 17.5f, 18f, 18.5f, 19f, 19.5f, 20f
+	};
+	private static final String[] SPARKLING_STEM_IDS = {
+		"melody", "magic", "harmony", "counter", "bass", "pulse", "drums", "grandeur",
+		"bells", "harp", "choir", "horns", "finale"
+	};
+	private static final int[] SPARKLING_STEM_LEVELS = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+	private static final float[] SPARKLING_STEM_GAINS = {
+		1f, .76f, .72f, .78f, .88f, .82f, 1.04f, .9f, .72f, .76f, .66f, .86f, .8f
+	};
+	private static final List<SoundInstance> ACTIVE_SPARKLING_SOUNDS = new ArrayList<>();
+	private static final int SPARKLING_FADE_TICKS = 20;
+	private static long sparklingFadeAt;
+	private static long sparklingStopAt;
+	private static long sparklingScoreStartedAt;
+	private static long sparklingScoreOffsetMillis;
+	private static long sparklingScoreCycle = -1;
+	private static final int[] SPARKLING_EVENT_INDEX = new int[13];
+	private static int activeSparklingSong = -1;
+	private static int activeSparklingTheme;
+	private static float activeSparklingGain;
+	private static final int[] SAMPLE_ANCHORS = {48, 66, 84};
+	private static final int NOTE_KIND_COUNT = 9;
+	private static final int SCORE_LOOP_MILLIS = 30_000;
+	private static final ScoreData SPARKLING_SCORES = loadSparklingScores();
+	private static final SoundEvent[][][] NOTE_SAMPLES = noteSamples();
+	private static final SoundEvent[] DRUM_SAMPLES = drumSamples();
+
+	private static final class ScoreData {
+		String[] kinds = new String[0];
+		float[][][][] songs = new float[0][][][];
+	}
+
+	/** Keeps the current arrangement playing while its real channel volume fades. */
+	private static final class FadingSparklingSound extends AbstractTickableSoundInstance {
+		private final float fullVolume;
+
+		private FadingSparklingSound(SoundEvent sound, float volume, float pitch) {
+			super(sound, SoundSource.PLAYERS, RandomSource.create());
+			this.fullVolume = volume;
+			this.volume = volume;
+			this.pitch = pitch;
+			this.looping = false;
+			this.delay = 0;
+			this.attenuation = SoundInstance.Attenuation.NONE;
+			this.relative = true;
+		}
+
+		@Override
+		public void tick() {
+			if (tick >= sparklingStopAt) {
+				stop();
+				return;
+			}
+			if (tick < sparklingFadeAt) return;
+			float remaining = (sparklingStopAt - tick) / (float) SPARKLING_FADE_TICKS;
+			volume = fullVolume * Math.clamp(remaining, 0f, 1f);
+		}
+	}
+	private record SparklingSong(int bodyTicks, int cadenceTicks, int[] melody,
+		int[] chords, int[] counter, int[] cadence, int[] cadenceChords) { }
+	/** Distinct major-key compositions ordered from intimate discovery to grand finale. */
+	private static final SparklingSong[] SPARKLING_SONGS = {
+		// Prismatic Discovery — compact G-major reveal.
+		new SparklingSong(160, 40,
+			new int[]{0,67, 8,71, 16,74, 28,79, 40,78, 52,74, 64,71, 76,67,
+				80,69, 92,72, 104,71, 116,74, 128,79, 140,78, 152,79},
+			new int[]{0,55,4, 40,50,4, 80,52,3, 120,48,4},
+			new int[]{20,86, 60,83, 100,88, 140,86},
+			new int[]{0,74, 8,79, 16,81, 24,83, 32,79, 39,79},
+			new int[]{0,50,4, 20,48,4, 32,55,4}),
+		// Starlight Ascent — buoyant D-major 6/8 climb.
+		new SparklingSong(144, 48,
+			new int[]{0,62, 6,66, 12,69, 18,74, 30,73, 36,69, 48,66, 54,69,
+				60,74, 72,76, 78,78, 84,81, 96,78, 108,76, 120,74, 132,81},
+			new int[]{0,50,4, 36,57,4, 72,47,3, 108,55,4},
+			new int[]{15,81, 45,78, 75,86, 105,83, 135,90},
+			new int[]{0,78, 8,81, 16,83, 24,86, 32,81, 40,78, 47,74},
+			new int[]{0,55,4, 24,57,4, 40,50,4}),
+		// Enchanted Dawn — warm C-major call and response.
+		new SparklingSong(160, 40,
+			new int[]{0,64, 10,67, 20,72, 30,71, 40,69, 50,67, 60,76, 70,72,
+				80,67, 90,72, 100,76, 110,79, 120,77, 130,76, 140,72, 150,79},
+			new int[]{0,48,4, 40,45,3, 80,53,4, 120,55,4},
+			new int[]{25,79, 55,76, 85,84, 115,81, 145,83},
+			new int[]{0,76, 8,77, 16,79, 24,84, 32,83, 39,84},
+			new int[]{0,53,4, 20,55,4, 32,48,4}),
+		// Aurora Waltz — lilting F-major three-beat phrase.
+		new SparklingSong(144, 48,
+			new int[]{0,65, 8,69, 16,72, 24,77, 36,76, 48,72, 56,69, 64,72,
+				72,74, 84,77, 96,81, 108,79, 120,77, 132,72, 140,77},
+			new int[]{0,53,4, 36,48,4, 72,50,3, 108,55,4},
+			new int[]{12,84, 36,81, 60,79, 84,86, 108,84, 132,81},
+			new int[]{0,72, 8,77, 16,81, 24,79, 32,76, 40,77, 47,77},
+			new int[]{0,55,4, 24,48,4, 40,53,4}),
+		// Crystal Reverie — shimmering A-major arpeggio and countermelody.
+		new SparklingSong(144, 48,
+			new int[]{0,69, 6,73, 12,76, 18,81, 24,80, 30,76, 36,73, 48,71,
+				54,74, 60,78, 66,83, 78,81, 90,78, 102,76, 114,73, 126,81, 138,85},
+			new int[]{0,57,4, 36,52,4, 72,54,3, 108,50,4},
+			new int[]{9,88, 27,85, 45,83, 63,90, 81,88, 99,85, 117,92, 135,90},
+			new int[]{0,76, 8,81, 16,83, 24,85, 32,88, 40,85, 47,81},
+			new int[]{0,50,4, 24,52,4, 40,57,4}),
+		// Celestial Voyage — broad E-major adventure theme.
+		new SparklingSong(160, 40,
+			new int[]{0,64, 8,68, 16,71, 24,76, 36,78, 48,80, 60,78, 72,76,
+				80,71, 88,76, 96,80, 104,83, 116,85, 128,83, 140,80, 152,88},
+			new int[]{0,52,4, 40,47,4, 80,49,3, 120,45,4},
+			new int[]{12,83, 32,80, 52,85, 72,83, 92,88, 112,85, 132,92, 152,88},
+			new int[]{0,80, 7,83, 14,85, 21,88, 28,87, 34,83, 39,88},
+			new int[]{0,45,4, 20,47,4, 32,52,4}),
+		// Mythic Coronation — B-flat major ceremonial fanfare.
+		new SparklingSong(160, 40,
+			new int[]{0,70, 6,74, 12,77, 20,82, 28,77, 36,82, 44,86, 56,84,
+				64,82, 72,79, 80,77, 88,82, 96,86, 104,89, 116,91, 128,89, 140,86, 152,94},
+			new int[]{0,58,4, 40,53,4, 80,55,3, 120,51,4},
+			new int[]{8,89, 24,86, 40,94, 56,91, 72,89, 88,98, 104,94, 120,91, 136,98, 152,94},
+			new int[]{0,82, 6,86, 12,89, 18,94, 25,91, 31,89, 36,86, 39,94},
+			new int[]{0,53,4, 18,51,4, 32,58,4}),
+		// Eternal Radiance — soaring G-major grand finale in 12/8.
+		new SparklingSong(144, 48,
+			new int[]{0,67, 4,71, 8,74, 12,79, 18,83, 24,81, 30,79, 36,86,
+				42,83, 48,88, 54,86, 60,83, 66,91, 72,88, 78,86, 84,83,
+				90,79, 96,83, 102,86, 108,91, 114,93, 120,95, 126,93, 132,91, 138,98},
+			new int[]{0,55,4, 36,50,4, 72,52,3, 108,48,4},
+			new int[]{6,86, 18,90, 30,86, 42,95, 54,91, 66,98, 78,95, 90,91,
+				102,100, 114,98, 126,102, 138,98},
+			new int[]{0,86, 5,91, 10,93, 15,95, 20,98, 26,95, 32,93, 38,91, 43,98, 47,103},
+			new int[]{0,50,4, 16,48,4, 32,55,4})
+	};
 	private static long tick;
 	private static final ThreadLocal<Boolean> PLAYING_ALERT = ThreadLocal.withInitial(() -> false);
 
@@ -143,47 +294,442 @@ public final class AlertSounds {
 		play(client, id, volume, pitch);
 	}
 
-	/** Dedicated five-second catch melody; intentionally absent from normal sound choices. */
-	public static void playSparklingCall(Minecraft client) {
-		if (client.player == null) return;
-		SPARKLING_PENDING.clear();
-		SoundEvent chime = SoundEvents.NOTE_BLOCK_CHIME.value();
-		float[] pitches = {
-			0.75f, 0.94f, 1.12f, 1.50f,
-			0.84f, 1.12f, 1.26f, 1.68f,
-			0.94f, 1.26f, 1.50f, 1.88f,
-			1.12f, 1.50f, 1.68f, 2.00f,
-			1.50f, 1.88f, 2.00f
+	public static String sparklingIntensityLabel(int theme) {
+		return switch (Math.clamp(theme, 0, 12)) {
+			case 0 -> "Delicate";
+			case 1 -> "Gentle";
+			case 2 -> "Luminous";
+			case 3 -> "Radiant";
+			case 4 -> "Celebratory";
+			case 5 -> "Triumphant";
+			case 6 -> "Majestic";
+			case 7 -> "Grand";
+			case 8 -> "Epic";
+			case 9 -> "Mythic";
+			case 10 -> "Legendary";
+			case 11 -> "Transcendent";
+			default -> "Apotheosis";
 		};
-		int[] delays = {0, 5, 10, 16, 22, 27, 33, 39, 45, 50, 56, 62, 68, 74, 80, 86, 91, 95, 98};
-		for (int note = 0; note < pitches.length; note++) {
-			// A few local layers keep the melody bright without recreating the old
-			// 150-sound burst or exposing it as a selectable ordinary alert sound.
-			for (int layer = 0; layer < 6; layer++) {
-				SPARKLING_PENDING.add(new Pending(chime, tick + delays[note], 1f, pitches[note]));
+	}
+
+	public static String sparklingIntensityShortLabel(int theme) {
+		return sparklingIntensityLabel(theme);
+	}
+
+	public static String sparklingSongLabel(int song) {
+		return switch (Math.clamp(song, 0, SPARKLING_SONG_OFF)) {
+			case 0 -> "Glimmering Discovery";
+			case 1 -> "Faelight Dance";
+			case 2 -> "Starlight Ascent";
+			case 3 -> "Enchanted Voyage";
+			case 4 -> "Celestial Awakening";
+			case 5 -> "Mythic Triumph";
+			case 6 -> "Infinite Wonder";
+			case 7 -> "Astral Jubilee";
+			case 8 -> "Empyrean Revelation";
+			case 9 -> "Arcane Tempest";
+			case 10 -> "Crown of Stars";
+			default -> "Off";
+		};
+	}
+
+	public static String sparklingSongShortLabel(int song) {
+		return switch (Math.clamp(song, 0, SPARKLING_SONG_OFF)) {
+			case 0 -> "Glimmer";
+			case 1 -> "Faelight";
+			case 2 -> "Ascent";
+			case 3 -> "Voyage";
+			case 4 -> "Awakening";
+			case 5 -> "Triumph";
+			case 6 -> "Infinite";
+			case 7 -> "Jubilee";
+			case 8 -> "Empyrean";
+			case 9 -> "Tempest";
+			case 10 -> "Crown";
+			default -> "Off";
+		};
+	}
+
+	public static int sparklingDurationChoiceCount() {
+		return SPARKLING_DURATION_CHOICES.length;
+	}
+
+	public static float sparklingDurationChoice(int index) {
+		return SPARKLING_DURATION_CHOICES[Math.clamp(index, 0,
+			SPARKLING_DURATION_CHOICES.length - 1)];
+	}
+
+	public static int nearestSparklingDurationChoice(float seconds) {
+		int nearest = 0;
+		for (int index = 1; index < SPARKLING_DURATION_CHOICES.length; index++) {
+			if (Math.abs(SPARKLING_DURATION_CHOICES[index] - seconds)
+					< Math.abs(SPARKLING_DURATION_CHOICES[nearest] - seconds)) nearest = index;
+		}
+		return nearest;
+	}
+
+	public static int defaultSparklingThemeDurationSeconds(int theme) {
+		return switch (Math.clamp(theme, 0, 12)) {
+			case 0, 1 -> 5;
+			case 2, 3 -> 8;
+			case 4, 5 -> 12;
+			case 6, 7 -> 16;
+			case 8, 9 -> 20;
+			case 10, 11 -> 24;
+			default -> 30;
+		};
+	}
+
+	/** Starts a loopable arrangement that fades its current phrase at the configured duration. */
+	public static void playSparklingTheme(Minecraft client, int song, int theme, float durationSeconds,
+			int volumePercent) {
+		playSparklingTheme(client, song, theme, durationSeconds, volumePercent, 0);
+	}
+
+	private static void playSparklingTheme(Minecraft client, int song, int theme,
+			float durationSeconds, int volumePercent, long offsetMillis) {
+		if (client.player == null) return;
+		stopSparklingSongs(client);
+		if (song == SPARKLING_SONG_OFF || SPARKLING_SCORES.songs.length == 0) return;
+		activeSparklingSong = Math.clamp(song, 0, SPARKLING_SONG_COUNT - 1);
+		// Each intensity setting unlocks exactly one additional arrangement stem.
+		// Song choice changes the composition, not the meaning of the intensity control.
+		activeSparklingTheme = Math.clamp(theme, 0, 12);
+		activeSparklingGain = Math.clamp(volumePercent, 0,
+			SparklingAlertStyle.VOLUME_MANUAL_MAX) / 100f * SPARKLING_BASE_VOLUME_GAIN;
+		long durationMillis = Math.round(Math.clamp(durationSeconds, 1f, 999f) * 1_000L);
+		long normalizedOffset = Math.floorMod(offsetMillis, durationMillis);
+		int durationTicks = Math.max(1,
+			(int) Math.ceil((durationMillis - normalizedOffset) / 50.0));
+		sparklingStopAt = tick + durationTicks;
+		sparklingFadeAt = Math.max(tick, sparklingStopAt - SPARKLING_FADE_TICKS);
+		sparklingScoreStartedAt = tick;
+		sparklingScoreOffsetMillis = normalizedOffset;
+		sparklingScoreCycle = -1;
+		playSparklingScoreTick(client);
+	}
+
+	private static void stopSparklingSongs(Minecraft client) {
+		stopSparklingInstances(client);
+		activeSparklingSong = -1;
+		sparklingFadeAt = 0;
+		sparklingStopAt = 0;
+		sparklingScoreStartedAt = 0;
+		sparklingScoreOffsetMillis = 0;
+		sparklingScoreCycle = -1;
+	}
+
+	/** Plays the editor preview through the same layered player as the real alert. */
+	public static void playSparklingPreview(Minecraft client, int song, int theme,
+			float durationSeconds, int volumePercent) {
+		playSparklingTheme(client, song, theme, durationSeconds, volumePercent);
+	}
+
+	public static void playSparklingPreview(Minecraft client, int song, int theme,
+			float durationSeconds, int volumePercent, long offsetMillis) {
+		playSparklingTheme(client, song, theme, durationSeconds, volumePercent, offsetMillis);
+	}
+
+	/** Stops only the sparkling score used by the editor when its modal closes. */
+	public static void stopSparklingPreview(Minecraft client) {
+		stopSparklingSongs(client);
+	}
+
+	private static void stopSparklingInstances(Minecraft client) {
+		for (SoundInstance sound : ACTIVE_SPARKLING_SOUNDS) {
+			client.getSoundManager().stop(sound);
+		}
+		ACTIVE_SPARKLING_SOUNDS.clear();
+	}
+
+	private static void playSparklingLayers(Minecraft client, SoundEvent sound, float volume,
+			float pitch) {
+		int layers = Math.max(1, (int) Math.ceil(volume));
+		for (int layer = 0; layer < layers; layer++) {
+			float layerVolume = Math.min(1f, volume - layer);
+			if (layerVolume <= .01f) continue;
+			SoundInstance instance = new FadingSparklingSound(sound, layerVolume, pitch);
+			ACTIVE_SPARKLING_SOUNDS.add(instance);
+			boolean previous = PLAYING_ALERT.get();
+			PLAYING_ALERT.set(true);
+			try {
+				client.getSoundManager().play(instance);
+			} finally {
+				PLAYING_ALERT.set(previous);
 			}
 		}
 	}
 
-	/** Loud, layered seven-second score reserved for the warned extreme catch effect. */
-	public static void playExtremeSparklingCall(Minecraft client) {
+	private static void playSparklingScoreTick(Minecraft client) {
+		if (activeSparklingSong < 0 || activeSparklingSong >= SPARKLING_SCORES.songs.length) return;
+		long elapsed = sparklingScoreOffsetMillis + (tick - sparklingScoreStartedAt) * 50L;
+		long cycle = elapsed / SCORE_LOOP_MILLIS;
+		int within = (int) (elapsed % SCORE_LOOP_MILLIS);
+		float[][][] stems = SPARKLING_SCORES.songs[activeSparklingSong];
+		if (cycle != sparklingScoreCycle) {
+			sparklingScoreCycle = cycle;
+			for (int stem = 0; stem < SPARKLING_EVENT_INDEX.length; stem++) {
+				int index = 0;
+				if (stem < stems.length) {
+					while (index < stems[stem].length && stems[stem][index][0] < within) index++;
+				}
+				SPARKLING_EVENT_INDEX[stem] = index;
+			}
+		}
+		for (int stem = 0; stem < Math.min(stems.length, SPARKLING_STEM_IDS.length); stem++) {
+			int progress = activeSparklingTheme - SPARKLING_STEM_LEVELS[stem];
+			if (progress < 0) continue;
+			float stemGain = activeSparklingGain * SPARKLING_STEM_GAINS[stem]
+				* (0.58f + Math.min(4, progress) * 0.12f);
+			int index = SPARKLING_EVENT_INDEX[stem];
+			while (index < stems[stem].length && stems[stem][index][0] <= within) {
+				playScoreEvent(client, stems[stem][index], stemGain);
+				index++;
+			}
+			SPARKLING_EVENT_INDEX[stem] = index;
+		}
+	}
+
+	private static void playScoreEvent(Minecraft client, float[] event, float stemGain) {
+		if (event.length < 5) return;
+		int kind = Math.clamp(Math.round(event[1]), 0, SPARKLING_SCORES.kinds.length - 1);
+		SoundEvent sample;
+		float pitch = 1f;
+		if (kind < NOTE_KIND_COUNT) {
+			int note = Math.round(event[2]);
+			int anchorIndex = 0;
+			for (int index = 1; index < SAMPLE_ANCHORS.length; index++) {
+				if (Math.abs(note - SAMPLE_ANCHORS[index])
+						< Math.abs(note - SAMPLE_ANCHORS[anchorIndex])) anchorIndex = index;
+			}
+			int duration = Math.clamp(Math.round(event[3]), 0, 3);
+			sample = NOTE_SAMPLES[kind][anchorIndex][duration];
+			pitch = (float) Math.pow(2.0, (note - SAMPLE_ANCHORS[anchorIndex]) / 12.0);
+		} else {
+			sample = DRUM_SAMPLES[Math.clamp(kind - NOTE_KIND_COUNT, 0,
+				DRUM_SAMPLES.length - 1)];
+		}
+		playSparklingLayers(client, sample, stemGain * event[4], pitch);
+	}
+
+	private static ScoreData loadSparklingScores() {
+		try (var stream = AlertSounds.class.getResourceAsStream(
+				"/assets/safariutils/sparkling_scores.json")) {
+			if (stream == null) return new ScoreData();
+			return new Gson().fromJson(new InputStreamReader(stream, StandardCharsets.UTF_8),
+				ScoreData.class);
+		} catch (Exception error) {
+			OperationalLog.error("AUDIO_SCORE", error);
+			return new ScoreData();
+		}
+	}
+
+	private static SoundEvent[][][] noteSamples() {
+		SoundEvent[][][] samples = new SoundEvent[NOTE_KIND_COUNT][SAMPLE_ANCHORS.length][4];
+		String[] kinds = {"celesta", "glass", "flute", "strings", "brass", "radiance",
+			"bass", "pluck", "pad"};
+		for (int kind = 0; kind < kinds.length; kind++) {
+			for (int anchor = 0; anchor < SAMPLE_ANCHORS.length; anchor++) {
+				for (int duration = 0; duration < 4; duration++) {
+					samples[kind][anchor][duration] = soundEvent("sparkling.sample."
+						+ kinds[kind] + "." + SAMPLE_ANCHORS[anchor] + "." + duration);
+				}
+			}
+		}
+		return samples;
+	}
+
+	private static SoundEvent[] drumSamples() {
+		return new SoundEvent[] {soundEvent("sparkling.sample.kick"),
+			soundEvent("sparkling.sample.tom"), soundEvent("sparkling.sample.cymbal"),
+			soundEvent("sparkling.sample.hat"), soundEvent("sparkling.sample.snare")};
+	}
+
+	private static SoundEvent soundEvent(String path) {
+		return SoundEvent.createVariableRangeEvent(
+			Identifier.fromNamespaceAndPath("safariutils", path));
+	}
+
+	/** Plays one distinct discovery composition with progressively richer orchestration. */
+	private static void playMajorSparklingScore(Minecraft client, int song, int theme,
+			float durationSeconds, int volumePercent) {
 		if (client.player == null) return;
 		SPARKLING_PENDING.clear();
-		SoundEvent chime = SoundEvents.NOTE_BLOCK_CHIME.value();
-		SoundEvent bell = SoundEvents.NOTE_BLOCK_BELL.value();
-		SoundEvent pling = SoundEvents.NOTE_BLOCK_PLING.value();
-		float[] scale = {0.63f, 0.75f, 0.84f, 0.94f, 1.12f, 1.26f, 1.50f, 1.68f, 1.88f, 2.00f};
-		for (int step = 0; step < 34; step++) {
-			SoundEvent sound = step % 5 == 0 ? bell : step % 3 == 0 ? pling : chime;
-			float pitch = scale[Math.floorMod(step * 3 + step / 6, scale.length)];
-			long due = tick + step * 4L;
-			for (int layer = 0; layer < 4; layer++) {
-				SPARKLING_PENDING.add(new Pending(sound, due, 1f, pitch));
+		SparklingSong score = SPARKLING_SONGS[song];
+		int arrangement = Math.min(12, theme + song);
+		int durationTicks = Math.round(durationSeconds * 20);
+		int cadenceLength = score.cadenceTicks();
+		int bodyEnd = Math.max(0, durationTicks - Math.min(durationTicks, cadenceLength));
+		float masterGain = volumePercent / 100f * SPARKLING_BASE_VOLUME_GAIN;
+		float orchestrationGain = 1f / (1f + arrangement * 0.045f);
+
+		int target = 0;
+		while (target < bodyEnd) {
+			int length = Math.min(score.bodyTicks(), bodyEnd - target);
+			queueSongRange(score, 0, length, target, song, arrangement,
+				orchestrationGain, masterGain);
+			target += length;
+		}
+		queueCadence(score, bodyEnd, durationTicks - bodyEnd, song, arrangement,
+			orchestrationGain, masterGain);
+		queuePercussion(durationTicks, song, arrangement, orchestrationGain, masterGain);
+
+		// Phrase percussion is queued after melody notes, so restore chronological
+		// order once; playback then remains O(number of notes due this tick).
+		List<Pending> ordered = new ArrayList<>(SPARKLING_PENDING);
+		ordered.sort(Comparator.comparingLong(Pending::dueTick));
+		SPARKLING_PENDING.clear();
+		SPARKLING_PENDING.addAll(ordered);
+	}
+
+	private static void queueSongRange(SparklingSong score, int sourceFrom, int sourceTo,
+			int targetStart, int song, int theme, float orchestrationGain, float masterGain) {
+		queueNoteRange(score.melody(), 0, sourceFrom, sourceTo, targetStart, song, theme,
+			orchestrationGain, masterGain);
+		queueNoteRange(score.counter(), 3, sourceFrom, sourceTo, targetStart, song, theme,
+			orchestrationGain, masterGain);
+		queueChordRange(score.chords(), sourceFrom, sourceTo, targetStart, song, theme,
+			orchestrationGain, masterGain);
+	}
+
+	private static void queueNoteRange(int[] notes, int role, int sourceFrom, int sourceTo,
+			int targetStart, int song, int theme, float orchestrationGain, float masterGain) {
+		for (int index = 0; index < notes.length; index += 2) {
+			int sourceTick = notes[index];
+			if (sourceTick < sourceFrom || sourceTick >= sourceTo) continue;
+			queueScoreNote(tick + targetStart + sourceTick - sourceFrom, notes[index + 1],
+				role, role == 0 ? 3 : 2, song, theme, orchestrationGain, masterGain);
+		}
+	}
+
+	private static void queueChordRange(int[] chords, int sourceFrom, int sourceTo,
+			int targetStart, int song, int theme, float orchestrationGain, float masterGain) {
+		for (int index = 0; index < chords.length; index += 3) {
+			int sourceTick = chords[index];
+			if (sourceTick < sourceFrom || sourceTick >= sourceTo) continue;
+			long due = tick + targetStart + sourceTick - sourceFrom;
+			int root = chords[index + 1];
+			int third = chords[index + 2];
+			queueScoreNote(due, root + third, 1, 2, song, theme, orchestrationGain, masterGain);
+			queueScoreNote(due, root + 7, 1, 2, song, theme, orchestrationGain, masterGain);
+			queueScoreNote(due, root - 12, 2, 3, song, theme, orchestrationGain, masterGain);
+		}
+	}
+
+	private static void queueCadence(SparklingSong score, int targetStart, int availableTicks,
+			int song, int theme, float orchestrationGain, float masterGain) {
+		if (availableTicks <= 0) return;
+		float scale = Math.min(1f, availableTicks / (float) score.cadenceTicks());
+		for (int index = 0; index < score.cadence().length; index += 2) {
+			int offset = Math.min(availableTicks - 1, Math.round(score.cadence()[index] * scale));
+			queueScoreNote(tick + targetStart + Math.max(0, offset), score.cadence()[index + 1],
+				0, 3, song, theme, orchestrationGain, masterGain);
+		}
+		for (int index = 0; index < score.cadenceChords().length; index += 3) {
+			int offset = Math.min(availableTicks - 1,
+				Math.round(score.cadenceChords()[index] * scale));
+			long due = tick + targetStart + Math.max(0, offset);
+			int root = score.cadenceChords()[index + 1];
+			int third = score.cadenceChords()[index + 2];
+			queueScoreNote(due, root + third, 1, 2, song, theme, orchestrationGain, masterGain);
+			queueScoreNote(due, root + 7, 1, 2, song, theme, orchestrationGain, masterGain);
+			queueScoreNote(due, root - 12, 2, 3, song, theme, orchestrationGain, masterGain);
+		}
+	}
+
+	private static void queueScoreNote(long due, int midi, int role, int strength,
+			int song, int theme, float orchestrationGain, float masterGain) {
+		float pitch = minecraftPitch(midi);
+		float gain = orchestrationGain * switch (strength) {
+			case 3 -> 1f;
+			case 2 -> 0.88f;
+			default -> 0.74f;
+		};
+		if (role == 0) {
+			queueSparklingLayers(songLead(song), due, 4 + song / 3,
+				pitch, gain, masterGain);
+			queueSparklingLayers(songCompanion(song), due, 2 + song / 4,
+				pitch, gain, masterGain);
+			if (theme >= 3) queueSparklingLayers(SoundEvents.NOTE_BLOCK_PLING.value(), due, 1,
+				pitch, gain, masterGain);
+			if (theme >= 7) queueSparklingLayers(SoundEvents.NOTE_BLOCK_FLUTE.value(), due, 1,
+				pitch, 0.82f * gain, masterGain);
+			if (theme >= 11) queueSparklingLayers(SoundEvents.NOTE_BLOCK_IRON_XYLOPHONE.value(),
+				due, 1, pitch, 0.8f * gain, masterGain);
+		} else if (role == 1 && theme >= 1) {
+			queueSparklingLayers(SoundEvents.NOTE_BLOCK_XYLOPHONE.value(), due,
+				theme >= 5 ? 2 : 1, pitch, 0.78f * gain, masterGain);
+			if (theme >= 8) queueSparklingLayers(SoundEvents.NOTE_BLOCK_BELL.value(), due, 1,
+				pitch, 0.7f * gain, masterGain);
+		} else if (role == 2 && theme >= 2) {
+			queueSparklingLayers(SoundEvents.NOTE_BLOCK_BASS.value(), due, 2,
+				pitch, 0.88f * gain, masterGain);
+			if (theme >= 6) queueSparklingLayers(SoundEvents.NOTE_BLOCK_GUITAR.value(), due, 1,
+				pitch, 0.75f * gain, masterGain);
+		} else if (role == 3 && theme >= 4) {
+			queueSparklingLayers(SoundEvents.NOTE_BLOCK_PLING.value(), due, 1,
+				pitch, 0.72f * gain, masterGain);
+			if (theme >= 9) queueSparklingLayers(SoundEvents.NOTE_BLOCK_BELL.value(), due, 1,
+				pitch, 0.68f * gain, masterGain);
+		}
+	}
+
+	private static void queuePercussion(int durationTicks, int song, int theme,
+			float orchestrationGain, float masterGain) {
+		if (theme + song / 2 < 4) return;
+		for (int position = 0; position < durationTicks - 2; position += 10) {
+			if (position % 20 == 0) queueSparklingLayers(SoundEvents.NOTE_BLOCK_BASEDRUM.value(),
+				tick + position, 1, 1f, 0.7f * orchestrationGain, masterGain);
+			else queueSparklingLayers(SoundEvents.NOTE_BLOCK_SNARE.value(), tick + position,
+				1, 1.08f, 0.62f * orchestrationGain, masterGain);
+			if (theme >= 8) queueSparklingLayers(SoundEvents.NOTE_BLOCK_HAT.value(),
+				tick + position + 5, 1, 1.2f, 0.48f * orchestrationGain, masterGain);
+			if (theme >= 12 && position % 40 == 30) {
+				queueSparklingLayers(SoundEvents.NOTE_BLOCK_COW_BELL.value(), tick + position,
+					1, 1.12f, 0.5f * orchestrationGain, masterGain);
 			}
-			if (step == 0 || step == 12 || step == 24 || step == 33) {
-				SPARKLING_PENDING.add(new Pending(SoundEvents.FIREWORK_ROCKET_BLAST, due, 1f, 1.25f));
-				SPARKLING_PENDING.add(new Pending(SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, due, 1f, 1.35f));
-			}
+		}
+	}
+
+	private static SoundEvent songLead(int song) {
+		return switch (song) {
+			case 1 -> SoundEvents.NOTE_BLOCK_FLUTE.value();
+			case 2 -> SoundEvents.NOTE_BLOCK_BELL.value();
+			case 3 -> SoundEvents.NOTE_BLOCK_HARP.value();
+			case 4 -> SoundEvents.NOTE_BLOCK_XYLOPHONE.value();
+			case 5 -> SoundEvents.NOTE_BLOCK_PLING.value();
+			case 6 -> SoundEvents.NOTE_BLOCK_IRON_XYLOPHONE.value();
+			case 7 -> SoundEvents.NOTE_BLOCK_CHIME.value();
+			default -> SoundEvents.NOTE_BLOCK_CHIME.value();
+		};
+	}
+
+	private static SoundEvent songCompanion(int song) {
+		return switch (song) {
+			case 1, 4 -> SoundEvents.NOTE_BLOCK_CHIME.value();
+			case 2, 6 -> SoundEvents.NOTE_BLOCK_HARP.value();
+			case 3 -> SoundEvents.NOTE_BLOCK_FLUTE.value();
+			case 5, 7 -> SoundEvents.NOTE_BLOCK_BELL.value();
+			default -> SoundEvents.NOTE_BLOCK_HARP.value();
+		};
+	}
+
+	private static float minecraftPitch(int midi) {
+		while (midi < 54) midi += 12;
+		while (midi > 78) midi -= 12;
+		return (float) Math.pow(2.0, (midi - 66) / 12.0);
+	}
+
+	private static void queueSparklingLayers(SoundEvent sound, long due, int layers,
+			float pitch, float volume, float masterGain) {
+		float scaledLayers = Math.max(0f, layers * masterGain);
+		int wholeLayers = (int) scaledLayers;
+		if (wholeLayers > 0) {
+			SPARKLING_PENDING.add(new Pending(sound, due, volume, pitch, wholeLayers));
+		}
+		float remainder = scaledLayers - wholeLayers;
+		if (remainder > 0.01f) {
+			SPARKLING_PENDING.add(new Pending(sound, due, volume * remainder, pitch));
 		}
 	}
 
@@ -194,18 +740,37 @@ public final class AlertSounds {
 		if (client.player == null) {
 			PENDING.clear();
 			SPARKLING_PENDING.clear();
+			stopSparklingSongs(client);
 			return;
 		}
+		if (activeSparklingSong >= 0 && tick >= sparklingStopAt) {
+			stopSparklingSongs(client);
+		} else if (activeSparklingSong >= 0) {
+			playSparklingScoreTick(client);
+		}
 		drain(client, PENDING);
-		drain(client, SPARKLING_PENDING);
+		drainSparkling(client);
 	}
 
 	private static void drain(Minecraft client, List<Pending> sounds) {
 		for (Iterator<Pending> iterator = sounds.iterator(); iterator.hasNext();) {
 			Pending pending = iterator.next();
 			if (pending.dueTick > tick) continue;
-			playNote(client, pending.sound, pending.volume, pending.pitch);
+			for (int layer = 0; layer < pending.layers; layer++) {
+				playNote(client, pending.sound, pending.volume, pending.pitch);
+			}
 			iterator.remove();
+		}
+	}
+
+	/** Sparkling scores are queued chronologically, so long custom durations stay O(due notes). */
+	private static void drainSparkling(Minecraft client) {
+		while (!SPARKLING_PENDING.isEmpty()
+				&& SPARKLING_PENDING.peekFirst().dueTick <= tick) {
+			Pending pending = SPARKLING_PENDING.removeFirst();
+			for (int layer = 0; layer < pending.layers; layer++) {
+				playNote(client, pending.sound, pending.volume, pending.pitch);
+			}
 		}
 	}
 

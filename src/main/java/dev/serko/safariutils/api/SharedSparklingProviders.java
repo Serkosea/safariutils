@@ -37,6 +37,10 @@ public final class SharedSparklingProviders {
 		PROVIDER.ifPresent(SharedSparklingProvider::shutdown);
 	}
 
+	public static int nameColour(String name) {
+		return PROVIDER.map(provider -> provider.nameColour(name)).orElse(-1);
+	}
+
 	public static boolean specialName(String name) {
 		return PROVIDER.map(provider -> provider.specialName(name)).orElse(false);
 	}

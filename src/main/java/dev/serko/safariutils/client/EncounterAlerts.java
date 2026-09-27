@@ -1,6 +1,7 @@
 package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.data.Critter;
+import dev.serko.safariutils.data.CritterSpawnRanges;
 import dev.serko.safariutils.data.Critters;
 import dev.serko.safariutils.data.SafariBiome;
 import dev.serko.safariutils.session.TrackingMode;
@@ -28,9 +29,6 @@ public final class EncounterAlerts implements HudElement {
 	private static final int STARTED_COLOUR = 0xFFFF5555;
 	private static final int DONE_COLOUR = 0xFF55FF55;
 
-	/** Exactly this many Gemzies spawn each time the chamber opens. */
-	private static final int GEMZIE_PER_CHAMBER = 3;
-
 	private static final Map<String, Long> lastFired = new HashMap<>();
 
 	/** Gemzies still to catch in the open chamber; 0 when no chamber is active. */
@@ -50,6 +48,14 @@ public final class EncounterAlerts implements HudElement {
 	private static String cachedStyledText;
 	private static int cachedStyledFont = Integer.MIN_VALUE;
 	private static Component cachedStyledMessage;
+	private static final int[] BANNER_QUADS = new int[5 * 512];
+	private static final int[] PROGRESS_QUADS = new int[10];
+	private static int bannerQuadLength;
+	private static long sparklingBannerFrame = Long.MIN_VALUE;
+	private static int sparklingBannerWidth, sparklingBannerHeight;
+	private static int sparklingBannerThickness;
+	private static boolean sparklingBannerBorder;
+	private static boolean sparklingBannerGeometryValid;
 
 	public enum Stage {READY, STARTED, DONE}
 	public enum Preview {FULL_PARTY, HOTSPOT, FLOOR_DROPS, BIOME_UNIQUES, ALL_BUT_MACAW, ALL_DONE,
@@ -83,7 +89,8 @@ public final class EncounterAlerts implements HudElement {
 			// Exactly three Gemzies spawn per chamber, so the encounter is over once
 			// three have been caught by anyone rather than on any message.
 			Critter gemzie = Critters.byName("Gemzie");
-			gemzieRemaining = gemzie == null ? GEMZIE_PER_CHAMBER : TrackingMode.required(gemzie);
+			gemzieRemaining = gemzie == null ? 3
+				: Math.min(TrackingMode.required(gemzie), CritterSpawnRanges.maximum(gemzie));
 			fire("Gemzie", Stage.READY, "chamber open, " + gemzieRemaining + " to catch", 1.4f);
 			return true;
 		}
@@ -712,6 +719,7 @@ public final class EncounterAlerts implements HudElement {
 		if ((playbackMode & 1) == 0) return;
 		message = text;
 		rainbowMessage = false;
+		sparklingBannerGeometryValid = false;
 		colour = bannerColour;
 		shownAtMillis = System.currentTimeMillis();
 		displayMillis = (long) (durationSeconds * 1000);
@@ -730,6 +738,7 @@ public final class EncounterAlerts implements HudElement {
 		if ((playbackMode & 1) == 0) return;
 		message = text;
 		rainbowMessage = true;
+		sparklingBannerGeometryValid = false;
 		shownAtMillis = System.currentTimeMillis();
 		displayMillis = (long) (durationSeconds * 1000);
 		SafariConfig.AlertConfig placement = ConfigManager.get().alerts;
@@ -919,7 +928,7 @@ public final class EncounterAlerts implements HudElement {
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(scale, scale);
 		drawBannerFrame(graphics, font, styledMessage, centreX, y, alpha, rainbowMessage,
-			appearance,
+			appearance, age,
 			(float) Math.clamp(1.0 - age / (double) displayMillis, 0.0, 1.0));
 		if (rainbowMessage) {
 			rainbowCenteredText(graphics, font, message, centreX, y + 1, alpha,
@@ -933,7 +942,7 @@ public final class EncounterAlerts implements HudElement {
 
 	private static void drawBannerFrame(GuiGraphicsExtractor graphics, Font font, Component text,
 			int centreX, int textY, int alpha, boolean rainbow,
-			SafariConfig.AlertConfig appearance, float remaining) {
+			SafariConfig.AlertConfig appearance, long age, float remaining) {
 		int width = font.width(text) + 16;
 		int left = centreX - width / 2;
 		int right = left + width;
@@ -962,26 +971,158 @@ public final class EncounterAlerts implements HudElement {
 				(panelAlpha << 24) | topRgb, (panelAlpha << 24) | bottomRgb);
 		}
 
-		int leftColor = (alpha << 24) | leftAccent;
-		int rightColor = (alpha << 24) | rightAccent;
-		int borderColor = rainbow ? leftColor : (alpha << 24) | leftAccent;
+		int borderColor = (alpha << 24) | leftAccent;
 		int progressRgb = mixWithWhite(rainbow ? rightAccent : leftAccent, 0.32f);
 		int progressColor = (alpha << 24) | progressRgb;
 		int thickness = Math.max(1, Math.round(appearance.bannerBorderThickness));
-		// Horizontal edges own the corners; vertical edges stop before them, so the
-		// same alpha is written exactly once everywhere around the frame.
-		if (appearance.bannerBorder) {
+		if (rainbow) {
+			drawSparklingBannerEffects(graphics, left, top, right, bottom, thickness,
+				alpha, age, appearance.bannerBorder);
+		} else if (appearance.bannerBorder) {
+			// Horizontal edges own the corners so fade alpha is written once.
 			int widthPixels = right - left;
 			int heightPixels = bottom - top;
-			GuiQuadBatchRenderState.submit(graphics, left, top, widthPixels, heightPixels, new int[]{
-				0, 0, widthPixels, thickness, borderColor,
-				0, heightPixels - thickness, widthPixels, heightPixels, borderColor,
-				0, thickness, thickness, heightPixels - thickness, borderColor,
-				widthPixels - thickness, thickness, widthPixels, heightPixels - thickness, borderColor
-			});
+			bannerQuadLength = 0;
+			addBannerQuad(0, 0, widthPixels, thickness, borderColor);
+			addBannerQuad(0, heightPixels - thickness, widthPixels, heightPixels, borderColor);
+			addBannerQuad(0, thickness, thickness, heightPixels - thickness, borderColor);
+			addBannerQuad(widthPixels - thickness, thickness, widthPixels,
+				heightPixels - thickness, borderColor);
+			GuiQuadBatchRenderState.submit(graphics, left, top, widthPixels, heightPixels,
+				BANNER_QUADS, bannerQuadLength);
 		}
 		drawSmoothProgress(graphics, left, right, top, bottom, progressColor, remaining,
 			appearance.bannerTopBar, appearance.bannerBottomBar, appearance.bannerBorder ? thickness : 0);
+	}
+
+	/** Sparkling detection uses a banner-centered effect rather than the catch celebration. */
+	private static void drawSparklingBannerEffects(GuiGraphicsExtractor graphics,
+			int left, int top, int right, int bottom, int thickness, int alpha, long age,
+			boolean showBorder) {
+		int marginX = 20;
+		int marginY = 8;
+		int width = right - left;
+		int height = bottom - top;
+		int canvasWidth = width + marginX * 2;
+		int canvasHeight = height + marginY * 2;
+		int frameLeft = marginX;
+		int frameTop = marginY;
+		long frame = age / RainbowColours.FRAME_MILLIS;
+		boolean rebuild = !sparklingBannerGeometryValid || sparklingBannerFrame != frame
+			|| sparklingBannerWidth != width || sparklingBannerHeight != height
+			|| sparklingBannerThickness != thickness
+			|| sparklingBannerBorder != showBorder;
+		if (!rebuild) {
+			GuiQuadBatchRenderState.submit(graphics, left - marginX, top - marginY,
+				canvasWidth, canvasHeight, BANNER_QUADS, bannerQuadLength);
+			return;
+		}
+		bannerQuadLength = 0;
+		int segments = Math.max(1, Math.min(width, 128));
+		float phase = (age % 4_000L) / 4_000f;
+		if (showBorder) {
+			for (int i = 0; i < segments; i++) {
+				int localX = width * i / segments;
+				int colour = RainbowColours.phased(phase, (left + localX) / 96f, 0.55f,
+					alpha / 255f);
+				int x1 = frameLeft + localX;
+				int x2 = frameLeft + width * (i + 1) / segments;
+				addBannerQuad(x1, frameTop, x2, frameTop + thickness, colour);
+				addBannerQuad(x1, frameTop + height - thickness, x2, frameTop + height, colour);
+			}
+			int sideColour = RainbowColours.phased(phase, left / 96f, 0.55f, alpha / 255f);
+			addBannerQuad(frameLeft, frameTop + thickness, frameLeft + thickness,
+				frameTop + height - thickness, sideColour);
+			addBannerQuad(frameLeft + width - thickness, frameTop + thickness,
+				frameLeft + width, frameTop + height - thickness,
+				RainbowColours.phased(phase, (left + width) / 96f, 0.55f, alpha / 255f));
+		}
+
+		int centreY = frameTop + height / 2;
+		// A mirrored four-point sparkle and two orbit trails replace the heavier
+		// arrows and side particles while retaining the banner's horizontal gradient.
+		int canvasGlobalLeft = left - marginX;
+		addBannerOrbitalSparkle(frameLeft - 10, centreY, canvasGlobalLeft,
+			phase, alpha, false);
+		addBannerOrbitalSparkle(frameLeft + width + 9, centreY, canvasGlobalLeft,
+			phase, alpha, true);
+
+		// Top and bottom motes move in opposite horizontal directions.
+		int orbit = Math.floorMod((int) (age / 24L), Math.max(1, width));
+		for (int mote = 0; mote < 4; mote++) {
+			int offset = mote * Math.max(1, width / 4);
+			int topX = frameLeft + Math.floorMod(orbit + offset, width);
+			int bottomX = frameLeft + width - 1 - Math.floorMod(orbit + offset, width);
+			int moteColour = RainbowColours.phased(phase, (left + topX - frameLeft) / 96f, 0.48f,
+				Math.min(alpha, 165) / 255f);
+			addBannerQuad(topX, frameTop - 3, topX + 1, frameTop - 2, moteColour);
+			addBannerQuad(bottomX, frameTop + height + 2,
+				bottomX + 1, frameTop + height + 3, moteColour);
+		}
+
+		int inset = showBorder ? Math.max(1, thickness) : 0;
+		int sweepLeft = frameLeft + inset;
+		int sweepRight = frameLeft + width - inset - 2;
+		int sweepSpan = Math.max(1, sweepRight - sweepLeft + 1);
+		int sweep = sweepLeft + Math.floorMod((int) (age / 18L), sweepSpan);
+		int reverseSweep = sweepRight - (sweep - sweepLeft);
+		int sweepColour = RainbowColours.phased(phase, 0.1f, 0.28f,
+			Math.min(alpha, 60) / 255f);
+		addBannerQuad(sweep, frameTop + inset, sweep + 2,
+			frameTop + height - inset, sweepColour);
+		addBannerQuad(reverseSweep, frameTop + inset,
+			reverseSweep + 2, frameTop + height - inset, sweepColour);
+		sparklingBannerFrame = frame;
+		sparklingBannerWidth = width;
+		sparklingBannerHeight = height;
+		sparklingBannerThickness = thickness;
+		sparklingBannerBorder = showBorder;
+		sparklingBannerGeometryValid = true;
+		GuiQuadBatchRenderState.submit(graphics, left - marginX, top - marginY,
+			canvasWidth, canvasHeight, BANNER_QUADS, bannerQuadLength);
+	}
+
+	private static void addBannerOrbitalSparkle(int centreX, int centreY,
+			int canvasGlobalLeft, float phase, int alpha, boolean mirrored) {
+		int starAlpha = Math.min(alpha, 205);
+		int starColour = RainbowColours.phased(phase,
+			(canvasGlobalLeft + centreX) / 96f, 0.5f, starAlpha / 255f);
+		addBannerQuad(centreX, centreY - 6, centreX + 1, centreY + 7, starColour);
+		addBannerQuad(centreX - 5, centreY, centreX, centreY + 1, starColour);
+		addBannerQuad(centreX + 1, centreY, centreX + 6, centreY + 1, starColour);
+		addBannerQuad(centreX - 1, centreY - 2, centreX + 2, centreY + 3, starColour);
+
+		int samples = 24;
+		float direction = mirrored ? -1f : 1f;
+		float rotation = direction * phase * (float) (Math.PI * 2.0);
+		for (int ring = 0; ring < 2; ring++) {
+			float tilt = ring == 0 ? 0.42f : -0.52f;
+			float radiusX = ring == 0 ? 8.5f : 7f;
+			float radiusY = ring == 0 ? 3.5f : 4.5f;
+			for (int sample = 0; sample < samples; sample++) {
+				float angle = (float) (sample * Math.PI * 2.0 / samples);
+				float rawX = (float) Math.cos(angle) * radiusX;
+				float rawY = (float) Math.sin(angle) * radiusY;
+				int pointX = centreX + Math.round(rawX * (float) Math.cos(tilt)
+					- rawY * (float) Math.sin(tilt));
+				int pointY = centreY + Math.round(rawX * (float) Math.sin(tilt)
+					+ rawY * (float) Math.cos(tilt));
+				float trail = (float) ((Math.cos(angle - rotation - ring * Math.PI) + 1.0) * 0.5);
+				int orbitAlpha = Math.min(alpha, 45 + Math.round(trail * 105f));
+				int colour = RainbowColours.phased(phase,
+					(canvasGlobalLeft + pointX) / 96f, 0.5f, orbitAlpha / 255f);
+				addBannerQuad(pointX, pointY, pointX + 1, pointY + 1, colour);
+			}
+		}
+	}
+
+	private static void addBannerQuad(int left, int top, int right, int bottom, int colour) {
+		if (right <= left || bottom <= top || bannerQuadLength + 5 > BANNER_QUADS.length) return;
+		BANNER_QUADS[bannerQuadLength++] = left;
+		BANNER_QUADS[bannerQuadLength++] = top;
+		BANNER_QUADS[bannerQuadLength++] = right;
+		BANNER_QUADS[bannerQuadLength++] = bottom;
+		BANNER_QUADS[bannerQuadLength++] = colour;
 	}
 
 	/** Draws inset duration bars at quarter-pixel horizontal resolution. */
@@ -996,26 +1137,25 @@ public final class EncounterAlerts implements HudElement {
 		int progressWidth = Math.round((right - left - inset * 2) * horizontalPrecision * remaining);
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(1f / horizontalPrecision, 1f);
-		int[] quads = new int[10];
 		int count = 0;
 		if (topDirection != 0) {
 			int start = topDirection == 1 ? scaledLeft : scaledRight - progressWidth;
-			quads[count++] = start;
-			quads[count++] = top + inset;
-			quads[count++] = start + progressWidth;
-			quads[count++] = top + inset + 1;
-			quads[count++] = color;
+			PROGRESS_QUADS[count++] = start;
+			PROGRESS_QUADS[count++] = top + inset;
+			PROGRESS_QUADS[count++] = start + progressWidth;
+			PROGRESS_QUADS[count++] = top + inset + 1;
+			PROGRESS_QUADS[count++] = color;
 		}
 		if (bottomDirection != 0) {
 			int start = bottomDirection == 1 ? scaledLeft : scaledRight - progressWidth;
-			quads[count++] = start;
-			quads[count++] = bottom - inset - 1;
-			quads[count++] = start + progressWidth;
-			quads[count++] = bottom - inset;
-			quads[count++] = color;
+			PROGRESS_QUADS[count++] = start;
+			PROGRESS_QUADS[count++] = bottom - inset - 1;
+			PROGRESS_QUADS[count++] = start + progressWidth;
+			PROGRESS_QUADS[count++] = bottom - inset;
+			PROGRESS_QUADS[count++] = color;
 		}
 		if (count > 0) GuiQuadBatchRenderState.submit(graphics, 0, 0,
-			Math.max(1, scaledRight), Math.max(1, bottom), quads, count);
+			Math.max(1, scaledRight), Math.max(1, bottom), PROGRESS_QUADS, count);
 		graphics.pose().popMatrix();
 	}
 

@@ -29,6 +29,11 @@ public interface SharedSparklingProvider {
 		return 0L;
 	}
 
+	/** Cached network-rank colour for a player, or {@code -1} when unavailable. */
+	default int nameColour(String name) {
+		return -1;
+	}
+
 	/** Whether a private build gives this UUID-backed player its special name style. */
 	default boolean specialName(String name) {
 		return false;

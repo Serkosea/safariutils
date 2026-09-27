@@ -1,0 +1,567 @@
+{
+  "sparkling.sample.celesta.48.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_celesta_48_0"
+    ]
+  },
+  "sparkling.sample.celesta.48.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_celesta_48_1"
+    ]
+  },
+  "sparkling.sample.celesta.48.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_celesta_48_2"
+    ]
+  },
+  "sparkling.sample.celesta.48.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_celesta_48_3"
+    ]
+  },
+  "sparkling.sample.celesta.66.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_celesta_66_0"
+    ]
+  },
+  "sparkling.sample.celesta.66.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_celesta_66_1"
+    ]
+  },
+  "sparkling.sample.celesta.66.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_celesta_66_2"
+    ]
+  },
+  "sparkling.sample.celesta.66.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_celesta_66_3"
+    ]
+  },
+  "sparkling.sample.celesta.84.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_celesta_84_0"
+    ]
+  },
+  "sparkling.sample.celesta.84.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_celesta_84_1"
+    ]
+  },
+  "sparkling.sample.celesta.84.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_celesta_84_2"
+    ]
+  },
+  "sparkling.sample.celesta.84.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_celesta_84_3"
+    ]
+  },
+  "sparkling.sample.glass.48.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_glass_48_0"
+    ]
+  },
+  "sparkling.sample.glass.48.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_glass_48_1"
+    ]
+  },
+  "sparkling.sample.glass.48.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_glass_48_2"
+    ]
+  },
+  "sparkling.sample.glass.48.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_glass_48_3"
+    ]
+  },
+  "sparkling.sample.glass.66.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_glass_66_0"
+    ]
+  },
+  "sparkling.sample.glass.66.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_glass_66_1"
+    ]
+  },
+  "sparkling.sample.glass.66.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_glass_66_2"
+    ]
+  },
+  "sparkling.sample.glass.66.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_glass_66_3"
+    ]
+  },
+  "sparkling.sample.glass.84.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_glass_84_0"
+    ]
+  },
+  "sparkling.sample.glass.84.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_glass_84_1"
+    ]
+  },
+  "sparkling.sample.glass.84.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_glass_84_2"
+    ]
+  },
+  "sparkling.sample.glass.84.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_glass_84_3"
+    ]
+  },
+  "sparkling.sample.flute.48.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_flute_48_0"
+    ]
+  },
+  "sparkling.sample.flute.48.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_flute_48_1"
+    ]
+  },
+  "sparkling.sample.flute.48.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_flute_48_2"
+    ]
+  },
+  "sparkling.sample.flute.48.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_flute_48_3"
+    ]
+  },
+  "sparkling.sample.flute.66.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_flute_66_0"
+    ]
+  },
+  "sparkling.sample.flute.66.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_flute_66_1"
+    ]
+  },
+  "sparkling.sample.flute.66.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_flute_66_2"
+    ]
+  },
+  "sparkling.sample.flute.66.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_flute_66_3"
+    ]
+  },
+  "sparkling.sample.flute.84.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_flute_84_0"
+    ]
+  },
+  "sparkling.sample.flute.84.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_flute_84_1"
+    ]
+  },
+  "sparkling.sample.flute.84.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_flute_84_2"
+    ]
+  },
+  "sparkling.sample.flute.84.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_flute_84_3"
+    ]
+  },
+  "sparkling.sample.strings.48.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_strings_48_0"
+    ]
+  },
+  "sparkling.sample.strings.48.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_strings_48_1"
+    ]
+  },
+  "sparkling.sample.strings.48.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_strings_48_2"
+    ]
+  },
+  "sparkling.sample.strings.48.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_strings_48_3"
+    ]
+  },
+  "sparkling.sample.strings.66.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_strings_66_0"
+    ]
+  },
+  "sparkling.sample.strings.66.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_strings_66_1"
+    ]
+  },
+  "sparkling.sample.strings.66.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_strings_66_2"
+    ]
+  },
+  "sparkling.sample.strings.66.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_strings_66_3"
+    ]
+  },
+  "sparkling.sample.strings.84.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_strings_84_0"
+    ]
+  },
+  "sparkling.sample.strings.84.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_strings_84_1"
+    ]
+  },
+  "sparkling.sample.strings.84.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_strings_84_2"
+    ]
+  },
+  "sparkling.sample.strings.84.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_strings_84_3"
+    ]
+  },
+  "sparkling.sample.brass.48.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_brass_48_0"
+    ]
+  },
+  "sparkling.sample.brass.48.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_brass_48_1"
+    ]
+  },
+  "sparkling.sample.brass.48.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_brass_48_2"
+    ]
+  },
+  "sparkling.sample.brass.48.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_brass_48_3"
+    ]
+  },
+  "sparkling.sample.brass.66.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_brass_66_0"
+    ]
+  },
+  "sparkling.sample.brass.66.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_brass_66_1"
+    ]
+  },
+  "sparkling.sample.brass.66.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_brass_66_2"
+    ]
+  },
+  "sparkling.sample.brass.66.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_brass_66_3"
+    ]
+  },
+  "sparkling.sample.brass.84.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_brass_84_0"
+    ]
+  },
+  "sparkling.sample.brass.84.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_brass_84_1"
+    ]
+  },
+  "sparkling.sample.brass.84.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_brass_84_2"
+    ]
+  },
+  "sparkling.sample.brass.84.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_brass_84_3"
+    ]
+  },
+  "sparkling.sample.radiance.48.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_radiance_48_0"
+    ]
+  },
+  "sparkling.sample.radiance.48.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_radiance_48_1"
+    ]
+  },
+  "sparkling.sample.radiance.48.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_radiance_48_2"
+    ]
+  },
+  "sparkling.sample.radiance.48.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_radiance_48_3"
+    ]
+  },
+  "sparkling.sample.radiance.66.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_radiance_66_0"
+    ]
+  },
+  "sparkling.sample.radiance.66.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_radiance_66_1"
+    ]
+  },
+  "sparkling.sample.radiance.66.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_radiance_66_2"
+    ]
+  },
+  "sparkling.sample.radiance.66.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_radiance_66_3"
+    ]
+  },
+  "sparkling.sample.radiance.84.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_radiance_84_0"
+    ]
+  },
+  "sparkling.sample.radiance.84.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_radiance_84_1"
+    ]
+  },
+  "sparkling.sample.radiance.84.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_radiance_84_2"
+    ]
+  },
+  "sparkling.sample.radiance.84.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_radiance_84_3"
+    ]
+  },
+  "sparkling.sample.bass.48.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_bass_48_0"
+    ]
+  },
+  "sparkling.sample.bass.48.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_bass_48_1"
+    ]
+  },
+  "sparkling.sample.bass.48.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_bass_48_2"
+    ]
+  },
+  "sparkling.sample.bass.48.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_bass_48_3"
+    ]
+  },
+  "sparkling.sample.bass.66.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_bass_66_0"
+    ]
+  },
+  "sparkling.sample.bass.66.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_bass_66_1"
+    ]
+  },
+  "sparkling.sample.bass.66.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_bass_66_2"
+    ]
+  },
+  "sparkling.sample.bass.66.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_bass_66_3"
+    ]
+  },
+  "sparkling.sample.bass.84.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_bass_84_0"
+    ]
+  },
+  "sparkling.sample.bass.84.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_bass_84_1"
+    ]
+  },
+  "sparkling.sample.bass.84.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_bass_84_2"
+    ]
+  },
+  "sparkling.sample.bass.84.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_bass_84_3"
+    ]
+  },
+  "sparkling.sample.pluck.48.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_pluck_48_0"
+    ]
+  },
+  "sparkling.sample.pluck.48.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_pluck_48_1"
+    ]
+  },
+  "sparkling.sample.pluck.48.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_pluck_48_2"
+    ]
+  },
+  "sparkling.sample.pluck.48.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_pluck_48_3"
+    ]
+  },
+  "sparkling.sample.pluck.66.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_pluck_66_0"
+    ]
+  },
+  "sparkling.sample.pluck.66.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_pluck_66_1"
+    ]
+  },
+  "sparkling.sample.pluck.66.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_pluck_66_2"
+    ]
+  },
+  "sparkling.sample.pluck.66.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_pluck_66_3"
+    ]
+  },
+  "sparkling.sample.pluck.84.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_pluck_84_0"
+    ]
+  },
+  "sparkling.sample.pluck.84.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_pluck_84_1"
+    ]
+  },
+  "sparkling.sample.pluck.84.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_pluck_84_2"
+    ]
+  },
+  "sparkling.sample.pluck.84.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_pluck_84_3"
+    ]
+  },
+  "sparkling.sample.pad.48.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_pad_48_0"
+    ]
+  },
+  "sparkling.sample.pad.48.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_pad_48_1"
+    ]
+  },
+  "sparkling.sample.pad.48.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_pad_48_2"
+    ]
+  },
+  "sparkling.sample.pad.48.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_pad_48_3"
+    ]
+  },
+  "sparkling.sample.pad.66.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_pad_66_0"
+    ]
+  },
+  "sparkling.sample.pad.66.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_pad_66_1"
+    ]
+  },
+  "sparkling.sample.pad.66.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_pad_66_2"
+    ]
+  },
+  "sparkling.sample.pad.66.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_pad_66_3"
+    ]
+  },
+  "sparkling.sample.pad.84.0": {
+    "sounds": [
+      "safariutils:sparkling/sample_pad_84_0"
+    ]
+  },
+  "sparkling.sample.pad.84.1": {
+    "sounds": [
+      "safariutils:sparkling/sample_pad_84_1"
+    ]
+  },
+  "sparkling.sample.pad.84.2": {
+    "sounds": [
+      "safariutils:sparkling/sample_pad_84_2"
+    ]
+  },
+  "sparkling.sample.pad.84.3": {
+    "sounds": [
+      "safariutils:sparkling/sample_pad_84_3"
+    ]
+  },
+  "sparkling.sample.kick": {
+    "sounds": [
+      "safariutils:sparkling/sample_kick"
+    ]
+  },
+  "sparkling.sample.tom": {
+    "sounds": [
+      "safariutils:sparkling/sample_tom"
+    ]
+  },
+  "sparkling.sample.cymbal": {
+    "sounds": [
+      "safariutils:sparkling/sample_cymbal"
+    ]
+  },
+  "sparkling.sample.hat": {
+    "sounds": [
+      "safariutils:sparkling/sample_hat"
+    ]
+  },
+  "sparkling.sample.snare": {
+    "sounds": [
+      "safariutils:sparkling/sample_snare"
+    ]
+  }
+}

@@ -50,12 +50,14 @@ public final class SparklingWatch {
 		lastScan = scan;
 		lastConfigRevision = configRevision;
 		Set<UUID> visibleKeys = new HashSet<>();
-		List<CritterEntities.Sighting> sparklingSightings = new ArrayList<>();
+		Map<Critter, CritterEntities.Sighting> bestBySpecies = new LinkedHashMap<>();
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
 			if (!isSparkling(sighting)) continue;
-			sparklingSightings.add(sighting);
-			visibleKeys.add(keyOf(sighting));
+			bestBySpecies.merge(sighting.critter(), sighting,
+				(first, second) -> sightingScore(second) > sightingScore(first) ? second : first);
 		}
+		List<CritterEntities.Sighting> sparklingSightings = new ArrayList<>(bestBySpecies.values());
+		for (CritterEntities.Sighting sighting : sparklingSightings) visibleKeys.add(keyOf(sighting));
 		for (CritterEntities.Sighting sighting : sparklingSightings) {
 			boolean visiblyConfirmed = visuallyConfirmed(sighting);
 			if (SafeMode.sparklingCritters()) {
@@ -85,8 +87,14 @@ public final class SparklingWatch {
 			if (bodyId != null) announcedBodies.add(bodyId);
 			Long caughtAt = justCaught.get(sighting.critter());
 			if (caughtAt != null && now - caughtAt <= CAUGHT_THEME_MILLIS) continue;
-			UUID replacement = nearestReplacement(sighting.critter(), pos, visibleKeys,
-				replacementExpectedUntil.containsKey(sighting.critter()) || knownId);
+			// Hypixel can recreate a critter's label and body several times through one
+			// capture. A second Sparkling of the same species in one run is not a real
+			// Safari state, so fold every new identity into that species' existing find.
+			UUID replacement = outstandingFor(sighting.critter());
+			if (replacement == null) {
+				replacement = nearestReplacement(sighting.critter(), pos, visibleKeys,
+					replacementExpectedUntil.containsKey(sighting.critter()) || knownId);
+			}
 			if (replacement != null) {
 				boolean chatWasSent = chatAnnounced.remove(replacement);
 				Outstanding previous = outstanding.remove(replacement);
@@ -151,12 +159,43 @@ public final class SparklingWatch {
 		return best;
 	}
 
+	private static UUID outstandingFor(Critter critter) {
+		return outstanding.entrySet().stream()
+			.filter(entry -> entry.getValue().critter() == critter)
+			.map(Map.Entry::getKey)
+			.findFirst()
+			.orElse(null);
+	}
+
+	/** Prefers a real, non-capture body over the duplicate labels used during transitions. */
+	private static int sightingScore(CritterEntities.Sighting sighting) {
+		boolean captureScaffolding = CritterEntities.isCaptureScaffolding(sighting);
+		int score = !captureScaffolding && outstanding.containsKey(keyOf(sighting)) ? 100 : 0;
+		if (!captureScaffolding) score += 40;
+		else score -= 100;
+		// Repeating particles follow the actual moving critter and therefore outweigh
+		// an older nearest-body pairing when several same-species mobs overlap.
+		if (ParticleDiagnostics.confirms(sighting)) score += 400;
+		else if (sighting.sparkling()) score += 150;
+		if (sighting.mob() != null) score += 20;
+		if (sighting.mob() != null && CritterEntities.isVerifiedBody(sighting.critter(), sighting.mob())) {
+			score += 10;
+		}
+		if (visuallyConfirmed(sighting)) score += 5;
+		return score;
+	}
+
 	/** Marks the next nearby ID for this species as a breakout replacement, not a find. */
 	public static void onCaptureInteraction(Critter critter) {
 		if (critter == null || outstanding.values().stream()
 			.noneMatch(entry -> entry.critter() == critter)) return;
 		replacementExpectedUntil.put(critter,
 			System.currentTimeMillis() + REPLACEMENT_GRACE_MILLIS);
+	}
+
+	/** A bodyless label is trustworthy except while Hypixel is replacing it with a capsule. */
+	static boolean provisionalMarkerAllowed(Critter critter) {
+		return critter != null && !replacementExpectedUntil.containsKey(critter);
 	}
 
 	/** Sends public chat only after the named critter itself is visible on screen. */
@@ -185,16 +224,16 @@ public final class SparklingWatch {
 
 	/** Keeps the special HUD frame briefly after the detected critter is caught. */
 	public static void onCaught(Critter critter) {
-		UUID removed = outstanding.entrySet().stream()
+		List<UUID> removed = outstanding.entrySet().stream()
 			.filter(entry -> entry.getValue().critter() == critter)
 			.map(Map.Entry::getKey)
-			.findFirst()
-			.orElse(null);
-		if (removed != null) outstanding.remove(removed);
+			.toList();
+		removed.forEach(outstanding::remove);
 		DebugLog.line("SPARKLING", "caught " + critter.name() + " removed=" + shortId(removed)
 			+ " remaining=" + outstanding.size());
 		justCaught.put(critter, System.currentTimeMillis());
 		replacementExpectedUntil.remove(critter);
+		ParticleDiagnostics.onCaught(critter);
 		caughtThemeUntil = System.currentTimeMillis() + CAUGHT_THEME_MILLIS;
 		FullScreenAlert.show("SPARKLING!", critter.name(), null, FullScreenAlert.SPARKLING);
 	}
@@ -224,6 +263,11 @@ public final class SparklingWatch {
 		return isSparkling(sighting) && entry != null && presentable(entry);
 	}
 
+	/** Sparkling styling is active only while this individual remains outstanding. */
+	static boolean presentsAsSparkling(CritterEntities.Sighting sighting) {
+		return isOutstanding(sighting);
+	}
+
 	/** How far the alerted critter is, for the player's own line. Unused when none. */
 	public static double distanceTo(BlockPos pos) {
 		Minecraft client = Minecraft.getInstance();
@@ -249,6 +293,11 @@ public final class SparklingWatch {
 
 	private static String shortId(UUID id) {
 		return id == null ? "none" : id.toString().substring(0, 8);
+	}
+
+	private static String shortId(List<UUID> ids) {
+		return ids.isEmpty() ? "none" : ids.stream().map(SparklingWatch::shortId)
+			.reduce((first, second) -> first + "," + second).orElse("none");
 	}
 
 	private static String pos(BlockPos pos) {

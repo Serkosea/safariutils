@@ -31,6 +31,8 @@ public final class SafariSession {
 	private final Map<Critter, Integer> failures = new LinkedHashMap<>();
 	/** critter -> partymate name -> how many times they caught it. */
 	private final Map<Critter, Map<String, Integer>> sharedCatches = new LinkedHashMap<>();
+	private final java.util.Set<String> participants =
+		new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
 	/** Shared totals kept beside the detailed player map for constant-time HUD reads. */
 	private final Map<Critter, Integer> sharedCatchTotals = new LinkedHashMap<>();
 	private final Map<SafariBiome, Integer> ownTotalsByBiome = new EnumMap<>(SafariBiome.class);
@@ -71,6 +73,7 @@ public final class SafariSession {
 		this.selfName = selfName == null ? "You" : selfName;
 		this.startedAtMillis = startedAtMillis;
 		this.lastEventMillis = startedAtMillis;
+		participants.add(this.selfName);
 	}
 
 	public void record(CritterEvent event, long atMillis) {
@@ -92,6 +95,7 @@ public final class SafariSession {
 				catchRevision++;
 			}
 			case SHARED_CATCH -> {
+				addParticipant(event.catcher());
 				boolean newlyPartyCaught = !caughtByParty(critter);
 				sharedCatches.computeIfAbsent(critter, c -> new TreeMap<>())
 					.merge(event.catcher(), 1, Integer::sum);
@@ -345,7 +349,12 @@ public final class SafariSession {
 
 	/** Every player seen this run, alphabetically by display name. */
 	public List<String> players() {
-		return new ArrayList<>(uniquePerPlayer().keySet());
+		return new ArrayList<>(participants);
+	}
+
+	/** Adds a confirmed run participant even when they have not produced a catch yet. */
+	public void addParticipant(String player) {
+		if (player != null && !player.isBlank()) participants.add(player);
 	}
 
 	// --- misc ----------------------------------------------------------------

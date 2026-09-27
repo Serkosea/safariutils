@@ -27,6 +27,8 @@ public final class DetectedCritters {
 		Map<Critter, Integer> detected = new HashMap<>();
 		Map<Critter, Integer> visible = new HashMap<>();
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
+			if (CritterEntities.isCaptureScaffolding(sighting)) continue;
+			if (sighting.mob() != null && StillCritters.isResolved(sighting.mob().getUUID())) continue;
 			boolean sparkling = SparklingWatch.isSparkling(sighting);
 			if (sparkling) continue;
 			boolean labelVisible = VisibilityCheck.canSeeVisibleName(sighting.label());

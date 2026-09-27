@@ -16,13 +16,17 @@ if (localDeployFile.isFile()) {
 }
 
 def deployRequested = gradle.startParameter.taskNames.any {
-	it == 'deployToInstance'
+	it == 'DeployBuilds'
 }
 def minecraftProfile = project.findProperty('minecraftProfile')
 	?: (deployRequested ? project.findProperty('deployMinecraftProfile') : null)
 	?: project.default_minecraft_profile
-def privateApiBuild = project.findProperty('includePrivateApi')?.toString()?.toBoolean()
+def developerBuild = project.findProperty('developerBuild')?.toString()?.toBoolean()
+	|| (deployRequested && project.findProperty('deployDeveloperBuild')?.toString()?.toBoolean())
+def privateApiBuild = developerBuild
+	|| project.findProperty('includePrivateApi')?.toString()?.toBoolean()
 	|| (deployRequested && project.findProperty('deployPrivateApi')?.toString()?.toBoolean())
+def privateBuild = privateApiBuild && !developerBuild
 def extraBuild = privateApiBuild
 	|| project.findProperty('extraBuild')?.toString()?.toBoolean()
 	|| (deployRequested && project.findProperty('deployExtraBuild')?.toString()?.toBoolean())
@@ -40,20 +44,21 @@ sourceSets.main.java.srcDir("src/${minecraftProfile}/java")
 // Keep variant outputs physically separate. Besides preserving all release jars,
 // this prevents stale private classes or service registrations from surviving into
 // a later incremental public build.
-def buildVariant = privateApiBuild ? 'private' : (extraBuild ? 'extra' : 'safe')
+def buildVariant = developerBuild ? 'developer'
+	: (privateBuild ? 'private' : (extraBuild ? 'extra' : 'safe'))
 layout.buildDirectory.set(layout.projectDirectory.dir(
 	"build/${minecraftProfile}/${buildVariant}"))
 
 def selectedReleaseVersion = privateApiBuild
 	? project.private_release_version
 	: project.release_version
-version = "${selectedReleaseVersion}${extraBuild ? '-extra' : ''}+mc${project.minecraft_version}"
+def variantSuffix = developerBuild ? '-developer'
+	: (privateBuild ? '-private' : (extraBuild ? '-extra' : ''))
+version = "${selectedReleaseVersion}${variantSuffix}+mc${project.minecraft_version}"
 group = project.maven_group
 
 base {
-	archivesName = privateApiBuild
-		? "${project.archives_base_name}-private"
-		: project.archives_base_name
+	archivesName = project.archives_base_name
 }
 
 loom {
@@ -133,7 +138,8 @@ processResources {
 		version: project.version,
 		minecraft_depends: project.minecraft_depends,
 		safe_build: safeBuild,
-		developer_build: privateApiBuild
+		private_build: privateApiBuild,
+		developer_build: developerBuild
 	]
 	inputs.properties expandProps
 
@@ -151,40 +157,74 @@ java {
 	targetCompatibility = JavaVersion.VERSION_25
 }
 
-// --- Explicit deployment to the selected Prism test instance ---------------
-def deployDirValue = project.findProperty('deployDir')
-	?: project.findProperty("deployDir.${minecraftProfile}")
-def deployDir = deployDirValue ? file(deployDirValue) : layout.buildDirectory.dir('undeployed').get().asFile
-def deployAdditionalDirValue = project.findProperty('deployAdditionalDir')
-	?: project.findProperty("deployAdditionalDir.${minecraftProfile}")
-def deployAdditionalDir = deployAdditionalDirValue ? file(deployAdditionalDirValue) : null
-def deployConfigSourceValue = project.findProperty('deployConfigSource')
-	?: project.findProperty("deployConfigSource.${minecraftProfile}")
-def deployConfigTargetValue = project.findProperty('deployConfigTarget')
-	?: project.findProperty("deployConfigTarget.${minecraftProfile}")
+// --- Explicit deployment to the configured Prism test instances ------------
+// Keep both supported Developer tasks available, but make the ordinary development
+// deploy intentionally 26.2-only. Release verification can invoke 26.1.2 explicitly.
+def supportedDeveloperProfiles = ['26.1.2', '26.2']
+def deployProfiles = ['26.2']
+def developerBuildTasks = [:]
+supportedDeveloperProfiles.each { profileName ->
+	def taskSuffix = profileName.replace('.', '_')
+	def buildTask = tasks.register("buildDeveloper${taskSuffix}", Exec) {
+		description = "Build the ${profileName} Developer jar for local deployment."
+		group = 'fabric'
+		workingDir projectDir
+		commandLine 'cmd', '/c', 'gradlew.bat', 'jar',
+			"-PminecraftProfile=${profileName}", '-PdeveloperBuild=true'
+	}
+	developerBuildTasks[profileName] = buildTask
+}
 
-tasks.register('deployToInstance') {
-	description = 'Copy the built mod jar to configured Prism instances and mirror Safari Utils config one-way.'
+def deployConfigSourceValue = project.findProperty('deployConfigSource.26.2')
+def deployConfigTargetValue = project.findProperty('deployConfigTarget.26.2')
+def fileSystemOperations = project.services.get(org.gradle.api.file.FileSystemOperations)
+def deployDestinations = [:]
+def developerJars = [:]
+supportedDeveloperProfiles.each { profileName ->
+	def deployedProfile = new Properties()
+	file("gradle/versions/${profileName}.properties").withInputStream {
+		deployedProfile.load(it)
+	}
+	developerJars[profileName] = file("build/${profileName}/developer/libs/"
+		+ "${project.archives_base_name}-${project.private_release_version}"
+		+ "-developer+mc${deployedProfile.minecraft_version}.jar")
+	def primary = project.findProperty("deployDir.${profileName}")
+	def additional = project.findProperty("deployAdditionalDir.${profileName}")
+	deployDestinations[profileName] = primary
+		? [file(primary)] + (additional ? [file(additional)] : [])
+		: []
+}
+
+tasks.register('DeployBuilds') {
+	description = 'Build and deploy the 26.2 Developer jar, then mirror its Safari Utils config one-way.'
 	group = 'fabric'
-	dependsOn tasks.named('jar')
+	dependsOn developerBuildTasks['26.2']
 	onlyIf {
-		if (deployDirValue && deployDir.isDirectory()) return true
-		logger.lifecycle('deployToInstance skipped: set -PdeployDir=<mods folder> or define it in local Gradle properties')
-		return false
+		def missing = deployProfiles.findAll { deployDestinations[it].isEmpty() }
+		if (missing.isEmpty()) return true
+		logger.lifecycle("DeployBuilds skipped: missing deployDir properties for ${missing.join(', ')}")
+		false
 	}
 	doLast {
-		def destinations = [deployDir]
-		if (deployAdditionalDir != null) destinations.add(deployAdditionalDir)
-		for (def destination : destinations) {
-			if (!destination.isDirectory()) {
-				throw new GradleException("Deploy mods folder does not exist: ${destination}")
+		deployProfiles.each { profileName ->
+			def jarFile = developerJars[profileName]
+			if (!jarFile.isFile()) {
+				throw new GradleException("Developer jar was not built: ${jarFile}")
 			}
-			delete fileTree(destination) { include 'safariutils-*.jar' }
-			copy {
-				from tasks.named('jar').get().archiveFile
-				into destination
+			deployDestinations[profileName].each { destination ->
+				if (!destination.isDirectory()) {
+					throw new GradleException("Deploy mods folder does not exist: ${destination}")
+				}
+				def oldJars = destination.listFiles({ dir, name ->
+					name.startsWith('safariutils-') && name.endsWith('.jar')
+				} as FilenameFilter)
+				fileSystemOperations.delete { delete oldJars }
+				fileSystemOperations.copy {
+					from jarFile
+					into destination
+				}
+				logger.lifecycle("DeployBuilds ${profileName} -> ${destination}")
 			}
-			logger.lifecycle("deployToInstance -> ${destination}")
 		}
 		if (deployConfigSourceValue && deployConfigTargetValue) {
 			def source = file(deployConfigSourceValue)
@@ -192,7 +232,7 @@ tasks.register('deployToInstance') {
 			if (!source.isDirectory()) {
 				throw new GradleException("Main Safari Utils config folder does not exist: ${source}")
 			}
-			project.sync {
+			fileSystemOperations.sync {
 				from source
 				into target
 			}

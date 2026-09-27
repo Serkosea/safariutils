@@ -17,9 +17,6 @@ public final class AdvancedUnlock {
 	public static void unlock() {
 		unlocked = true;
 		Minecraft client = Minecraft.getInstance();
-		if (client.gui != null) {
-			ClientMessages.send("Advanced Mode Enabled", ClientMessages.Tone.SUCCESS);
-		}
 		if (client.player != null) {
 			// Layering is needed because one Minecraft sound barely changes above volume 1.
 			for (int layer = 0; layer < 25; layer++) {

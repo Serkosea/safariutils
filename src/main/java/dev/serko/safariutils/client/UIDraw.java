@@ -83,6 +83,34 @@ final class UIDraw {
 			Math.clamp(alpha, 0, 255) << 24 | 0xFFFFFF, shadow);
 	}
 
+	/** Draws rainbow text at a caller-controlled phase without changing the shared theme clock. */
+	static void rainbowTextAtPhase(GuiGraphicsExtractor graphics, Font font,
+			Component component, int x, int y, float saturation, int alpha, float phase) {
+		int phaseBucket = Math.floorMod(Math.round(phase * RAINBOW_TEXT_PHASES),
+			RAINBOW_TEXT_PHASES);
+		Component rainbow = cachedRainbowComponent(font, component, x, saturation, phaseBucket);
+		graphics.text(font, rainbow, x, y,
+			Math.clamp(alpha, 0, 255) << 24 | 0xFFFFFF, false);
+	}
+
+	static Component rainbowComponent(Font font, String text, int x, float saturation) {
+		return cachedRainbowComponent(font, Component.literal(text), x, saturation);
+	}
+
+	/** Updates a placeholder only when its animation phase or theme state changes. */
+	static int updateRainbowHint(EditBox editor, Font font, String text,
+			Component normal, int previousPhase) {
+		if (!SpecialTheme.rainbow()) {
+			if (previousPhase >= 0) editor.setHint(normal);
+			return -1;
+		}
+		int phase = RainbowColours.phaseBucket(RAINBOW_TEXT_PHASES);
+		if (phase != previousPhase) {
+			editor.setHint(rainbowComponent(font, text, editor.getScreenX(0), 0.24f));
+		}
+		return phase;
+	}
+
 	/** Gives editable text the same screen-positioned gradient as labels around it. */
 	static void rainbowEditBox(EditBox editor, Font font) {
 		editor.addFormatter((visibleText, sourceOffset) -> {
@@ -106,25 +134,32 @@ final class UIDraw {
 
 	private static Component cachedRainbowComponent(Font font, Component component,
 			int x, float saturation) {
+		return cachedRainbowComponent(font, component, x, saturation,
+			RainbowColours.phaseBucket(RAINBOW_TEXT_PHASES));
+	}
+
+	private static Component cachedRainbowComponent(Font font, Component component,
+			int x, float saturation, int phaseBucket) {
 		String text = component.getString();
 		RainbowTextKey key = new RainbowTextKey(text, component.getStyle(),
 			Math.floorMod(x, (int) RAINBOW_CYCLE_PIXELS),
-			Math.round(saturation * 100f), RainbowColours.phaseBucket(RAINBOW_TEXT_PHASES));
+			Math.round(saturation * 100f), phaseBucket);
 		Component rainbow = RAINBOW_TEXT_CACHE.get(key);
 		if (rainbow == null) {
-			rainbow = rainbowComponent(font, component, x, saturation);
+			rainbow = rainbowComponent(font, component, x, saturation,
+				phaseBucket / (float) RAINBOW_TEXT_PHASES);
 			RAINBOW_TEXT_CACHE.put(key, rainbow);
 		}
 		return rainbow;
 	}
 
 	private static Component rainbowComponent(Font font, Component component,
-			int x, float saturation) {
+			int x, float saturation, float phase) {
 		String text = component.getString();
 		MutableComponent rainbow = Component.empty();
 		int cursor = x;
 		for (int i = 0; i < text.length(); i++) {
-			int colour = rainbowAt(cursor, saturation) & 0xFFFFFF;
+			int colour = rainbowAt(phase, cursor, saturation) & 0xFFFFFF;
 			Component character = Component.literal(String.valueOf(text.charAt(i)))
 				.withStyle(component.getStyle())
 				.withStyle(style -> style.withColor(colour));

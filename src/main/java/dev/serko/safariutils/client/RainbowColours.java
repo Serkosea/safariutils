@@ -5,7 +5,8 @@ import java.util.Map;
 
 /** Shared, allocation-free rainbow clock and colour lookup tables. */
 final class RainbowColours {
-	static final long FRAME_MILLIS = 40L;
+	/** 40 FPS: clean motion without rebuilding effects at monitor refresh rate. */
+	static final long FRAME_MILLIS = 25L;
 	private static final long CYCLE_MILLIS = 4_000L;
 	private static final int COLOURS = 256;
 	private static final Map<Integer, int[]> PALETTES = new HashMap<>();

@@ -18,23 +18,15 @@ public final class DebugStateLog {
 	private static List<String> lastScoreboard = List.of();
 	private static List<String> lastInventory = List.of();
 	private static String lastObjectives;
-	private static int objectiveScanTicks;
-	private static boolean wasLogging;
+	private static int ticks;
 
 	private DebugStateLog() {
 	}
 
 	public static void tick() {
-		boolean logging = DebugLog.isEnabled();
-		if (!logging) {
-			if (wasLogging) reset();
-			wasLogging = false;
-			return;
-		}
-		wasLogging = true;
-		SafariConfig.AdvancedConfig options = ConfigManager.get().advanced;
-
-		if (options.logLocation) {
+		if (++ticks % 10 != 0) return;
+		boolean safari = SafariLocation.inSafari();
+		if (ticks % 20 == 0) {
 			String location = "area=" + SafariLocation.tabListArea()
 				+ " subArea=" + SafariLocation.area()
 				+ " where=" + SafariLocation.where()
@@ -46,52 +38,57 @@ public final class DebugStateLog {
 				lastLocation = location;
 				DebugLog.line("LOCATION", location);
 			}
-		} else lastLocation = null;
 
-		if (options.logPartyRoster) {
-			List<String> roster = rosterSnapshot();
-			if (!roster.equals(lastRoster)) {
-				lastRoster = roster;
-				DebugLog.line("PARTY", snapshot(roster));
+			if (safari) {
+				List<String> roster = rosterSnapshot();
+				if (!roster.equals(lastRoster)) {
+					lastRoster = roster;
+					DebugLog.line("PARTY", snapshot(roster));
+				}
+			} else lastRoster = List.of();
+
+			if (safari) {
+				// Metadata rows contain location and server state without duplicating every
+				// player already represented by the roster snapshot.
+				List<String> tabList = SafariLocation.tabListEntries().stream()
+					.filter(DebugStateLog::usefulTabEntry).toList();
+				if (!tabList.equals(lastTabList)) {
+					lastTabList = tabList;
+					DebugLog.line("TABLIST", snapshot(tabList));
+				}
+
+				List<String> scoreboard = List.copyOf(SafariLocation.sidebarLines());
+				if (!scoreboard.equals(lastScoreboard)) {
+					lastScoreboard = scoreboard;
+					DebugLog.line("SCORE", snapshot(scoreboard));
+				}
+			} else {
+				lastTabList = List.of();
+				lastScoreboard = List.of();
 			}
-		} else lastRoster = List.of();
+		}
 
-		if (options.logTabList) {
-			List<String> tabList = List.copyOf(SafariLocation.tabListEntries());
-			if (!tabList.equals(lastTabList)) {
-				lastTabList = tabList;
-				DebugLog.line("TABLIST", snapshot(tabList));
-			}
-		} else lastTabList = List.of();
-
-		if (options.logScoreboard) {
-			List<String> scoreboard = List.copyOf(SafariLocation.sidebarLines());
-			if (!scoreboard.equals(lastScoreboard)) {
-				lastScoreboard = scoreboard;
-				DebugLog.line("SCORE", snapshot(scoreboard));
-			}
-		} else lastScoreboard = List.of();
-
-		if (options.logInventory) {
+		if (safari) {
 			List<String> inventory = inventorySnapshot();
 			if (!inventory.equals(lastInventory)) {
 				lastInventory = inventory;
 				DebugLog.line("INVENTORY", snapshot(inventory));
 			}
-		} else lastInventory = List.of();
-
-		// Objective state is sampled at inventory cadence and written only on change.
-		if (options.logObjectives && ++objectiveScanTicks >= 5) {
-			objectiveScanTicks = 0;
 			String objective = objectiveSnapshot();
 			if (!Objects.equals(objective, lastObjectives)) {
 				lastObjectives = objective;
 				DebugLog.line("OBJECTIVE", objective);
 			}
-		} else if (!options.logObjectives) {
+		} else {
+			lastInventory = List.of();
 			lastObjectives = null;
-			objectiveScanTicks = 0;
 		}
+	}
+
+	private static boolean usefulTabEntry(String entry) {
+		String lower = entry.toLowerCase(java.util.Locale.ROOT);
+		return lower.contains("area") || lower.contains("biome") || lower.contains("safari")
+			|| lower.contains("zone") || entry.contains("⏣");
 	}
 
 	private static String objectiveSnapshot() {
@@ -115,6 +112,7 @@ public final class DebugStateLog {
 		if (client.player == null || client.player.connection == null) return List.of();
 		List<String> result = new ArrayList<>();
 		for (PlayerInfo info : client.player.connection.getOnlinePlayers()) {
+			if (!info.getProfile().name().matches("[A-Za-z0-9_]{1,16}")) continue;
 			String shown = info.getTabListDisplayName() == null
 				? "" : info.getTabListDisplayName().getString();
 			result.add(info.getProfile().name() + " uuid=" + info.getProfile().id()
@@ -141,13 +139,4 @@ public final class DebugStateLog {
 		return lines.isEmpty() ? "[]" : "[" + String.join(" | ", lines) + "]";
 	}
 
-	private static void reset() {
-		lastLocation = null;
-		lastRoster = List.of();
-		lastTabList = List.of();
-		lastScoreboard = List.of();
-		lastInventory = List.of();
-		lastObjectives = null;
-		objectiveScanTicks = 0;
-	}
 }

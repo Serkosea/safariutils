@@ -105,7 +105,7 @@ public final class SpecialTheme {
 		StarCache cache = STAR_CACHE.computeIfAbsent(key, ignored -> {
 			float actualDensity = densityKey / 100f;
 			// The layout is generated once and only its compact quad batch changes at
-			// 25 FPS, so the denser field does not add widget or render-state churn.
+			// 40 FPS, so the denser field does not add widget or render-state churn.
 			int count = Math.clamp(Math.round(width * height / 760f * actualDensity),
 				Math.max(1, Math.round(13 * actualDensity)),
 				Math.max(1, Math.round(120 * actualDensity)));

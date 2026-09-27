@@ -7,6 +7,7 @@ import java.util.Properties;
 public final class BuildVersion {
 	private static final Properties PROPERTIES = load();
 	public static final boolean SAFE = flag("safe");
+	public static final boolean PRIVATE = flag("private");
 	public static final boolean DEVELOPER = flag("developer");
 
 	private BuildVersion() {
@@ -23,5 +24,12 @@ public final class BuildVersion {
 
 	private static boolean flag(String name) {
 		return Boolean.parseBoolean(PROPERTIES.getProperty(name, "false"));
+	}
+
+	/** Compact suffix used by the settings title for the four distributed builds. */
+	public static String titleSuffix() {
+		if (DEVELOPER) return "-DEV";
+		if (PRIVATE) return "-PRIV";
+		return SAFE ? "" : "-EXTRA";
 	}
 }

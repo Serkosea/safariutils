@@ -15,6 +15,8 @@ public class RunRecord {
 	public long started;
 	public long ended;
 	public String self;
+	/** Confirmed participants, including ticket-trading arrivals without catches. */
+	public java.util.List<String> players = new java.util.ArrayList<>();
 	/** Species name -> times you caught it. */
 	public Map<String, Integer> own = new LinkedHashMap<>();
 	/** Species name -> times a partymate caught it, summed across the party. */
@@ -45,6 +47,7 @@ public class RunRecord {
 		record.started = session.startedAtMillis();
 		record.ended = session.startedAtMillis() + session.durationMillis();
 		record.self = session.selfName();
+		record.players.addAll(session.players());
 		session.ownCatchCounts().forEach((critter, count) -> record.own.put(critter.name(), count));
 		session.sharedCatchCounts().forEach((critter, count) -> record.shared.put(critter.name(), count));
 		session.attemptCounts().forEach((critter, count) -> record.attempts.put(critter.name(), count));

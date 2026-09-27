@@ -30,6 +30,7 @@ public final class ChatMessageFilter {
 	private static final int HIDEYHO = 1 << 20;
 	private static final int BIRD_SPAWNS = 1 << 21;
 	private static final int EMPTY_NESTS = 1 << 22;
+	private static final int DROP_ITEMS = 1 << 23;
 
 	private static final Set<String> ROCKMITE_MESSAGES = Set.of(
 		"Small cracks begin to form in the mound...",
@@ -82,7 +83,9 @@ public final class ChatMessageFilter {
 
 	/** Called only after normal automation/sync filters have accepted the message. */
 	public static boolean shouldHide(Component message, boolean overlay) {
-		if (overlay || message == null) return false;
+		// These phrases are only Safari-specific while the player is in an active
+		// Safari instance. Do not suppress an unrelated server message elsewhere.
+		if (overlay || message == null || !SafariLocation.inside()) return false;
 		int selected = ConfigManager.get().display.hiddenChatMessages;
 		if (selected == 0) return false;
 		for (String part : message.getString().split("\\r?\\n|\\\\n")) {
@@ -114,6 +117,7 @@ public final class ChatMessageFilter {
 			if ((selected & HIDEYHO) != 0 && line.startsWith("[MOB] Hideyho:")) return true;
 			if ((selected & BIRD_SPAWNS) != 0 && BirdfeederWatch.isBirdSpawnMessage(line)) return true;
 			if ((selected & EMPTY_NESTS) != 0 && line.equals("Looks like the hive is empty now...")) return true;
+			if ((selected & DROP_ITEMS) != 0 && dropItemsMessage(line)) return true;
 		}
 		return false;
 	}
@@ -135,10 +139,17 @@ public final class ChatMessageFilter {
 	}
 
 	private static boolean doomspiralMessage(String line) {
-		return line.startsWith("You used the Soothing Incense to light the candle")
+		return line.equals("This candle is already lit...")
+			|| line.startsWith("You used the Soothing Incense to light the candle")
 			|| line.startsWith("Your ritual summoned a Doomspiral")
 			|| line.startsWith("Something stirs in the Haunted Biome")
 			|| line.startsWith("The darkness in the Haunted Biome fades away")
 			|| line.startsWith("The Doomspiral retreats back underground");
+	}
+
+	private static boolean dropItemsMessage(String line) {
+		return line.equals("You cannot drop items yet!")
+			|| line.equals("You must double tap the drop button to drop this item!")
+			|| line.equals("You can disable this in the Settings in your SkyBlock Menu!");
 	}
 }

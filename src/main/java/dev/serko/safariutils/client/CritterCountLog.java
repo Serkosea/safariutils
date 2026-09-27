@@ -1,6 +1,7 @@
 package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.data.Critter;
+import dev.serko.safariutils.data.CritterSpawnRanges;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -13,10 +14,9 @@ public final class CritterCountLog {
 	private CritterCountLog() {
 	}
 
-	/** Records new peaks only when the debug category is enabled. */
+	/** Records new peaks once per shared entity scan. */
 	public static void tick() {
-		boolean enabled = DebugLog.isEnabled() && ConfigManager.get().advanced.logCritterCounts;
-		if (!enabled || !SafariLocation.inSafari()) return;
+		if (!SafariLocation.inSafari()) return;
 		long scan = CritterEntities.scannedAt();
 		if (scan == lastScan) return;
 		lastScan = scan;
@@ -30,6 +30,11 @@ public final class CritterCountLog {
 			if (current != null && entry.getValue() <= current) continue;
 			peak.put(entry.getKey(), entry.getValue());
 			DebugLog.line("COUNT", entry.getKey().name() + " new peak: " + entry.getValue());
+			int expectedMaximum = CritterSpawnRanges.maximum(entry.getKey());
+			if (entry.getValue() > expectedMaximum) {
+				OperationalLog.debug("RANGE/OBSERVED", entry.getKey().name() + " concurrent="
+					+ entry.getValue() + " expectedMax=" + expectedMaximum);
+			}
 		}
 	}
 

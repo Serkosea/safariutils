@@ -5,23 +5,29 @@ import dev.serko.safariutils.parse.ChatParser;
 import dev.serko.safariutils.parse.CritterEvent;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * Pins a critter's last body position while its capsule attempt is unresolved.
  * Multiple throws may be active; species-only outcomes resolve the oldest matching
- * pin. Pins never follow entity IDs across breakouts. {@link #worthPinning(Critter)}
- * excludes attempts that cannot benefit from a recatch position.
+ * pin. A failed pin may transfer once to the replacement body used by a rapid retry.
+ * {@link #worthPinning(Critter)} excludes attempts that cannot benefit from a recatch
+ * position.
  */
 public final class RecatchSpots {
 
@@ -35,8 +41,12 @@ public final class RecatchSpots {
 	private static final double PITY_CARRY_DISTANCE = 3.0;
 	/** How long an orphaned pity count is still worth claiming before it is just forgotten. */
 	private static final long ORPHAN_MILLIS = 10_000;
-	/** Refuse pity transfer while the original ID was seen this recently. */
-	private static final long ORPHAN_STILL_LIVE_MILLIS = 1_000;
+	/** Covers the small scan-to-chat gap without admitting older unloaded bodies. */
+	private static final long CURRENT_TARGET_GRACE_MILLIS = 750;
+	/** Long enough to cover the server replacing a thrown-at body with its capsule animation. */
+	private static final long CAPTURE_TRANSITION_MILLIS = 10_000;
+	/** Briefly retains a resolved throw while its capsule entities finish disappearing. */
+	private static final long RESOLVED_TRANSITION_MILLIS = 5_000;
 
 	/** Where an individual's body was last seen, how big it was, its species, and whether it is sparkling. */
 	private record Seen(Critter critter, AABB box, boolean sparkling, long millis) {
@@ -67,8 +77,14 @@ public final class RecatchSpots {
 	private static final Map<UUID, Integer> pity = new HashMap<>();
 	/** A pity count whose id just went quiet, kept briefly in case it is the same individual reappearing. */
 	private static final Map<UUID, OrphanedPity> orphanedPity = new HashMap<>();
+	/** Failed throws retain their marker until the escaped body is visible again. */
+	private static final Set<UUID> escapedPins = new HashSet<>();
+	/** Outstanding throws by species; bodyless labels during these windows are capsules, not critters. */
+	private static final Map<Critter, Deque<Long>> captureTransitions = new HashMap<>();
 	/** The sweep these sightings came from, so a cached list is not re-timestamped. */
 	private static long lastScan;
+	/** Detects a live Eagle setting change so obsolete pity state is removed immediately. */
+	private static int lastEagleRarity = Integer.MIN_VALUE;
 
 	private RecatchSpots() {
 	}
@@ -91,7 +107,7 @@ public final class RecatchSpots {
 		Pin pin = pins.get(entityId);
 		if (pin == null) return false;
 		// Not pinned for display purposes once its pity has reached the threshold
-		// that guarantees this exact throw — a Common is never pinned at all for the
+		// that guarantees this exact throw — a base-guaranteed critter is never pinned for the
 		// same reason, this is just the same fact arrived at individually rather than
 		// known in advance. Bookkeeping (pins itself) still holds the entry, so a
 		// FAILED or catch line still resolves against it correctly; only the visible
@@ -102,7 +118,8 @@ public final class RecatchSpots {
 
 	/** Whether this individual's pity is already at the threshold that guarantees its next throw. */
 	private static boolean isGuaranteed(Critter critter, UUID entityId) {
-		return pityFor(entityId) >= Markers.pityThreshold(critter.rarity());
+		return CritterCatchRules.guaranteedWithoutPity(critter)
+			|| pityFor(entityId) >= Markers.pityThreshold(critter.rarity());
 	}
 
 	/**
@@ -145,6 +162,15 @@ public final class RecatchSpots {
 
 	public static void tick() {
 		long now = System.currentTimeMillis();
+		int eagleRarity = ConfigManager.get().display.eagleRarity;
+		if (eagleRarity != lastEagleRarity) {
+			lastEagleRarity = eagleRarity;
+			removeGuaranteedState();
+		}
+		captureTransitions.values().forEach(expiries -> {
+			while (!expiries.isEmpty() && expiries.peekFirst() < now) expiries.removeFirst();
+		});
+		captureTransitions.entrySet().removeIf(entry -> entry.getValue().isEmpty());
 
 		if (CritterEntities.scannedAt() != lastScan) {
 			lastScan = CritterEntities.scannedAt();
@@ -154,10 +180,28 @@ public final class RecatchSpots {
 				// rather than on the spot the critter will come back to. A real critter
 				// has a mob under its name tag; the capsule has nothing.
 				if (sighting.mob() == null) continue;
+				Entity body = sighting.mob();
+				UUID id = body.getUUID();
+				// Some capture animations briefly expose a mob-like helper beneath the
+				// retained critter label. Never teach that fresh ID as a real body while
+				// the throw is unresolved; already-known same-species peers remain valid.
+				if (isCaptureArtifact(sighting.critter(), body)) continue;
 				AABB box = sighting.body().getBoundingBox();
-				UUID id = sighting.mob().getUUID();
 				byEntity.put(id, new Seen(sighting.critter(), box,
 					SparklingWatch.isSparkling(sighting), now));
+				// Keep the sighting for capsule-transition identity, as with Commons, but
+				// guaranteed catches need no recatch or pity bookkeeping.
+				if (CritterCatchRules.guaranteedWithoutPity(sighting.critter())) {
+					pity.remove(id);
+					pins.remove(id);
+					escapedPins.remove(id);
+					continue;
+				}
+				if (escapedPins.remove(id)) {
+					pins.remove(id);
+					DebugLog.line("RECATCH", "REJOIN " + sighting.critter().name()
+						+ " id=" + shortId(id) + " (same body)");
+				}
 
 				if (!pity.containsKey(id)) claimOrphanedPity(sighting.critter(), id, box);
 			}
@@ -174,10 +218,29 @@ public final class RecatchSpots {
 			if (now - pin.pinnedAt() <= HOLD_MILLIS) continue;
 			DebugLog.line("RECATCH", "TIMEOUT " + pin.critter().name() + " id=" + shortId(entry.getKey())
 				+ " held " + HOLD_MILLIS + "ms unresolved");
+			escapedPins.remove(entry.getKey());
 			it.remove();
 		}
 
 		orphanedPity.entrySet().removeIf(e -> now - e.getValue().orphanedAt() > ORPHAN_MILLIS);
+	}
+
+	/** Drops state that became impossible when the configured Eagle rarity changed. */
+	private static void removeGuaranteedState() {
+		Set<UUID> guaranteedIds = new HashSet<>();
+		byEntity.forEach((id, seen) -> {
+			if (CritterCatchRules.guaranteedWithoutPity(seen.critter())) guaranteedIds.add(id);
+		});
+		pins.forEach((id, pin) -> {
+			if (CritterCatchRules.guaranteedWithoutPity(pin.critter())) guaranteedIds.add(id);
+		});
+		guaranteedIds.forEach(id -> {
+			pins.remove(id);
+			pity.remove(id);
+			escapedPins.remove(id);
+		});
+		orphanedPity.entrySet().removeIf(entry ->
+			CritterCatchRules.guaranteedWithoutPity(entry.getValue().critter()));
 	}
 
 	/**
@@ -193,12 +256,10 @@ public final class RecatchSpots {
 			OrphanedPity orphan = entry.getValue();
 			if (!orphan.critter().equals(critter)) continue;
 
-			// A still-visible original entity kept its id, so its pity is not orphaned.
-			Seen originalStillSeen = byEntity.get(entry.getKey());
-			if (originalStillSeen != null
-				&& System.currentTimeMillis() - originalStillSeen.millis() < ORPHAN_STILL_LIVE_MILLIS) {
-				continue;
-			}
+			// Never steal pity from a genuinely concurrent peer. The shared entity scan
+			// is authoritative here: once the original id is absent, a nearby fresh body
+			// may claim it immediately instead of waiting on a stale timestamp.
+			if (currentlySighted(entry.getKey())) continue;
 
 			double distSq = box.getCenter().distanceToSqr(orphan.lastBox().getCenter());
 			if (distSq >= bestDistSq) continue;
@@ -207,9 +268,28 @@ public final class RecatchSpots {
 		}
 		if (bestOrphanId == null) return;
 		OrphanedPity claimed = orphanedPity.remove(bestOrphanId);
+		Pin previousPin = pins.remove(bestOrphanId);
+		// A player can throw again in the few milliseconds between the FAILED line
+		// and the escaped body's replacement id arriving. Preserve that unresolved
+		// retry while moving its identity; otherwise the catch clears the wrong peer
+		// and leaves the original recatch marker behind.
+		boolean retryPending = previousPin != null && !escapedPins.contains(bestOrphanId);
+		escapedPins.remove(bestOrphanId);
 		pity.put(newId, claimed.count());
+		if (retryPending) {
+			pins.put(newId, new Pin(critter, CritterMarkerGeometry.recatch(critter, box),
+				previousPin.sparkling(), previousPin.pinnedAt()));
+		}
 		DebugLog.line("RECATCH", "PITY-CARRY " + critter.name() + " id " + shortId(bestOrphanId)
-			+ " -> " + shortId(newId) + " count=" + claimed.count());
+			+ " -> " + shortId(newId) + " count=" + claimed.count()
+			+ (retryPending ? " retry=pending" : ""));
+	}
+
+	private static boolean currentlySighted(UUID entityId) {
+		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
+			if (sighting.mob() != null && entityId.equals(sighting.mob().getUUID())) return true;
+		}
+		return false;
 	}
 
 	/** Feeds one cleaned chat line. */
@@ -223,6 +303,12 @@ public final class RecatchSpots {
 		// disabled so that replacement cannot become a second detection.
 		if (event.type() == CritterEvent.Type.ATTEMPT) {
 			SparklingWatch.onCaptureInteraction(event.critter());
+			captureTransitions.computeIfAbsent(event.critter(), ignored -> new ArrayDeque<>())
+				.addLast(System.currentTimeMillis() + CAPTURE_TRANSITION_MILLIS);
+		} else if (event.type() == CritterEvent.Type.FAILED
+			|| event.type() == CritterEvent.Type.OWN_CATCH
+			|| event.type() == CritterEvent.Type.SHARED_CATCH) {
+			resolveCaptureTransition(event.critter());
 		}
 		DebugLog.line("CHAT", event.type() + " " + event.critter().name() + " raw=\"" + line + "\"");
 
@@ -242,8 +328,9 @@ public final class RecatchSpots {
 			// line is about — see the class doc. Its pity count is set aside as
 			// orphaned, not lost, in case the same individual is what turns up next.
 			case FAILED -> withOldestPin(event.critter(), (id, pinEntry) -> {
-				DebugLog.line("RECATCH", "CLEAR " + event.critter().name() + " id=" + shortId(id) + " (escaped)");
-				pins.remove(id);
+				DebugLog.line("RECATCH", "HOLD " + event.critter().name() + " id=" + shortId(id)
+					+ " (awaiting escaped body)");
+				escapedPins.add(id);
 				orphanPity(id, pinEntry);
 			});
 			case OWN_CATCH, SHARED_CATCH -> withOldestPin(event.critter(), (id, pinEntry) -> {
@@ -255,6 +342,36 @@ public final class RecatchSpots {
 			default -> {
 			}
 		}
+	}
+
+	/** Whether a bodyless label of this species currently belongs to a thrown capsule. */
+	public static boolean captureInProgress(Critter critter) {
+		Deque<Long> expiries = captureTransitions.get(critter);
+		if (expiries == null) return false;
+		long now = System.currentTimeMillis();
+		while (!expiries.isEmpty() && expiries.peekFirst() < now) expiries.removeFirst();
+		if (expiries.isEmpty()) {
+			captureTransitions.remove(critter);
+			return false;
+		}
+		return true;
+	}
+
+	/** Whether a fresh body ID appeared only after this species entered capture animation. */
+	public static boolean isCaptureArtifact(Critter critter, Entity entity) {
+		if (entity == null || !captureInProgress(critter)) return false;
+		UUID entityId = entity.getUUID();
+		if (byEntity.containsKey(entityId) || pins.containsKey(entityId)) return false;
+		// A newly assigned body of a verified species/type is the real breakout or a
+		// concurrently spawned critter. Only unverified proximity matches stay hidden.
+		return !CritterEntities.isVerifiedBody(critter, entity);
+	}
+
+	private static void resolveCaptureTransition(Critter critter) {
+		Deque<Long> expiries = captureTransitions.get(critter);
+		if (expiries == null) return;
+		expiries.pollFirst();
+		expiries.addFirst(System.currentTimeMillis() + RESOLVED_TRANSITION_MILLIS);
 	}
 
 	/** Clears replacement IDs belonging to the caught individual, not nearby peers. */
@@ -295,6 +412,9 @@ public final class RecatchSpots {
 		Pin oldest = null;
 		for (Map.Entry<UUID, Pin> entry : pins.entrySet()) {
 			if (!entry.getValue().critter().equals(critter)) continue;
+			// FAILED has already resolved that throw. Its pin remains visible only to
+			// guide the recatch and must not consume a later catch/failure result.
+			if (escapedPins.contains(entry.getKey())) continue;
 			if (oldest != null && oldest.pinnedAt() <= entry.getValue().pinnedAt()) continue;
 			oldestId = entry.getKey();
 			oldest = entry.getValue();
@@ -329,7 +449,7 @@ public final class RecatchSpots {
 
 	/** Returns whether this critter can escape an ordinary capsule and need a recatch pin. */
 	private static boolean worthPinning(Critter critter) {
-		return critter.rarity() != Critter.Rarity.COMMON
+		return !CritterCatchRules.guaranteedWithoutPity(critter)
 			&& !"Hideyho".equals(critter.name());
 	}
 
@@ -348,9 +468,20 @@ public final class RecatchSpots {
 		UUID bestId = null;
 		double bestScore = Double.MAX_VALUE;
 		long now = System.currentTimeMillis();
+		Set<UUID> currentlySighted = new HashSet<>();
+		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
+			if (critter.equals(sighting.critter()) && sighting.mob() != null) {
+				currentlySighted.add(sighting.mob().getUUID());
+			}
+		}
+		boolean haveCurrent = !currentlySighted.isEmpty();
 		for (Map.Entry<UUID, Seen> entry : byEntity.entrySet()) {
 			Seen seen = entry.getValue();
 			if (!critter.equals(seen.critter())) continue;
+			// A body in the current shared scan always beats an unloaded/stale sighting.
+			// The recent-sighting fallback remains for genuinely distant throws.
+			if (haveCurrent && !currentlySighted.contains(entry.getKey())
+				&& now - seen.millis() > CURRENT_TARGET_GRACE_MILLIS) continue;
 			if (now - seen.millis() > SIGHTING_MILLIS) continue;
 			double score = aimScore(player, seen.box());
 			if (score >= bestScore) continue;
@@ -359,12 +490,40 @@ public final class RecatchSpots {
 			bestId = entry.getKey();
 		}
 
+		// A rapid retry may arrive before the escaped body has received its new
+		// entity id. Let the retained recatch marker compete by aim direction with
+		// live same-species peers, instead of blindly attaching the retry to one of
+		// those peers during this short replacement gap.
+		UUID escapedBestId = null;
+		Pin escapedBest = null;
+		for (UUID escapedId : escapedPins) {
+			Pin escaped = pins.get(escapedId);
+			if (escaped == null || !critter.equals(escaped.critter())) continue;
+			double score = aimScore(player, escaped.box());
+			if (score >= bestScore) continue;
+			bestScore = score;
+			escapedBestId = escapedId;
+			escapedBest = escaped;
+		}
+		if (escapedBest != null) {
+			escapedPins.remove(escapedBestId);
+			pins.put(escapedBestId, new Pin(critter, escapedBest.box(), escapedBest.sparkling(), now));
+			int nowPity = pity.merge(escapedBestId, 1, Integer::sum);
+			orphanedPity.put(escapedBestId,
+				new OrphanedPity(critter, escapedBest.box(), nowPity, now));
+			DebugLog.line("RECATCH", "RETRY " + critter.name() + " id=" + shortId(escapedBestId)
+				+ " pos=" + pos(escapedBest.box()) + " pity=" + nowPity
+				+ " (escaped body replacement pending)");
+			return;
+		}
+
 		if (best == null) {
 			DebugLog.line("RECATCH", "SKIP " + critter.name() + " (no recent sighting to pin)");
 			return;
 		}
 
-		pins.put(bestId, new Pin(critter, best.box(), best.sparkling(), now));
+		pins.put(bestId, new Pin(critter,
+			CritterMarkerGeometry.recatch(critter, best.box()), best.sparkling(), now));
 		// Claimed here too, not only from the scan loop in tick() — that runs on its
 		// own schedule, separately from chat, and a throw fast enough could land before
 		// it has caught up to a just-reappeared id. Claiming synchronously right before
@@ -379,6 +538,7 @@ public final class RecatchSpots {
 	/** Drops every active pin. */
 	public static void clear() {
 		pins.clear();
+		escapedPins.clear();
 	}
 
 	/** Forgotten between runs; a spot from the last one is meaningless in this one. */
@@ -386,6 +546,8 @@ public final class RecatchSpots {
 		byEntity.clear();
 		pity.clear();
 		orphanedPity.clear();
+		captureTransitions.clear();
+		lastEagleRarity = ConfigManager.get().display.eagleRarity;
 		clear();
 	}
 

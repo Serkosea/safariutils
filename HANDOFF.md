@@ -1,6 +1,6 @@
 # Safari Utils developer handoff
 
-This document records the invariants needed to maintain the v2.1 codebase. User-facing features, installation, and commands belong in [README.md](README.md); release history belongs in [CHANGELOG.md](CHANGELOG.md).
+This document records the invariants needed to maintain the current codebase. User-facing features, installation, and commands belong in [README.md](README.md); release history belongs in [CHANGELOG.md](CHANGELOG.md).
 
 ## Project and builds
 
@@ -12,9 +12,14 @@ Safari Utils is a client-side Fabric mod for Hypixel SkyBlock's Critter Safari. 
 - Safe build: `./gradlew build`
 - Extra build: `./gradlew build -PextraBuild=true`
 - Other profile: add `-PminecraftProfile=<profile>`
-- Private build: add `-PincludePrivateApi=true` (also selects Extra behavior)
+- Private build: add `-PincludePrivateApi=true` (API plus Extra behavior, no developer tools)
+- Developer build: add `-PdeveloperBuild=true` (private API, Testing UI, commands, and automatic diagnostics)
 
-Build variants use separate output directories so stale private classes cannot enter public jars. `deployToInstance` copies the selected jar to configured Prism instances and mirrors Safari Utils configuration only from the configured source instance to the target.
+Build variants use separate output directories so stale private classes cannot enter public jars. `DeployBuilds` builds and deploys only the 26.2 Developer jar during development, then mirrors Safari Utils configuration from the 26.2 main instance to the 26.2 Ticket Collecting instance. The explicit `buildDeveloper26_1_2` task remains available for compatibility checks. Generate all eight variants only for an explicitly requested artifact set or a GitHub release.
+
+Artifact names place the variant after the version: no suffix for normal Safe Mode,
+`-extra`, `-private`, or `-developer`. Clean-build all eight profile/variant
+combinations before copying release artifacts so deleted classes cannot survive an incremental build.
 
 ## Runtime and lifecycle
 
@@ -33,7 +38,9 @@ Entering Safari creates a transient visit immediately. Scouting, objective obser
 
 `StartingItemsWatch` owns activation. It waits 250 ms after capsule allocation before freezing one complete inventory snapshot so later drops and inventory movement cannot change Starting Items. Before activation, the Progress HUD may show attendance, the conservative `Join` countdown, Sparkling detections, and detected Hideonfloor waypoints, but not run timing or statistics.
 
-The countdown begins from the earliest local queue notice or confirmed party-entry notice for the attempt and uses a conservative 33-second deadline. It displays `Closing` at zero or after the Manager's lockout dialogue begins. This is an estimate, especially when another member reaches the instance first. `JoinWindowDiagnostics` and read-only packet diagnostics exist to refine it without sending, modifying, retaining, cancelling, or delaying network traffic.
+The countdown begins at the destination play-connection event and uses the server's 30-second ticket window. Queue or party-entry chat is diagnostic context rather than elapsed ticket time; scoreboard, area, and lobby-ID state can arrive several seconds late. The connection anchor also covers late party warps without a local queue line. It displays `Closing` at zero, then `Closed` once the Manager's lockout dialogue begins. Developer `JoinWindowDiagnostics` compares every anchor without sending or modifying network traffic.
+
+Ticket Trading snapshots up to three trusted names only when a ticket activates before 20 seconds. It sends one multi-invite at 20s, waits until 27s before warping any joined trusted players, accepts a first late join through 29s, and closes an unwarped party at 29s. A successfully warped party stays intact until the host leaves that ticketed Safari instance. Traded arrivals remain provisional until this client receives their loot share or still sees them in the Safari at 60s; confirmation raises the stable run roster and is persisted with the run.
 
 The first fresh `/party list` response after entry freezes the visit roster. Leaves, kicks, crashes, delayed arrivals, and party changes do not rewrite that roster; a new composition applies on the next Safari entry. Attendance is tracked separately. Reward summary or confirmed lobby transition ends a run. Empty visits are never persisted.
 
@@ -97,8 +104,8 @@ Performance rules:
 - `Markers` builds one marker list per tick/config revision
 - `WaypointRenderer` batches geometry, culls off-screen markers, and bounds label caches
 - `WorldEntities` provides one entity snapshot per tick; `CritterEntities` scans once every five ticks and spatially indexes pairing
-- Operational logging is asynchronous, bounded, deduplicated, and rolled at 1 MiB
-- Diagnostic logging is opt-in, buffered, and must aggregate high-volume packet streams
+- Operational logging is asynchronous, bounded, deduplicated, and rolled at 4 MiB
+- Developer diagnostics are automatic and asynchronous; keep snapshots change-only and aggregate high-volume packet streams
 
 Keep live entity interpolation at frame frequency. Safe Mode evidence, depth behavior, marker eligibility, and exact labels are logic constraints, not optimization opportunities.
 
@@ -112,18 +119,18 @@ config/safariutils/
 ├── safariutils-runs.json
 ├── safariutils-sparkling.json
 └── logs/
-    ├── safariutils.log
-    └── safariutils.previous.log
+    ├── SafariUtils_<Month>-<day><suffix>-<year>_<hour>H-<minute>M.log
+    └── SafariUtils_<Month>-<day><suffix>-<year>_<hour>H-<minute>M_P2.log
 ```
 
-The optional static-entities JSON appears only when Hideonfloor research saves a new candidate. Settings, history, and research data use atomic replacement. Diagnostic and Party Sync settings reset each launch.
+The optional static-entities JSON appears only when Hideonfloor research saves a new candidate. Settings, history, and research data use atomic replacement. Party Sync resets each launch.
 
 Public jars may contain only the public party-sync service. They must contain no private API classes or services, saved owner identities or UUIDs, API keys, or generated key payloads. Public documentation and release notes must not advertise private-only API behavior. Never commit `private-api/`, key files, generated private sources, user configuration/history/logs, or built jars.
 
 ## Release checklist
 
 1. Run `git diff --check` and validate JSON/resources
-2. Build Safe, Extra, and private jars for every supported profile
+2. Build Safe, Extra, private, and developer jars for every supported profile
 3. Inspect jar names, metadata, class lists, services, and public-key absence
 4. Test lifecycle, Starting Items, objectives, mode/settings toggles, HUD editing, Sparkling UI, and Contest visibility
 5. Synchronize README, CHANGELOG, RELEASE_NOTES, and this handoff

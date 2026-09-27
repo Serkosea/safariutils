@@ -194,9 +194,9 @@ public final class Markers {
 
 	/** Returns this individual's pity count for hitboxes and waypoints. */
 	public static String pityLabel(Critter critter, java.util.UUID entityId) {
-		// A Common is caught on the throw, always — there is no escape to build pity
-		// from, so a count next to one is pure clutter, not information.
-		if (critter.rarity() == Critter.Rarity.COMMON) return "";
+		// Guaranteed catches cannot escape or build useful pity. This includes
+		// Uncommons when the configured Eagle bonus raises their chance above 100%.
+		if (CritterCatchRules.guaranteedWithoutPity(critter)) return "";
 		return " (" + RecatchSpots.pityFor(entityId) + "/" + pityThreshold(critter.rarity()) + ")";
 	}
 

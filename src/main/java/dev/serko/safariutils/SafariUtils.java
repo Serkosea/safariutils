@@ -23,6 +23,7 @@ import dev.serko.safariutils.client.HideyhoAutoAccept;
 import dev.serko.safariutils.client.PartyErrorSuppressor;
 import dev.serko.safariutils.client.PartyRosterWatch;
 import dev.serko.safariutils.client.TicketProtection;
+import dev.serko.safariutils.client.TicketTrading;
 import dev.serko.safariutils.client.StillCritters;
 import dev.serko.safariutils.client.HotspotWatch;
 import dev.serko.safariutils.client.JoinWindowDiagnostics;
@@ -36,7 +37,6 @@ import dev.serko.safariutils.client.RecatchSpots;
 import dev.serko.safariutils.client.SafariLocation;
 import dev.serko.safariutils.client.SafariPartyWatch;
 import dev.serko.safariutils.client.SafariPaths;
-import dev.serko.safariutils.client.ServerPacketDiagnostics;
 import dev.serko.safariutils.client.OperationalLog;
 import dev.serko.safariutils.client.StaticEntityCatalog;
 import dev.serko.safariutils.client.FullScreenAlert;
@@ -87,6 +87,9 @@ public class SafariUtils implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		SafariPaths.migrateLegacyFiles();
+		// Load the persisted logging preference before deciding whether to create a
+		// diagnostic file or start its background writer.
+		ConfigManager.get();
 		OperationalLog.start();
 		ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> OperationalLog.run("SCREEN/INIT", () -> {
 			InteractionDebugLog.onScreenInit(client, screen, width, height);
@@ -116,10 +119,11 @@ public class SafariUtils implements ClientModInitializer {
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			tickSafely("alerts", AlertSounds::tick);
-			if (BuildVersion.DEVELOPER) tickSafely("debug-log", DebugLog::tick);
 			// Next, and only here: everything below asks it where the player is.
 			tickSafely("location", SafariLocation::tick);
-			if (BuildVersion.DEVELOPER) tickSafely("join-window", () -> JoinWindowDiagnostics.tick(client));
+			if (BuildVersion.DEVELOPER) {
+				tickSafely("join-window", () -> JoinWindowDiagnostics.tick(client));
+			}
 			tickSafely("birdfeeder-menu", BirdfeederWatch::tickMenu);
 			tickSafely("party-roster", PartyRosterWatch::tick);
 			tickSafely("safari-party", SafariPartyWatch::tick);
@@ -129,9 +133,10 @@ public class SafariUtils implements ClientModInitializer {
 			tickSafely("objectives", SafariObjectives::tick);
 			// Sync snapshots consume the inventory caches refreshed immediately above.
 			tickSafely("party-objectives", PartyItemSyncProviders::tick);
-			if (BuildVersion.DEVELOPER) tickSafely("debug-state", DebugStateLog::tick);
-			if (BuildVersion.DEVELOPER) tickSafely("server-packet-debug", ServerPacketDiagnostics::tick);
-			if (BuildVersion.DEVELOPER) tickSafely("interaction-debug", InteractionDebugLog::tick);
+			if (BuildVersion.DEVELOPER) {
+				tickSafely("debug-state", DebugStateLog::tick);
+				tickSafely("interaction-debug", InteractionDebugLog::tick);
+			}
 			tickSafely("contest", ContestTracker::tick);
 			// One sweep of the world's critters, for everything below that wants them.
 			tickSafely("critter-entities", CritterEntities::tick);
@@ -141,6 +146,7 @@ public class SafariUtils implements ClientModInitializer {
 			tickSafely("still-critters", StillCritters::tick);
 			tickSafely("detected-critters", DetectedCritters::tick);
 			tickSafely("session", SessionManager::tick);
+			tickSafely("ticket-trading", TicketTrading::tick);
 			tickSafely("critter-spotter", CritterSpotter::tick);
 			tickSafely("nests", NestTracker::tick);
 			tickSafely("sparkling-watch", SparklingWatch::tick);
@@ -162,7 +168,6 @@ public class SafariUtils implements ClientModInitializer {
 			BazaarPrices.shutdown();
 			SharedSparklingProviders.shutdown();
 			StaticEntityCatalog.shutdown();
-			if (BuildVersion.DEVELOPER) DebugLog.shutdown();
 			OperationalLog.shutdown();
 		});
 
@@ -171,6 +176,8 @@ public class SafariUtils implements ClientModInitializer {
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> OperationalLog.run("CONNECTION/JOIN", () -> {
 			OperationalLog.info("LIFECYCLE", "Joined a server world");
 			if (BuildVersion.DEVELOPER) JoinWindowDiagnostics.onConnectionJoin();
+			SessionManager.onConnectionJoin();
+			TicketTrading.onConnectionJoin();
 			SafariLocation.onWorldChange();
 			SessionManager.onWorldChange();
 		}));
@@ -178,6 +185,7 @@ public class SafariUtils implements ClientModInitializer {
 			OperationalLog.info("LIFECYCLE", "Disconnected from server world");
 			SafariLocation.onWorldChange();
 			SessionManager.onWorldChange();
+			TicketTrading.onDisconnect();
 		}));
 
 		AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
@@ -264,6 +272,7 @@ public class SafariUtils implements ClientModInitializer {
 				SafariLocation.onChatMessage(line);
 				SparklingMode.onChatMessage(line);
 				SessionManager.onChatMessage(line);
+				TicketTrading.onChatMessage(line);
 				if (BuildVersion.DEVELOPER) JoinWindowDiagnostics.onChatMessage(line);
 				EncounterAlerts.onChatMessage(line);
 				RecatchSpots.onChatMessage(line);

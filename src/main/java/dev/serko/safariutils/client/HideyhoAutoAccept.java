@@ -18,7 +18,7 @@ public final class HideyhoAutoAccept {
 	/** Returns false only for the Hideyho choice line consumed by this feature. */
 	public static boolean allow(Component message, boolean overlay) {
 		ClickEvent accept = findAcceptAction(message);
-		if (overlay || !ConfigManager.get().gameplay.autoAcceptHideyho || accept == null) return true;
+		if (overlay || !SafariLocation.inside() || !ConfigManager.get().gameplay.autoAcceptHideyho || accept == null) return true;
 
 		long now = System.currentTimeMillis();
 		if (now - lastAcceptedAt < 1_000L) return false;

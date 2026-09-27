@@ -3,12 +3,27 @@ package dev.serko.safariutils.client;
 import com.google.gson.annotations.Expose;
 import com.google.gson.annotations.SerializedName;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Settings mapped to {@code config/safariutils/safariutils.json}. Public field names
  * are persistence keys unless an explicit {@link SerializedName} migration preserves
  * an older key; UI annotations are owned by Safari Utils.
  */
 public class SafariConfig {
+	public static class SavedAlertPreset {
+		@Expose public String name = "Custom Alert";
+		@Expose public String recipe = "";
+		@Expose public boolean favorite;
+
+		public SavedAlertPreset() { }
+
+		public SavedAlertPreset(String name, String recipe) {
+			this.name = name;
+			this.recipe = recipe;
+		}
+	}
 
 	/** Where an announcement goes. */
 	public enum Broadcast {
@@ -205,6 +220,20 @@ public class SafariConfig {
 		@SettingGroup(id = PROGRESS_HUD_OPTIONS)
 		@Expose
 		public boolean shardProfit = true;
+
+		@SettingInfo(name = "Show Total Progress",
+			desc = "Shows the overall unique critter progress bar")
+		@SettingToggle
+		@SettingGroup(id = PROGRESS_HUD_OPTIONS)
+		@Expose
+		public boolean showTotalProgress = true;
+
+		@SettingInfo(name = "Show Biome Progress",
+			desc = "Shows the individual biome progress bars")
+		@SettingToggle
+		@SettingGroup(id = PROGRESS_HUD_OPTIONS)
+		@Expose
+		public boolean showBiomeProgress = true;
 
 		@SettingInfo(name = "Per-Player Lines", desc = "Shows each player's unique catches by biome")
 		@SettingToggle
@@ -452,6 +481,13 @@ public class SafariConfig {
 		@SettingGroup(id = HIGHLIGHTS)
 		@Expose
 		public boolean hidePossibleWaypoints = false;
+
+		@SettingInfo(name = "Eagle Rarity",
+			desc = "Choose the rarity of your Eagle pet, used for pity titles and recatch waypoints")
+		@SettingChoice(values = {"None", "Common", "Uncommon", "Rare", "Epic", "Legendary"})
+		@SettingGroup(id = HIGHLIGHTS)
+		@Expose
+		public int eagleRarity = 0;
 
 		/** Accordion id for marks on fixed world features rather than living critters. */
 		private static final int MARKERS = 7;
@@ -802,17 +838,11 @@ public class SafariConfig {
 		@SettingSection(id = HITBOXES)
 		public boolean hitboxesAccordion = false;
 
-		@SettingInfo(name = "Enable Hitboxes", desc = "Shows critter hitboxes within the selected distance")
+		@SettingInfo(name = "Enable Hitboxes", desc = "Shows hitboxes for detected critters")
 		@SettingToggle
 		@SettingGroup(id = HITBOXES)
 		@Expose
 		public boolean enableHitboxes = true;
-
-		@SettingInfo(name = "Hitbox Distance", desc = "Maximum distance at which critter hitboxes are shown")
-		@SettingRange(minValue = 0, maxValue = 200, minStep = 1)
-		@SettingGroup(id = HITBOXES)
-		@Expose
-		public int hitboxDistance = 50;
 
 		@SettingInfo(name = "Pity Title", desc = "Shows a pity count as each hitbox's title")
 		@SettingToggle
@@ -870,11 +900,11 @@ public class SafariConfig {
 			desc = "Hides selected server dialogue and objective messages")
 		@SettingMultiChoice(
 			values = {"Run Start Information", "Catch Attempts", "Critter Catches", "Loot Shares",
-				"Floor Drops", "Safari Manager", "Gemzie", "Chuckwalla", "Rockmite", "Scrappy",
+				"Floor Drops", "Safari Manager", "Drop Items", "Gemzie", "Chuckwalla", "Rockmite", "Scrappy",
 				"Shyworm", "Snoozle", "Wumpa", "Troodon", "Cold", "Doomspiral", "Bloodbat",
 				"Duplico", "Gazer", "Gimmiegold", "Hideyho", "Bird Spawns", "Empty Nest"},
 			groups = {"General", "Cavern", "Icy", "Haunted", "Forest"},
-			groupStarts = {0, 6, 12, 15, 21}, biomeColumns = true)
+			groupStarts = {0, 7, 13, 16, 22}, biomeColumns = true)
 		@Expose
 		@SerializedName("hiddenChatMessageGroups")
 		public int hiddenChatMessages = 0;
@@ -1094,314 +1124,38 @@ public class SafariConfig {
 		@SettingSection(id = TESTING)
 		public boolean testingAccordion = false;
 
+		@SettingInfo(name = "Disable Automatic Logging",
+			desc = "Stops automatic diagnostic and error log files to minimize logging overhead")
+		@SettingToggle
+		@SettingGroup(id = TESTING)
+		@Expose
+		public boolean disableAutomaticLogging = false;
+
+		/** Accordion id for developer-only data collection and persistence controls. */
+		private static final int DATA_COLLECTING = 25;
+
+		@SettingInfo(name = "Data Collecting", desc = "Controls test-run persistence and learned locations")
+		@SettingSection(id = DATA_COLLECTING)
+		@SettingGroup(id = TESTING)
+		public boolean dataCollectingAccordion = false;
+
+		@SettingInfo(name = "Don't Save Run",
+			desc = "Runs normally but prevents this run and its catches, profits, rewards, and Sparklings from being saved")
+		@SettingToggle
+		@SettingGroup(id = DATA_COLLECTING)
+		public transient boolean testingDoNotSaveRun = false;
+
 		@SettingInfo(name = "Save Learned Locations",
 			desc = "Saves new Hideonfloor block-center locations for later review")
 		@SettingToggle
-		@SettingGroup(id = TESTING)
+		@SettingGroup(id = DATA_COLLECTING)
 		public transient boolean testingSaveLearnedLocations = false;
 
 		@SettingInfo(name = "Show Learned Candidates",
 			desc = "Shows newly learned locations absent from the bundled catalog across the whole Safari for manual review")
 		@SettingToggle
-		@SettingGroup(id = TESTING)
+		@SettingGroup(id = DATA_COLLECTING)
 		public transient boolean testingShowLearnedCandidates = false;
-
-		/** Accordion id for the debug-logging toggles. */
-		private static final int DEBUG_LOGGING = 1;
-
-		@SettingInfo(name = "Debug Logging", desc = "Records selected game and Safari activity for troubleshooting")
-		@SettingSection(id = DEBUG_LOGGING)
-		@SettingGroup(id = TESTING)
-		public boolean debugLoggingAccordion = false;
-
-		@SettingInfo(
-			name = "Output Log",
-			desc = "Writes a running log of entity and event activity to disk, for diagnosing bugs.\n" +
-				"§7A new timestamped file each time this is turned on, in config/safariutils/logs")
-		@SettingToggle
-		@SettingGroup(id = DEBUG_LOGGING)
-		@Expose
-		public boolean debugLog = false;
-
-		@SettingInfo(name = "Output Log Preset",
-			desc = "Applies a ready-made set of testing and logging options")
-		@SettingChoice(values = {"All", "Custom", "Join Timing", "Safari Run Research", "Party And Sync",
-			"Run Lifecycle", "Objectives And Inventory", "Contests And HUD",
-			"Sparkling Research", "Static Locations", "Entity And Catch Tracking",
-			"Server Packets"})
-		@SettingGroup(id = DEBUG_LOGGING)
-		public transient int outputLogPreset = 1;
-
-		/** Accordion id for which categories the Output Log actually writes. */
-		private static final int OUTPUT_LOG_OPTIONS = 13;
-		private static final int OUTPUT_SESSION_DATA = 15;
-		private static final int OUTPUT_CRITTER_DETECTION = 16;
-		private static final int OUTPUT_WORLD_TRACKING = 17;
-		private static final int OUTPUT_SERVER_PACKETS = 25;
-
-		@SettingInfo(name = "Output Log Options",
-			desc = "Choose which information is written while Output Log is enabled")
-		@SettingSection(id = OUTPUT_LOG_OPTIONS)
-		@SettingGroup(id = DEBUG_LOGGING)
-		public boolean outputLogOptionsAccordion = false;
-
-		@SettingInfo(name = "Session And Server", desc = "Chat, location, roster, server, and run-state diagnostics")
-		@SettingSection(id = OUTPUT_SESSION_DATA)
-		@SettingGroup(id = OUTPUT_LOG_OPTIONS)
-		public boolean outputSessionDataAccordion = false;
-
-		@SettingInfo(name = "Raw Chat", desc = "Every game chat line, unfiltered, exactly as it arrived")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_SESSION_DATA)
-		@Expose
-		public boolean logRaw = false;
-
-		@SettingInfo(name = "Location And Lobby", desc = "Area, sub-area, biome, lobby id, and Safari entry or exit changes")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_SESSION_DATA)
-		@Expose
-		public boolean logLocation = false;
-
-		@SettingInfo(name = "Party Roster", desc = "Player names, UUIDs, and displayed tab names whenever the roster changes")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_SESSION_DATA)
-		@Expose
-		public boolean logPartyRoster = false;
-
-		@SettingInfo(name = "Full Party Timing", desc = "Raw and stabilized Safari player counts with alert timing")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_SESSION_DATA)
-		@Expose
-		public boolean logPartyTiming = false;
-
-		@SettingInfo(name = "Party Sync State", desc = "Party sync eligibility, message types, and enqueue counts without payloads")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_SESSION_DATA)
-		@Expose
-		public boolean logPartySync = false;
-
-		@SettingInfo(name = "Party API Refresh", desc = "Private automatic shared-Sparkling refresh decisions and outcomes without credentials")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_SESSION_DATA)
-		@Expose
-		public boolean logPartyApi = false;
-
-		@SettingInfo(name = "GUI And NPC Interactions",
-			desc = "Safari NPC uses, GUI openings, clicks, slots, and container changes")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_SESSION_DATA)
-		@Expose
-		public boolean logInterfaces = false;
-
-		@SettingInfo(name = "Tab List Changes", desc = "A snapshot whenever the stripped tab list changes")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_SESSION_DATA)
-		@Expose
-		public boolean logTabList = false;
-
-		@SettingInfo(name = "Scoreboard Changes", desc = "A snapshot whenever the sidebar scoreboard changes")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_SESSION_DATA)
-		@Expose
-		public boolean logScoreboard = false;
-
-		@SettingInfo(name = "Inventory And Hotbar", desc = "Non-empty inventory and hotbar slots whenever their contents change")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_SESSION_DATA)
-		@Expose
-		public boolean logInventory = false;
-
-		@SettingInfo(name = "Run And Event Tracking", desc = "Parsed catches, activation, and run lifecycle decisions")
-		@SettingSection(id = OUTPUT_CRITTER_DETECTION)
-		@SettingGroup(id = OUTPUT_LOG_OPTIONS)
-		public boolean outputCritterDetectionAccordion = false;
-
-		@SettingInfo(name = "Parsed Catch Events",
-			desc = "Attempts, escapes, and catches, once matched to a species and a chat line")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_CRITTER_DETECTION)
-		@Expose
-		public boolean logChat = false;
-
-		@SettingInfo(name = "Run Start And End", desc = "When a run opens or closes, and why")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_CRITTER_DETECTION)
-		@Expose
-		public boolean logRun = false;
-
-		@SettingInfo(name = "Objective State Changes",
-			desc = "Change-only gems, incense, bird feed, and encounter objective state")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_CRITTER_DETECTION)
-		@Expose
-		public boolean logObjectives = false;
-
-		@SettingInfo(name = "Run Activation", desc = "Safari entry, Manager-message matching, pending events, and activation decisions")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_CRITTER_DETECTION)
-		@Expose
-		public boolean logActivation = false;
-
-		@SettingInfo(name = "World And Entity Tracking", desc = "Entity detection, waypoints, encounters, and Safari world features")
-		@SettingSection(id = OUTPUT_WORLD_TRACKING)
-		@SettingGroup(id = OUTPUT_LOG_OPTIONS)
-		public boolean outputWorldTrackingAccordion = false;
-
-		@SettingInfo(name = "Entity Sightings",
-			desc = "A critter's label appearing, disappearing, or changing id underneath it")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
-		@Expose
-		public boolean logSighting = false;
-
-		@SettingInfo(name = "Nearby Counts", desc = "How many of a species are currently loaded, each time it changes")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
-		@Expose
-		public boolean logNearby = false;
-
-		@SettingInfo(name = "Entity Pairing",
-			desc = "How a label was matched to its mob, and details on any match that failed")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
-		@Expose
-		public boolean logPair = false;
-
-		@SettingInfo(name = "Ball Position Data",
-			desc = "Where a capsule's ball appears relative to the player and the critter, for pattern data")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
-		@Expose
-		public boolean logBall = false;
-
-		@SettingInfo(name = "Recatch Pins And Pity",
-			desc = "A pin being placed or cleared, and every pity count change behind it")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
-		@Expose
-		public boolean logRecatch = false;
-
-		@SettingInfo(name = "Hitbox Suppression",
-			desc = "A hitbox being hidden or shown again because of a recatch pin over the same individual")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
-		@Expose
-		public boolean logDraw = false;
-
-		@SettingInfo(name = "Stale Waypoint Fixes",
-			desc = "A tracked entity's waypoint being replaced after it woke up under a new id nearby")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
-		@Expose
-		public boolean logStill = false;
-
-		@SettingInfo(name = "Wall Tracking", desc = "A Snoozle or Troodon wall's state changing")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
-		@Expose
-		public boolean logWall = false;
-
-		@SettingInfo(name = "Floor Drops", desc = "A floor drop being confirmed, and its shard credited if it was one")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
-		@Expose
-		public boolean logFloor = false;
-
-		@SettingInfo(name = "Hideyho Tracking", desc = "Hideyho's own detection and hitbox placement")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
-		@Expose
-		public boolean logHideyho = false;
-
-		@SettingInfo(name = "Head Start Scan", desc = "What the inventory scan for starting items found")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
-		@Expose
-		public boolean logHeadstart = false;
-
-		@SettingInfo(name = "Nest Tracking",
-			desc = "The Forest sweep for bee nests starting, finishing, and what it actually found")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
-		@Expose
-		public boolean logNest = false;
-
-		@SettingInfo(
-			name = "Critter Count Peaks",
-			desc = "Highest concurrent count reached by each species during a run")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
-		@Expose
-		public boolean logCritterCounts = false;
-
-		@SettingInfo(name = "Static Waypoint Locations",
-			desc = "New and confirmed solo static positions, exact coordinates, and discrepancies")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
-		@Expose
-		public boolean logStaticWaypoints = false;
-
-		@SettingInfo(name = "Critter Particles",
-			desc = "Aggregates server particle packets and associates them with nearby critters")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
-		@Expose
-		public boolean logParticles = false;
-
-		@SettingInfo(name = "Sparkling Detection",
-			desc = "Records Sparkling discovery, visibility, entity replacement, and catch decisions")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_WORLD_TRACKING)
-		@Expose
-		public boolean logSparkling = false;
-
-		@SettingInfo(name = "Passive Server Packets",
-			desc = "Read-only observations of packets vanilla Minecraft already receives")
-		@SettingSection(id = OUTPUT_SERVER_PACKETS)
-		@SettingGroup(id = OUTPUT_LOG_OPTIONS)
-		public boolean outputServerPacketsAccordion = false;
-
-		@SettingInfo(name = "World Transitions",
-			desc = "Configuration, login, respawn, position, spawn, and chunk-center packets")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_SERVER_PACKETS)
-		@Expose
-		public boolean logPacketTransitions = false;
-
-		@SettingInfo(name = "Server HUD Packets",
-			desc = "Scoreboard, title, subtitle, action-bar, boss-bar, and player-list updates")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_SERVER_PACKETS)
-		@Expose
-		public boolean logPacketHud = false;
-
-		@SettingInfo(name = "Server Inventory Packets",
-			desc = "Player inventory, open-container, carried-item, and slot updates")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_SERVER_PACKETS)
-		@Expose
-		public boolean logPacketInventory = false;
-
-		@SettingInfo(name = "Server Entity Packets",
-			desc = "Aggregated entity additions, removals, and metadata updates without per-packet spam")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_SERVER_PACKETS)
-		@Expose
-		public boolean logPacketEntities = false;
-
-		@SettingInfo(name = "Server World Packets",
-			desc = "Aggregated chunks plus time, ticking-state, and game-event updates")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_SERVER_PACKETS)
-		@Expose
-		public boolean logPacketWorld = false;
-
-		@SettingInfo(name = "Custom Payload Channels",
-			desc = "Channel identifiers only; payload contents are never inspected or recorded")
-		@SettingToggle
-		@SettingGroup(id = OUTPUT_SERVER_PACKETS)
-		@Expose
-		public boolean logPacketChannels = false;
 
 		/** Accordion id for hitboxes on entity types outside the normal critter set. */
 		private static final int DIAGNOSTIC_HITBOXES = 14;
@@ -3601,6 +3355,17 @@ public class SafariConfig {
 		@Expose
 		public boolean sparklingMode = true;
 
+		@SettingInfo(name = "Ticket Trading",
+			desc = "Configure trusted players for timed Safari ticket trading")
+		@SettingAction(buttonText = "Configure")
+		public Runnable configureTicketTrading = TicketTradingScreen::open;
+
+		// Edited by the dedicated Ticket Trading screen rather than ordinary cards.
+		@Expose public boolean ticketTradingEnabled = false;
+		@Expose public String ticketTradingPlayer1 = "";
+		@Expose public String ticketTradingPlayer2 = "";
+		@Expose public String ticketTradingPlayer3 = "";
+
 		@SettingInfo(name = "Sparkling Mode Options", desc = "")
 		@SettingSection(id = SPARKLING_MODE_OPTIONS)
 		public boolean sparklingModeOptionsAccordion = false;
@@ -3710,11 +3475,110 @@ public class SafariConfig {
 		public Runnable testSparklingCatch = FullScreenAlert::testSparklingCatch;
 
 		@SettingInfo(name = "Special Sparkling Catch",
-			desc = "Selects the intensity of the special full-screen celebration\n§cHigher intensities may affect photosensitive players")
-		@SettingChoice(values = {"Special", "Intense", "Extreme", "Maximum"})
+			desc = "Selects a full-screen celebration or opens the custom alert editor\n§cHigher effect intensities may affect photosensitive players")
+		@SettingChoice(values = {SparklingAlertStyle.PRISMATIC_WHISPER,
+			SparklingAlertStyle.PRISMATIC_GLEAM, SparklingAlertStyle.STARLIGHT_DRIFT,
+			SparklingAlertStyle.STARLIGHT_WALTZ, SparklingAlertStyle.AURORA_RISE,
+			SparklingAlertStyle.AURORA_CASCADE, SparklingAlertStyle.COMET_SHOWER,
+			SparklingAlertStyle.COMET_TEMPEST, SparklingAlertStyle.FIREWORK_BLOOM,
+			SparklingAlertStyle.FIREWORK_SYMPHONY, SparklingAlertStyle.CELESTIAL_CHORUS,
+			SparklingAlertStyle.CELESTIAL_CARNIVAL, SparklingAlertStyle.NEBULA_SURGE,
+			SparklingAlertStyle.NEBULA_RHAPSODY, SparklingAlertStyle.GALACTIC_PULSE,
+			SparklingAlertStyle.GALACTIC_TEMPEST, SparklingAlertStyle.ASTRAL_REVERIE,
+			SparklingAlertStyle.ASTRAL_ASCENSION, SparklingAlertStyle.SUPERNOVA,
+			SparklingAlertStyle.HYPERNOVA, SparklingAlertStyle.COSMIC_JUBILEE,
+			SparklingAlertStyle.COSMIC_OVERDRIVE, SparklingAlertStyle.RADIANT_SINGULARITY,
+			SparklingAlertStyle.CELESTIAL_TRANSCENDENCE, SparklingAlertStyle.EVENT_HORIZON,
+			SparklingAlertStyle.INFINITE_RADIANCE, SparklingAlertStyle.ENDLESS_COSMOS,
+			SparklingAlertStyle.CHROMATIC_ZENITH, SparklingAlertStyle.ETHEREAL_GENESIS,
+			SparklingAlertStyle.ETHEREAL_ASCENDANCE, SparklingAlertStyle.MYTHIC_DOMINION,
+			SparklingAlertStyle.MYTHIC_ETERNITY, SparklingAlertStyle.CELESTIAL_GENESIS,
+			SparklingAlertStyle.CELESTIAL_ASCENDANCE,
+			SparklingAlertStyle.INFINITE_TRANSCENDENCE,
+			SparklingAlertStyle.INFINITE_APOTHEOSIS, SparklingAlertStyle.ETERNAL_DAWN,
+			SparklingAlertStyle.ETERNAL_RESONANCE, SparklingAlertStyle.ETERNAL_DOMINION,
+			SparklingAlertStyle.ETERNAL_TRANSCENDENCE,
+			SparklingAlertStyle.ETERNAL_APOTHEOSIS, SparklingAlertStyle.CUSTOM})
 		@SettingGroup(id = CATCH_ALERT)
 		@Expose
 		public int specialSparklingIntensity = 0;
+		@Expose public int sparklingAlertPresetVersion = 9;
+
+		// Persisted by the dedicated custom-alert editor; these intentionally do not
+		// appear as ordinary settings rows.
+		@Expose public int customAlertStars = 6;
+		@Expose public int customAlertComets = 0;
+		@Expose public int customAlertBursts = 0;
+		@Expose public int customAlertOrbits = 0;
+		@Expose public int customAlertConfetti = 0;
+		@Expose public int customAlertRibbons = 0;
+		@Expose public int customAlertCorners = 0;
+		@Expose public int customAlertRays = 0;
+		@Expose public int customAlertShockwaves = 0;
+		@Expose public int customAlertGlitterWaves = 0;
+		@Expose public int customAlertPrisms = 0;
+		@Expose public int customAlertFireworks = 6;
+		@Expose public int customAlertHalos = 0;
+		@Expose public int customAlertNebulae = 0;
+		@Expose public int customAlertSpirals = 0;
+		@Expose public int customAlertCurtains = 0;
+		@Expose public int customAlertChromaticRain = 0;
+		@Expose public int customAlertDiamonds = 0;
+		@Expose public int customAlertHorizonFlares = 0;
+		@Expose public int customAlertConstellations = 0;
+		@Expose public int customAlertLattice = 0;
+		@Expose public int customAlertEmbers = 0;
+		@Expose public int customAlertKaleidoscope = 0;
+		@Expose public int customAlertEclipses = 0;
+		@Expose public int customAlertRunes = 0;
+		@Expose public int customAlertCrownRays = 0;
+		@Expose public int customAlertHearts = 0;
+		@Expose public int customAlertMirrorComets = 0;
+		@Expose public int customAlertSweeps = 0;
+		@Expose public int customAlertTwinHelix = 0;
+		@Expose public int customAlertLightning = 0;
+		@Expose public int customAlertPrismFans = 0;
+		@Expose public int customAlertSatellites = 0;
+		@Expose public int customAlertHourglass = 0;
+		@Expose public int customAlertGlyphRain = 0;
+		@Expose public int customAlertNovaCrosses = 0;
+		@Expose public int customAlertPortalGates = 0;
+		@Expose public int customAlertCrystalShards = 0;
+		@Expose public int customAlertInfinityTrails = 0;
+		@Expose public int customAlertGravityWells = 0;
+		@Expose public int customAlertSpectrumSteps = 0;
+		@Expose public int customAlertStarfallColumns = 6;
+		@Expose public int customAlertMagicCircle = 0;
+		@Expose public int customAlertConstellationReveal = 0;
+		@Expose public int customAlertPrismaticWings = 0;
+		@Expose public int customAlertNorthernLights = 0;
+		@Expose public int customAlertCelestialClock = 0;
+		@Expose public int customAlertCrystalBloom = 0;
+		@Expose public int customAlertStardustVortex = 0;
+		@Expose public int customAlertCometImpact = 0;
+		@Expose public int customAlertArcaneSeal = 0;
+		@Expose public int customAlertLightPillars = 0;
+		@Expose public int customAlertDimensionalTear = 0;
+		@Expose public int customAlertCelestialWings = 0;
+		@Expose public int customAlertMeteorShower = 0;
+		@Expose public int customAlertCrownFormation = 0;
+		@Expose public int customAlertRealityRipple = 0;
+		@Expose public int customAlertPulse = 0;
+		@Expose public int customAlertFrame = 1;
+		@Expose public int customAlertCallout = 6;
+		@Expose public int customAlertTextShake = 0;
+		@Expose public int customAlertTextGradientSpeed = 2;
+		@Expose public int customAlertSong = 2;
+		@Expose public int customAlertSoundTheme = 12;
+		@Expose public String customAlertCalloutText = "SPARKLING CAPTURE";
+		@Expose public float customAlertDuration = 5.5f;
+		@Expose public int customAlertSoundVolume = 250;
+		@Expose public int customAlertPerformanceBudget = 2;
+		@Expose public int customAlertTimingMode = 3;
+		@Expose public int customAlertPreviewScale = 2;
+		@Expose public int customAlertPreviewBackground = 0;
+		@Expose public boolean customAlertPreviewLoop = true;
+		@Expose public List<SavedAlertPreset> customAlertSavedPresets = new ArrayList<>();
 
 		@SettingInfo(name = "Chat Alerts", desc = "")
 		@SettingSection(id = CHAT_ALERTS)

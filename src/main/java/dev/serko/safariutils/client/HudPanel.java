@@ -306,23 +306,7 @@ public final class HudPanel {
 	/** Draws this panel with the same continuous animated rainbow used by Sparkling. */
 	public void renderRainbow(GuiGraphicsExtractor graphics, Font font, int x, int y, float scale) {
 		if (rows.isEmpty()) return;
-		if (SpecialTheme.rainbow()) {
-			renderSpecialRainbow(graphics, font, x, y, scale);
-			return;
-		}
-		if (scale == 1.0f) {
-			draw(graphics, font, x, y, 0, true);
-			drawRainbowBorder(graphics, x, y, width(font), height());
-			drawInnerKeyline(graphics, x, y, width(font), height());
-			return;
-		}
-		graphics.pose().pushMatrix();
-		graphics.pose().translate(x, y);
-		graphics.pose().scale(scale, scale);
-		draw(graphics, font, 0, 0, 0, true);
-		drawRainbowBorder(graphics, 0, 0, width(font), height());
-		drawInnerKeyline(graphics, 0, 0, width(font), height());
-		graphics.pose().popMatrix();
+		renderSpecialRainbow(graphics, font, x, y, scale);
 	}
 
 	/** Draws ordinary panel content with only the frame changed to rainbow. */
@@ -384,7 +368,7 @@ public final class HudPanel {
 			BACKGROUND_TOP, BACKGROUND_BOTTOM);
 		UIDraw.outline(graphics, left + 1, y + 1, panelWidth - 2, panelHeight - 2, INNER_KEYLINE);
 		if (rainbowAll) SpecialTheme.stars(graphics, left + 2, y + 2,
-			panelWidth - 4, panelHeight - 4, 1.5f);
+			panelWidth - 4, panelHeight - 4, 1.5f, true);
 		if ((borderColour >>> 24) != 0) {
 			UIDraw.outline(graphics, left, y, panelWidth, panelHeight, borderColour);
 		}

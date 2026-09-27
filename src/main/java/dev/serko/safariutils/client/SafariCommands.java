@@ -73,6 +73,10 @@ public final class SafariCommands {
 					requireUnlocked(ctx.getSource(), () -> runState(ctx.getSource()));
 					return 1;
 				}))
+				.then(ClientCommands.literal("log").executes(ctx -> {
+					requireUnlocked(ctx.getSource(), () -> logStatus(ctx.getSource()));
+					return 1;
+				}))
 				.then(ClientCommands.literal("jointimer").executes(ctx -> {
 					requireUnlocked(ctx.getSource(), () -> joinTimer(ctx.getSource()));
 					return 1;
@@ -355,6 +359,15 @@ public final class SafariCommands {
 			source.sendFeedback(Component.literal(line).withStyle(ChatFormatting.GRAY));
 		}
 		copyResult(source, report);
+	}
+
+	/** Reports the automatic logger without exposing or changing its internal state. */
+	private static void logStatus(FabricClientCommandSource source) {
+		String status = OperationalLog.status();
+		for (String line : status.stripTrailing().split("\\R")) {
+			source.sendFeedback(Component.literal(line).withStyle(ChatFormatting.GRAY));
+		}
+		copyResult(source, status);
 	}
 
 	/** Reports only hashes needed to verify that every client derives one room identity. */

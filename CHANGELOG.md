@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.1] - 2026-09-28
+
+### Changes & Additions
+
+- Added a Display Nametags picker for choosing None, Vanilla, Waypoint, or Both names on critters with rendered hitboxes and waypoints
+- Defaulted critter nametags to Both while keeping hitbox visibility, detection, pairing, pity, and objective labels independent
+
 ## [2.2.0] - 2026-09-27
 
 ### Performance

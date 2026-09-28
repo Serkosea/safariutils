@@ -199,7 +199,8 @@ public final class WaypointRenderer {
 				Markers.Marker marker = visible.marker();
 				// Only a waypoint is named: a highlight sits on something you can
 				// already see, so a label over it is just something else to read.
-				if (marker.style() != Markers.Style.WAYPOINT) continue;
+				if (marker.style() != Markers.Style.WAYPOINT
+					|| marker.critterLabel() && !showsWaypointNametags()) continue;
 				label(poses, backend, marker, camera, visible.distance(), visible.seeThrough());
 			}
 		}
@@ -218,13 +219,14 @@ public final class WaypointRenderer {
 
 	/** Rendering-only test used by the entity-name mixin. */
 	public static boolean replacesVanillaName(Entity entity) {
-		if (!ConfigManager.get().display.enableHitboxes || !SafariLocation.inside()) return false;
+		if (showsVanillaNametags() || !SafariLocation.inside()) return false;
 		if (replacedVanillaNames.contains(entity.getUUID())) return true;
 		// Entity render states may be extracted before this frame's waypoint pass.
 		// Evaluate the shared hitbox conditions directly instead of depending only on
 		// the previous published render snapshot.
 		CritterEntities.Sighting sighting = CritterEntities.sightingFor(entity.getUUID());
-		if (sighting != null && rendersLiveHitbox(sighting)) return true;
+		if (ConfigManager.get().display.enableHitboxes
+			&& sighting != null && rendersLiveHitbox(sighting)) return true;
 		Critter bodyless = CritterEntities.bodylessLabelCritter(entity.getUUID());
 		if (bodyless != null && captureTransitionReplacesName(bodyless)) return true;
 		return sighting != null && captureTransitionReplacesName(sighting.critter());
@@ -278,8 +280,19 @@ public final class WaypointRenderer {
 
 	/** Both the floating label and some critter bodies can independently render a name. */
 	private static void markVanillaNameReplaced(CritterEntities.Sighting sighting) {
+		if (showsVanillaNametags()) return;
 		nextReplacedVanillaNames.add(sighting.label().getUUID());
 		if (sighting.mob() != null) nextReplacedVanillaNames.add(sighting.mob().getUUID());
+	}
+
+	private static boolean showsVanillaNametags() {
+		int mode = ConfigManager.get().display.displayNametags;
+		return mode == 1 || mode == 3;
+	}
+
+	private static boolean showsWaypointNametags() {
+		int mode = ConfigManager.get().display.displayNametags;
+		return mode == 2 || mode == 3;
 	}
 
 	/** Animated colour shared by every Sparkling world-space element. */
@@ -524,8 +537,10 @@ public final class WaypointRenderer {
 		if (anyThroughWalls) backend.flush(LINES);
 		if (!anyDrawn && !anyThroughWalls) return;
 
-		for (Found found : drawn) {
-			label(poses, backend, found.marker(), camera, found.distance(), found.seeThrough());
+		if (showsWaypointNametags()) {
+			for (Found found : drawn) {
+				label(poses, backend, found.marker(), camera, found.distance(), found.seeThrough());
+			}
 		}
 	}
 
@@ -625,8 +640,10 @@ public final class WaypointRenderer {
 			backend.flush(beamCore);
 			if (beamGlow != beamCore) backend.flush(beamGlow);
 		}
-		for (Found found : labels) {
-			label(poses, backend, found.marker(), camera, found.distance(), found.seeThrough());
+		if (showsWaypointNametags()) {
+			for (Found found : labels) {
+				label(poses, backend, found.marker(), camera, found.distance(), found.seeThrough());
+			}
 		}
 	}
 
@@ -971,8 +988,10 @@ public final class WaypointRenderer {
 		if (anyDepthTested) backend.flush(RenderTypes.LINES);
 		if (anyThroughWalls) backend.flush(LINES);
 
-		for (Found found : drawn) {
-			label(poses, backend, found.marker(), camera, found.distance(), found.seeThrough());
+		if (showsWaypointNametags()) {
+			for (Found found : drawn) {
+				label(poses, backend, found.marker(), camera, found.distance(), found.seeThrough());
+			}
 		}
 	}
 

@@ -29,13 +29,18 @@ public final class Markers {
 
 	/** A labeled box to render. Only waypoint boxes can ignore depth. */
 	public record Marker(AABB box, String label, int colour, Style style,
-			boolean seeThrough, boolean researchCandidate) {
+			boolean seeThrough, boolean researchCandidate, boolean critterLabel) {
+		public Marker(AABB box, String label, int colour, Style style, boolean seeThrough,
+				boolean researchCandidate) {
+			this(box, label, colour, style, seeThrough, researchCandidate, false);
+		}
+
 		public Marker(AABB box, String label, int colour, Style style, boolean seeThrough) {
-			this(box, label, colour, style, seeThrough, false);
+			this(box, label, colour, style, seeThrough, false, false);
 		}
 
 		public Marker(AABB box, String label, int colour, Style style) {
-			this(box, label, colour, style, true, false);
+			this(box, label, colour, style, true, false, false);
 		}
 	}
 
@@ -120,7 +125,8 @@ public final class Markers {
 					: Colours.argb(display.recatchColour, 0xFFFFFF55);
 				String label = (pin.sparkling() ? "SPARKLING " : "") + pin.critter().name()
 					+ (display.recatchPityTitle ? pityLabel(pin.critter(), pin.entityId()) : "");
-				markers.add(new Marker(pin.box(), label, colour, Style.WAYPOINT));
+				markers.add(new Marker(pin.box(), label, colour, Style.WAYPOINT,
+					true, false, true));
 			}
 		}
 
@@ -158,7 +164,7 @@ public final class Markers {
 			if (!"Hideonfloor".equals(candidate.critter())) continue;
 			BlockPos pos = candidate.pos();
 			markers.add(new Marker(new AABB(pos).inflate(0.06), "New " + candidate.critter() + " (Review)",
-				LEARNED_CANDIDATE_COLOUR, Style.WAYPOINT, true, true));
+				LEARNED_CANDIDATE_COLOUR, Style.WAYPOINT, true, true, true));
 		}
 	}
 

@@ -482,6 +482,13 @@ public class SafariConfig {
 		@Expose
 		public boolean hidePossibleWaypoints = false;
 
+		@SettingInfo(name = "Display Nametags",
+			desc = "Chooses which names appear for critters with rendered hitboxes or waypoints")
+		@SettingChoice(values = {"None", "Vanilla", "Waypoint", "Both"})
+		@SettingGroup(id = HIGHLIGHTS)
+		@Expose
+		public int displayNametags = 3;
+
 		@SettingInfo(name = "Eagle Rarity",
 			desc = "Choose the rarity of your Eagle pet, used for pity titles and recatch waypoints")
 		@SettingChoice(values = {"None", "Common", "Uncommon", "Rare", "Epic", "Legendary"})

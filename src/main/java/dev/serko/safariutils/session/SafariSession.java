@@ -156,13 +156,11 @@ public final class SafariSession {
 	}
 
 	/**
-	 * A shard found on the ground rather than from a catch — see {@link ChatParser}'s
-	 * class doc for why this bypasses {@link #record} entirely rather than being
-	 * squeezed into a {@link CritterEvent} of some kind. Only ever touches the shard
-	 * totals: nothing was caught, attempted, or failed, so nothing else here should
-	 * move.
+	 * A shard awarded outside a catch, currently from a floor drop or Shard Trader.
+	 * This bypasses {@link #record}: nothing was caught, attempted, or failed, so only
+	 * shard income and the activity timestamp move.
 	 */
-	public void recordFloorDropShard(Critter critter, int amount, long atMillis) {
+	public void recordShardReward(Critter critter, int amount, long atMillis) {
 		lastEventMillis = atMillis;
 		ownShards += amount;
 		shardCounts.merge(critter, amount, Integer::sum);

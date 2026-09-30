@@ -16,6 +16,8 @@ public final class ChatParser {
 	private static final Pattern SHARD_AMOUNT = Pattern.compile("(\\d[\\d,]*)x\\s+\\S");
 	private static final Pattern FLOOR_DROP_SHARD =
 		Pattern.compile("^FLOOR DROP! You found (?:(\\d[\\d,]*)x\\s+)?(.+?) Shard on the ground!$");
+	private static final Pattern RECEIVED_SHARD =
+		Pattern.compile("^You received (?:a|an) (.+?) Shard!$");
 	private static final Pattern LOOT_SHARE_CATCHER =
 		Pattern.compile("from\\s+(\\w{1,16})\\s+(?:catching|finding)\\b");
 	private static final Pattern ATTEMPT =
@@ -166,6 +168,12 @@ public final class ChatParser {
 
 	/** A species and how many of its shards were just found on the ground. */
 	public record FloorDropShard(Critter critter, int amount) {
+	}
+
+	/** A Shard Trader receipt, resolved only when it names a known Safari species. */
+	public static Critter receivedShard(String line) {
+		Matcher matcher = RECEIVED_SHARD.matcher(line);
+		return matcher.matches() ? Critters.byName(matcher.group(1)) : null;
 	}
 
 	/**

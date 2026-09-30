@@ -114,6 +114,11 @@ public final class PartyRosterWatch {
 		return known;
 	}
 
+	/** Whether the last authoritative party-list response contains another player. */
+	public static boolean inParty() {
+		return known && expectedPlayers > 1;
+	}
+
 	/** Last complete roster response. Failed refreshes never erase this stable snapshot. */
 	public static List<String> rosterLines() {
 		return rosterLines;

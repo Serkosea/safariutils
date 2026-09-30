@@ -51,6 +51,7 @@ public final class ConfigManager {
 			JsonObject root = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
 			migrateBannerPlayback(root);
 			migrateSparklingCatchIntensity(root);
+			migrateSafeModeOptions(root);
 			SafariConfig loaded = GSON.fromJson(root, SafariConfig.class);
 			if (loaded == null) loaded = new SafariConfig();
 			if (loaded.sparkling.sparklingUniqueHitboxColours) {
@@ -63,6 +64,26 @@ public final class ConfigManager {
 			OperationalLog.error("CONFIG/LOAD", malformed);
 			return new SafariConfig();
 		}
+	}
+
+	/** Replaces the old master switch while preserving its disabled behavior once. */
+	private static void migrateSafeModeOptions(JsonObject root) {
+		if (!root.has("advanced") || !root.get("advanced").isJsonObject()) return;
+		JsonObject advanced = root.getAsJsonObject("advanced");
+		if (advanced.has("safeModeOptionsVersion")) return;
+		boolean masterEnabled = !advanced.has("safeMode") || advanced.get("safeMode").getAsBoolean();
+		if (!masterEnabled) {
+			for (String option : new String[] {
+				"safeVisibleCritterDetection", "safeHideNearbyCounts",
+				"safeConservativeAvailability", "safeConservativeCompletion",
+				"safeCritterHitboxes", "safeSparklingCritters", "safeHideyho",
+				"safeHideonwall", "safeDuplico", "safeBloodbat", "safeHideonfloor",
+				"safeFloorDrops", "safeBeeNests", "safeRockmiteMounds",
+				"safeSnoozleWalls", "safeTroodonWalls"
+			}) advanced.addProperty(option, false);
+		}
+		advanced.remove("safeMode");
+		advanced.addProperty("safeModeOptionsVersion", 1);
 	}
 
 	/** Replaces the former on/off celebration with an always-enabled intensity picker. */

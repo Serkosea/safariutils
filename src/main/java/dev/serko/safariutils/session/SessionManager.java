@@ -263,6 +263,15 @@ public final class SessionManager {
 			return;
 		}
 
+		Critter tradedShard = ChatParser.receivedShard(line);
+		if (tradedShard != null) {
+			if (current != null) {
+				current.recordShardReward(tradedShard, 1, now);
+				DebugLog.line("SHARD", "TRADE " + tradedShard.name() + " x1");
+			}
+			return;
+		}
+
 		CritterEvent event = ChatParser.parse(line, selfName());
 		if (event == null) return;
 

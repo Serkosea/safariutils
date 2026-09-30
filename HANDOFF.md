@@ -15,7 +15,10 @@ Safari Utils is a client-side Fabric mod for Hypixel SkyBlock's Critter Safari. 
 - Private build: add `-PincludePrivateApi=true` (API plus Extra behavior, no developer tools)
 - Developer build: add `-PdeveloperBuild=true` (private API, Testing UI, commands, and automatic diagnostics)
 
-Build variants use separate output directories so stale private classes cannot enter public jars. `DeployBuilds` builds and deploys only the 26.2 Developer jar during development, then mirrors Safari Utils configuration from the 26.2 main instance to the 26.2 Ticket Collecting instance. The explicit `buildDeveloper26_1_2` task remains available for compatibility checks. Generate all eight variants only for an explicitly requested artifact set or a GitHub release.
+SafariUtils diagnostic files and their controls are Developer-only. Release variants
+still report failures to Minecraft's standard log without starting the custom writer.
+
+Build variants use separate output directories so stale private classes cannot enter public jars. `DeployBuilds` builds and deploys the 26.1.2 and 26.2 Developer jars, then mirrors Safari Utils configuration from the 26.2 main instance to the 26.2 Ticket Collecting instance. `BuildArtifacts` builds all eight profile/variant combinations sequentially and synchronizes only those current jars directly into the flat `release-artifacts/` folder.
 
 Artifact names place the variant after the version: no suffix for normal Safe Mode,
 `-extra`, `-private`, or `-developer`. Clean-build all eight profile/variant
@@ -40,7 +43,7 @@ Entering Safari creates a transient visit immediately. Scouting, objective obser
 
 The countdown begins at the destination play-connection event and uses the server's 30-second ticket window. Queue or party-entry chat is diagnostic context rather than elapsed ticket time; scoreboard, area, and lobby-ID state can arrive several seconds late. The connection anchor also covers late party warps without a local queue line. It displays `Closing` at zero, then `Closed` once the Manager's lockout dialogue begins. Developer `JoinWindowDiagnostics` compares every anchor without sending or modifying network traffic.
 
-Ticket Trading snapshots up to three trusted names only when a ticket activates before 20 seconds. It sends one multi-invite at 20s, waits until 27s before warping any joined trusted players, accepts a first late join through 29s, and closes an unwarped party at 29s. A successfully warped party stays intact until the host leaves that ticketed Safari instance. Traded arrivals remain provisional until this client receives their loot share or still sees them in the Safari at 60s; confirmation raises the stable run roster and is persisted with the run.
+Ticket Trading snapshots up to three trusted names only when a ticket activates before 20 seconds. It sends ordinary targets in one multi-invite at 20s and adds Sparkling-only targets only after a genuine detection through 25s. It waits until 27s and the command cooldown before warping any joined trusted players, accepts a first late join before 29.5s, and closes an unwarped party at 29.5s. A successfully warped party stays intact until the host leaves that ticketed Safari instance. Traded arrivals remain provisional until this client receives their loot share or still sees them in the Safari at 60s; confirmation raises the stable run roster and is persisted with the run.
 
 The first fresh `/party list` response after entry freezes the visit roster. Leaves, kicks, crashes, delayed arrivals, and party changes do not rewrite that roster; a new composition applies on the next Safari entry. Attendance is tracked separately. Reward summary or confirmed lobby transition ends a run. Empty visits are never persisted.
 
@@ -58,7 +61,7 @@ The Party Objectives title remains visible throughout Safari and shows the enabl
 
 Forest retains its nine-drop count because every feed matters. Cavern and Haunted intentionally have no floor-drop count. Their floor-drop guidance stops only when the objective is complete or this client personally holds every remaining required item.
 
-Safe Mode exposes visible or otherwise player-observable evidence. Extra Mode may expose additional internal detections. Presentation settings never discard tracker state: switching modes or toggles mid-run must immediately render the appropriate already-known subset. Caches that affect presentation include the configuration revision.
+Safe Mode exposes visible or otherwise player-observable evidence. Extra Mode may expose additional internal detections. Its feature toggles apply independently; the former master switch is retained only as a one-time configuration migration source. Presentation settings never discard tracker state: switching modes or toggles mid-run must immediately render the appropriate already-known subset. Caches that affect presentation include the configuration revision.
 
 - Bee Nests clear only after a left/right interaction is followed by a new nearby Honeybug within five seconds
 - Loaded air alone never completes an objective candidate
@@ -84,11 +87,21 @@ Manual profile lookups have a ten-second request cooldown and a five-minute resu
 
 Party Sync is public, opt-in, and party-chat-backed. Its transient setting resets off each launch. A client sends one compact visible verification token only after the complete Safari roster is present and stable; the token is derived from its displayed username, the current lobby ID, and its action. Parsed objective traffic remains disabled until every current member has confirmed the same protocol. Local state is tracked before confirmation, then sent as a coalesced authoritative snapshot with batched confirmed hives. Disabling sync during an active synchronized run sends the matching sender/lobby-bound shutdown token, immediately stopping transport for every client while preserving local state. Departures retain confirmed remaining members, while a newly added member requires a fresh readiness check on the next stable Safari visit. Solo has complete local state without sending messages. Any future remote transport remains deferred and must preserve the documented privacy design: short-lived end-to-end-encrypted rooms, no credentials or private account data, and no developer/user access to connection metadata beyond what a trusted provider must process.
 
-Chat-message hiding is display-only. Its finalized bit mask is serialized as `hiddenChatMessageGroups`, defaults to zero, and is grouped into General, Cavern, Icy, Haunted, and Forest columns. Selected Safari lines must pass through the complete tracker pipeline before `ALLOW_GAME` rejects them; never move the filter ahead of parsing or suppress player-written chat by keyword.
+Ticket Trading resets disabled each launch, while its three trusted names and per-name Sparkling-only flags persist. A host snapshots those settings when its ticket activates the run: ordinary targets enter the 20-second invite batch, while Sparkling-only targets enter only after a genuine Sparkling detection and only while the command cooldown still permits a warp before the join window closes. A Sparkling-only guest leaves an existing (or not-yet-known) party, waits out the command cooldown, then accepts that trusted host. The host disbands after leaving the ticketed Safari, or at the invite deadline when nobody joined.
+
+Chat-message hiding is display-only. Its stable bit mask is serialized as `hiddenChatMessageGroups`, defaults to zero, and is grouped into General, Cavern, Icy, Haunted, and Forest columns. Visible order may differ from persisted bit order through `SettingMultiChoice.bits`; never shift existing persisted meanings just to insert an option. Selected Safari lines must pass through the complete tracker pipeline before `ALLOW_GAME` rejects them; never move the filter ahead of parsing or suppress player-written chat by keyword. The NPC option dynamically captures each Shard Trader's offered species, requested item, and server-provided colors. It retains the original clickable selector components and adds a non-clickable `Trade: cost -> shard` line through `MODIFY_GAME`; successful receipt lines remain visible and add the shard to run income exactly once.
 
 ## UI and performance
 
 `SafariConfig` fields annotated with `@Expose` are persistent keys. Rename them only with `@SerializedName` aliases or explicit `ConfigManager` migration. Deliberately transient session settings such as Party Sync must remain unexposed and be reset explicitly on load. Existing run history and settings must remain forward-compatible.
+
+`SafariSettingsScreen` presents one compact category sidebar plus a fixed wrapping tab header and collapsed, nested section accordions over the unchanged `SafariConfig` schema. Each logical section shares a card; collections of distinct waypoint features split into one toggle-and-color card per feature. Search follows the same area/tab/page/card order, preserves relevant shared cards, and appends feature names to broad section breadcrumbs. Changing tabs collapses the previous tab's sections, and collapsing a parent also collapses all descendants. Areas, tabs, and sections may reorganize controls across their source config classes, but they must retain the original owner and reflected `Field`; never move persisted fields merely to change navigation. Global search, tab reset, build visibility, warnings, and custom editors all reuse those same controls. Safe Mode and Developer remain unlock-gated, and Developer exists only in developer builds.
+
+Display's Safari tab owns presentation-only chat filtering and screen-effect removal. Gameplay's Safari tab owns Hideyho convenience, ticket protection/trading, and Party Sync; Profit remains separate. These are navigation groupings only, and persisted fields remain in their existing config owners.
+
+Responsive screens reflow before they scale. Settings narrows its single navigation rail, wraps meaningful tabs, stacks controls below descriptions, and caches static text layouts by reflected field and available width; Sparkling collection, party, and lookup views switch from four biome columns to two; Ticket Trading wraps and stacks its content. Dense dashboard tables may use content-measured fallback scaling only when their real minimum width or height does not fit. Keep scrolling content clipped below fixed headers and off-screen rows culled without removing them from tab reset coverage.
+
+UI centering always means optical/geometric centering of the visible pixels. Do not include glyph advance padding, transparent space, or text shadows when calculating centered positions; draw shadows only after the primary shape is centered.
 
 Use `ResponsiveUI` for fixed logical canvases and convert mouse coordinates for scaled widgets. `HudBox` is the source of truth for live/editor positioning. The HUD editor keeps outlines one pixel inside each screen edge and supports unsnapped one-pixel arrow adjustments.
 
@@ -133,5 +146,6 @@ Public jars may contain only the public party-sync service. They must contain no
 2. Build Safe, Extra, private, and developer jars for every supported profile
 3. Inspect jar names, metadata, class lists, services, and public-key absence
 4. Test lifecycle, Starting Items, objectives, mode/settings toggles, HUD editing, Sparkling UI, and Contest visibility
-5. Synchronize README, CHANGELOG, RELEASE_NOTES, and this handoff
-6. Push or publish only after explicit user approval
+5. Before preparing v2.3.0 or later release text, ask the user for their final exact wording and formatting; preserve it instead of regenerating prior wording
+6. Synchronize README, CHANGELOG, RELEASE_NOTES, and this handoff
+7. Push or publish only after explicit user approval

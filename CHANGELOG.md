@@ -1,5 +1,37 @@
 # Changelog
 
+## [2.3.0] - 2026-09-30
+
+### Changes & Additions
+
+- Rebuilt settings as a compact single-sidebar workspace with meaningful tabs and collapsed, nested section accordions
+- Reorganized Alerts into General, Banners, and Chat, with Safari, Encounters, and Contest groups inside the latter two tabs
+- Combined each logical settings section into a cohesive card while keeping distinct waypoint features in separate toggle-and-color cards
+- Completed shared-card row and outer borders, reset accordions when changing tabs, and recursively collapse nested sections with their parent
+- Matched settings scroll limits to the exact clipped viewport so final cards and dropdowns remain fully visible
+- Cached responsive setting text layouts and removed per-frame shared-card and accordion traversal allocations
+- Reused inline-editor hit bounds and removed repeated per-frame theme-label stream allocations
+- Bounded width-specific settings layout caches during repeated live window resizing
+- Reorganized Theme & Border Colors into HUD and Stats groups without changing any saved color keys
+- Preserved normal shared-card grouping when related settings appear together in search results
+- Matched search ordering to settings navigation, added feature-specific search breadcrumbs, and made complete inline-field frames reliably focusable
+- Added a directly accessible Safe Mode Sparkling Critters toggle and flattened hidden-critter controls into the Critter Overlays accordion
+- Kept Safe Mode visible in regular builds with a clear read-only explanation that its controls require Extra
+- Added responsive navigation widths, wrapped fixed headers, stacked setting controls, adaptive collection/party columns, wrapped ticket-trading content, and content-aware dashboard scaling
+- Grouped Safari convenience, ticket trading, and party sync under Gameplay while moving presentation-only chat and screen-effect controls under Display
+- Clarified Sparkling Mode guidance and ordered its alert groups as Banner, Chat, and Special Catch
+- Added optional NPC and expanded Scrappy dialogue filtering, with dynamic colored Shard Trader summaries, preserved clickable choices, and traded shards included in run profit
+- Added per-player Sparkling-only ticket trading, including detection-gated host invites and safe leave-then-accept guest transfers
+- Matched each enabled Sparkling-trading button and username field with one shared animated row tint
+- Matched settings category and accordion typography and refreshed the default HUD layout from the maintained configuration
+- Kept Reset Layout synchronized with canonical HUD defaults and layered recently moved HUDs above editor headings and controls until stationary
+- Combined on-screen and outgoing chat alerts under Alerts while keeping unlock-gated Safe Mode and Developer tools isolated by build
+- Replaced Safe Mode's master switch with independently active feature groups and migrated existing disabled configurations safely
+- Paired waypoint toggles with their colors under one nested Waypoint Settings section and flattened redundant Developer navigation
+- Preserved every existing setting key, control, theme, search result, warning, custom editor, and page-level reset
+- Clipped scrolling content below the fixed tab header, culled off-screen rows, and retained tab-level resets
+- Added dedicated DeployBuilds and BuildArtifacts workflows for dual-version testing and a clean flat eight-jar release set
+
 ## [2.2.1] - 2026-09-28
 
 ### Changes & Additions

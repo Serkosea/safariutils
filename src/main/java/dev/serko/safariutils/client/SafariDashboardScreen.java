@@ -178,7 +178,20 @@ public final class SafariDashboardScreen extends Screen {
 	@Override
 	protected void init() {
 		controls.clear();
-		responsiveScale = ResponsiveUI.scale(width, height);
+		int preferredColumnsWidth = measureColumnWidth() * BIOME_ORDER.length + PANEL_PADDING * 2;
+		int preferredWidth = Math.max(420, Math.max(preferredColumnsWidth,
+			measureTabTextWidth() + PANEL_PADDING * 2)) + 8;
+		int valueRows = showValue() ? 1 : 0;
+		int preferredPanelHeight = NAV_CONTENT_OFFSET + switch (tab) {
+			case RUN -> 46 + (2 + valueRows + 10) * LINE_HEIGHT
+				+ ((session == null ? 0 : session.uniquePerPlayer().size()) + 2) * LINE_HEIGHT + 40;
+			case HISTORY -> 46 + (HISTORY_ROWS + 2) * LINE_HEIGHT + 46;
+			case STATS -> 46 + (4 + valueRows + 10) * LINE_HEIGHT;
+		};
+		// Use native-size adaptive columns whenever they fit. Dense history tables or
+		// unusually short canvases alone fall back to proportional scaling.
+		responsiveScale = Math.min(1f, Math.min(width / (float) preferredWidth,
+			height / (float) (preferredPanelHeight + 20)));
 		layoutWidth = ResponsiveUI.logicalWidth(width, responsiveScale);
 		layoutHeight = ResponsiveUI.logicalHeight(height, responsiveScale);
 		int columns = BIOME_ORDER.length;
@@ -190,7 +203,6 @@ public final class SafariDashboardScreen extends Screen {
 		int textWidth = measureTabTextWidth() + PANEL_PADDING * 2;
 		panelWidth = Math.min(layoutWidth - 8, Math.max(columnsWidth, textWidth));
 		// Price totals add one row to the header and Stats summary.
-		int valueRows = showValue() ? 1 : 0;
 		int statsValueRows = valueRows;
 		panelHeight = NAV_CONTENT_OFFSET + switch (tab) {
 			// Header block, the longest biome column (Haunted has 10), then the player table.

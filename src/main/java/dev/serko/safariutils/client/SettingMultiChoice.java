@@ -12,6 +12,8 @@ public @interface SettingMultiChoice {
 	String[] values() default {};
 	String[] groups() default {};
 	int[] groupStarts() default {};
+	/** Optional persisted bit index for each visible value; empty uses its visible index. */
+	int[] bits() default {};
 	/** Populate choices from the canonical 37-critter biome/rarity order. */
 	boolean critters() default false;
 	/** Present the four configured biome groups as headed columns when space allows. */

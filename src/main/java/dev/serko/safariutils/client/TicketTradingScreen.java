@@ -38,11 +38,15 @@ public final class TicketTradingScreen extends Screen {
 	private static final Component NAME_HINT_COMPONENT = Component.literal(NAME_HINT);
 	private static final int ROW_MARGIN = 40;
 	private static final int LABEL_FIELD_GAP = 14;
+	private static final int SPARKLING_BUTTON_SIZE = 24;
 	private int left;
 	private int top;
 	private int panelWidth;
 	private int panelHeight;
 	private boolean showInfo;
+	private boolean stackedRows;
+	private int cachedInfoWidth = -1;
+	private List<InfoLine> cachedInfoLines = List.of();
 
 	private TicketTradingScreen(Screen parent) {
 		super(Component.literal("Ticket Trading"));
@@ -59,8 +63,12 @@ public final class TicketTradingScreen extends Screen {
 	protected void init() {
 		applyTheme();
 		clearWidgets();
-		panelWidth = Math.min(520, Math.max(300, width - 20));
-		panelHeight = Math.min(294, Math.max(250, height - 20));
+		panelWidth = ResponsiveUI.panelWidth(width, 520, 300);
+		stackedRows = panelWidth < 410;
+		int preferredHeight = stackedRows ? 318 : 294;
+		panelHeight = Math.min(preferredHeight, Math.max(238,
+			height - ResponsiveUI.gutter(width) * 2));
+		if (stackedRows && panelHeight < 285) stackedRows = false;
 		left = (width - panelWidth) / 2;
 		top = (height - panelHeight) / 2;
 		SafariConfig.SparklingConfig config = ConfigManager.get().sparkling;
@@ -70,8 +78,8 @@ public final class TicketTradingScreen extends Screen {
 			int index = i;
 			int frameLeft = nameFrameLeft();
 			// Match Safari Settings' ordinary inline text editor exactly: the native
-			// field is borderless and inset 8px/7px inside the themed 24px frame.
-			EditBox field = new EditBox(font, frameLeft + 8, top + 96 + i * 35,
+			// The field is borderless and optically centered inside the 24px frame.
+			EditBox field = new EditBox(font, frameLeft + 8, nameFrameTop(i) + 8,
 				nameFrameWidth() - 16, 10, Component.literal("Username " + (i + 1)));
 			field.setMaxLength(16);
 			field.setBordered(false);
@@ -80,7 +88,8 @@ public final class TicketTradingScreen extends Screen {
 			field.setResponder(value -> setName(config, index, value));
 			field.setTextColor(text);
 			field.setTextColorUneditable(label);
-			UIDraw.rainbowEditBox(field, font);
+			UIDraw.rainbowEditBox(field, font,
+				() -> SpecialTheme.rainbow() || sparklingEnabled(config, index));
 			field.visible = !showInfo;
 			names[i] = field;
 			addRenderableWidget(field);
@@ -105,26 +114,44 @@ public final class TicketTradingScreen extends Screen {
 		centered(graphics, "Timed invites for trusted players sharing Safari tickets", top + 35, label);
 
 		SafariConfig.SparklingConfig config = ConfigManager.get().sparkling;
-		button(graphics, left + 22, top + 57, 112, 22,
-			config.ticketTradingEnabled ? "Enabled" : "Disabled", mouseX, mouseY, () -> {
-				config.ticketTradingEnabled = !config.ticketTradingEnabled;
-				ConfigManager.save();
-			});
-		button(graphics, left + panelWidth - 48, top + 57, 26, 22, "i", mouseX, mouseY,
-			this::toggleInfo);
-		for (int i = 0; i < names.length; i++) {
-			int frameLeft = nameFrameLeft();
-			SpecialTheme.text(graphics, font, Component.literal("Player " + (i + 1)),
-				left + ROW_MARGIN,
-				top + 97 + i * 35, label);
-			graphics.fill(frameLeft, top + 89 + i * 35,
-				frameLeft + nameFrameWidth(), top + 113 + i * 35, card);
-			UIDraw.outline(graphics, frameLeft, top + 89 + i * 35,
-				nameFrameWidth(), 24, SpecialTheme.rainbow()
-					? SpecialTheme.accent(i * 18) : border);
-			UIDraw.updateRainbowCaret(names[i], text);
-			nameHintPhases[i] = UIDraw.updateRainbowHint(names[i], font, NAME_HINT,
-				NAME_HINT_COMPONENT, nameHintPhases[i]);
+		if (!showInfo) {
+			button(graphics, left + 22, top + 57, 112, 22,
+				config.ticketTradingEnabled ? "Enabled" : "Disabled", mouseX, mouseY, () -> {
+					config.ticketTradingEnabled = !config.ticketTradingEnabled;
+					ConfigManager.save();
+				});
+			button(graphics, left + panelWidth - 48, top + 57, 26, 22, "i", mouseX, mouseY,
+				this::toggleInfo);
+			for (int i = 0; i < names.length; i++) {
+				int frameLeft = nameFrameLeft();
+				boolean sparkling = sparklingEnabled(config, i);
+				int rowBackground = sparkling ? sparklingRowBackground(i) : card;
+				String playerLabel = "Player " + (i + 1);
+				int labelX = stackedRows ? left + 20 : left + ROW_MARGIN;
+				int labelY = stackedRows ? nameFrameTop(i) - 11 : nameFrameTop(i) + 8;
+				if (sparkling) UIDraw.rainbowText(graphics, font, playerLabel,
+					labelX, labelY, 0.5f);
+				else SpecialTheme.text(graphics, font, Component.literal(playerLabel),
+					labelX, labelY, label);
+				graphics.fill(frameLeft, nameFrameTop(i),
+					frameLeft + nameFrameWidth(), nameFrameTop(i) + 24, card);
+				if (sparkling) {
+					graphics.fill(frameLeft + 1, nameFrameTop(i) + 1,
+						frameLeft + nameFrameWidth() - 1, nameFrameTop(i) + 23,
+						rowBackground);
+				}
+				if (SpecialTheme.rainbow() || sparkling) {
+					SpecialTheme.border(graphics, frameLeft, nameFrameTop(i),
+						nameFrameWidth(), 24, 1);
+				} else UIDraw.outline(graphics, frameLeft, nameFrameTop(i),
+					nameFrameWidth(), 24, border);
+				UIDraw.updateRainbowCaret(names[i], text,
+					SpecialTheme.rainbow() || sparkling);
+				nameHintPhases[i] = UIDraw.updateRainbowHint(names[i], font, NAME_HINT,
+					NAME_HINT_COMPONENT, nameHintPhases[i],
+					SpecialTheme.rainbow() || sparkling);
+				drawSparklingButton(graphics, config, i, rowBackground, mouseX, mouseY);
+			}
 		}
 
 		for (EditBox name : names) if (name != null) name.visible = !showInfo;
@@ -139,33 +166,85 @@ public final class TicketTradingScreen extends Screen {
 
 	private void drawInfo(GuiGraphicsExtractor graphics) {
 		int x = left + 20;
-		int y = top + 82;
+		int y = top + 52;
 		int w = panelWidth - 40;
-		int h = 144;
+		List<InfoLine> lines = infoLines(w - 24);
+		int lineSpacing = 14;
+		int h = Math.min(panelHeight - 96, Math.max(112, 20 + lines.size() * lineSpacing));
 		graphics.fill(x, y, x + w, y + h, surface);
 		if (SpecialTheme.rainbow()) SpecialTheme.border(graphics, x, y, w, h, 1);
 		else UIDraw.outline(graphics, x, y, w, h, border);
-		List<String> lines = List.of(
-			"Ticket trading must be enabled for either role",
-			"Host: Must use a ticket before 20 seconds after joining a Safari run",
-			"- Trusted players are automatically invited to the party",
-			"- Any players who joined will be automatically warped",
-			"- Party will automatically disband after the Host leaves the Safari run",
-			"Guest: Automatically accepts party invites from trusted players"
-		);
 		for (int i = 0; i < lines.size(); i++) {
-			String line = lines.get(i);
+			InfoLine info = lines.get(i);
+			String line = info.text();
 			int lineX = x + 12;
-			int lineY = y + 12 + i * 19;
-			if (line.startsWith("Host:") || line.startsWith("Guest:")) {
-				String role = line.substring(0, line.indexOf(':') + 1);
+			int lineY = y + 11 + i * lineSpacing;
+			if (info.role() != null) {
+				String role = info.role();
 				SpecialTheme.text(graphics, font, Component.literal(role), lineX, lineY, primary);
-				SpecialTheme.text(graphics, font, Component.literal(line.substring(role.length())),
-					lineX + font.width(role), lineY, label);
+				drawInfoText(graphics, line, lineX + font.width(role), lineY);
 			} else {
-				SpecialTheme.text(graphics, font, Component.literal(line), lineX, lineY, label);
+				drawInfoText(graphics, line, lineX, lineY);
 			}
 		}
+	}
+
+	private void drawInfoText(GuiGraphicsExtractor graphics, String line, int x, int y) {
+		int iconAt = line.indexOf('✦');
+		if (iconAt < 0) {
+			SpecialTheme.text(graphics, font, Component.literal(line), x, y, label);
+			return;
+		}
+		String before = line.substring(0, iconAt);
+		String after = line.substring(iconAt + 1);
+		SpecialTheme.text(graphics, font, Component.literal(before), x, y, label);
+		int iconX = x + font.width(before);
+		UIDraw.rainbowText(graphics, font, Component.literal("✦"),
+			iconX, y, 0.5f, 0xFF, true);
+		SpecialTheme.text(graphics, font, Component.literal(after),
+			iconX + font.width("✦"), y, label);
+	}
+
+	private record InfoLine(String role, String text) { }
+
+	private List<InfoLine> infoLines(int width) {
+		if (width == cachedInfoWidth) return cachedInfoLines;
+		List<InfoLine> result = new java.util.ArrayList<>();
+		addInfoLines(result, null, "Ticket trading must be enabled for either role", width);
+		addInfoLines(result, "Host", ": Must use a ticket before 20 seconds after joining a Safari run", width);
+		addInfoLines(result, null, "- Trusted players are automatically invited to the party", width);
+		addInfoLines(result, null, "- Trusted ✦ players will only be invited if a Sparkling is detected in time", width);
+		addInfoLines(result, null, "- Any players who joined will be automatically warped", width);
+		addInfoLines(result, null, "- Party will automatically disband after the Host leaves the Safari run", width);
+		addInfoLines(result, "Guest", ": Automatically accepts party invites from trusted players", width);
+		addInfoLines(result, null, "- Automatically leaves your current party for trusted ✦ players' invites", width);
+		cachedInfoWidth = width;
+		cachedInfoLines = List.copyOf(result);
+		return cachedInfoLines;
+	}
+
+	private void addInfoLines(List<InfoLine> output, String role, String text, int width) {
+		int firstWidth = Math.max(20, width - (role == null ? 0 : font.width(role)));
+		List<String> wrapped = wrapPlain(text, firstWidth);
+		for (int i = 0; i < wrapped.size(); i++) {
+			output.add(new InfoLine(i == 0 ? role : null, wrapped.get(i)));
+		}
+	}
+
+	private List<String> wrapPlain(String text, int width) {
+		List<String> lines = new java.util.ArrayList<>();
+		StringBuilder current = new StringBuilder();
+		for (String word : text.trim().split("\\s+")) {
+			String candidate = current.isEmpty() ? word : current + " " + word;
+			if (!current.isEmpty() && font.width(candidate) > width) {
+				lines.add(current.toString());
+				current.setLength(0);
+			}
+			if (!current.isEmpty()) current.append(' ');
+			current.append(word);
+		}
+		if (!current.isEmpty()) lines.add(current.toString());
+		return lines;
 	}
 
 	private void toggleInfo() {
@@ -184,6 +263,61 @@ public final class TicketTradingScreen extends Screen {
 		SpecialTheme.text(graphics, font, Component.literal(label),
 			x + (w - font.width(label)) / 2, y + (h - 8) / 2, colour);
 		hits.add(new Hit(x, y, w, h, action));
+	}
+
+	private void drawSparklingButton(GuiGraphicsExtractor graphics,
+			SafariConfig.SparklingConfig config, int index, int rowBackground,
+			int mouseX, int mouseY) {
+		int x = sparklingButtonLeft();
+		int y = nameFrameTop(index);
+		boolean active = sparklingEnabled(config, index);
+		boolean hovered = mouseX >= x && mouseX < x + SPARKLING_BUTTON_SIZE
+			&& mouseY >= y && mouseY < y + SPARKLING_BUTTON_SIZE;
+		graphics.fill(x, y, x + SPARKLING_BUTTON_SIZE, y + SPARKLING_BUTTON_SIZE,
+			active ? rowBackground : hovered ? hover : card);
+		if (SpecialTheme.rainbow() || active) {
+			SpecialTheme.border(graphics, x, y, SPARKLING_BUTTON_SIZE, SPARKLING_BUTTON_SIZE, 1);
+		} else {
+			UIDraw.outline(graphics, x, y, SPARKLING_BUTTON_SIZE, SPARKLING_BUTTON_SIZE, border);
+		}
+		drawSparklingGlyph(graphics, x, y, active);
+		hits.add(new Hit(x, y, SPARKLING_BUTTON_SIZE, SPARKLING_BUTTON_SIZE, () -> {
+			setSparkling(config, index, !sparklingEnabled(config, index));
+			ConfigManager.save();
+		}));
+	}
+
+	/** The standard Sparkling glyph, moderately enlarged and centered before its shadow. */
+	private void drawSparklingGlyph(GuiGraphicsExtractor graphics,
+			int buttonX, int buttonY, boolean active) {
+		String icon = "✦";
+		float scale = 1.65f;
+		float iconWidth = font.width(icon) * scale;
+		float iconHeight = 8f * scale;
+		// The glyph's advance box has more unused space on its right. One screen
+		// pixel of optical-bearing compensation centers the actual lit pixels.
+		float x = buttonX + (SPARKLING_BUTTON_SIZE - iconWidth) / 2f + 1f;
+		float y = buttonY + (SPARKLING_BUTTON_SIZE - iconHeight) / 2f;
+		graphics.pose().pushMatrix();
+		graphics.pose().translate(x, y);
+		graphics.pose().scale(scale, scale);
+		if (active) {
+			UIDraw.rainbowText(graphics, font, Component.literal(icon),
+				0, 0, 0.5f, 0xFF, true);
+		} else {
+			graphics.text(font, Component.literal(icon), 0, 0, label, true);
+		}
+		graphics.pose().popMatrix();
+	}
+
+	private int sparklingRowBackground(int index) {
+		int accent = RainbowColours.shared(index * 0.17f, 0.42f);
+		float amount = 0.20f;
+		float inverse = 1f - amount;
+		int red = Math.round((card >> 16 & 0xFF) * inverse + (accent >> 16 & 0xFF) * amount);
+		int green = Math.round((card >> 8 & 0xFF) * inverse + (accent >> 8 & 0xFF) * amount);
+		int blue = Math.round((card & 0xFF) * inverse + (accent & 0xFF) * amount);
+		return 0xFF000000 | red << 16 | green << 8 | blue;
 	}
 
 	private void centered(GuiGraphicsExtractor graphics, String text, int y, int colour) {
@@ -206,7 +340,7 @@ public final class TicketTradingScreen extends Screen {
 		}
 		for (int i = 0; i < names.length; i++) {
 			EditBox name = names[i];
-			int fieldTop = top + 89 + i * 35;
+			int fieldTop = nameFrameTop(i);
 			int frameLeft = nameFrameLeft();
 			boolean overFrame = event.x() >= frameLeft && event.x() < frameLeft + nameFrameWidth()
 				&& event.y() >= fieldTop && event.y() < fieldTop + 24;
@@ -216,7 +350,7 @@ public final class TicketTradingScreen extends Screen {
 				// The visible themed frame is slightly larger than the borderless native
 				// editor. Forward a clamped click so its caret always activates as well.
 				int editorLeft = frameLeft + 8;
-				int editorTop = top + 96 + i * 35;
+				int editorTop = nameFrameTop(i) + 8;
 				double x = Math.clamp(event.x(), editorLeft,
 					editorLeft + nameFrameWidth() - 17);
 				double y = Math.clamp(event.y(), editorTop, editorTop + 9);
@@ -237,11 +371,22 @@ public final class TicketTradingScreen extends Screen {
 	}
 
 	private int nameFrameLeft() {
-		return left + ROW_MARGIN + font.width("Player 3") + LABEL_FIELD_GAP;
+		return stackedRows ? left + 20
+			: left + ROW_MARGIN + font.width("Player 3") + LABEL_FIELD_GAP;
 	}
 
 	private int nameFrameWidth() {
-		return left + panelWidth - ROW_MARGIN - nameFrameLeft();
+		int oldWidth = stackedRows ? panelWidth - 40
+			: left + panelWidth - ROW_MARGIN - nameFrameLeft();
+		return oldWidth - LABEL_FIELD_GAP - SPARKLING_BUTTON_SIZE;
+	}
+
+	private int sparklingButtonLeft() {
+		return nameFrameLeft() + nameFrameWidth() + LABEL_FIELD_GAP;
+	}
+
+	private int nameFrameTop(int index) {
+		return top + (stackedRows ? 99 + index * 45 : 89 + index * 35);
 	}
 
 	@Override
@@ -283,6 +428,25 @@ public final class TicketTradingScreen extends Screen {
 			case 0 -> config.ticketTradingPlayer1 = value;
 			case 1 -> config.ticketTradingPlayer2 = value;
 			case 2 -> config.ticketTradingPlayer3 = value;
+			default -> { }
+		}
+	}
+
+	private static boolean sparklingEnabled(SafariConfig.SparklingConfig config, int index) {
+		return switch (index) {
+			case 0 -> config.ticketTradingSparkling1;
+			case 1 -> config.ticketTradingSparkling2;
+			case 2 -> config.ticketTradingSparkling3;
+			default -> false;
+		};
+	}
+
+	private static void setSparkling(SafariConfig.SparklingConfig config,
+			int index, boolean enabled) {
+		switch (index) {
+			case 0 -> config.ticketTradingSparkling1 = enabled;
+			case 1 -> config.ticketTradingSparkling2 = enabled;
+			case 2 -> config.ticketTradingSparkling3 = enabled;
 			default -> { }
 		}
 	}

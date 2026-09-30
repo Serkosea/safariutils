@@ -8,6 +8,8 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.util.FormattedCharSequence;
 
+import java.util.function.BooleanSupplier;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -100,7 +102,13 @@ final class UIDraw {
 	/** Updates a placeholder only when its animation phase or theme state changes. */
 	static int updateRainbowHint(EditBox editor, Font font, String text,
 			Component normal, int previousPhase) {
-		if (!SpecialTheme.rainbow()) {
+		return updateRainbowHint(editor, font, text, normal, previousPhase,
+			SpecialTheme.rainbow());
+	}
+
+	static int updateRainbowHint(EditBox editor, Font font, String text,
+			Component normal, int previousPhase, boolean rainbow) {
+		if (!rainbow) {
 			if (previousPhase >= 0) editor.setHint(normal);
 			return -1;
 		}
@@ -113,8 +121,12 @@ final class UIDraw {
 
 	/** Gives editable text the same screen-positioned gradient as labels around it. */
 	static void rainbowEditBox(EditBox editor, Font font) {
+		rainbowEditBox(editor, font, SpecialTheme::rainbow);
+	}
+
+	static void rainbowEditBox(EditBox editor, Font font, BooleanSupplier rainbow) {
 		editor.addFormatter((visibleText, sourceOffset) -> {
-			if (!SpecialTheme.rainbow()) {
+			if (!rainbow.getAsBoolean()) {
 				return FormattedCharSequence.forward(visibleText, Style.EMPTY);
 			}
 			int x = editor.getScreenX(sourceOffset);
@@ -125,8 +137,12 @@ final class UIDraw {
 
 	/** Keeps the native blinking insertion cursor on the same gradient as editable text. */
 	static void updateRainbowCaret(EditBox editor, int fallbackColour) {
+		updateRainbowCaret(editor, fallbackColour, SpecialTheme.rainbow());
+	}
+
+	static void updateRainbowCaret(EditBox editor, int fallbackColour, boolean rainbow) {
 		if (editor == null) return;
-		int colour = SpecialTheme.rainbow()
+		int colour = rainbow
 			? rainbowAt(editor.getScreenX(editor.getCursorPosition()), 0.5f)
 			: fallbackColour;
 		editor.setTextColor(colour);

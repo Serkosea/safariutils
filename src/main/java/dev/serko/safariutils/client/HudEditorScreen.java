@@ -24,6 +24,7 @@ public final class HudEditorScreen extends Screen {
 	private static final float SCALE_STEP = 0.1f;
 	private static final int CENTRE_SNAP_DISTANCE = 5;
 	private static final int EDGE_SNAP_DISTANCE = 3;
+	private static final long EDITOR_CHROME_DELAY_MILLIS = 3_000L;
 	private int hint, dim, outline, outlineIdle, backdropTop, backdropBottom;
 	private int surface, card, cardHover, border, accent;
 
@@ -43,6 +44,9 @@ public final class HudEditorScreen extends Screen {
 	private long resetArmedUntil;
 	private boolean snappedHorizontal;
 	private boolean snappedVertical;
+	private long lastHudInteractionAt;
+	private int lastDragPointerX;
+	private int lastDragPointerY;
 	private final Screen parent;
 
 	public HudEditorScreen(Screen parent) {
@@ -59,9 +63,15 @@ public final class HudEditorScreen extends Screen {
 
 	@Override
 	protected void init() {
-		resetButton = new Rect(width / 2 - 154, height - 32, 98, 22);
-		snapButton = new Rect(width / 2 - 49, height - 32, 98, 22);
-		doneButton = new Rect(width / 2 + 56, height - 32, 98, 22);
+		int gutter = ResponsiveUI.gutter(width);
+		int gap = width < 360 ? 4 : 7;
+		int available = Math.max(3, width - gutter * 2 - gap * 2);
+		int buttonWidth = Math.min(98, available / 3);
+		int groupWidth = buttonWidth * 3 + gap * 2;
+		int startX = (width - groupWidth) / 2;
+		resetButton = new Rect(startX, height - 32, buttonWidth, 22);
+		snapButton = new Rect(startX + buttonWidth + gap, height - 32, buttonWidth, 22);
+		doneButton = new Rect(startX + (buttonWidth + gap) * 2, height - 32, buttonWidth, 22);
 	}
 
 	@Override
@@ -78,6 +88,15 @@ public final class HudEditorScreen extends Screen {
 		hovered = null;
 		snappedHorizontal = false;
 		snappedVertical = false;
+		long now = System.currentTimeMillis();
+		if (dragging != null && (mouseX != lastDragPointerX || mouseY != lastDragPointerY)) {
+			lastHudInteractionAt = now;
+			lastDragPointerX = mouseX;
+			lastDragPointerY = mouseY;
+		}
+		boolean chromeBehindHuds = lastHudInteractionAt != 0
+			&& now - lastHudInteractionAt < EDITOR_CHROME_DELAY_MILLIS;
+		if (chromeBehindHuds) drawEditorChrome(graphics, mouseX, mouseY, now);
 
 		for (HudBox box : HudBox.values()) {
 			if (!box.enabled()) continue;
@@ -136,20 +155,24 @@ public final class HudEditorScreen extends Screen {
 			graphics.fill(0, height / 2, width, height / 2 + 1, accent);
 		}
 
-		String title = "HUD LAYOUT";
-		drawText(graphics, title, (width - font.width(title)) / 2, 12, hint);
-		String hint2 = "Drag to move  ·  Arrows to nudge  ·  Scroll to resize  ·  Snapping "
-			+ (ConfigManager.get().display.hudSnapping ? "on" : "off");
-		drawText(graphics, hint2, (width - font.width(hint2)) / 2, 24, dim);
-		boolean resetArmed = System.currentTimeMillis() < resetArmedUntil;
-		drawButton(graphics, resetButton, resetArmed ? "Confirm Reset" : "Reset Layout",
-			mouseX, mouseY, resetArmed);
-		drawButton(graphics, snapButton,
-			"Snap: " + (ConfigManager.get().display.hudSnapping ? "On" : "Off"),
-			mouseX, mouseY, ConfigManager.get().display.hudSnapping);
-		drawButton(graphics, doneButton, "Done", mouseX, mouseY, true);
+		if (!chromeBehindHuds) drawEditorChrome(graphics, mouseX, mouseY, now);
 
 		super.extractRenderState(graphics, mouseX, mouseY, partialTick);
+	}
+
+	private void drawEditorChrome(GuiGraphicsExtractor graphics, int mouseX, int mouseY, long now) {
+		String title = "HUD LAYOUT";
+		drawText(graphics, title, (width - font.width(title)) / 2, 12, hint);
+		String hint2 = responsiveHint();
+		drawText(graphics, hint2, (width - font.width(hint2)) / 2, 24, dim);
+		boolean resetArmed = now < resetArmedUntil;
+		drawButton(graphics, resetButton, resetArmed ? "Confirm" : responsiveLabel("Reset Layout", "Reset"),
+			mouseX, mouseY, resetArmed);
+		drawButton(graphics, snapButton,
+			responsiveLabel("Snap: ", "Snap ")
+				+ (ConfigManager.get().display.hudSnapping ? "On" : "Off"),
+			mouseX, mouseY, ConfigManager.get().display.hudSnapping);
+		drawButton(graphics, doneButton, "Done", mouseX, mouseY, true);
 	}
 
 	private void drawButton(GuiGraphicsExtractor graphics, Rect rect, String label,
@@ -159,8 +182,29 @@ public final class HudEditorScreen extends Screen {
 		graphics.fill(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h,
 			hovered ? cardHover : card);
 		outline(graphics, rect.x, rect.y, rect.w, rect.h, buttonBorder);
-		drawText(graphics, label,
-			rect.x + (rect.w - font.width(label)) / 2, rect.y + 7, hovered ? hint : dim);
+		String fitted = fit(label, Math.max(1, rect.w - 8));
+		drawText(graphics, fitted,
+			rect.x + (rect.w - font.width(fitted)) / 2, rect.y + 7, hovered ? hint : dim);
+	}
+
+	private String responsiveHint() {
+		String snap = ConfigManager.get().display.hudSnapping ? "on" : "off";
+		String full = "Drag to move  ·  Arrows to nudge  ·  Scroll to resize  ·  Snapping " + snap;
+		if (font.width(full) <= width - 16) return full;
+		String medium = "Drag  ·  Arrows nudge  ·  Scroll resize  ·  Snap " + snap;
+		if (font.width(medium) <= width - 16) return medium;
+		return fit("Drag · Arrows · Scroll · Snap " + snap, Math.max(1, width - 16));
+	}
+
+	private String responsiveLabel(String full, String compact) {
+		return resetButton != null && resetButton.w >= font.width(full) + 8 ? full : compact;
+	}
+
+	private String fit(String value, int maxWidth) {
+		if (font.width(value) <= maxWidth) return value;
+		String suffix = "…";
+		return font.plainSubstrByWidth(value,
+			Math.max(0, maxWidth - font.width(suffix))) + suffix;
 	}
 
 	private void applyTheme() {
@@ -260,6 +304,9 @@ public final class HudEditorScreen extends Screen {
 			dragging = hit.getKey();
 			grabOffsetX = mouseX - rect.x();
 			grabOffsetY = mouseY - rect.y();
+			lastHudInteractionAt = System.currentTimeMillis();
+			lastDragPointerX = mouseX;
+			lastDragPointerY = mouseY;
 			return true;
 		}
 		return false;
@@ -283,6 +330,7 @@ public final class HudEditorScreen extends Screen {
 		float scale = target.scale() + (float) Math.signum(scrollY) * SCALE_STEP;
 		scale = Math.round(scale * 100) / 100f;
 		target.setScale(Math.clamp(scale, target.minScale(), target.maxScale()));
+		lastHudInteractionAt = System.currentTimeMillis();
 		ConfigManager.save();
 		return true;
 	}
@@ -307,21 +355,25 @@ public final class HudEditorScreen extends Screen {
 		int x = clamp(rect.x() + dx, edgeMinimum(width, rect.w()), edgeMaximum(width, rect.w()));
 		int y = clamp(rect.y() + dy, edgeMinimum(height, rect.h()), edgeMaximum(height, rect.h()));
 		target.setPixelPosition(x, y, width, height, panel, font, renderedScale);
+		lastHudInteractionAt = System.currentTimeMillis();
 		ConfigManager.save();
 		return true;
 	}
 
 	private void resetAll() {
-		HudBox.PROGRESS.setScale(1.0f);
-		HudBox.MISSING.setScale(1.0f);
-		HudBox.CONTEST.setScale(1.0f);
-		HudBox.ALERTS.setScale(3.5f);
-		HudBox.PROGRESS.setPosition(0.0046838406f, 0.008333334f);
-		HudBox.MISSING.setPosition(0.0046838406f, 0.26041666f);
-		HudBox.CONTEST.setPosition(0.23185012f, 0.008333334f);
-		HudBox.PARTY_OBJECTIVE.setScale(1.0f);
-		HudBox.PARTY_OBJECTIVE.setPosition(0.9941452f, 0.008333334f);
-		HudBox.ALERTS.setPosition(0.49882904f, 0.33125f);
+		SafariConfig.DisplayConfig display = new SafariConfig.DisplayConfig();
+		SafariConfig.AlertConfig alerts = new SafariConfig.AlertConfig();
+		HudBox.PROGRESS.setScale(display.progressScale);
+		HudBox.MISSING.setScale(display.missingScale);
+		HudBox.CONTEST.setScale(display.contestScale);
+		HudBox.PARTY_OBJECTIVE.setScale(display.partyObjectiveScale);
+		HudBox.ALERTS.setScale(alerts.alertScale);
+		HudBox.PROGRESS.setPosition(display.progressX, display.progressY);
+		HudBox.MISSING.setPosition(display.missingX, display.missingY);
+		HudBox.CONTEST.setPosition(display.contestX, display.contestY);
+		HudBox.PARTY_OBJECTIVE.setPosition(display.partyObjectiveX, display.partyObjectiveY);
+		HudBox.ALERTS.setPosition(alerts.alertHorizontalPosition, alerts.alertVerticalPosition);
+		lastHudInteractionAt = System.currentTimeMillis();
 		ConfigManager.save();
 	}
 

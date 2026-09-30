@@ -158,10 +158,9 @@ java {
 }
 
 // --- Explicit deployment to the configured Prism test instances ------------
-// Keep both supported Developer tasks available, but make the ordinary development
-// deploy intentionally 26.2-only. Release verification can invoke 26.1.2 explicitly.
+// Keep both supported Developer tasks available and deploy both compatibility profiles.
 def supportedDeveloperProfiles = ['26.1.2', '26.2']
-def deployProfiles = ['26.2']
+def deployProfiles = supportedDeveloperProfiles
 def developerBuildTasks = [:]
 supportedDeveloperProfiles.each { profileName ->
 	def taskSuffix = profileName.replace('.', '_')
@@ -196,9 +195,9 @@ supportedDeveloperProfiles.each { profileName ->
 }
 
 tasks.register('DeployBuilds') {
-	description = 'Build and deploy the 26.2 Developer jar, then mirror its Safari Utils config one-way.'
+	description = 'Build and deploy both Developer jars, then mirror the 26.2 Safari Utils config one-way.'
 	group = 'fabric'
-	dependsOn developerBuildTasks['26.2']
+	dependsOn deployProfiles.collect { developerBuildTasks[it] }
 	onlyIf {
 		def missing = deployProfiles.findAll { deployDestinations[it].isEmpty() }
 		if (missing.isEmpty()) return true
@@ -238,5 +237,71 @@ tasks.register('DeployBuilds') {
 			}
 			logger.lifecycle("Safari Utils config mirrored one-way: ${source} -> ${target}")
 		}
+	}
+}
+
+// --- Complete release artifact set -----------------------------------------
+// Nested builds keep every profile/variant in its isolated output directory.
+// Run them sequentially to avoid competing Loom/Gradle workers, then sync only
+// the eight finished jars into one flat release-artifacts folder.
+def releaseVariants = [
+	[key: 'safe', label: 'Safe', arguments: [], suffix: '', privateVersion: false],
+	[key: 'extra', label: 'Extra', arguments: ['-PextraBuild=true'], suffix: '-extra', privateVersion: false],
+	[key: 'private', label: 'Private', arguments: ['-PincludePrivateApi=true'], suffix: '-private', privateVersion: true],
+	[key: 'developer', label: 'Developer', arguments: ['-PdeveloperBuild=true'], suffix: '-developer', privateVersion: true]
+]
+def releaseBuildTasks = []
+def releaseArtifactJars = []
+
+supportedDeveloperProfiles.each { profileName ->
+	def taskSuffix = profileName.replace('.', '_')
+	def artifactProfile = new Properties()
+	file("gradle/versions/${profileName}.properties").withInputStream {
+		artifactProfile.load(it)
+	}
+	releaseVariants.each { variant ->
+		def buildTask
+		if (variant.key == 'developer') {
+			buildTask = developerBuildTasks[profileName]
+		} else {
+			buildTask = tasks.register("build${variant.label}${taskSuffix}", Exec) {
+				description = "Build the ${profileName} ${variant.label} release jar."
+				group = 'fabric'
+				workingDir projectDir
+				commandLine(['cmd', '/c', 'gradlew.bat', 'jar',
+					"-PminecraftProfile=${profileName}"] + variant.arguments)
+			}
+		}
+		releaseBuildTasks.add(buildTask)
+		def artifactVersion = variant.privateVersion
+			? project.private_release_version : project.release_version
+		releaseArtifactJars.add(file("build/${profileName}/${variant.key}/libs/"
+			+ "${project.archives_base_name}-${artifactVersion}${variant.suffix}"
+			+ "+mc${artifactProfile.minecraft_version}.jar"))
+	}
+}
+
+for (int index = 1; index < releaseBuildTasks.size(); index++) {
+	def currentBuildTask = releaseBuildTasks[index]
+	def previousBuildTask = releaseBuildTasks[index - 1]
+	currentBuildTask.configure {
+		mustRunAfter previousBuildTask
+	}
+}
+
+tasks.register('BuildArtifacts') {
+	description = 'Build all eight release jars and replace release-artifacts with the current flat set.'
+	group = 'fabric'
+	dependsOn releaseBuildTasks
+	doLast {
+		def missing = releaseArtifactJars.findAll { !it.isFile() }
+		if (!missing.isEmpty()) {
+			throw new GradleException("Release artifacts were not built: ${missing.join(', ')}")
+		}
+		fileSystemOperations.sync {
+			from releaseArtifactJars
+			into file('release-artifacts')
+		}
+		logger.lifecycle("BuildArtifacts wrote ${releaseArtifactJars.size()} current jars to release-artifacts")
 	}
 }

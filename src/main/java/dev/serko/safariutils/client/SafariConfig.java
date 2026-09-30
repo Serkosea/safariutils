@@ -106,6 +106,11 @@ public class SafariConfig {
 		@SettingToggle
 		@Expose
 		public boolean protectSafariTicket = true;
+
+		@SettingInfo(name = "Ticket Trading",
+			desc = "Configure trusted players for timed Safari ticket trading")
+		@SettingAction(buttonText = "Configure")
+		public Runnable configureTicketTrading = TicketTradingScreen::open;
 	}
 
 	public static class DisplayConfig {
@@ -726,8 +731,10 @@ public class SafariConfig {
 		public String hideonfloorColour = colour(0xFF, 0x00, 0xFF);
 
 		private static final int HUD_BORDER_COLOURS = 21;
+		private static final int HUD_BORDER_HUDS = 30;
+		private static final int HUD_BORDER_STATS = 31;
 
-		@SettingInfo(name = "HUD Border Colors", desc = "")
+		@SettingInfo(name = "Border Colors", desc = "")
 		@SettingSection(id = HUD_BORDER_COLOURS)
 		public boolean hudBorderColoursAccordion = false;
 
@@ -736,21 +743,31 @@ public class SafariConfig {
 		private static final int CONTEST_HUD_BORDER = 24;
 		private static final int PARTY_OBJECTIVE_BORDER = 29;
 
-		@SettingInfo(name = "Current Run Tab", desc = "")
-		@SettingColor @SettingGroup(id = HUD_BORDER_COLOURS) @Expose
+		@SettingInfo(name = "HUDs", desc = "")
+		@SettingSection(id = HUD_BORDER_HUDS)
+		@SettingGroup(id = HUD_BORDER_COLOURS)
+		public boolean hudBordersAccordion = false;
+
+		@SettingInfo(name = "Stats", desc = "")
+		@SettingSection(id = HUD_BORDER_STATS)
+		@SettingGroup(id = HUD_BORDER_COLOURS)
+		public boolean statsBordersAccordion = false;
+
+		@SettingInfo(name = "Current Run", desc = "")
+		@SettingColor @SettingGroup(id = HUD_BORDER_STATS) @Expose
 		public String currentRunTabBorderColour = colour(0x55, 0xFF, 0x55);
 
-		@SettingInfo(name = "History Tab", desc = "")
-		@SettingColor @SettingGroup(id = HUD_BORDER_COLOURS) @Expose
+		@SettingInfo(name = "History", desc = "")
+		@SettingColor @SettingGroup(id = HUD_BORDER_STATS) @Expose
 		public String historyTabBorderColour = colour(0xFF, 0xAA, 0x00);
 
-		@SettingInfo(name = "Stats Tab", desc = "")
-		@SettingColor @SettingGroup(id = HUD_BORDER_COLOURS) @Expose
+		@SettingInfo(name = "Stats", desc = "")
+		@SettingColor @SettingGroup(id = HUD_BORDER_STATS) @Expose
 		public String statsTabBorderColour = colour(0x55, 0xFF, 0xFF);
 
 		@SettingInfo(name = "Progress HUD", desc = "")
 		@SettingSection(id = PROGRESS_HUD_BORDER)
-		@SettingGroup(id = HUD_BORDER_COLOURS)
+		@SettingGroup(id = HUD_BORDER_HUDS)
 		public boolean progressHudBorderAccordion = false;
 
 		@SettingInfo(name = "Show Border", desc = "Shows a border around the Progress HUD")
@@ -767,7 +784,7 @@ public class SafariConfig {
 
 		@SettingInfo(name = "Missing HUD", desc = "")
 		@SettingSection(id = MISSING_HUD_BORDER)
-		@SettingGroup(id = HUD_BORDER_COLOURS)
+		@SettingGroup(id = HUD_BORDER_HUDS)
 		public boolean missingHudBorderAccordion = false;
 
 		@SettingInfo(name = "Show Border", desc = "Shows a border around the Missing HUD")
@@ -788,7 +805,7 @@ public class SafariConfig {
 
 		@SettingInfo(name = "Contest HUD", desc = "Used when bracket coloring is off or no bracket is known")
 		@SettingSection(id = CONTEST_HUD_BORDER)
-		@SettingGroup(id = HUD_BORDER_COLOURS)
+		@SettingGroup(id = HUD_BORDER_HUDS)
 		public boolean contestHudBorderAccordion = false;
 
 		@SettingInfo(name = "Show Border", desc = "Shows a border around the Contest HUD")
@@ -808,7 +825,7 @@ public class SafariConfig {
 		public boolean contestBorderUseBracketColour = false;
 
 		@SettingInfo(name = "Party Objective HUD", desc = "")
-		@SettingSection(id = PARTY_OBJECTIVE_BORDER) @SettingGroup(id = HUD_BORDER_COLOURS)
+		@SettingSection(id = PARTY_OBJECTIVE_BORDER) @SettingGroup(id = HUD_BORDER_HUDS)
 		public boolean partyObjectiveBorderAccordion = false;
 		@SettingInfo(name = "Show Border", desc = "Shows a border around the Party Objective HUD")
 		@SettingToggle @SettingGroup(id = PARTY_OBJECTIVE_BORDER) @Expose
@@ -907,11 +924,13 @@ public class SafariConfig {
 			desc = "Hides selected server dialogue and objective messages")
 		@SettingMultiChoice(
 			values = {"Run Start Information", "Catch Attempts", "Critter Catches", "Loot Shares",
-				"Floor Drops", "Safari Manager", "Drop Items", "Gemzie", "Chuckwalla", "Rockmite", "Scrappy",
+				"Floor Drops", "Safari Manager", "NPCs", "Drop Items", "Gemzie", "Chuckwalla", "Rockmite", "Scrappy",
 				"Shyworm", "Snoozle", "Wumpa", "Troodon", "Cold", "Doomspiral", "Bloodbat",
 				"Duplico", "Gazer", "Gimmiegold", "Hideyho", "Bird Spawns", "Empty Nest"},
 			groups = {"General", "Cavern", "Icy", "Haunted", "Forest"},
-			groupStarts = {0, 7, 13, 16, 22}, biomeColumns = true)
+			groupStarts = {0, 8, 14, 17, 23},
+			bits = {0, 1, 2, 3, 4, 5, 24, 23, 6, 7, 8, 9, 10, 11, 12,
+				13, 14, 15, 16, 17, 18, 19, 20, 21, 22}, biomeColumns = true)
 		@Expose
 		@SerializedName("hiddenChatMessageGroups")
 		public int hiddenChatMessages = 0;
@@ -939,7 +958,7 @@ public class SafariConfig {
 		@Expose
 		public float missingX = 0.0046838406f;
 		@Expose
-		public float missingY = 0.26041666f;
+		public float missingY = 0.21041666f;
 		@Expose
 		public float contestX = 0.23185012f;
 		@Expose
@@ -998,6 +1017,10 @@ public class SafariConfig {
 		private static final int SAFE_HIDDEN_CRITTERS = 22;
 		private static final int SAFE_STATIC_OBJECTIVES = 23;
 
+		@SettingInfo(name = "Safe Mode Required",
+			desc = "Safe Mode is always enabled in this version. Use the Extra version to configure or disable it.")
+		public transient String safeModeLockedNotice = "";
+
 		@SettingInfo(name = "Special Themes",
 			desc = "Applies a special theme to settings and all HUDs")
 		@SettingChoice(values = {"Off", "Rainbow"})
@@ -1017,8 +1040,11 @@ public class SafariConfig {
 			desc = "Uses the visibility-based behavior selected below")
 		@SettingToggle
 		@SettingGroup(id = SAFE_MODE)
-		@Expose
+		// Migration-only legacy master switch. Individual options now apply directly.
 		public boolean safeMode = true;
+
+		@Expose
+		public int safeModeOptionsVersion = 1;
 
 		@SettingInfo(name = "Safe Mode Options", desc = "Choose which features require visible confirmation")
 		@SettingSection(id = SAFE_MODE_OPTIONS)
@@ -3355,23 +3381,21 @@ public class SafariConfig {
 		private static final int SPARKLING_MODE_OPTIONS = 9;
 		private static final int CATCH_ALERT = 10;
 
-		@SettingInfo(name = "Sparkling Mode",
-			desc = "Enables sparkling mode to remove extra information for party's mutual Sparkling critters\n" +
-				"§b/sparkling §7opens the collection and party editor")
+		@SettingInfo(name = "Enable Sparkling Mode",
+			desc = "Sparkling mode removes extra information based on current party's shared Sparkling critters\n" +
+				"§bUse /sparkling to see your collected sparklings and update party's Shared sparklings")
 		@SettingToggle
 		@Expose
 		public boolean sparklingMode = true;
-
-		@SettingInfo(name = "Ticket Trading",
-			desc = "Configure trusted players for timed Safari ticket trading")
-		@SettingAction(buttonText = "Configure")
-		public Runnable configureTicketTrading = TicketTradingScreen::open;
 
 		// Edited by the dedicated Ticket Trading screen rather than ordinary cards.
 		@Expose public boolean ticketTradingEnabled = false;
 		@Expose public String ticketTradingPlayer1 = "";
 		@Expose public String ticketTradingPlayer2 = "";
 		@Expose public String ticketTradingPlayer3 = "";
+		@Expose public boolean ticketTradingSparkling1 = false;
+		@Expose public boolean ticketTradingSparkling2 = false;
+		@Expose public boolean ticketTradingSparkling3 = false;
 
 		@SettingInfo(name = "Sparkling Mode Options", desc = "")
 		@SettingSection(id = SPARKLING_MODE_OPTIONS)
@@ -3413,7 +3437,7 @@ public class SafariConfig {
 		@SettingSection(id = SPARKLING_ALERTS)
 		public boolean sparklingAlertsAccordion = false;
 
-		@SettingInfo(name = "Banner Alert", desc = "")
+		@SettingInfo(name = "Banner", desc = "")
 		@SettingSection(id = BANNER_ALERT)
 		@SettingGroup(id = SPARKLING_ALERTS)
 		public boolean sparklingBannerAccordion = false;
@@ -3471,7 +3495,7 @@ public class SafariConfig {
 		@SettingGroup(id = BANNER_SOUND) @Expose
 		public float sparklingBannerSoundPitch = 1f;
 
-		@SettingInfo(name = "Catch Alert", desc = "")
+		@SettingInfo(name = "Special Catch", desc = "")
 		@SettingSection(id = CATCH_ALERT)
 		@SettingGroup(id = SPARKLING_ALERTS)
 		public boolean sparklingCatchAlertAccordion = false;
@@ -3587,7 +3611,7 @@ public class SafariConfig {
 		@Expose public boolean customAlertPreviewLoop = true;
 		@Expose public List<SavedAlertPreset> customAlertSavedPresets = new ArrayList<>();
 
-		@SettingInfo(name = "Chat Alerts", desc = "")
+		@SettingInfo(name = "Chat", desc = "")
 		@SettingSection(id = CHAT_ALERTS)
 		@SettingGroup(id = SPARKLING_ALERTS)
 		public boolean sparklingChatAlertsAccordion = false;

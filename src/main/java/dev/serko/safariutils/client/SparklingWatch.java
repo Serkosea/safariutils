@@ -114,6 +114,7 @@ public final class SparklingWatch {
 				+ " label=" + shortId(labelId) + " body=" + shortId(bodyId)
 				+ " key=" + shortId(key) + " pos=" + pos(pos)
 				+ " source=" + ParticleDiagnostics.source(sighting));
+			TicketTrading.onSparklingDetected();
 			EncounterAlerts.fireSparklingDetected(sighting.critter().name());
 			postVisibleChat(sighting, key);
 		}

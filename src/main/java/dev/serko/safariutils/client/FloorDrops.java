@@ -212,7 +212,7 @@ public final class FloorDrops {
 		ChatParser.FloorDropShard shard = ChatParser.floorDropShard(line);
 		SafariSession session = SessionManager.current();
 		if (shard != null && session != null) {
-			session.recordFloorDropShard(shard.critter(), shard.amount(), System.currentTimeMillis());
+			session.recordShardReward(shard.critter(), shard.amount(), System.currentTimeMillis());
 			DebugLog.line("FLOOR", "SHARD " + shard.critter().name() + " x" + shard.amount());
 		}
 

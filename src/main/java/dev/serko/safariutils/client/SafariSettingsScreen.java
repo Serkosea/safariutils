@@ -14,9 +14,7 @@ import net.fabricmc.loader.api.FabricLoader;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -26,16 +24,16 @@ import java.util.Set;
 /** Safari Utils' fast, dependency-free settings workspace. */
 public final class SafariSettingsScreen extends Screen {
 	private static final long REOPEN_MEMORY_MILLIS = 10_000L;
-	private static final Map<String, String> REMEMBERED_SELECTIONS = new HashMap<>();
-	private static final Set<String> REMEMBERED_OPEN_GROUPS = new HashSet<>();
 	private static final Map<Class<?>, Field[]> PUBLIC_FIELDS = new HashMap<>();
 	private static final Map<String, String> CLEAN_TEXT = new HashMap<>();
 	private static final Map<String, String> DISPLAY_NAMES = new HashMap<>();
-	private static String rememberedSettingCategory;
+	private static String rememberedSettingsArea;
+	private static String rememberedSettingsTab;
 	private static int rememberedScroll;
 	private static long rememberedAt;
-	private static final int NAV_WIDTH = 158;
-	private static final int HEADER_HEIGHT = 58;
+	private static final int WIDE_NAV_WIDTH = 136;
+	private static final int HEADER_HEIGHT = 48;
+	private static final int BRAND_LINE_GAP = 4;
 	private static final int FOOTER_HEIGHT = 30;
 	private static final int THEME_BUTTON_WIDTH = 126;
 	private static final int[] CONSTELLATION_ORDER = {0, 4, 8, 3, 7, 2, 6, 1, 5};
@@ -65,14 +63,26 @@ public final class SafariSettingsScreen extends Screen {
 	private static int[][] themePalettes;
 	private static int customThemeHash;
 	private static int[] customThemeCache;
+	private int navWidth = WIDE_NAV_WIDTH;
+	private int workspaceLeft = WIDE_NAV_WIDTH;
+	private int themeButtonWidth = THEME_BUTTON_WIDTH;
 
 	private final Screen parent;
 	private final List<SettingCategoryView> categories = new ArrayList<>();
+	private final List<SettingsArea> settingsAreas = new ArrayList<>();
+	private final Set<String> expandedSettingSections = new java.util.HashSet<>();
+	private final Map<SettingsTab, Map<SettingsPage, Integer>> effectiveDepthCache =
+		new java.util.IdentityHashMap<>();
+	private final Map<SettingsPage, List<List<Field>>> settingCardCache =
+		new java.util.IdentityHashMap<>();
+	private final Map<Field, List<Field>> normalSettingCardCache =
+		new java.util.IdentityHashMap<>();
+	private final Map<Field, Integer> settingOrderCache = new java.util.IdentityHashMap<>();
+	private final Map<Field, Map<Integer, SettingTextLayout>> settingTextLayoutCache =
+		new java.util.IdentityHashMap<>();
+	private final boolean[] visibleSettingBranches = new boolean[16];
 	private final List<Hit> hits = new ArrayList<>();
 	private final List<SoundPreviewHit> soundPreviewHits = new ArrayList<>();
-	private final Set<VisibleSetting> visibleSettings = new java.util.LinkedHashSet<>();
-	private final Map<String, String> selectedGroups = new HashMap<>();
-	private final Set<String> openGroups = new HashSet<>();
 	private final Map<WrapKey, List<String>> wrappedText = new LinkedHashMap<>(128, 0.75f, true) {
 		@Override
 		protected boolean removeEldestEntry(Map.Entry<WrapKey, List<String>> eldest) {
@@ -80,8 +90,9 @@ public final class SafariSettingsScreen extends Screen {
 		}
 	};
 	private String cachedSearchQuery;
-	private List<SearchItem> cachedSearchResults = List.of();
-	private SettingCategoryView selected;
+	private List<SearchGroup> cachedSearchGroups = List.of();
+	private SettingsArea selectedArea;
+	private SettingsTab selectedTab;
 	private EditBox search;
 	private int searchFrameX, searchFrameY, searchFrameWidth, searchFrameHeight;
 	private String searchHintText = "Search";
@@ -113,6 +124,9 @@ public final class SafariSettingsScreen extends Screen {
 	private int scroll;
 	private int contentHeight;
 	private ScreenRectangle contentScissor;
+	private int contentViewportTop;
+	private int contentViewportBottom;
+	private int contentHeaderBottom = HEADER_HEIGHT;
 	private int navigationScroll;
 	private int navigationContentHeight;
 	private Field draggingSlider;
@@ -134,6 +148,10 @@ public final class SafariSettingsScreen extends Screen {
 	private int customDurationSliderTop;
 	private EditBox customVolumeEditor;
 	private EditBox customPresetNameEditor;
+	private final EditorBounds customCalloutBounds = new EditorBounds();
+	private final EditorBounds customDurationBounds = new EditorBounds();
+	private final EditorBounds customVolumeBounds = new EditorBounds();
+	private final EditorBounds customPresetNameBounds = new EditorBounds();
 	private boolean customPresetMenu;
 	private boolean customPresetNaming;
 	private boolean customPresetRenaming;
@@ -171,7 +189,35 @@ public final class SafariSettingsScreen extends Screen {
 	private long resetArmedUntil;
 
 	private record SettingCategoryView(String key, Field field, Object value, SettingCategory info) { }
+	private static final class SettingsArea {
+		private final String key;
+		private final String name;
+		private final String description;
+		private final List<SettingsPage> pages = new ArrayList<>();
+		private final List<SettingsTab> tabs = new ArrayList<>();
+
+		private SettingsArea(String key, String name, String description) {
+			this.key = key;
+			this.name = name;
+			this.description = description;
+		}
+	}
+
+	private record SettingsPage(String key, String name, String description, String breadcrumb,
+		Object owner, List<Field> fields, int depth) {
+		private boolean selectable() {
+			return !fields.isEmpty();
+		}
+	}
+	private record SettingsTab(String key, String name, String description,
+		List<SettingsPage> pages) {
+		private boolean selectable() {
+			return pages.stream().anyMatch(SettingsPage::selectable);
+		}
+	}
 	private record VisibleSetting(Object owner, Field field) { }
+	private record SettingTextLayout(List<String> mainLines, List<String> tagLines,
+		boolean safeModeComparison, int height) { }
 	private record ThemeChoice(int id, String label) { }
 	private record CustomThemeRole(String label, String field) { }
 	private static final List<ThemeChoice> THEMES = List.of(
@@ -215,6 +261,30 @@ public final class SafariSettingsScreen extends Screen {
 	private static final List<String> SOUND_LABELS = AlertSounds.alphabetical().stream()
 		.map(AlertSounds.Choice::label).toList();
 	private record SearchItem(Object owner, Field field, String context) { }
+	private record SearchGroup(String context, Object owner, List<Field> fields) { }
+	private static final class EditorBounds {
+		private int left;
+		private int top;
+		private int right;
+		private int bottom;
+		private boolean active;
+
+		private void set(int left, int top, int right, int bottom) {
+			this.left = left;
+			this.top = top;
+			this.right = right;
+			this.bottom = bottom;
+			active = true;
+		}
+
+		private void clear() {
+			active = false;
+		}
+
+		private boolean contains(double x, double y) {
+			return active && inside(x, y, left, top, right, bottom);
+		}
+	}
 	private record WrapKey(String text, int width) { }
 	private record SoundPreviewHit(int left, int top, int right, int bottom, int soundId) {
 		boolean contains(double x, double y) {
@@ -238,10 +308,9 @@ public final class SafariSettingsScreen extends Screen {
 		this.parent = parent;
 		loadCategories();
 		if (System.currentTimeMillis() - rememberedAt <= REOPEN_MEMORY_MILLIS) {
-			selectedGroups.putAll(REMEMBERED_SELECTIONS);
-			openGroups.addAll(REMEMBERED_OPEN_GROUPS);
-			selected = categories.stream().filter(category -> category.key.equals(rememberedSettingCategory))
-				.findFirst().orElse(selected);
+			selectedArea = settingsAreas.stream().filter(area -> area.key.equals(rememberedSettingsArea))
+				.findFirst().orElse(selectedArea);
+			selectRememberedTab();
 			scroll = rememberedScroll;
 		}
 	}
@@ -249,7 +318,7 @@ public final class SafariSettingsScreen extends Screen {
 	private void loadCategories() {
 		categories.clear();
 		cachedSearchQuery = null;
-		cachedSearchResults = List.of();
+		cachedSearchGroups = List.of();
 		SafariConfig config = ConfigManager.get();
 		for (Field field : SafariConfig.class.getFields()) {
 			SettingCategory category = field.getAnnotation(SettingCategory.class);
@@ -260,13 +329,397 @@ public final class SafariSettingsScreen extends Screen {
 			} catch (IllegalAccessException ignored) {
 			}
 		}
-		if (selected == null || categories.stream().noneMatch(c -> c.key.equals(selected.key))) {
-			selected = categories.isEmpty() ? null : categories.getFirst();
+		buildSettingsNavigation();
+	}
+
+	private void buildSettingsNavigation() {
+		settingsAreas.clear();
+		effectiveDepthCache.clear();
+		settingCardCache.clear();
+		normalSettingCardCache.clear();
+		settingOrderCache.clear();
+		settingTextLayoutCache.clear();
+		SettingsArea display = area("display", "Display", "HUDs, waypoints, colors, and Safari presentation");
+		SettingsArea gameplay = area("gameplay", "Gameplay", "Safari behavior, party tools, and profit tracking");
+		SettingsArea alerts = area("alerts", "Alerts", "On-screen and outgoing chat alerts");
+		SettingsArea sparkling = area("sparkling", "Sparkling", "Sparkling hunting, detection, and celebrations");
+		SettingsArea advanced = AdvancedUnlock.isUnlocked()
+			? area("advanced", "Safe Mode", "Visibility-based detection and waypoint behavior") : null;
+		SettingsArea developer = AdvancedUnlock.isUnlocked() && BuildVersion.DEVELOPER
+			? area("developer", "Developer", "Diagnostics, research, and test-run controls") : null;
+
+		SettingCategoryView displaySource = source("display");
+		SettingCategoryView gameplaySource = source("gameplay");
+		SettingCategoryView profitSource = source("profit");
+		SettingCategoryView alertSource = source("alerts");
+		SettingCategoryView chatSource = source("party");
+		SettingCategoryView sparklingSource = source("sparkling");
+		SettingCategoryView advancedSource = source("advanced");
+
+		addRootPage(display, displaySource, "display.overview", "HUD Layout",
+			"Move and arrange the visible HUD panels", "editPositions");
+		if (advancedSource != null) addRootPage(display, advancedSource, "display.theme", "Special Theme",
+			"Apply the optional theme across settings and HUDs", "specialTheme");
+		addRootPage(display, displaySource, "display.safari.chat", "Chat Filtering",
+			"Hide selected server dialogue while retaining mod detection", "hiddenChatMessages");
+		addRootPage(display, displaySource, "display.safari.comfort", "Visual Comfort",
+			"Reduce disruptive Safari screen effects", "removeColdOverlay", "removeDarkness");
+		appendAllSections(display, displaySource, 0, "Display");
+		organizeWaypointSettings(display, displaySource);
+
+		addRootPage(gameplay, gameplaySource, "gameplay.auto-hideyho", "Hideyho",
+			"Automatically accept Hideyho's Hide N' Seek game", "autoAcceptHideyho");
+		addRootPage(gameplay, gameplaySource, "gameplay.tickets", "Tickets",
+			"Protect tickets and configure trusted players for timed ticket trading",
+			"protectSafariTicket", "configureTicketTrading");
+		if (advancedSource != null) addRootPage(gameplay, advancedSource, "gameplay.party", "Party Sync",
+			"Share objective progress with a fully participating modded party", "enablePartySync");
+		addRootPage(gameplay, profitSource, "gameplay.profit", "Profit Tracking",
+			"Control run profit tracking and Bazaar pricing");
+
+		addRootPage(alerts, alertSource, "alerts.general", "General",
+			"Shared alert behavior", "muteOtherSounds");
+		appendAllSections(alerts, alertSource, 0, "On-Screen Alerts");
+		appendAllSections(alerts, chatSource, 0, "Chat");
+
+		addRootPage(sparkling, sparklingSource, "sparkling.overview", "Sparkling Mode",
+			"Core Sparkling hunting behavior", "sparklingMode");
+		appendAllSections(sparkling, sparklingSource, 0, "Sparkling");
+		organizeSparklingAlertSettings(sparkling);
+
+		if (advanced != null && advancedSource != null) {
+			if (BuildVersion.SAFE) {
+				addRootPage(advanced, advancedSource, "advanced.safe-mode.locked", "Safe Mode",
+					"Safe Mode build information", "safeModeLockedNotice");
+			} else {
+				appendNamedSection(advanced, advancedSource, "safeModeAccordion", 0, "Advanced");
+				organizeSafeModeSettings(advanced);
+			}
 		}
+		if (developer != null && advancedSource != null) {
+			appendNamedSection(developer, advancedSource, "testingAccordion", 0, "Developer");
+			flattenDeveloperSettings(developer);
+		}
+
+		buildSettingsTabs();
+		settingsAreas.removeIf(area -> area.tabs.stream().noneMatch(SettingsTab::selectable));
+		indexSettingCards();
+		String selectedAreaKey = selectedArea == null ? null : selectedArea.key;
+		selectedArea = settingsAreas.stream().filter(area -> area.key.equals(selectedAreaKey))
+			.findFirst().orElse(settingsAreas.isEmpty() ? null : settingsAreas.getFirst());
+		ensureSelectedTab();
+	}
+
+	private void indexSettingCards() {
+		int order = 0;
+		try {
+			settingOrderCache.put(SafariConfig.DisplayConfig.class.getField("settingsTheme"), order++);
+		} catch (NoSuchFieldException ignored) {
+		}
+		Set<SettingsPage> indexedPages = java.util.Collections.newSetFromMap(
+			new java.util.IdentityHashMap<>());
+		for (SettingsArea area : settingsAreas) {
+			for (SettingsTab tab : area.tabs) {
+				for (SettingsPage page : tab.pages) {
+					if (!indexedPages.add(page)) continue;
+					if (page.owner == null) continue;
+					for (List<Field> card : settingCardCache.computeIfAbsent(page, this::settingCards)) {
+						for (Field field : card) {
+							normalSettingCardCache.putIfAbsent(field, card);
+							settingOrderCache.putIfAbsent(field, order++);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	private void buildSettingsTabs() {
+		for (SettingsArea area : settingsAreas) area.tabs.clear();
+		SettingsArea display = areaByKey("display");
+		addTab(display, "huds", "HUDs", "Visible HUD panels, lines, and layout",
+			page -> page.key.equals("display.overview") || !page.breadcrumb.contains("Border Colors")
+				&& containsAny(page.breadcrumb,
+					"Progress HUD", "Missing HUD", "Contest HUD", "Party Objective HUD"));
+		addTab(display, "waypoints", "Waypoints", "World markers, critter overlays, and their colors",
+			page -> page.key.startsWith("display.waypoint-settings")
+				|| page.breadcrumb.contains("Critter Hitboxes"));
+		addTab(display, "theme", "Theme & Border Colors", "Interface theme and border colors",
+			page -> page.key.equals("display.theme") || page.breadcrumb.contains("Border Colors"));
+		addTab(display, "safari", "Safari", "Safari chat visibility and visual comfort",
+			page -> page.key.equals("display.safari.chat")
+				|| page.key.equals("display.safari.comfort"));
+
+		SettingsArea gameplay = areaByKey("gameplay");
+		addTab(gameplay, "safari", "Safari", "Safari convenience, tickets, and optional party synchronization",
+			page -> page.key.equals("gameplay.auto-hideyho") || page.key.equals("gameplay.tickets")
+				|| page.key.equals("gameplay.party"));
+		addTab(gameplay, "profit", "Profit", "Run profit tracking and Bazaar pricing",
+			page -> page.key.equals("gameplay.profit"));
+
+		SettingsArea alerts = areaByKey("alerts");
+		addTab(alerts, "general", "General", "Shared alert behavior and appearance",
+			page -> page.key.equals("alerts.general") || page.breadcrumb.contains("Banner Appearance"));
+		addTab(alerts, "banners", "Banners", "On-screen alert appearance, playback, and content",
+			page -> page.breadcrumb.startsWith("On-Screen Alerts"));
+		addTab(alerts, "chat", "Chat", "Outgoing Safari, encounter, and contest messages",
+			page -> page.breadcrumb.startsWith("Chat"));
+
+		SettingsArea sparkling = areaByKey("sparkling");
+		addTab(sparkling, "sparkling-mode", "Sparkling Mode", "Sparkling detection and hunting behavior",
+			page -> page.key.equals("sparkling.overview")
+				|| page.breadcrumb.contains("Sparkling Mode Options"));
+		addTab(sparkling, "alerts", "Alerts", "Sparkling banners, catches, sounds, and chat alerts",
+			page -> page.breadcrumb.contains("Sparkling Alerts"));
+
+		SettingsArea advanced = areaByKey("advanced");
+		addTab(advanced, "options", "Options", "Choose which features require visible confirmation",
+			page -> true);
+
+		SettingsArea developer = areaByKey("developer");
+		addTab(developer, "diagnostics", "Diagnostics", "Automatic logging and diagnostic overlays",
+			page -> !page.breadcrumb.contains("Data Collecting"));
+		addTab(developer, "data", "Data Collection", "Test-run persistence and learned locations",
+			page -> page.breadcrumb.contains("Data Collecting"));
+
+		// Any future setting section remains reachable even before its navigation is
+		// intentionally categorized.
+		for (SettingsArea area : settingsAreas) {
+			Set<SettingsPage> assigned = new java.util.LinkedHashSet<>();
+			for (SettingsTab tab : area.tabs) assigned.addAll(tab.pages);
+			List<SettingsPage> remaining = area.pages.stream()
+				.filter(page -> !assigned.contains(page)).toList();
+			if (!remaining.isEmpty()) area.tabs.add(new SettingsTab("more", "More",
+				"Additional settings", remaining));
+		}
+	}
+
+	private SettingsArea areaByKey(String key) {
+		return settingsAreas.stream().filter(area -> area.key.equals(key)).findFirst().orElse(null);
+	}
+
+	private void addTab(SettingsArea area, String key, String name, String description,
+			java.util.function.Predicate<SettingsPage> include) {
+		if (area == null) return;
+		Set<SettingsPage> assigned = new java.util.LinkedHashSet<>();
+		for (SettingsTab tab : area.tabs) assigned.addAll(tab.pages);
+		List<SettingsPage> pages = area.pages.stream()
+			.filter(page -> !assigned.contains(page) && include.test(page)).toList();
+		if (pages.stream().anyMatch(SettingsPage::selectable)) {
+			area.tabs.add(new SettingsTab(key, name, description, pages));
+		}
+	}
+
+	private static boolean containsAny(String value, String... needles) {
+		for (String needle : needles) if (value.contains(needle)) return true;
+		return false;
+	}
+
+	private SettingsArea area(String key, String name, String description) {
+		SettingsArea area = new SettingsArea(key, name, description);
+		settingsAreas.add(area);
+		return area;
+	}
+
+	private SettingCategoryView source(String key) {
+		return categories.stream().filter(category -> category.key.equals(key)).findFirst().orElse(null);
+	}
+
+	private void organizeSafeModeSettings(SettingsArea area) {
+		Object owner = area.pages.stream().map(SettingsPage::owner)
+			.filter(java.util.Objects::nonNull).findFirst().orElse(null);
+		if (owner == null) return;
+		area.pages.clear();
+		area.pages.add(navigationPage(owner, "advanced.safe-mode.sparklings", "Sparklings",
+			"Safe Mode  ›  Sparklings", 0, "safeSparklingCritters"));
+		area.pages.add(navigationPage(owner, "advanced.safe-mode.detection", "Detection And HUD",
+			"Safe Mode  ›  Detection And HUD", 0, "safeVisibleCritterDetection",
+			"safeHideNearbyCounts", "safeConservativeAvailability", "safeConservativeCompletion"));
+		area.pages.add(navigationPage(owner, "advanced.safe-mode.overlays", "Critter Overlays",
+			"Safe Mode  ›  Critter Overlays", 0, "safeCritterHitboxes", "safeHideyho",
+			"safeHideonwall", "safeDuplico", "safeBloodbat", "safeHideonfloor"));
+		area.pages.add(navigationPage(owner, "advanced.safe-mode.objectives", "Static Objectives",
+			"Safe Mode  ›  Static Objectives", 0, "safeFloorDrops", "safeBeeNests",
+			"safeRockmiteMounds", "safeSnoozleWalls", "safeTroodonWalls"));
+	}
+
+	private static void flattenDeveloperSettings(SettingsArea area) {
+		for (int index = 0; index < area.pages.size(); index++) {
+			SettingsPage page = area.pages.get(index);
+			if (!page.name.equals("Testing")) continue;
+			area.pages.set(index, new SettingsPage("developer.logging", "Automatic Logging", "",
+				"Developer  ›  Automatic Logging", page.owner, page.fields, 0));
+			return;
+		}
+	}
+
+	/** Keeps the three top-level Sparkling alert groups in their intentional UI order. */
+	private static void organizeSparklingAlertSettings(SettingsArea area) {
+		if (area == null) return;
+		int insertion = -1;
+		List<SettingsPage> alertPages = new ArrayList<>();
+		for (int index = 0; index < area.pages.size(); index++) {
+			SettingsPage page = area.pages.get(index);
+			if (!page.breadcrumb.contains("Sparkling Alerts")) continue;
+			if (insertion < 0) insertion = index;
+			alertPages.add(page);
+		}
+		if (insertion < 0) return;
+		area.pages.removeAll(alertPages);
+		alertPages.sort(java.util.Comparator.comparingInt(SafariSettingsScreen::sparklingAlertOrder));
+		area.pages.addAll(Math.min(insertion, area.pages.size()), alertPages);
+	}
+
+	private static int sparklingAlertOrder(SettingsPage page) {
+		if (page.name.equals("Sparkling Alerts")) return 0;
+		if (page.breadcrumb.contains("  ›  Banner")) return 10 + page.depth;
+		if (page.breadcrumb.contains("  ›  Chat")) return 20 + page.depth;
+		if (page.breadcrumb.contains("  ›  Special Catch")) return 30 + page.depth;
+		return 40 + page.depth;
+	}
+
+	private void organizeWaypointSettings(SettingsArea area, SettingCategoryView source) {
+		if (area == null || source == null) return;
+		int insertion = -1;
+		for (int index = 0; index < area.pages.size(); index++) {
+			SettingsPage page = area.pages.get(index);
+			if (page.breadcrumb.contains("Waypoints") || page.breadcrumb.contains("Waypoint Colors")) {
+				if (insertion < 0) insertion = index;
+			}
+		}
+		if (insertion < 0) return;
+		area.pages.removeIf(page -> page.breadcrumb.contains("Waypoints")
+			|| page.breadcrumb.contains("Waypoint Colors"));
+		List<SettingsPage> organized = List.of(
+			settingsPage(source.value, "display.waypoint-settings", "Waypoint Settings", 0,
+				"waypointDistance", "hidePossibleWaypoints", "displayNametags", "eagleRarity"),
+			settingsPage(source.value, "display.waypoint-settings.objectives", "Objectives", 1,
+				"floorDrops", "floorDropColour", "floorDropFaceColour",
+				"highlightMounds", "moundColour", "highlightSnooperWalls", "snooperWallColour",
+				"highlightTroodonWalls", "troodonWallColour", "highlightNests", "nestColour"),
+			settingsPage(source.value, "display.waypoint-settings.critters", "Critters", 1,
+				"hideyhoSolver", "hideyhoColour", "highlightHideonwalls", "hideonwallColour",
+				"highlightDuplico", "duplicoColour", "highlightBloodbat", "bloodbatColour",
+				"highlightHideonfloor", "hideonfloorColour"),
+			settingsPage(source.value, "display.waypoint-settings.critters.recatch", "Recatch", 2,
+				"recatchHelper", "recatchColour", "recatchPityTitle", "recatchRarityColour")
+		);
+		area.pages.addAll(Math.min(insertion, area.pages.size()), organized);
+	}
+
+	private SettingsPage settingsPage(Object owner, String key, String name, int depth,
+			String... fieldNames) {
+		String breadcrumb = switch (key) {
+			case "display.waypoint-settings" -> "Display  ›  Waypoint Settings";
+			case "display.waypoint-settings.objectives" -> "Display  ›  Waypoint Settings  ›  Objectives";
+			case "display.waypoint-settings.critters" -> "Display  ›  Waypoint Settings  ›  Critters";
+			default -> "Display  ›  Waypoint Settings  ›  Critters  ›  " + name;
+		};
+		return navigationPage(owner, key, name, breadcrumb, depth, fieldNames);
+	}
+
+	private SettingsPage navigationPage(Object owner, String key, String name,
+			String breadcrumb, int depth, String... fieldNames) {
+		Map<String, Field> available = new HashMap<>();
+		for (Field field : publicFields(owner.getClass())) available.put(field.getName(), field);
+		List<Field> fields = new ArrayList<>();
+		for (String fieldName : fieldNames) {
+			Field field = available.get(fieldName);
+			if (field != null && hasEditor(field)) fields.add(field);
+		}
+		return new SettingsPage(key, name, "", breadcrumb,
+			owner, List.copyOf(fields), depth);
+	}
+
+	private void addRootPage(SettingsArea area, SettingCategoryView source, String key,
+			String name, String description, String... fieldNames) {
+		if (area == null || source == null) return;
+		Set<String> requested = Set.of(fieldNames);
+		List<Field> fields = new ArrayList<>();
+		for (Field field : publicFields(source.value.getClass())) {
+			if (field.getAnnotation(SettingInfo.class) == null || isHeaderOnly(field)
+					|| field.getAnnotation(SettingSection.class) != null || !hasEditor(field)
+					|| !belongsTo(field, null)) continue;
+			if (requested.isEmpty() || requested.contains(field.getName())) fields.add(field);
+		}
+		if (!fields.isEmpty()) area.pages.add(new SettingsPage(key, name, description,
+			area.name + "  ›  " + name, source.value, List.copyOf(fields), 0));
+	}
+
+	private void appendAllSections(SettingsArea area, SettingCategoryView source,
+			int depth, String breadcrumb) {
+		if (area == null || source == null) return;
+		for (Field field : publicFields(source.value.getClass())) {
+			if (field.getAnnotation(SettingSection.class) == null || !belongsTo(field, null)) continue;
+			appendSection(area, source.value, source.value.getClass(), field, depth, breadcrumb);
+		}
+	}
+
+	private void appendNamedSection(SettingsArea area, SettingCategoryView source,
+			String fieldName, int depth, String breadcrumb) {
+		if (area == null || source == null) return;
+		for (Field field : publicFields(source.value.getClass())) {
+			if (field.getName().equals(fieldName) && field.getAnnotation(SettingSection.class) != null) {
+				appendSection(area, source.value, source.value.getClass(), field, depth, breadcrumb);
+				return;
+			}
+		}
+	}
+
+	private void appendSection(SettingsArea area, Object owner, Class<?> type, Field sectionField,
+			int depth, String breadcrumb) {
+		SettingInfo info = sectionField.getAnnotation(SettingInfo.class);
+		SettingSection section = sectionField.getAnnotation(SettingSection.class);
+		if (info == null || section == null) return;
+		List<Field> direct = directSettings(type, section.id());
+		String name = displayName(info.name());
+		String path = breadcrumb + "  ›  " + name;
+		String key = type.getName() + "." + sectionField.getName();
+		area.pages.add(new SettingsPage(key, name, clean(info.desc()), path,
+			direct.isEmpty() ? null : owner, List.copyOf(direct), depth));
+		for (Field child : publicFields(type)) {
+			if (child.getAnnotation(SettingSection.class) == null || !belongsTo(child, section.id())) continue;
+			appendSection(area, owner, type, child, depth + 1, path);
+		}
+	}
+
+	private List<Field> directSettings(Class<?> type, Integer parentId) {
+		List<Field> fields = new ArrayList<>();
+		for (Field field : publicFields(type)) {
+			if (field.getAnnotation(SettingInfo.class) == null || isHeaderOnly(field)
+					|| field.getAnnotation(SettingSection.class) != null || !hasEditor(field)
+					|| !belongsTo(field, parentId)) continue;
+			fields.add(field);
+		}
+		return fields;
+	}
+
+	private void ensureSelectedTab() {
+		if (selectedArea == null) {
+			selectedTab = null;
+			return;
+		}
+		String selectedTabKey = selectedTab == null ? null : selectedTab.key;
+		selectedTab = selectedArea.tabs.stream()
+			.filter(tab -> tab.selectable() && tab.key.equals(selectedTabKey))
+			.findFirst().orElseGet(() -> selectedArea.tabs.stream()
+				.filter(SettingsTab::selectable).findFirst().orElse(null));
+	}
+
+	private void selectRememberedTab() {
+		if (selectedArea == null || rememberedSettingsTab == null) {
+			ensureSelectedTab();
+			return;
+		}
+		selectedTab = selectedArea.tabs.stream()
+			.filter(tab -> tab.selectable() && tab.key.equals(rememberedSettingsTab))
+			.findFirst().orElse(null);
+		ensureSelectedTab();
 	}
 
 	@Override
 	protected void init() {
+		updateResponsiveLayout();
 		String preservedSearch = search == null ? "" : search.getValue();
 		boolean searchFocused = search != null && search.isFocused();
 		boolean editorFocused = editor != null && editor.isFocused();
@@ -276,16 +729,18 @@ public final class SafariSettingsScreen extends Screen {
 		boolean presetNameFocused = customPresetNameEditor != null
 			&& customPresetNameEditor.isFocused();
 		clearWidgets();
-		int searchX = NAV_WIDTH + 24;
-		int themeLeft = width - 20 - THEME_BUTTON_WIDTH;
+		int gutter = ResponsiveUI.gutter(width);
+		int searchX = workspaceLeft + gutter;
+		int themeLeft = width - gutter - themeButtonWidth;
 		int searchWidth = Math.max(24, themeLeft - 8 - searchX);
 		searchFrameX = searchX;
-		searchFrameY = 18;
+		searchFrameY = (HEADER_HEIGHT - 20) / 2 - 1;
 		searchFrameWidth = searchWidth;
 		searchFrameHeight = 20;
 		// The native unbordered control puts text at its own top-left. Inset the
 		// widget itself while Safari Utils draws the themed outer shell.
-		search = new EditBox(font, searchX + 4, 24, Math.max(8, searchWidth - 8), 9,
+		search = new EditBox(font, searchX + 4, searchFrameY + 6,
+			Math.max(8, searchWidth - 8), 9,
 			Component.literal("Search Settings"));
 		String hint = font.width("Search settings, descriptions, and tags...") <= searchWidth - 18
 			? "Search settings, descriptions, and tags..."
@@ -321,6 +776,19 @@ public final class SafariSettingsScreen extends Screen {
 		else if (searchFocused && search.visible) setFocused(search);
 	}
 
+	private void updateResponsiveLayout() {
+		if (width >= 760) {
+			navWidth = WIDE_NAV_WIDTH;
+		} else if (width >= 520) {
+			navWidth = 116;
+		} else {
+			navWidth = Math.max(88, Math.min(102, width / 5));
+		}
+		workspaceLeft = navWidth;
+		int contentWidth = width - workspaceLeft;
+		themeButtonWidth = contentWidth < 330 ? 78 : THEME_BUTTON_WIDTH;
+	}
+
 	@Override
 	public void onClose() {
 		rememberUIState();
@@ -337,11 +805,8 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private void rememberUIState() {
-		REMEMBERED_SELECTIONS.clear();
-		REMEMBERED_SELECTIONS.putAll(selectedGroups);
-		REMEMBERED_OPEN_GROUPS.clear();
-		REMEMBERED_OPEN_GROUPS.addAll(openGroups);
-		rememberedSettingCategory = selected == null ? null : selected.key;
+		rememberedSettingsArea = selectedArea == null ? null : selectedArea.key;
+		rememberedSettingsTab = selectedTab == null ? null : selectedTab.key;
 		rememberedScroll = scroll;
 		rememberedAt = System.currentTimeMillis();
 	}
@@ -359,11 +824,11 @@ public final class SafariSettingsScreen extends Screen {
 		int backgroundMouseX = modalOpen ? Integer.MIN_VALUE : mouseX;
 		int backgroundMouseY = modalOpen ? Integer.MIN_VALUE : mouseY;
 		graphics.fill(0, 0, width, height, BACKGROUND);
-		graphics.fill(0, 0, NAV_WIDTH, height, SURFACE);
-		graphics.fill(NAV_WIDTH, 0, width, HEADER_HEIGHT, SURFACE);
-		graphics.fill(NAV_WIDTH, height - FOOTER_HEIGHT, width, height, SURFACE);
-		graphics.fill(NAV_WIDTH - 1, 0, NAV_WIDTH, height, BORDER);
-		graphics.fill(NAV_WIDTH, HEADER_HEIGHT - 1, width, HEADER_HEIGHT, BORDER);
+		graphics.fill(0, 0, navWidth, height, SURFACE);
+		graphics.fill(workspaceLeft, 0, width, HEADER_HEIGHT, SURFACE);
+		graphics.fill(workspaceLeft, height - FOOTER_HEIGHT, width, height, SURFACE);
+		graphics.fill(navWidth - 1, 0, navWidth, height, BORDER);
+		graphics.fill(0, HEADER_HEIGHT - 1, width, HEADER_HEIGHT, BORDER);
 		if (SpecialTheme.rainbow()) {
 			// One cached batch covers the whole workspace; individual cards do not own
 			// independent particle systems or allocate effects while scrolling.
@@ -372,11 +837,16 @@ public final class SafariSettingsScreen extends Screen {
 		drawBrand(graphics);
 		hits.clear();
 		soundPreviewHits.clear();
+		customCalloutBounds.clear();
+		customDurationBounds.clear();
+		customVolumeBounds.clear();
+		customPresetNameBounds.clear();
 		modalHitStart = -1;
 		customPresetHitStart = -1;
 		drawSearchFieldFrame(graphics);
 		drawThemeControl(graphics, backgroundMouseX, backgroundMouseY);
 		drawNavigation(graphics, backgroundMouseX, backgroundMouseY);
+		drawCategoryHeader(graphics, backgroundMouseX, backgroundMouseY);
 		drawContent(graphics, backgroundMouseX, backgroundMouseY);
 		drawFooter(graphics, backgroundMouseX, backgroundMouseY);
 		if (unlockPanel) {
@@ -553,8 +1023,7 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private void drawBrand(GuiGraphicsExtractor graphics) {
-		graphics.fillGradient(0, 0, NAV_WIDTH, 54, SURFACE, CARD);
-		float titleScale = 1.42f;
+		graphics.fillGradient(0, 0, navWidth - 1, HEADER_HEIGHT - 1, SURFACE, CARD);
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
 		int safariColour = display.settingsTheme == 34
 			? Colours.argb(display.customThemeSafariTitle, CYAN) : CYAN;
@@ -563,34 +1032,49 @@ public final class SafariSettingsScreen extends Screen {
 		Component safariTitle = Component.literal("SAFARI ").withStyle(style -> style.withBold(true));
 		Component utilsTitle = Component.literal("UTILS").withStyle(style -> style.withBold(true));
 		int titleWidth = font.width(safariTitle) + font.width(utilsTitle);
-		int titleLeft = Math.round(NAV_WIDTH / 2f / titleScale - titleWidth / 2f);
+		float titleScale = Math.min(navWidth < 106 ? 1.18f : 1.52f,
+			(navWidth - 8f) / Math.max(1, titleWidth));
+		Component version = Component.literal("VERSION " + MOD_VERSION + BuildVersion.titleSuffix())
+			.withStyle(style -> style.withBold(true));
+		float versionScale = Math.min(1.0f,
+			(navWidth - 8f) / Math.max(1, font.width(version)));
+		int titleHeight = Math.round(font.lineHeight * titleScale);
+		int versionHeight = Math.round(font.lineHeight * versionScale);
+		int blockTop = Math.max(0,
+			(HEADER_HEIGHT - 1 - titleHeight - versionHeight - BRAND_LINE_GAP) / 2 + 1);
+		int titleLeft = Math.round(navWidth / 2f / titleScale - titleWidth / 2f);
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(titleScale, titleScale);
-		drawText(graphics, safariTitle, titleLeft, Math.round(11f / titleScale), safariColour);
-		drawText(graphics, utilsTitle, titleLeft + font.width(safariTitle), Math.round(11f / titleScale), utilsColour);
+		drawText(graphics, safariTitle, titleLeft, Math.round(blockTop / titleScale), safariColour);
+		drawText(graphics, utilsTitle, titleLeft + font.width(safariTitle), Math.round(blockTop / titleScale), utilsColour);
 		graphics.pose().popMatrix();
-		drawScaledCenteredText(graphics, "VERSION " + MOD_VERSION + BuildVersion.titleSuffix(),
-			NAV_WIDTH / 2, 32, 1.08f, MUTED);
+		drawScaledCenteredText(graphics, version, navWidth / 2,
+			blockTop + titleHeight + BRAND_LINE_GAP, versionScale, MUTED);
 	}
 
 	/** Header-only theme picker kept out of Display's ordinary setting cards. */
 	private void drawThemeControl(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-		int x = width - 20 - THEME_BUTTON_WIDTH;
-		int y = 14;
-		boolean hovered = inside(mouseX, mouseY, x, y, x + THEME_BUTTON_WIDTH, y + 28);
-		graphics.fillGradient(x, y, x + THEME_BUTTON_WIDTH, y + 28,
+		int x = width - ResponsiveUI.gutter(width) - themeButtonWidth;
+		int y = (HEADER_HEIGHT - 28) / 2 - 1;
+		boolean hovered = inside(mouseX, mouseY, x, y, x + themeButtonWidth, y + 28);
+		graphics.fillGradient(x, y, x + themeButtonWidth, y + 28,
 			hovered ? SELECTED : CARD, hovered ? SUB_SELECTED : SURFACE);
-		outline(graphics, x, y, THEME_BUTTON_WIDTH, 28, hovered ? CYAN : GOLD);
+		outline(graphics, x, y, themeButtonWidth, 28, hovered ? CYAN : GOLD);
 		drawDiamond(graphics, x + 13, y + 14, 5, ConfigManager.get().display.settingsTheme == 4 ? CYAN : GOLD);
-		drawText(graphics, "THEME", x + 24, y + 5, DIM);
-		drawText(graphics, currentThemeLabel(), x + 24, y + 16, hovered ? TEXT : MUTED);
-		hits.add(new Hit(x, y, x + THEME_BUTTON_WIDTH, y + 28, this::openThemePicker));
+		if (themeButtonWidth >= 100) {
+			drawText(graphics, "THEME", x + 24, y + 5, DIM);
+			drawText(graphics, currentThemeLabel(), x + 24, y + 16, hovered ? TEXT : MUTED);
+		} else drawText(graphics, trim(currentThemeLabel(), themeButtonWidth - 30), x + 24, y + 10,
+			hovered ? TEXT : MUTED);
+		hits.add(new Hit(x, y, x + themeButtonWidth, y + 28, this::openThemePicker));
 	}
 
 	private String currentThemeLabel() {
 		int current = ConfigManager.get().display.settingsTheme;
-		return THEMES.stream().filter(theme -> theme.id == current)
-			.findFirst().map(ThemeChoice::label).orElse("Default");
+		for (ThemeChoice theme : THEMES) {
+			if (theme.id == current) return theme.label;
+		}
+		return "Default";
 	}
 
 	private void openThemePicker() {
@@ -605,38 +1089,90 @@ public final class SafariSettingsScreen extends Screen {
 	private void drawNavigation(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
 		int top = HEADER_HEIGHT;
 		int bottom = height - FOOTER_HEIGHT;
-		int y = 66 - navigationScroll;
-		graphics.enableScissor(0, top, NAV_WIDTH, bottom);
-		for (SettingCategoryView category : categories) {
-			boolean active = category == selected;
-			boolean hovered = mouseX >= 8 && mouseX < NAV_WIDTH - 8 && mouseY >= y && mouseY < y + 30;
+		int y = HEADER_HEIGHT + 8 - navigationScroll;
+		graphics.enableScissor(0, top, navWidth, bottom);
+		for (SettingsArea area : settingsAreas) {
+			boolean active = area == selectedArea;
+			boolean hovered = mouseX >= 0 && mouseX < navWidth && mouseY >= y && mouseY < y + 32;
 			if (active || hovered) {
-				graphics.fill(8, y, NAV_WIDTH - 8, y + 30, active ? SELECTED : CARD_HOVER);
-				if (active) graphics.fill(8, y, 11, y + 30, CYAN);
+				graphics.fill(0, y, navWidth - 1, y + 32, active ? SELECTED : CARD_HOVER);
+				if (active) graphics.fill(0, y, 3, y + 32, CYAN);
 			}
-			drawScaledText(graphics, category.info.name(), 18,
-				y + (30f - font.lineHeight) / 2f, 1.0f, active ? TEXT : MUTED);
+			Component categoryTitle = Component.literal(trim(area.name, navWidth - 20))
+				.withStyle(style -> style.withBold(true));
+			drawText(graphics, categoryTitle, 12,
+				y + (32 - font.lineHeight) / 2, active ? TEXT : MUTED);
 			int rowY = y;
-			if (rowY + 30 > top && rowY < bottom) {
-				hits.add(new Hit(8, Math.max(rowY, top), NAV_WIDTH - 8,
-					Math.min(rowY + 30, bottom), () -> select(category)));
+			if (rowY + 32 > top && rowY < bottom) {
+				hits.add(new Hit(0, Math.max(rowY, top), navWidth,
+					Math.min(rowY + 32, bottom), () -> selectArea(area)));
 			}
-			y += 34;
+			y += 36;
 		}
 
 		if (!AdvancedUnlock.isUnlocked()) {
 			int lockY = y + 8;
-			boolean hovered = mouseX >= 8 && mouseX < NAV_WIDTH - 8 && mouseY >= lockY && mouseY < lockY + 30;
-			if (hovered) graphics.fill(8, lockY, NAV_WIDTH - 8, lockY + 30, CARD_HOVER);
-			drawText(graphics, "◇  Locked", 18, lockY + 10, hovered ? GOLD : DIM);
-			if (lockY + 30 > top && lockY < bottom) {
-				hits.add(new Hit(8, Math.max(lockY, top), NAV_WIDTH - 8,
-					Math.min(lockY + 30, bottom), this::openUnlockPanel));
+			boolean hovered = mouseX >= 0 && mouseX < navWidth && mouseY >= lockY && mouseY < lockY + 32;
+			if (hovered) graphics.fill(0, lockY, navWidth - 1, lockY + 32, CARD_HOVER);
+			drawText(graphics, "◇  Locked", 12,
+				lockY + (32 - font.lineHeight) / 2, hovered ? GOLD : DIM);
+			if (lockY + 32 > top && lockY < bottom) {
+				hits.add(new Hit(0, Math.max(lockY, top), navWidth,
+					Math.min(lockY + 32, bottom), this::openUnlockPanel));
 			}
-			y = lockY + 30;
+			y = lockY + 32;
 		}
-		navigationContentHeight = Math.max(0, y + navigationScroll - 66);
+		navigationContentHeight = Math.max(0, y + navigationScroll - (HEADER_HEIGHT + 8));
 		graphics.disableScissor();
+	}
+
+	private void drawCategoryHeader(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+		contentHeaderBottom = HEADER_HEIGHT;
+		if (selectedArea == null || selectedTab == null) return;
+		int gutter = ResponsiveUI.gutter(width);
+		int left = workspaceLeft + gutter;
+		int right = width - gutter;
+		int tabsY = HEADER_HEIGHT + 8;
+		int tabX = left;
+		int tabY = tabsY;
+		for (SettingsTab tab : selectedArea.tabs) {
+			if (!tab.selectable()) continue;
+			int tabWidth = settingsTabWidth(tab, left, right);
+			if (tabX > left && tabX + tabWidth > right) {
+				tabX = left;
+				tabY += 27;
+			}
+			tabX += tabWidth + 6;
+		}
+		contentHeaderBottom = Math.min(height - FOOTER_HEIGHT - 40, tabY + 31);
+		graphics.fill(workspaceLeft, HEADER_HEIGHT, width, contentHeaderBottom, SURFACE);
+		graphics.fill(workspaceLeft, contentHeaderBottom - 1, width, contentHeaderBottom, BORDER);
+		tabX = left;
+		tabY = tabsY;
+		for (SettingsTab tab : selectedArea.tabs) {
+			if (!tab.selectable()) continue;
+			int tabWidth = settingsTabWidth(tab, left, right);
+			if (tabX > left && tabX + tabWidth > right) {
+				tabX = left;
+				tabY += 27;
+			}
+			boolean active = tab == selectedTab;
+			boolean hovered = inside(mouseX, mouseY, tabX, tabY, tabX + tabWidth, tabY + 22);
+			graphics.fill(tabX, tabY, tabX + tabWidth, tabY + 22,
+				active ? SUB_SELECTED : hovered ? CARD_HOVER : CARD);
+			outline(graphics, tabX, tabY, tabWidth, 22, active ? GOLD : BORDER);
+			drawCenteredText(graphics, trim(tab.name, tabWidth - 12),
+				tabX + tabWidth / 2, tabY + 7,
+				active ? TEXT : MUTED);
+			int hitX = tabX;
+			hits.add(new Hit(hitX, tabY, hitX + tabWidth, tabY + 22, () -> selectTab(tab)));
+			tabX += tabWidth + 6;
+		}
+	}
+
+	private int settingsTabWidth(SettingsTab tab, int left, int right) {
+		return Math.min(right - left,
+			Math.max(66, Math.min(180, font.width(tab.name) + 24)));
 	}
 
 	private void openUnlockPanel() {
@@ -655,33 +1191,46 @@ public final class SafariSettingsScreen extends Screen {
 		}
 	}
 
-	private void select(SettingCategoryView category) {
-		if (selected != null && !selected.key.equals(category.key)) {
-			selectedGroups.clear();
-			openGroups.clear();
-		}
-		selected = category;
+	private void selectArea(SettingsArea area) {
+		if (selectedArea == area) return;
+		selectedArea = area;
+		selectedTab = null;
+		expandedSettingSections.clear();
+		ensureSelectedTab();
 		scroll = 0;
 		resetArmedUntil = 0;
 		search.setValue("");
 	}
 
+	private void selectTab(SettingsTab tab) {
+		if (!tab.selectable()) return;
+		if (selectedTab == tab) return;
+		selectedTab = tab;
+		expandedSettingSections.clear();
+		scroll = 0;
+		resetArmedUntil = 0;
+		if (search != null) search.setValue("");
+	}
+
 	private void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-		if (selected == null) return;
-		if (selected.key.equals("advanced") && !AdvancedUnlock.isUnlocked()) return;
-		visibleSettings.clear();
-		int left = NAV_WIDTH + 20;
-		int right = width - 20;
-		int top = HEADER_HEIGHT + 14;
+		if (selectedArea == null || selectedTab == null) return;
+		int gutter = ResponsiveUI.gutter(width);
+		int left = workspaceLeft + gutter;
+		int right = width - gutter;
+		int top = contentHeaderBottom + 8;
 		int bottom = height - FOOTER_HEIGHT - 8;
+		contentViewportTop = top;
+		contentViewportBottom = bottom;
 		contentScissor = new ScreenRectangle(left, top, right - left, bottom - top);
 		graphics.enableScissor(left, top, right, bottom);
 		int y = top - scroll;
 		String query = search == null ? "" : search.getValue().trim().toLowerCase(Locale.ROOT);
 		if (query.isEmpty()) {
-			y = drawNormalFields(graphics, selected.value, selected.value.getClass(), null,
-				selected.key, left, right, y, 0, mouseX, mouseY);
+			y = drawTabPages(graphics, selectedTab.pages, left, right, y, mouseX, mouseY);
 		} else {
+			drawText(graphics, "Search Results", left + 4, y + 2, TEXT);
+			drawText(graphics, "All visible settings", left + 4, y + 17, MUTED);
+			y += 38;
 			y = drawSearchResults(graphics, query, left, right, y, mouseX, mouseY);
 		}
 		contentHeight = Math.max(0, y + scroll - top);
@@ -689,140 +1238,192 @@ public final class SafariSettingsScreen extends Screen {
 		contentScissor = null;
 	}
 
-	private int drawNormalFields(GuiGraphicsExtractor graphics, Object owner, Class<?> type,
-			Integer parentId, String path, int left, int right, int y, int depth,
-			int mouseX, int mouseY) {
-		List<Field> groups = new ArrayList<>();
-		List<Field> fields = new ArrayList<>(java.util.Arrays.asList(publicFields(type)));
-		if (path.startsWith("advanced.testingAccordion.")
-			|| path.startsWith("advanced.safeModeAccordion")) {
-			fields.sort(java.util.Comparator.comparing(field -> {
-				SettingInfo info = field.getAnnotation(SettingInfo.class);
-				return info == null ? "" : clean(info.name()).toLowerCase(Locale.ROOT);
-			}));
+	private int drawTabPages(GuiGraphicsExtractor graphics, List<SettingsPage> pages,
+			int left, int right, int y, int mouseX, int mouseY) {
+		if (pages.isEmpty()) return y;
+		Map<SettingsPage, Integer> effectiveDepths = effectiveDepthCache.computeIfAbsent(
+			selectedTab, ignored -> calculateEffectiveDepths(pages));
+		int rootCount = 0;
+		SettingsPage root = null;
+		for (SettingsPage page : pages) {
+			if (effectiveDepths.getOrDefault(page, 0) != 0) continue;
+			rootCount++;
+			root = page;
 		}
-		for (Field field : fields) {
-			SettingInfo option = field.getAnnotation(SettingInfo.class);
-			if (option == null || isHeaderOnly(field) || !belongsTo(field, parentId)) continue;
-			SettingSection accordion = field.getAnnotation(SettingSection.class);
-			if (accordion != null) {
-				groups.add(field);
-			} else if (hasEditor(field)) {
-				y = drawSetting(graphics, owner, field, option, left + depth * 5, right, y,
-					mouseX, mouseY);
+		SettingsPage hiddenRoot = rootCount == 1 && root != null && !root.selectable() ? root : null;
+		java.util.Arrays.fill(visibleSettingBranches, true);
+		for (int index = 0; index < pages.size(); index++) {
+			SettingsPage page = pages.get(index);
+			int depth = effectiveDepths.getOrDefault(page, 0);
+			if (hiddenRoot != null && page != hiddenRoot
+					&& page.breadcrumb.startsWith(hiddenRoot.breadcrumb + "  ›  ")) {
+				depth = Math.max(0, depth - 1);
+			}
+			final int layoutDepth = depth;
+			java.util.Arrays.fill(visibleSettingBranches,
+				Math.min(layoutDepth, visibleSettingBranches.length),
+				visibleSettingBranches.length, true);
+			boolean parentVisible = true;
+			for (int branchDepth = 0;
+					branchDepth < Math.min(layoutDepth, visibleSettingBranches.length);
+					branchDepth++) {
+				if (!visibleSettingBranches[branchDepth]) {
+					parentVisible = false;
+					break;
+				}
+			}
+			boolean hasChildren = index + 1 < pages.size() && pages.get(index + 1).depth > page.depth;
+			if (!parentVisible) {
+				if (depth < visibleSettingBranches.length) visibleSettingBranches[depth] = false;
+				continue;
+			}
+
+			boolean structuralRoot = page == hiddenRoot;
+			boolean direct = structuralRoot || isDirectSettingsPage(page, hasChildren);
+			if (direct) {
+				int settingLeft = left + Math.min(18, depth * 6);
+				y = drawPageSettings(graphics, page, settingLeft, right, y, mouseX, mouseY);
+				if (depth < visibleSettingBranches.length) visibleSettingBranches[depth] = true;
+				continue;
+			}
+
+			boolean expanded = expandedSettingSections.contains(page.key);
+			int sectionLeft = left + Math.min(18, depth * 6);
+			y = drawCollapsibleSection(graphics, page, sectionLeft, right, y,
+				mouseX, mouseY, expanded);
+			if (expanded) {
+				int settingLeft = Math.min(right - 40, sectionLeft + 6);
+				y = drawPageSettings(graphics, page, settingLeft, right, y, mouseX, mouseY);
+			}
+			if (depth < visibleSettingBranches.length) visibleSettingBranches[depth] = expanded;
+		}
+		return y;
+	}
+
+	private boolean isDirectSettingsPage(SettingsPage page, boolean hasChildren) {
+		if (page.key.equals("advanced.safe-mode.sparklings")) return true;
+		if (page.key.startsWith("advanced.safe-mode.")) return false;
+		if (page.key.startsWith("display.waypoint-settings")) return false;
+		if (!page.key.startsWith("dev.")) return true;
+		if (!hasChildren && page.fields.size() == 1) return true;
+		String pageName = compactSectionName(page.name).replace(" Alerts", "");
+		String tabName = selectedTab == null ? "" : selectedTab.name.replace(" Alerts", "");
+		return pageName.equalsIgnoreCase(tabName);
+	}
+
+	private static Map<SettingsPage, Integer> calculateEffectiveDepths(List<SettingsPage> pages) {
+		Map<SettingsPage, Integer> result = new java.util.IdentityHashMap<>();
+		for (SettingsPage page : pages) {
+			int depth = 0;
+			for (SettingsPage candidate : pages) {
+				if (candidate == page || candidate.depth >= page.depth) continue;
+				if (page.breadcrumb.startsWith(candidate.breadcrumb + "  ›  ")) depth++;
+			}
+			result.put(page, depth);
+		}
+		return result;
+	}
+
+	private int drawCollapsibleSection(GuiGraphicsExtractor graphics, SettingsPage page,
+			int left, int right, int y, int mouseX, int mouseY, boolean expanded) {
+		int height = 22;
+		boolean hovered = inside(mouseX, mouseY, left, y, right, y + height);
+		if (y + height > contentViewportTop && y < contentViewportBottom) {
+			int accent = page.depth % 2 == 0 ? GOLD : CYAN;
+			graphics.fill(left, y, right, y + height, hovered ? CARD_HOVER : SURFACE);
+			graphics.fill(left, y, left + 3, y + height, accent);
+			drawText(graphics, trim(compactSectionName(page.name), right - left - 34),
+				left + 10, y + 7, TEXT);
+			drawCenteredText(graphics, expanded ? "−" : "+", right - 12, y + 7,
+				expanded ? GOLD : MUTED);
+			int hitTop = Math.max(y, contentViewportTop);
+			int hitBottom = Math.min(y + height, contentViewportBottom);
+			if (hitBottom > hitTop) {
+				hits.add(new Hit(left, hitTop, right, hitBottom,
+					() -> toggleSettingSection(page.key)));
 			}
 		}
-		if (groups.isEmpty()) return y;
+		return y + height + 6;
+	}
 
-		if (depth <= 1 && !(depth == 1 && groups.size() == 1)) {
-			String selectionKey = path + ":" + (parentId == null ? "root" : parentId);
-			String selectedField = selectedGroups.get(selectionKey);
-			boolean validSelection = false;
-			for (Field field : groups) validSelection |= field.getName().equals(selectedField);
-			if (!validSelection) selectedField = null;
-			y = drawGroupTabs(graphics, groups, selectionKey, selectedField,
-				left + depth * 5, right, y, depth, mouseX, mouseY);
-			for (Field field : groups) {
-				if (!field.getName().equals(selectedField)) continue;
-				SettingSection accordion = field.getAnnotation(SettingSection.class);
-				y = drawSelectedSection(graphics, field.getAnnotation(SettingInfo.class),
-					left + depth * 5, right, y);
-				y = drawNormalFields(graphics, owner, type, accordion.id(), path + "." + field.getName(),
-					left, right, y, depth + 1, mouseX, mouseY);
-			}
-			return y;
+	private void toggleSettingSection(String key) {
+		if (!expandedSettingSections.add(key)) {
+			expandedSettingSections.remove(key);
+			collapseChildSections(key);
 		}
+		resetArmedUntil = 0;
+	}
 
-		for (Field field : groups) {
-			SettingInfo option = field.getAnnotation(SettingInfo.class);
-			String groupPath = path + "." + field.getName();
-			boolean open = openGroups.contains(groupPath);
-			y = drawCollapsibleSection(graphics, option, groupPath, open,
-				left + depth * 5, right, y, depth, mouseX, mouseY);
-			if (open) {
-				y = drawNormalFields(graphics, owner, type,
-					field.getAnnotation(SettingSection.class).id(), groupPath,
-					left, right, y, depth + 1, mouseX, mouseY);
+	private void collapseChildSections(String parentKey) {
+		if (selectedTab == null) return;
+		SettingsPage parent = selectedTab.pages.stream()
+			.filter(page -> page.key.equals(parentKey))
+			.findFirst().orElse(null);
+		if (parent == null) return;
+		String childPrefix = parent.breadcrumb + "  ›  ";
+		for (SettingsPage page : selectedTab.pages) {
+			if (page.breadcrumb.startsWith(childPrefix)) {
+				expandedSettingSections.remove(page.key);
+			}
+		}
+	}
+
+	private int drawPageSettings(GuiGraphicsExtractor graphics, SettingsPage page,
+			int left, int right, int y, int mouseX, int mouseY) {
+		if (page.fields.isEmpty()) return y;
+		for (List<Field> card : settingCardCache.computeIfAbsent(page, this::settingCards)) {
+			if (card.size() == 1) {
+				Field field = card.getFirst();
+				y = drawSetting(graphics, page.owner, field,
+					field.getAnnotation(SettingInfo.class), left, right, y, mouseX, mouseY);
+			} else {
+				y = drawCombinedSettings(graphics, page.owner, card,
+					left, right, y, mouseX, mouseY);
 			}
 		}
 		return y;
 	}
 
-	private int drawGroupTabs(GuiGraphicsExtractor graphics, List<Field> groups, String selectionKey,
-			String selectedField, int left, int right, int y, int depth, int mouseX, int mouseY) {
-		int x = left;
-		for (Field field : groups) {
-			String label = displayName(field.getAnnotation(SettingInfo.class).name());
-			int tabWidth = Math.min(right - left, Math.max(76, font.width(label) + 24));
-			if (x > left && x + tabWidth > right) {
-				x = left;
-				y += 28;
-			}
-			boolean active = field.getName().equals(selectedField);
-			boolean hovered = inside(mouseX, mouseY, x, y, x + tabWidth, y + 23);
-			int activeFill = depth == 0 ? SELECTED : SUB_SELECTED;
-			int inactiveFill = depth == 0 ? CARD : SURFACE;
-			int accent = depth == 0 ? CYAN : GOLD;
-			graphics.fill(x, y, x + tabWidth, y + 23,
-				active ? activeFill : hovered ? CARD_HOVER : inactiveFill);
-			outline(graphics, x, y, tabWidth, 23, active ? accent : BORDER);
-			drawCenteredText(graphics, trim(label, tabWidth - 12), x + tabWidth / 2, y + 8,
-				active ? TEXT : MUTED);
-			String choice = field.getName();
-			hits.add(new Hit(x, y, x + tabWidth, y + 23, () -> {
-				String parentPath = selectionKey.substring(0, selectionKey.lastIndexOf(':'));
-				collapseDescendants(parentPath);
-				if (choice.equals(selectedGroups.get(selectionKey))) {
-					selectedGroups.remove(selectionKey);
-				} else {
-					selectedGroups.put(selectionKey, choice);
+	private List<List<Field>> settingCards(SettingsPage page) {
+		if (page.key.equals("display.waypoint-settings")) {
+			return page.fields.stream().map(List::of).toList();
+		}
+		if (page.key.equals("display.waypoint-settings.objectives")
+				|| page.key.equals("display.waypoint-settings.critters")) {
+			return featureColourCards(page.fields);
+		}
+		return List.of(page.fields);
+	}
+
+	private List<List<Field>> featureColourCards(List<Field> fields) {
+		List<List<Field>> cards = new ArrayList<>();
+		for (int index = 0; index < fields.size(); index++) {
+			Field field = fields.get(index);
+			List<Field> card = new ArrayList<>();
+			card.add(field);
+			if (field.isAnnotationPresent(SettingToggle.class)) {
+				while (index + 1 < fields.size()
+						&& fields.get(index + 1).isAnnotationPresent(SettingColor.class)) {
+					card.add(fields.get(++index));
 				}
-			}));
-			x += tabWidth + 6;
+			}
+			cards.add(List.copyOf(card));
 		}
-		return y + 31;
+		return cards;
 	}
 
-	private void collapseDescendants(String parentPath) {
-		String prefix = parentPath + ".";
-		selectedGroups.keySet().removeIf(key -> key.startsWith(prefix));
-		openGroups.removeIf(path -> path.startsWith(prefix));
-	}
-
-	private int drawSelectedSection(GuiGraphicsExtractor graphics, SettingInfo option,
-			int left, int right, int y) {
-		if (option.desc().isBlank()) return y;
-		List<String> lines = wrap(clean(option.desc()), right - left - 24);
-		drawText(graphics, displayName(option.name()), left + 4, y + 2, TEXT);
-		int lineY = y + 17;
-		for (String line : lines) {
-			drawText(graphics, line, left + 4, lineY, MUTED);
-			lineY += 11;
-		}
-		return lineY + 5;
-	}
-
-	private int drawCollapsibleSection(GuiGraphicsExtractor graphics, SettingInfo option,
-			String path, boolean open, int left, int right, int y, int depth,
-			int mouseX, int mouseY) {
-		List<String> description = wrap(clean(option.desc()), right - left - 48);
-		int height = Math.max(28, 28 + description.size() * 11);
-		boolean hovered = inside(mouseX, mouseY, left, y, right, y + height);
-		graphics.fill(left, y, right, y + height, hovered ? CARD_HOVER : CARD);
-		int accent = depth <= 1 ? GOLD : CYAN;
-		graphics.fill(left, y, left + 3, y + height, accent);
-		drawText(graphics, open ? "−" : "+", left + 11, y + 10, accent);
-		drawText(graphics, displayName(option.name()), left + 27, y + 9, TEXT);
-		int lineY = y + 24;
-		for (String line : description) {
-			drawText(graphics, line, left + 27, lineY, MUTED);
-			lineY += 11;
-		}
-		hits.add(new Hit(left, y, right, y + height, () -> {
-			if (openGroups.remove(path)) collapseDescendants(path);
-			else openGroups.add(path);
-		}));
-		return y + height + 6;
+	private static String compactSectionName(String name) {
+		return switch (name) {
+			case "Safari Alerts", "Safari Chat Alerts" -> "Safari";
+			case "Encounter Alerts", "Encounter Chat Alerts" -> "Encounters";
+			case "Contest Alerts", "Contest Chat Alerts" -> "Contest";
+			case "Appearance Settings" -> "Appearance";
+			case "Sound Settings" -> "Sound";
+			case "Progress HUD Options", "Missing HUD Options", "Contest HUD Options",
+				"Party Objective HUD Options", "Safe Mode Options" -> "Options";
+			case "Data Collecting" -> "Data Collection";
+			default -> name;
+		};
 	}
 
 	private int drawSearchResults(GuiGraphicsExtractor graphics, String query,
@@ -833,26 +1434,60 @@ public final class SafariSettingsScreen extends Screen {
 				collectSearchResults(category.value, category.value.getClass(), null, List.of(),
 					query, false, category.info.name(), results);
 			}
+			results.sort((first, second) -> Integer.compare(
+				settingOrderCache.getOrDefault(first.field, Integer.MAX_VALUE),
+				settingOrderCache.getOrDefault(second.field, Integer.MAX_VALUE)));
 			cachedSearchQuery = query;
-			cachedSearchResults = List.copyOf(results);
+			cachedSearchGroups = buildSearchGroups(results);
 		}
-		List<SearchItem> results = cachedSearchResults;
 		String previousContext = null;
-		for (SearchItem result : results) {
-			String context = result.context;
+		for (SearchGroup group : cachedSearchGroups) {
+			String context = group.context;
 			if (!context.equals(previousContext) && !context.isBlank()) {
 				y = drawSearchContext(graphics, context, left, right, y);
 				previousContext = context;
 			}
-			SettingInfo option = result.field.getAnnotation(SettingInfo.class);
-			y = drawSetting(graphics, result.owner, result.field, option,
-				left + 5, right, y, mouseX, mouseY);
+			if (group.fields.size() > 1) {
+				y = drawCombinedSettings(graphics, group.owner, group.fields,
+					left + 5, right, y, mouseX, mouseY);
+			} else {
+				Field field = group.fields.getFirst();
+				y = drawSetting(graphics, group.owner, field,
+					field.getAnnotation(SettingInfo.class),
+					left + 5, right, y, mouseX, mouseY);
+			}
 		}
-		if (results.isEmpty()) {
+		if (cachedSearchGroups.isEmpty()) {
 			drawCenteredText(graphics, "No matching settings", (left + right) / 2, y + 30, MUTED);
 			y += 70;
 		}
 		return y;
+	}
+
+	private List<SearchGroup> buildSearchGroups(List<SearchItem> results) {
+		List<SearchGroup> groups = new ArrayList<>();
+		for (int index = 0; index < results.size();) {
+			SearchItem first = results.get(index);
+			List<Field> normalCard = normalCard(first);
+			List<Field> matches = new ArrayList<>();
+			matches.add(first.field);
+			int next = index + 1;
+			while (next < results.size()) {
+				SearchItem candidate = results.get(next);
+				if (candidate.owner != first.owner || !candidate.context.equals(first.context)
+						|| normalCard(candidate) != normalCard) break;
+				matches.add(candidate.field);
+				next++;
+			}
+			groups.add(new SearchGroup(first.context, first.owner, List.copyOf(matches)));
+			index = next;
+		}
+		return List.copyOf(groups);
+	}
+
+	private List<Field> normalCard(SearchItem item) {
+		List<Field> card = normalSettingCardCache.get(item.field);
+		return card == null ? List.of(item.field) : card;
 	}
 
 	private void collectSearchResults(Object owner, Class<?> type, Integer parentId,
@@ -869,13 +1504,38 @@ public final class SafariSettingsScreen extends Screen {
 				collectSearchResults(owner, type, accordion.id(), nested, query,
 					ancestorMatches || matches, category, results);
 			} else if (hasEditor(field) && (ancestorMatches || matches)) {
-				StringBuilder path = new StringBuilder(displayName(category));
-				for (SettingInfo level : context) {
-					path.append("  ›  ").append(displayName(level.name()));
+				String mappedContext = navigationContext(owner, field);
+				StringBuilder path = new StringBuilder(mappedContext == null
+					? displayName(category) : mappedContext);
+				if (mappedContext == null) {
+					for (SettingInfo level : context) {
+						path.append("  ›  ").append(displayName(level.name()));
+					}
 				}
 				results.add(new SearchItem(owner, field, path.toString()));
 			}
 		}
+	}
+
+	private String navigationContext(Object owner, Field field) {
+		for (SettingsArea area : settingsAreas) {
+			for (SettingsPage page : area.pages) {
+				if (page.owner != owner || !page.fields.contains(field)) continue;
+				List<List<Field>> cards = settingCardCache.computeIfAbsent(page, this::settingCards);
+				if (cards.size() <= 1) return page.breadcrumb;
+				for (List<Field> card : cards) {
+					if (!card.contains(field)) continue;
+					SettingInfo cardInfo = card.getFirst().getAnnotation(SettingInfo.class);
+					String cardName = cardInfo == null ? "" : displayName(cardInfo.name());
+					if (cardName.isBlank() || page.breadcrumb.endsWith("  ›  " + cardName)) {
+						return page.breadcrumb;
+					}
+					return page.breadcrumb + "  ›  " + cardName;
+				}
+				return page.breadcrumb;
+			}
+		}
+		return null;
 	}
 
 	private static boolean smartMatches(SettingInfo option, String query) {
@@ -911,6 +1571,9 @@ public final class SafariSettingsScreen extends Screen {
 	/** Keeps developer tools private and hides Safe Mode controls in Safe Mode jars. */
 	private static boolean visibleInThisBuild(Class<?> owner, Field field) {
 		if (field.getName().startsWith("private") && !BuildVersion.PRIVATE) return false;
+		if (owner == SafariConfig.AdvancedConfig.class
+				&& field.getName().equals("safeModeLockedNotice")) return BuildVersion.SAFE;
+		if (owner == SafariConfig.AdvancedConfig.class && field.getName().equals("safeMode")) return false;
 		if (owner != SafariConfig.AdvancedConfig.class || BuildVersion.DEVELOPER) return true;
 		if (field.getName().equals("specialTheme")
 			|| field.getName().equals("enablePartySync")) return true;
@@ -941,51 +1604,171 @@ public final class SafariSettingsScreen extends Screen {
 		return y + 34;
 	}
 
+	private int drawCombinedSettings(GuiGraphicsExtractor graphics, Object owner,
+			List<Field> fields, int left, int right, int y, int mouseX, int mouseY) {
+		int totalHeight = 0;
+		for (Field field : fields) {
+			totalHeight += settingTextLayout(field,
+				field.getAnnotation(SettingInfo.class), left, right).height;
+		}
+		boolean visible = y + totalHeight > contentViewportTop && y < contentViewportBottom;
+		if (visible) {
+			graphics.fill(left, y, right, y + totalHeight, CARD);
+			int dividerY = y;
+			for (int index = 1; index < fields.size(); index++) {
+				Field previous = fields.get(index - 1);
+				dividerY += settingTextLayout(previous,
+					previous.getAnnotation(SettingInfo.class), left, right).height;
+				graphics.fill(left + 8, dividerY, right - 8, dividerY + 1, BORDER);
+			}
+		}
+
+		int rowY = y;
+		String previousName = null;
+		int hoveredY = Integer.MIN_VALUE;
+		int hoveredHeight = 0;
+		for (int index = 0; index < fields.size(); index++) {
+			Field field = fields.get(index);
+			SettingInfo option = field.getAnnotation(SettingInfo.class);
+			int rowHeight = settingTextLayout(field, option, left, right).height;
+			if (rowY + rowHeight > contentViewportTop && rowY < contentViewportBottom) {
+				boolean hovered = settingControlHovered(field, left, right, rowY, rowHeight,
+					mouseX, mouseY);
+				if (hovered) graphics.fill(left + 1, rowY, right - 1, rowY + rowHeight, CARD_HOVER);
+				if (hovered) {
+					hoveredY = rowY;
+					hoveredHeight = rowHeight;
+				}
+				drawCombinedSettingRow(graphics, owner, field, option, previousName,
+					left, right, rowY, rowHeight, mouseX, mouseY);
+			}
+			previousName = displayName(option.name());
+			rowY += rowHeight;
+		}
+		// Shared rows meet on their exclusive bottom coordinate. Include that
+		// boundary so the final card edge and every hovered divider are complete.
+		if (visible) outline(graphics, left, y, right - left, totalHeight + 1, BORDER);
+		if (hoveredY != Integer.MIN_VALUE) {
+			outline(graphics, left, hoveredY, right - left, hoveredHeight + 1, CYAN);
+		}
+		return y + totalHeight + 6;
+	}
+
+	private boolean settingControlHovered(Field field, int left, int right, int y, int height,
+			int mouseX, int mouseY) {
+		boolean stacked = stackedSetting(left, right);
+		int controlWidth = settingControlWidth(left, right, stacked);
+		int controlX = stacked ? left + 12 : right - controlWidth - 10;
+		int controlY = stacked ? y + height - 28 : y + (height - 22) / 2;
+		if (field.isAnnotationPresent(SettingToggle.class)) {
+			return inside(mouseX, mouseY, left, y, right, y + height);
+		}
+		if (field.isAnnotationPresent(SettingRange.class)) {
+			return inside(mouseX, mouseY, controlX, y, right, y + height);
+		}
+		return inside(mouseX, mouseY, controlX, controlY,
+			controlX + controlWidth, controlY + 22);
+	}
+
+	private SettingTextLayout settingTextLayout(Field field, SettingInfo option,
+			int left, int right) {
+		int availableWidth = right - left;
+		Map<Integer, SettingTextLayout> widths = settingTextLayoutCache.computeIfAbsent(field,
+			ignored -> new LinkedHashMap<>(4, 0.75f, true) {
+				@Override
+				protected boolean removeEldestEntry(
+						Map.Entry<Integer, SettingTextLayout> eldest) {
+					return size() > 8;
+				}
+			});
+		SettingTextLayout cached = widths.get(availableWidth);
+		if (cached != null) return cached;
+		String description = option.desc();
+		int split = description.indexOf('\n');
+		String main = clean(split < 0 ? description : description.substring(0, split));
+		String tag = split < 0 ? "" : clean(description.substring(split + 1));
+		boolean readOnlyNotice = isReadOnlyNotice(field);
+		boolean stacked = !readOnlyNotice && stackedSetting(left, right);
+		int controlWidth = settingControlWidth(left, right, stacked);
+		int descriptionWidth = readOnlyNotice ? Math.max(40, right - left - 24)
+			: stacked ? Math.max(40, right - left - 24)
+			: Math.max(40, right - controlWidth - 24 - (left + 12));
+		List<String> mainLines = main.isBlank() ? List.of() : wrap(main, descriptionWidth);
+		List<String> tagLines = tag.isBlank() ? List.of() : wrap(tag, descriptionWidth);
+		int lines = mainLines.size() + tagLines.size();
+		int textHeight = lines == 0 ? 30 : 24 + lines * 11;
+		boolean safeModeComparison = main.startsWith("Safe:") && tag.startsWith("Normal:");
+		SettingTextLayout layout = new SettingTextLayout(mainLines, tagLines,
+			safeModeComparison, stacked ? Math.max(66, textHeight + 34)
+				: Math.max(42, textHeight + 8));
+		widths.put(availableWidth, layout);
+		return layout;
+	}
+
+	private void drawCombinedSettingRow(GuiGraphicsExtractor graphics, Object owner, Field field,
+			SettingInfo option, String previousName, int left, int right, int y, int height,
+			int mouseX, int mouseY) {
+		SettingTextLayout layout = settingTextLayout(field, option, left, right);
+		String name = displayName(option.name());
+		if (field.isAnnotationPresent(SettingColor.class) && name.equals(previousName)) name = "Color";
+		drawText(graphics, name, left + 12, y + 9, TEXT);
+		int lineY = y + 24;
+		for (String line : layout.mainLines) {
+			drawText(graphics, line, left + 12, lineY, layout.safeModeComparison ? CYAN : MUTED);
+			lineY += 11;
+		}
+		for (String line : layout.tagLines) {
+			drawText(graphics, line, left + 12, lineY, layout.safeModeComparison ? MUTED : CYAN);
+			lineY += 11;
+		}
+		drawControl(graphics, owner, field, left, right, y, height, mouseX, mouseY);
+	}
+
 	private int drawSetting(GuiGraphicsExtractor graphics, Object owner, Field field,
 			SettingInfo option, int left, int right, int y, int mouseX, int mouseY) {
-		String[] description = option.desc().split("\\n", 2);
-		boolean safeModeComparison = description.length > 1
-			&& clean(description[0]).startsWith("Safe:")
-			&& clean(description[1]).startsWith("Normal:");
-		int controlWidth = Math.clamp((right - left) / 3, 116, 210);
-		int descriptionWidth = Math.max(40, right - controlWidth - 24 - (left + 12));
-		List<String> mainLines = description[0].isBlank() ? List.of() : wrap(clean(description[0]), descriptionWidth);
-		List<String> tagLines = description.length > 1 ? wrap(clean(description[1]), descriptionWidth) : List.of();
-		int lineCount = mainLines.size() + tagLines.size();
-		int height = Math.max(42, lineCount == 0 ? 42 : 32 + lineCount * 11);
-		int controlX = right - controlWidth - 10;
-		int controlY = y + (height - 22) / 2;
-		if (field.isAnnotationPresent(com.google.gson.annotations.Expose.class)) {
-			visibleSettings.add(new VisibleSetting(owner, field));
+		SettingTextLayout layout = settingTextLayout(field, option, left, right);
+		boolean stacked = stackedSetting(left, right);
+		int controlWidth = settingControlWidth(left, right, stacked);
+		int height = layout.height;
+		int controlX = stacked ? left + 12 : right - controlWidth - 10;
+		int controlY = stacked ? y + height - 28 : y + (height - 22) / 2;
+		if (y + height <= contentViewportTop || y >= contentViewportBottom) {
+			return y + height + 6;
 		}
 		boolean rowHovered = inside(mouseX, mouseY, left, y, right, y + height);
 		boolean controlHovered = inside(mouseX, mouseY, controlX, controlY,
 			controlX + controlWidth, controlY + 22);
-		boolean hovered = field.isAnnotationPresent(SettingToggle.class)
+		boolean interactive = !isReadOnlyNotice(field);
+		boolean hovered = interactive && (field.isAnnotationPresent(SettingToggle.class)
 			? rowHovered : field.isAnnotationPresent(SettingRange.class)
 				? inside(mouseX, mouseY, controlX, y, right, y + height)
-				: controlHovered;
+				: controlHovered);
 		graphics.fill(left, y, right, y + height, hovered ? CARD_HOVER : CARD);
 		outline(graphics, left, y, right - left, height, hovered ? CYAN : BORDER);
 		drawText(graphics, displayName(option.name()), left + 12, y + 9, TEXT);
 		int lineY = y + 24;
-		for (String line : mainLines) {
-			drawText(graphics, line, left + 12, lineY, safeModeComparison ? CYAN : MUTED);
+		for (String line : layout.mainLines) {
+			drawText(graphics, line, left + 12, lineY, layout.safeModeComparison ? CYAN : MUTED);
 			lineY += 11;
 		}
-		for (String line : tagLines) {
-			drawText(graphics, line, left + 12, lineY, safeModeComparison ? MUTED : CYAN);
+		for (String line : layout.tagLines) {
+			drawText(graphics, line, left + 12, lineY, layout.safeModeComparison ? MUTED : CYAN);
 			lineY += 11;
 		}
-		drawControl(graphics, owner, field, left, right, y, height, mouseX, mouseY);
+		if (interactive) drawControl(graphics, owner, field, left, right, y, height, mouseX, mouseY);
 		return y + height + 6;
+	}
+
+	private static boolean isReadOnlyNotice(Field field) {
+		return field.getName().equals("safeModeLockedNotice");
 	}
 
 	private void drawControl(GuiGraphicsExtractor graphics, Object owner, Field field,
 			int left, int right, int y, int height, int mouseX, int mouseY) {
-		int controlWidth = Math.clamp((right - left) / 3, 116, 210);
-		int x = right - controlWidth - 10;
-		int controlY = y + (height - 22) / 2;
+		boolean stacked = stackedSetting(left, right);
+		int controlWidth = settingControlWidth(left, right, stacked);
+		int x = stacked ? left + 12 : right - controlWidth - 10;
+		int controlY = stacked ? y + height - 28 : y + (height - 22) / 2;
 		try {
 			SettingChoice dropdown = field.getAnnotation(SettingChoice.class);
 			SettingMultiChoice multiChoice = field.getAnnotation(SettingMultiChoice.class);
@@ -1003,8 +1786,8 @@ public final class SafariSettingsScreen extends Screen {
 					() -> openChoicePicker(owner, field, dropdown)));
 			} else if (multiChoice != null) {
 				int total = multiChoiceLabels(multiChoice).length;
-				long validBits = total >= Long.SIZE ? -1L : (1L << total) - 1;
-				int selected = Long.bitCount(multiChoiceValue(owner, field) & validBits);
+				long selectedValue = multiChoiceValue(owner, field);
+				int selected = multiChoiceSelectedCount(selectedValue, multiChoice.bits(), total);
 				String label = selected == total ? "All selected"
 					: selected == 0 ? "None selected"
 					: selected + " of " + total + " selected";
@@ -1067,6 +1850,15 @@ public final class SafariSettingsScreen extends Screen {
 			}
 		} catch (IllegalAccessException ignored) {
 		}
+	}
+
+	private static boolean stackedSetting(int left, int right) {
+		return right - left < 430;
+	}
+
+	private static int settingControlWidth(int left, int right, boolean stacked) {
+		return stacked ? Math.max(80, right - left - 24)
+			: Math.clamp((right - left) / 3, 116, 210);
 	}
 
 	private void drawToggle(GuiGraphicsExtractor graphics, int x, int y, boolean enabled) {
@@ -1193,6 +1985,7 @@ public final class SafariSettingsScreen extends Screen {
 			x + 14, y + 27, MUTED);
 		int cellWidth = (w - 28 - (columns - 1) * 8) / columns;
 		long selected = multiChoiceValue(choiceOwner, choiceField);
+		int[] storedBits = multiChoiceDropdown.bits();
 		if (groupedColumns) {
 			for (int column = 0; column < groups.length; column++) {
 				drawText(graphics, groups[column],
@@ -1218,7 +2011,8 @@ public final class SafariSettingsScreen extends Screen {
 			int cellY = itemsTop + row * 31 - multiChoiceScroll;
 			if (cellY < itemsTop || cellY + 26 > itemsBottom) continue;
 			String group = groupFor(index, groups, starts);
-			boolean active = (selected & 1L << index) != 0;
+			long bit = multiChoiceBit(storedBits, index);
+			boolean active = (selected & bit) != 0;
 			boolean hovered = inside(mouseX, mouseY, cellX, cellY, cellX + cellWidth, cellY + 26);
 			graphics.fill(cellX, cellY, cellX + cellWidth, cellY + 26,
 				active ? SELECTED : hovered ? CARD_HOVER : CARD);
@@ -1229,7 +2023,6 @@ public final class SafariSettingsScreen extends Screen {
 			drawText(graphics, trim(groupedColumns ? labels[index] : group + " · " + labels[index],
 				cellWidth - 34),
 				cellX + 24, cellY + 9, active ? TEXT : MUTED);
-			long bit = 1L << index;
 			hits.add(new Hit(cellX, cellY, cellX + cellWidth, cellY + 26,
 				() -> toggleMultiChoice(bit)));
 		}
@@ -1290,6 +2083,23 @@ public final class SafariSettingsScreen extends Screen {
 
 	private static String[] multiChoiceLabels(SettingMultiChoice choice) {
 		return choice.critters() ? CRITTER_CHOICES : choice.values();
+	}
+
+	private static int multiChoiceSelectedCount(long value, int[] bits, int total) {
+		if (bits.length == 0) {
+			long valid = total >= Long.SIZE ? -1L : (1L << total) - 1;
+			return Long.bitCount(value & valid);
+		}
+		int selected = 0;
+		for (int index = 0; index < total; index++) {
+			if ((value & multiChoiceBit(bits, index)) != 0) selected++;
+		}
+		return selected;
+	}
+
+	private static long multiChoiceBit(int[] bits, int visibleIndex) {
+		int bitIndex = visibleIndex < bits.length ? bits[visibleIndex] : visibleIndex;
+		return bitIndex >= 0 && bitIndex < Long.SIZE ? 1L << bitIndex : 0L;
 	}
 
 	private static int[] critterGroupStarts() {
@@ -1655,6 +2465,8 @@ public final class SafariSettingsScreen extends Screen {
 		int durationFieldX = x + w - 14 - durationFieldWidth;
 		drawInlineEditorFrame(graphics, durationFieldX, durationY, durationFieldWidth, 20);
 		if (customDurationEditor != null) {
+			if (globalEditorsVisible) customDurationBounds.set(durationFieldX,
+				durationY, durationFieldX + durationFieldWidth, durationY + 20);
 			customDurationEditor.visible = globalEditorsVisible;
 			customDurationEditor.setX(durationFieldX + 5);
 			customDurationEditor.setY(durationY + 6);
@@ -1686,6 +2498,8 @@ public final class SafariSettingsScreen extends Screen {
 		int volumeFieldX = x + w - 14 - volumeFieldWidth;
 		drawInlineEditorFrame(graphics, volumeFieldX, volumeY, volumeFieldWidth, 20);
 		if (customVolumeEditor != null) {
+			if (globalEditorsVisible) customVolumeBounds.set(volumeFieldX,
+				volumeY, volumeFieldX + volumeFieldWidth, volumeY + 20);
 			customVolumeEditor.visible = globalEditorsVisible;
 			customVolumeEditor.setX(volumeFieldX + 5);
 			customVolumeEditor.setY(volumeY + 6);
@@ -1724,6 +2538,8 @@ public final class SafariSettingsScreen extends Screen {
 				int fieldWidth = w - 126;
 				drawText(graphics, "Callout Text", x + 14, controlsTop + 5, TEXT);
 				drawInlineEditorFrame(graphics, fieldX, controlsTop, fieldWidth, 18);
+				customCalloutBounds.set(fieldX, controlsTop,
+					fieldX + fieldWidth, controlsTop + 18);
 				customCalloutEditor.setX(fieldX + 4);
 				customCalloutEditor.setY(controlsTop + 5);
 				customCalloutEditor.setWidth(Math.max(8, fieldWidth - 8));
@@ -1912,6 +2728,8 @@ public final class SafariSettingsScreen extends Screen {
 			drawText(graphics, "Preset Name", x + 12, rowY + 7, TEXT);
 			int fieldX = x + 88;
 			drawInlineEditorFrame(graphics, fieldX, rowY, width - 190, 20);
+			customPresetNameBounds.set(fieldX, rowY,
+				fieldX + width - 190, rowY + 20);
 			if (customPresetNameEditor != null) {
 				customPresetNameEditor.visible = true;
 				customPresetNameEditor.active = true;
@@ -2603,22 +3421,35 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private void drawFooter(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-		if (selected == null) return;
+		if (selectedArea == null || selectedTab == null) return;
 		int footerTop = height - FOOTER_HEIGHT;
 		int y = footerTop + (FOOTER_HEIGHT - 22) / 2;
-		int resetX = width - 14 - 90;
-		int closeX = resetX - 8 - 58;
-		String description = trim(selected.info.desc(), Math.max(40, closeX - NAV_WIDTH - 32));
-		drawScaledText(graphics, description, NAV_WIDTH + 20,
+		int available = width - workspaceLeft - 16;
+		int resetWidth = available < 180 ? 70 : 90;
+		int closeWidth = available < 180 ? 50 : 58;
+		int gap = available < 180 ? 4 : 8;
+		int resetX = width - 8 - resetWidth;
+		int closeX = resetX - gap - closeWidth;
+		String description = trim(selectedTab.description,
+			Math.max(40, closeX - workspaceLeft - 32));
+		if (closeX - workspaceLeft > 150) drawScaledText(graphics, description, workspaceLeft + 12,
 			footerTop + (FOOTER_HEIGHT - font.lineHeight) / 2f, 1.0f, MUTED);
 		boolean armed = System.currentTimeMillis() < resetArmedUntil;
-		drawButton(graphics, closeX, y, 58, "Done", mouseX, mouseY);
-		drawButton(graphics, resetX, y, 90, armed ? "Confirm Reset" : "Reset Page", mouseX, mouseY);
-		hits.add(new Hit(closeX, y, closeX + 58, y + 22, this::onClose));
-		hits.add(new Hit(resetX, y, resetX + 90, y + 22, this::resetSelected));
+		drawButton(graphics, closeX, y, closeWidth, "Done", mouseX, mouseY);
+		drawButton(graphics, resetX, y, resetWidth,
+			armed ? available < 180 ? "Confirm" : "Confirm Reset"
+				: available < 180 ? "Reset" : "Reset Tab",
+			mouseX, mouseY);
+		hits.add(new Hit(closeX, y, closeX + closeWidth, y + 22, this::onClose));
+		hits.add(new Hit(resetX, y, resetX + resetWidth, y + 22, this::resetSelected));
 	}
 
 	private void drawScaledText(GuiGraphicsExtractor graphics, String text,
+			float x, float y, float scale, int colour) {
+		drawScaledText(graphics, Component.literal(text), x, y, scale, colour);
+	}
+
+	private void drawScaledText(GuiGraphicsExtractor graphics, Component text,
 			float x, float y, float scale, int colour) {
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(scale, scale);
@@ -2645,20 +3476,30 @@ public final class SafariSettingsScreen extends Screen {
 
 	private void drawScaledCenteredText(GuiGraphicsExtractor graphics, String text,
 			float centerX, float y, float scale, int colour) {
+		drawScaledCenteredText(graphics, Component.literal(text), centerX, y, scale, colour);
+	}
+
+	private void drawScaledCenteredText(GuiGraphicsExtractor graphics, Component text,
+			float centerX, float y, float scale, int colour) {
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(scale, scale);
-		drawCenteredText(graphics, text, Math.round(centerX / scale), Math.round(y / scale), colour);
+		int x = Math.round(centerX / scale - font.width(text) / 2f);
+		drawText(graphics, text, x, Math.round(y / scale), colour);
 		graphics.pose().popMatrix();
 	}
 
 	private void resetSelected() {
-		if (selected == null) return;
+		if (selectedTab == null) return;
 		if (System.currentTimeMillis() >= resetArmedUntil) {
 			resetArmedUntil = System.currentTimeMillis() + 3_000L;
 			return;
 		}
 		Map<Class<?>, Object> defaults = new HashMap<>();
-		for (VisibleSetting setting : visibleSettings) {
+		Set<VisibleSetting> tabSettings = new java.util.LinkedHashSet<>();
+		for (SettingsPage page : selectedTab.pages) {
+			for (Field field : page.fields) tabSettings.add(new VisibleSetting(page.owner, field));
+		}
+		for (VisibleSetting setting : tabSettings) {
 			try {
 				Object defaultOwner = defaults.computeIfAbsent(setting.owner.getClass(), type -> {
 					try {
@@ -3078,10 +3919,10 @@ public final class SafariSettingsScreen extends Screen {
 		signalCompletedAt = 0;
 		AdvancedUnlock.unlock();
 		loadCategories();
-		selected = categories.stream().filter(category -> category.key.equals("advanced"))
-			.findFirst().orElse(selected);
-		selectedGroups.clear();
-		openGroups.clear();
+		selectedArea = settingsAreas.stream().filter(area -> area.key.equals("advanced"))
+			.findFirst().orElse(selectedArea);
+		selectedTab = null;
+		ensureSelectedTab();
 		scroll = 0;
 		if (search != null) {
 			search.setValue("");
@@ -3221,14 +4062,9 @@ public final class SafariSettingsScreen extends Screen {
 		if (event.button() == 0) blurInlineFieldsOutside(event.x(), event.y());
 		if (event.button() == 0 && search != null && search.visible
 				&& inside(event.x(), event.y(), searchFrameX, searchFrameY,
-					searchFrameX + searchFrameWidth, searchFrameY + searchFrameHeight)
-				&& !search.isMouseOver(event.x(), event.y())) {
-			search.setFocused(true);
-			if (event.x() < search.getX()) search.setCursorPosition(0);
-			else if (event.x() >= search.getX() + search.getWidth()) {
-				search.setCursorPosition(search.getValue().length());
-			}
-			return true;
+					searchFrameX + searchFrameWidth, searchFrameY + searchFrameHeight)) {
+			return focusEditorFrame(event, doubled, search, searchFrameX, searchFrameY,
+				searchFrameX + searchFrameWidth, searchFrameY + searchFrameHeight);
 		}
 		if (choiceField != null && isSoundChoice(choiceField) && event.button() == 1) {
 			for (SoundPreviewHit hit : soundPreviewHits) {
@@ -3248,12 +4084,10 @@ public final class SafariSettingsScreen extends Screen {
 			if (sameSlider) return true;
 		}
 		if (editingInlineText && editor != null
-			&& inside(event.x(), event.y(), inlineEditorLeft, inlineEditorTop,
-				inlineEditorRight, inlineEditorBottom)) {
-			if (editor.isMouseOver(event.x(), event.y())) {
-				return super.mouseClicked(event, doubled);
-			}
-			return true;
+				&& inside(event.x(), event.y(), inlineEditorLeft, inlineEditorTop,
+					inlineEditorRight, inlineEditorBottom)) {
+			return focusEditorFrame(event, doubled, editor, inlineEditorLeft,
+				inlineEditorTop, inlineEditorRight, inlineEditorBottom);
 		}
 		if (event.button() == 0 && updateColourControl(event.x(), event.y())) return true;
 		if (editor != null && editor.isMouseOver(event.x(), event.y())) {
@@ -3261,23 +4095,24 @@ public final class SafariSettingsScreen extends Screen {
 		}
 		if (customSparklingPanel && !customPresetMenu && customCalloutEditor != null
 				&& customCalloutEditor.visible
-				&& customCalloutEditor.isMouseOver(event.x(), event.y())) {
-			return super.mouseClicked(event, doubled);
+				&& customCalloutBounds.contains(event.x(), event.y())) {
+			return focusEditorFrame(event, doubled, customCalloutEditor, customCalloutBounds);
 		}
 		if (customSparklingPanel && !customPresetMenu && customDurationEditor != null
 				&& customDurationEditor.visible && customDurationEditor.active
-				&& customDurationEditor.isMouseOver(event.x(), event.y())) {
-			return super.mouseClicked(event, doubled);
+				&& customDurationBounds.contains(event.x(), event.y())) {
+			return focusEditorFrame(event, doubled, customDurationEditor, customDurationBounds);
 		}
 		if (customSparklingPanel && !customPresetMenu && customVolumeEditor != null
 				&& customVolumeEditor.visible && customVolumeEditor.active
-				&& customVolumeEditor.isMouseOver(event.x(), event.y())) {
-			return super.mouseClicked(event, doubled);
+				&& customVolumeBounds.contains(event.x(), event.y())) {
+			return focusEditorFrame(event, doubled, customVolumeEditor, customVolumeBounds);
 		}
 		if (customSparklingPanel && customPresetNameEditor != null
 				&& customPresetNameEditor.visible && customPresetNameEditor.active
-				&& customPresetNameEditor.isMouseOver(event.x(), event.y())) {
-			return super.mouseClicked(event, doubled);
+				&& customPresetNameBounds.contains(event.x(), event.y())) {
+			return focusEditorFrame(event, doubled, customPresetNameEditor,
+				customPresetNameBounds);
 		}
 		if (customSparklingPanel && !customPresetMenu && event.button() == 0
 				&& inside(event.x(), event.y(), customDurationSliderLeft,
@@ -3313,29 +4148,62 @@ public final class SafariSettingsScreen extends Screen {
 		return super.mouseClicked(event, doubled);
 	}
 
+	private boolean focusEditorFrame(MouseButtonEvent event, boolean doubled,
+			EditBox field, EditorBounds bounds) {
+		if (event.button() != 0 || field == null
+				|| !bounds.contains(event.x(), event.y())) return false;
+		return focusEditorFrame(event, doubled, field);
+	}
+
+	private boolean focusEditorFrame(MouseButtonEvent event, boolean doubled,
+			EditBox field, int left, int top, int right, int bottom) {
+		if (event.button() != 0 || field == null
+				|| !inside(event.x(), event.y(), left, top, right, bottom)) return false;
+		return focusEditorFrame(event, doubled, field);
+	}
+
+	private boolean focusEditorFrame(MouseButtonEvent event, boolean doubled, EditBox field) {
+		boolean overNativeField = field.isMouseOver(event.x(), event.y());
+		if (overNativeField) super.mouseClicked(event, doubled);
+		setFocused(field);
+		field.setFocused(true);
+		if (!overNativeField) {
+			if (event.x() <= field.getX()) field.setCursorPosition(0);
+			else if (event.x() >= field.getX() + field.getWidth()) {
+				field.setCursorPosition(field.getValue().length());
+			}
+		}
+		return true;
+	}
+
 	private void blurInlineFieldsOutside(double mouseX, double mouseY) {
 		if (search != null && search.isFocused()
 				&& !inside(mouseX, mouseY, searchFrameX, searchFrameY,
 					searchFrameX + searchFrameWidth, searchFrameY + searchFrameHeight)) {
 			search.setFocused(false);
+			setFocused(null);
 		}
 		if (customCalloutEditor != null && customCalloutEditor.isFocused()
-				&& !customCalloutEditor.isMouseOver(mouseX, mouseY)) {
+				&& !customCalloutBounds.contains(mouseX, mouseY)) {
 			customCalloutEditor.setFocused(false);
+			setFocused(null);
 		}
 		if (customDurationEditor != null && customDurationEditor.isFocused()
-				&& !customDurationEditor.isMouseOver(mouseX, mouseY)) {
+				&& !customDurationBounds.contains(mouseX, mouseY)) {
 			applyCustomDurationEditor();
 			customDurationEditor.setFocused(false);
+			setFocused(null);
 		}
 		if (customVolumeEditor != null && customVolumeEditor.isFocused()
-				&& !customVolumeEditor.isMouseOver(mouseX, mouseY)) {
+				&& !customVolumeBounds.contains(mouseX, mouseY)) {
 			applyCustomVolumeEditor();
 			customVolumeEditor.setFocused(false);
+			setFocused(null);
 		}
 		if (customPresetNameEditor != null && customPresetNameEditor.isFocused()
-				&& !customPresetNameEditor.isMouseOver(mouseX, mouseY)) {
+				&& !customPresetNameBounds.contains(mouseX, mouseY)) {
 			customPresetNameEditor.setFocused(false);
+			setFocused(null);
 		}
 	}
 
@@ -3422,17 +4290,24 @@ public final class SafariSettingsScreen extends Screen {
 				Math.max(0, rows * 31 - (h - margin)));
 			return true;
 		}
-		if (mouseX < NAV_WIDTH && mouseY >= HEADER_HEIGHT && mouseY < height - FOOTER_HEIGHT) {
+		// Commit an inline value before its card moves. This prevents a native text
+		// widget from remaining at an obsolete screen position while the page scrolls.
+		if (editor != null) applyEditor();
+		if (mouseX < navWidth && mouseY >= HEADER_HEIGHT && mouseY < height - FOOTER_HEIGHT) {
 			int viewport = height - HEADER_HEIGHT - FOOTER_HEIGHT - 8;
 			int max = Math.max(0, navigationContentHeight - viewport);
 			navigationScroll = Math.clamp(navigationScroll
 				+ (scrollY > 0 ? -34 : scrollY < 0 ? 34 : 0), 0, max);
 			return true;
 		}
-		if (mouseX < NAV_WIDTH || mouseY < HEADER_HEIGHT || mouseY >= height - FOOTER_HEIGHT) {
+		if (mouseX < workspaceLeft || mouseY < contentViewportTop
+				|| mouseY >= contentViewportBottom) {
 			return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
 		}
-		int viewport = height - HEADER_HEIGHT - FOOTER_HEIGHT - 22;
+		// Match the exact scissor rectangle. The previous estimate counted the
+		// eight-pixel inset below the tab header as visible content, leaving the
+		// final card eight pixels short of its fully scrolled position.
+		int viewport = Math.max(1, contentViewportBottom - contentViewportTop);
 		int max = Math.max(0, contentHeight - viewport);
 		scroll = Math.clamp(scroll + (scrollY > 0 ? -36 : scrollY < 0 ? 36 : 0), 0, max);
 		return true;
@@ -3525,8 +4400,12 @@ public final class SafariSettingsScreen extends Screen {
 
 	private String dropdownLabel(Field field, SettingChoice dropdown, int value) {
 		if (isSoundChoice(field)) return AlertSounds.label(value);
-		if (isThemeChoice(field)) return THEMES.stream().filter(theme -> theme.id == value)
-			.findFirst().map(ThemeChoice::label).orElse("Default");
+		if (isThemeChoice(field)) {
+			for (ThemeChoice theme : THEMES) {
+				if (theme.id == value) return theme.label;
+			}
+			return "Default";
+		}
 		return value >= 0 && value < dropdown.values().length ? dropdown.values()[value] : dropdown.values()[0];
 	}
 
@@ -3589,7 +4468,8 @@ public final class SafariSettingsScreen extends Screen {
 			&& (field.getName().equals("sparklingBannerScale")
 				|| field.getName().equals("sparklingBannerVerticalPosition"));
 		if (oldAlertPlacement || oldSparklingPlacement) return false;
-		return field.isAnnotationPresent(SettingToggle.class)
+		return isReadOnlyNotice(field)
+			|| field.isAnnotationPresent(SettingToggle.class)
 			|| field.isAnnotationPresent(SettingChoice.class)
 			|| field.isAnnotationPresent(SettingMultiChoice.class)
 			|| field.isAnnotationPresent(SettingRange.class)

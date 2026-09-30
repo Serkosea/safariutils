@@ -111,6 +111,7 @@ public class SafariUtils implements ClientModInitializer {
 				return false;
 			}, true);
 		});
+		ClientReceiveMessageEvents.MODIFY_GAME.register(ChatMessageFilter::modify);
 		// Hypixel sends catch messages as system chat, which is what GAME covers.
 		// This fires upstream of chat-compacting mods, so the duplicate counters
 		// they append never reach the parser.

@@ -10,7 +10,7 @@ Safari Utils is a Fabric mod made for Hypixel SkyBlock's Critter Safari. It keep
 - A dedicated Sparkling menu with editable collection totals, party-shared lists, Sparkling Mode, selectable always-active critters and waypoints, and special catch effects.
 - Helpful markers for Safari objectives and encounters.
 - Party-ready alerts and ticket protection while waiting for everyone to arrive.
-- Optional Ticket Trading for timed invites, Safari warping, and cleanup with up to three explicitly configured players.
+- Optional Ticket Trading for timed invites, Safari warping, cleanup, and per-player Sparkling-only transfers with up to three explicitly configured players.
 - Optional Party Sync for sharing objective state through parsed party chat when every member uses Safari Utils and explicitly enables it.
 - Selective hiding for processed general chat and independently grouped Cavern, Icy, Haunted, and Forest objective messages.
 - Automatic Hideyho acceptance, Birdfeeder inventory/empty alerts, and configurable starting-item party messages.
@@ -43,7 +43,7 @@ Safari Utils requires Java 25, Fabric Loader 0.19 or newer, and Fabric API. Mod 
 Existing Safari Utils settings and history are moved into `config/safariutils/` automatically when possible.
 Important mod errors are recorded automatically in timestamped `SafariUtils_*.log` files under `config/safariutils/logs/`.
 
-Party Sync is disabled on every launch. When enabled under Advanced, it sends one compact visible verification token for a new stable Safari party and exchanges parsed objective updates only after every member confirms the same capability. Verification and shutdown tokens are bound to their displayed sender and current Safari lobby. Disabling it during an active synchronized run visibly notifies the party and stops synchronization for everyone.
+Party Sync is disabled on every launch. When enabled under Gameplay's Safari tab, it sends one compact visible verification token for a new stable Safari party and exchanges parsed objective updates only after every member confirms the same capability. Verification and shutdown tokens are bound to their displayed sender and current Safari lobby. Disabling it during an active synchronized run visibly notifies the party and stops synchronization for everyone.
 
 ## Commands
 

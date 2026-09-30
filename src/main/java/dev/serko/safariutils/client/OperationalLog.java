@@ -129,7 +129,13 @@ public final class OperationalLog {
 	}
 
 	public static void error(String category, Throwable error) {
-		if (disabled() || error == null) return;
+		if (error == null) return;
+		if (disabled()) {
+			// Release variants still report failures through Minecraft's ordinary log,
+			// but only Developer builds create SafariUtils diagnostic files.
+			SafariUtils.LOGGER.error("SafariUtils {} failure", category, error);
+			return;
+		}
 		String signature = category + '|' + error.getClass().getName() + '|' + error.getMessage();
 		long now = System.currentTimeMillis();
 		Long previous = LAST_ERROR.put(signature, now);
@@ -242,7 +248,7 @@ public final class OperationalLog {
 	}
 
 	private static boolean disabled() {
-		return BuildVersion.DEVELOPER && ConfigManager.automaticLoggingDisabled();
+		return !BuildVersion.DEVELOPER || ConfigManager.automaticLoggingDisabled();
 	}
 
 	private static void expireRepeats(long now) {

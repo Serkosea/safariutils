@@ -3,7 +3,7 @@ package dev.serko.safariutils.client;
 import dev.serko.safariutils.BuildVersion;
 import dev.serko.safariutils.data.Critter;
 
-/** Centralizes the master Safe Mode switch and its per-feature overrides. */
+/** Centralizes the build-wide Safe Mode requirement and per-feature controls. */
 public final class SafeMode {
 	private SafeMode() {
 	}
@@ -13,11 +13,20 @@ public final class SafeMode {
 	}
 
 	private static boolean option(boolean enabled) {
-		return BuildVersion.SAFE || (config().safeMode && enabled);
+		return BuildVersion.SAFE || enabled;
 	}
 
-	/** Whether the version-wide or user-controlled Safe Mode switch is active. */
-	public static boolean active() { return BuildVersion.SAFE || config().safeMode; }
+	/** Whether any visibility-based protection is active. */
+	public static boolean active() {
+		SafariConfig.AdvancedConfig config = config();
+		return BuildVersion.SAFE || config.safeVisibleCritterDetection
+			|| config.safeHideNearbyCounts || config.safeConservativeAvailability
+			|| config.safeConservativeCompletion || config.safeCritterHitboxes
+			|| config.safeSparklingCritters || config.safeHideyho || config.safeHideonwall
+			|| config.safeDuplico || config.safeBloodbat || config.safeHideonfloor
+			|| config.safeFloorDrops || config.safeBeeNests || config.safeRockmiteMounds
+			|| config.safeSnoozleWalls || config.safeTroodonWalls;
+	}
 
 	public static boolean critterDetection() { return option(config().safeVisibleCritterDetection); }
 	public static boolean nearbyCounts() { return option(config().safeHideNearbyCounts); }
@@ -32,7 +41,7 @@ public final class SafeMode {
 
 	public static boolean hiddenCritter(Critter critter, boolean sparkling) {
 		if (BuildVersion.SAFE) return hiddenSpecies(critter);
-		if (!config().safeMode || (sparkling && !config().safeSparklingCritters)) return false;
+		if (sparkling && !config().safeSparklingCritters) return false;
 		return isHiddenSpeciesEnabled(critter);
 	}
 

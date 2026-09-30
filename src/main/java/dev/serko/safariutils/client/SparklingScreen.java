@@ -46,6 +46,8 @@ public final class SparklingScreen extends Screen {
 	private static final int DIM = 0xFF888888;
 	private static final int LINE = 13;
 	private static final int SUMMARY_EDGE_MARGIN = 16;
+	private static final int MAX_BIOME_ROWS = BIOMES.stream()
+		.mapToInt(biome -> Critters.inBiome(biome).size()).max().orElse(10);
 	private static final long LOOKUP_CACHE_MILLIS = 5 * 60_000L;
 	private static final String LOOKUP_HINT = "Minecraft username";
 	private static final Component LOOKUP_HINT_COMPONENT = Component.literal(LOOKUP_HINT);
@@ -76,6 +78,7 @@ public final class SparklingScreen extends Screen {
 	private int panelTop;
 	private int panelWidth;
 	private int panelHeight;
+	private int biomeColumns = 4;
 	private String status = "Click any critter count number or rainbow feathers number to change it";
 	private int statusColour = DIM;
 	private long statusUntil;
@@ -121,12 +124,19 @@ public final class SparklingScreen extends Screen {
 	}
 
 	private void updatePanelBounds() {
-		scale = ResponsiveUI.scale(width, height);
+		biomeColumns = width < 600 ? 2 : 4;
+		int preferredHeight = biomeColumns == 2 ? 472 : 330;
+		int minimumWidth = biomeColumns == 2 ? 320 : 560;
+		// Reflow biome columns before scaling; scaling is reserved for canvases that
+		// cannot fit even the compact two-column layout or its vertical content.
+		scale = Math.min(1f, Math.min(width / (float) minimumWidth,
+			height / (float) preferredHeight));
 		int logicalWidth = ResponsiveUI.logicalWidth(width, scale);
 		int logicalHeight = ResponsiveUI.logicalHeight(height, scale);
 		int summaryWidth = font.width(collectionSummary().fullText()) + SUMMARY_EDGE_MARGIN * 2;
-		panelWidth = Math.min(Math.max(660, summaryWidth), logicalWidth - 8);
-		panelHeight = Math.min(330, logicalHeight - 8);
+		int preferredWidth = biomeColumns == 2 ? 520 : Math.max(660, summaryWidth);
+		panelWidth = Math.min(preferredWidth, logicalWidth - 8);
+		panelHeight = Math.min(preferredHeight, logicalHeight - 8);
 		panelLeft = (logicalWidth - panelWidth) / 2;
 		panelTop = (logicalHeight - panelHeight) / 2;
 	}
@@ -243,29 +253,46 @@ public final class SparklingScreen extends Screen {
 		String prefix = summary.prefix();
 		String feathers = summary.feathers();
 		String suffix = summary.suffix();
-		int summaryWidth = font.width(summary.fullText());
+		boolean compactSummary = font.width(summary.fullText()) > panelWidth - SUMMARY_EDGE_MARGIN * 2;
+		String compactFirst = "Unique  " + SparklingStats.unique() + "/" + totalSpecies
+			+ "   ✦   Sparklings  " + displayedSparklingTotal()
+			+ "   ✦   Duplicates  " + duplicateText();
+		String compactPrefix = "Rainbow Feathers  ";
+		String compactSuffix = "   ✦   Runs Since Last  "
+			+ (RunHistory.runsSinceLastSparkling() < 0 ? "—" : RunHistory.runsSinceLastSparkling());
+		String shownPrefix = compactSummary ? compactPrefix : prefix;
+		String shownSuffix = compactSummary ? compactSuffix : suffix;
+		int summaryWidth = font.width(shownPrefix + feathers + shownSuffix);
 		int summaryX = panelLeft + (panelWidth - summaryWidth) / 2;
-		int featherX = summaryX + font.width(prefix);
+		int featherX = summaryX + font.width(shownPrefix);
+		int featherY = compactSummary ? top + 12 : top;
 		int featherWidth = Math.max(font.width("00000") + 8, font.width(feathers) + 4);
 		int featherHitX = featherX - (featherWidth - font.width(feathers)) / 2;
-		if (contains(featherHitX, top - 2, featherWidth, 12, mouseX, mouseY)) {
-			graphics.fill(featherHitX, top - 2, featherHitX + featherWidth, top + 10, HOVER);
+		if (contains(featherHitX, featherY - 2, featherWidth, 12, mouseX, mouseY)) {
+			graphics.fill(featherHitX, featherY - 2, featherHitX + featherWidth, featherY + 10, HOVER);
 		}
 		boolean collectionComplete = totalSpecies > 0 && SparklingStats.unique() == totalSpecies;
+		if (compactSummary) {
+			int firstX = panelLeft + (panelWidth - font.width(compactFirst)) / 2;
+			if (collectionComplete) SpecialTheme.rainbowText(graphics, font, compactFirst, firstX, top);
+			else text(graphics, compactFirst, firstX, top, 0xFFFFE08A);
+		}
 		if (collectionComplete) {
 			// Completion uses the same screen-positioned gradient as the special theme,
 			// keeping one continuous wavelength across the entire summary line.
-			SpecialTheme.rainbowText(graphics, font, summary.fullText(), summaryX, top);
+			SpecialTheme.rainbowText(graphics, font, shownPrefix + feathers + shownSuffix,
+				summaryX, featherY);
 		} else {
-			text(graphics, prefix, summaryX, top, 0xFFFFE08A);
-			text(graphics, feathers, featherX, top, 0xFFFFE08A);
-			text(graphics, suffix, featherX + font.width(feathers), top, 0xFFFFE08A);
+			text(graphics, shownPrefix, summaryX, featherY, 0xFFFFE08A);
+			text(graphics, feathers, featherX, featherY, 0xFFFFE08A);
+			text(graphics, shownSuffix, featherX + font.width(feathers), featherY, 0xFFFFE08A);
 		}
-		numberHits.add(new NumberHit(featherHitX, top - 2, featherWidth, 12, top, null, true));
+		numberHits.add(new NumberHit(featherHitX, featherY - 2, featherWidth, 12,
+			featherY, null, true));
 
 		int barLeft = panelLeft + 24;
 		int barRight = panelLeft + panelWidth - 24;
-		int barY = top + 16;
+		int barY = top + (compactSummary ? 28 : 16);
 		graphics.fill(barLeft, barY, barRight, barY + 4, 0x553A2A10);
 		int filled = totalSpecies == 0 ? 0
 			: (barRight - barLeft) * SparklingStats.unique() / totalSpecies;
@@ -278,18 +305,20 @@ public final class SparklingScreen extends Screen {
 
 	private void drawSpeciesColumns(GuiGraphicsExtractor graphics, int y, int mouseX, int mouseY,
 			Set<String> remoteSpecies, boolean editable) {
-		int columnWidth = Math.min(150, (panelWidth - 24) / 4);
-		int left = panelLeft + (panelWidth - columnWidth * 4) / 2;
+		int columnWidth = Math.min(150, (panelWidth - 24) / biomeColumns);
+		int left = panelLeft + (panelWidth - columnWidth * biomeColumns) / 2;
+		int rowHeight = 17 + MAX_BIOME_ROWS * LINE + 8;
 		for (int column = 0; column < BIOMES.size(); column++) {
 			SafariBiome biome = BIOMES.get(column);
-			int x = left + column * columnWidth;
+			int x = left + column % biomeColumns * columnWidth;
+			int sectionY = y + column / biomeColumns * rowHeight;
 			List<Critter> species = Critters.inBiome(biome);
 			boolean complete = species.stream().allMatch(critter -> remoteSpecies == null
 				? SparklingStats.count(critter) > 0 : remoteSpecies.contains(speciesId(critter.name())));
-			drawBiomeTitle(graphics, biome, x + 8, columnWidth - 16, y, complete);
+			drawBiomeTitle(graphics, biome, x + 8, columnWidth - 16, sectionY, complete);
 			for (int row = 0; row < species.size(); row++) {
 				Critter critter = species.get(row);
-				int rowY = y + 17 + row * LINE;
+				int rowY = sectionY + 17 + row * LINE;
 				int count = SparklingStats.count(critter);
 				boolean remoteOwned = remoteSpecies != null
 					&& remoteSpecies.contains(speciesId(critter.name()));
@@ -358,16 +387,18 @@ public final class SparklingScreen extends Screen {
 	private void drawPartyColumns(GuiGraphicsExtractor graphics, int y, int mouseX, int mouseY,
 			Set<Critter> shared, boolean apiManaged) {
 		int left = panelLeft + 12;
-		int columnWidth = (panelWidth - 24) / 4;
+		int columnWidth = (panelWidth - 24) / biomeColumns;
+		int rowHeight = 17 + MAX_BIOME_ROWS * LINE + 8;
 		for (int column = 0; column < BIOMES.size(); column++) {
 			SafariBiome biome = BIOMES.get(column);
-			int x = left + column * columnWidth;
+			int x = left + column % biomeColumns * columnWidth;
+			int sectionY = y + column / biomeColumns * rowHeight;
 			List<Critter> species = Critters.inBiome(biome);
-			drawBiomeTitle(graphics, biome, x + 8, columnWidth - 16, y,
+			drawBiomeTitle(graphics, biome, x + 8, columnWidth - 16, sectionY,
 				species.stream().allMatch(shared::contains));
 			for (int row = 0; row < species.size(); row++) {
 				Critter critter = species.get(row);
-				int rowY = y + 17 + row * LINE;
+				int rowY = sectionY + 17 + row * LINE;
 				boolean shownSelected = shared.contains(critter);
 				int rowWidth = columnWidth - 12;
 				boolean hovered = !apiManaged
@@ -521,31 +552,50 @@ public final class SparklingScreen extends Screen {
 		if (lastLookup == null) {
 			return;
 		}
-		drawLookupNameAndTickets(graphics, y + 29);
+		int detailsBottom = drawLookupNameAndTickets(graphics, y + 29);
 		int unique = lastLookup.species().size();
 		String duplicates = lastLookup.duplicates() < 0 ? "—" : String.valueOf(lastLookup.duplicates());
 		String total = lastLookup.duplicates() < 0 ? "—" : String.valueOf(unique + lastLookup.duplicates());
 		String summary = "Unique Sparklings  " + unique + "/" + Critters.total()
 			+ "   ✦   Sparklings  " + total + "   ✦   Duplicates  " + duplicates;
-		centered(graphics, summary, panelLeft, panelWidth, y + 46, WHITE);
-		drawSpeciesColumns(graphics, y + 64, mouseX, mouseY, lastLookup.species(), false);
+		int summaryY = detailsBottom + 4;
+		centered(graphics, trimToWidth(summary, panelWidth - 24), panelLeft, panelWidth, summaryY, WHITE);
+		drawSpeciesColumns(graphics, summaryY + 18, mouseX, mouseY, lastLookup.species(), false);
 	}
 
-	private void drawLookupNameAndTickets(GuiGraphicsExtractor graphics, int y) {
-		int columnWidth = Math.min(150, (panelWidth - 24) / 4);
-		int x = panelLeft + (panelWidth - columnWidth * 4) / 2 + 8;
+	private int drawLookupNameAndTickets(GuiGraphicsExtractor graphics, int y) {
+		int columnWidth = Math.min(150, (panelWidth - 24) / biomeColumns);
+		int x = biomeColumns == 2 ? panelLeft + 12
+			: panelLeft + (panelWidth - columnWidth * biomeColumns) / 2 + 8;
 		int rankColour = SharedSparklingProviders.nameColour(lastLookup.username());
 		int nameColour = rankColour == -1 ? AQUA : rankColour;
 		Component name = Component.literal(lastLookup.username())
 			.withStyle(style -> style.withColor(nameColour));
+		int nameX = biomeColumns == 2 ? panelLeft + (panelWidth - font.width(name)) / 2 : x;
 		if (SharedSparklingProviders.specialName(lastLookup.username())) {
-			UIDraw.rainbowText(graphics, font, lastLookup.username(), x, y, 0.45f);
+			UIDraw.rainbowText(graphics, font, lastLookup.username(), nameX, y, 0.45f);
 		} else {
-			SpecialTheme.text(graphics, font, name, x, y, nameColour);
+			SpecialTheme.text(graphics, font, name, nameX, y, nameColour);
 		}
 		String[] keys = {"Basic", "Economy", "Premium", "First Class"};
 		String[] labels = {"Basic", "Economy", "Premium", "First-Class"};
 		int[] colours = {0xFF55FF55, 0xFF5599FF, 0xFFAA55FF, 0xFFFFAA00};
+		if (biomeColumns == 2) {
+			for (int row = 0; row < 2; row++) {
+				String leftTicket = labels[row * 2] + "  "
+					+ lastLookup.tickets().getOrDefault(keys[row * 2], 0L);
+				String rightTicket = labels[row * 2 + 1] + "  "
+					+ lastLookup.tickets().getOrDefault(keys[row * 2 + 1], 0L);
+				int totalWidth = font.width(leftTicket) + font.width("   │   ") + font.width(rightTicket);
+				int cursor = panelLeft + (panelWidth - totalWidth) / 2;
+				text(graphics, leftTicket, cursor, y + 12 + row * 11, colours[row * 2]);
+				cursor += font.width(leftTicket);
+				text(graphics, "   │   ", cursor, y + 12 + row * 11, DIM);
+				cursor += font.width("   │   ");
+				text(graphics, rightTicket, cursor, y + 12 + row * 11, colours[row * 2 + 1]);
+			}
+			return y + 34;
+		}
 		int cursor = x + font.width(name) + font.width("  ");
 		text(graphics, "(  ", cursor, y, WHITE);
 		cursor += font.width("(  ");
@@ -559,6 +609,7 @@ public final class SparklingScreen extends Screen {
 			cursor += font.width(value);
 		}
 		text(graphics, "  )", cursor, y, WHITE);
+		return y + 11;
 	}
 
 	private void drawLookupButton(GuiGraphicsExtractor graphics, int x, int y,
@@ -758,21 +809,27 @@ public final class SparklingScreen extends Screen {
 	}
 
 	private static CollectionSummary collectionSummary() {
-		int setDuplicates = SparklingStats.duplicates();
-		String duplicateText = SparklingStats.hasImportedDuplicates()
-			&& SparklingStats.importedDuplicates() != setDuplicates
-			? SparklingStats.importedDuplicates() + " (" + setDuplicates + ")"
-			: String.valueOf(setDuplicates);
-		int displayedTotal = SparklingStats.hasImportedDuplicates()
-			? SparklingStats.unique() + SparklingStats.importedDuplicates() : SparklingStats.total();
 		String prefix = "Unique Sparklings  " + SparklingStats.unique() + "/" + Critters.total()
-			+ "   ✦   Sparklings  " + displayedTotal
-			+ "   ✦   Duplicates  " + duplicateText
+			+ "   ✦   Sparklings  " + displayedSparklingTotal()
+			+ "   ✦   Duplicates  " + duplicateText()
 			+ "   ✦   Rainbow Feathers  ";
 		String feathers = String.valueOf(SparklingStats.rainbowFeathers());
 		int since = RunHistory.runsSinceLastSparkling();
 		String suffix = "   ✦   Runs Since Last  " + (since < 0 ? "—" : since);
 		return new CollectionSummary(prefix, feathers, suffix);
+	}
+
+	private static String duplicateText() {
+		int setDuplicates = SparklingStats.duplicates();
+		return SparklingStats.hasImportedDuplicates()
+			&& SparklingStats.importedDuplicates() != setDuplicates
+			? SparklingStats.importedDuplicates() + " (" + setDuplicates + ")"
+			: String.valueOf(setDuplicates);
+	}
+
+	private static int displayedSparklingTotal() {
+		return SparklingStats.hasImportedDuplicates()
+			? SparklingStats.unique() + SparklingStats.importedDuplicates() : SparklingStats.total();
 	}
 
 	@Override
@@ -809,8 +866,16 @@ public final class SparklingScreen extends Screen {
 			recentLookupsOpen = false;
 			return true;
 		}
-		if (editor != null && editor.isMouseOver(mouseX, mouseY)) {
-			return super.mouseClicked(scaledEvent, doubled);
+		if (editor != null && editingBounds != null
+				&& editingBounds.contains(mouseX, mouseY)) {
+			if (editor.isMouseOver(mouseX, mouseY)) super.mouseClicked(scaledEvent, doubled);
+			setFocused(editor);
+			editor.setFocused(true);
+			if (mouseX <= editor.getX()) editor.setCursorPosition(0);
+			else if (mouseX >= editor.getX() + editor.getWidth()) {
+				editor.setCursorPosition(editor.getValue().length());
+			}
+			return true;
 		}
 		commitEditor();
 		for (NumberHit hit : numberHits) {

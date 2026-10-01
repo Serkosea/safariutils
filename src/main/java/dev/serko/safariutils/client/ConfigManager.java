@@ -2,6 +2,7 @@ package dev.serko.safariutils.client;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.serko.safariutils.io.AtomicFiles;
@@ -52,8 +53,10 @@ public final class ConfigManager {
 			migrateBannerPlayback(root);
 			migrateSparklingCatchIntensity(root);
 			migrateSafeModeOptions(root);
+			migrateTicketTradingProfiles(root);
 			SafariConfig loaded = GSON.fromJson(root, SafariConfig.class);
 			if (loaded == null) loaded = new SafariConfig();
+			TicketTradingProfiles.sanitize(loaded.sparkling);
 			if (loaded.sparkling.sparklingUniqueHitboxColours) {
 				loaded.display.uniqueHitboxColours = true;
 				loaded.sparkling.sparklingUniqueHitboxColours = false;
@@ -64,6 +67,34 @@ public final class ConfigManager {
 			OperationalLog.error("CONFIG/LOAD", malformed);
 			return new SafariConfig();
 		}
+	}
+
+	/** Converts the former three inline names into reusable profiles without changing behavior. */
+	private static void migrateTicketTradingProfiles(JsonObject root) {
+		if (!root.has("sparkling") || !root.get("sparkling").isJsonObject()) return;
+		JsonObject sparkling = root.getAsJsonObject("sparkling");
+		if (sparkling.has("ticketTradingProfiles")) return;
+		JsonArray profiles = new JsonArray();
+		java.util.Set<String> added = new java.util.HashSet<>();
+		for (int index = 1; index <= 3; index++) {
+			String playerKey = "ticketTradingPlayer" + index;
+			if (!sparkling.has(playerKey)) continue;
+			String username = sparkling.get(playerKey).getAsString().trim();
+			if (!username.matches("[A-Za-z0-9_]{1,16}")) continue;
+			String normalized = username.toLowerCase(java.util.Locale.ROOT);
+			if (added.add(normalized)) {
+				JsonObject profile = new JsonObject();
+				profile.addProperty("username", username);
+				String sparklingKey = "ticketTradingSparkling" + index;
+				profile.addProperty("sparklingOnly", sparkling.has(sparklingKey)
+					&& sparkling.get(sparklingKey).getAsBoolean());
+				profile.addProperty("sparklingCritters",
+					dev.serko.safariutils.data.Critters.allSelectionMask());
+				profiles.add(profile);
+			}
+			sparkling.addProperty("ticketTradingSlot" + index, username);
+		}
+		sparkling.add("ticketTradingProfiles", profiles);
 	}
 
 	/** Replaces the old master switch while preserving its disabled behavior once. */

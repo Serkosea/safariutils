@@ -297,9 +297,9 @@ public final class PartyObjectiveHud implements HudElement {
 
 	/** Uses the server's tab-list text color; rank names need not be present. */
 	public static int playerNameColour(String name) {
-		if (name == null) return 0xFFAAAAAA;
+		if (name == null) return 0xFFFFFFFF;
 		if (playerColoursDirty) snapshotPlayerColours();
-		return playerColours.getOrDefault(name.toLowerCase(Locale.ROOT), 0xFFAAAAAA);
+		return playerColours.getOrDefault(name.toLowerCase(Locale.ROOT), 0xFFFFFFFF);
 	}
 
 	/** Invalidated only by world or player-list packets, including late arrivals. */
@@ -330,8 +330,9 @@ public final class PartyObjectiveHud implements HudElement {
 
 	/** The UUID-backed owner identity remains rainbow; all other names retain rank color. */
 	public static void addPlayerRow(HudPanel panel, String name, HudPanel.IconValue... values) {
-		if (SharedSparklingProviders.specialName(name)) panel.rainbowIconPair(name, values);
-		else panel.iconPair(name, playerNameColour(name), values);
+		String displayed = CanonicalPlayerNames.display(name);
+		if (SharedSparklingProviders.specialName(displayed)) panel.rainbowIconPair(displayed, values);
+		else panel.iconPair(displayed, PlayerNameStyle.colour(displayed), values);
 	}
 
 	private static String displayedPlayerName(Component shown) {

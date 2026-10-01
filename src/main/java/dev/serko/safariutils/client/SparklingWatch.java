@@ -23,8 +23,8 @@ public final class SparklingWatch {
 	/** Labels already called out, so it announces once rather than every sweep. */
 	private static final Set<UUID> announcedLabels = new HashSet<>();
 	private static final Set<UUID> announcedBodies = new HashSet<>();
-	/** Finds whose chat line has been sent after the critter became genuinely visible. */
-	private static final Set<UUID> chatAnnounced = new HashSet<>();
+	/** Finds whose user-facing alerts have fired after genuine visual confirmation. */
+	private static final Set<UUID> visuallyAnnounced = new HashSet<>();
 	/** Detected individuals retained until an authoritative catch removes each one. */
 	private static final Map<UUID, Outstanding> outstanding = new LinkedHashMap<>();
 	/** Suppresses labels lingering or appearing briefly after an authoritative catch. */
@@ -78,7 +78,7 @@ public final class SparklingWatch {
 					visiblyConfirmed || previous.visiblyConfirmed()));
 				announcedLabels.add(labelId);
 				if (bodyId != null) announcedBodies.add(bodyId);
-				postVisibleChat(sighting, key);
+				postVisibleFoundAlerts(sighting, key);
 				continue;
 			}
 			boolean knownId = announcedLabels.contains(labelId)
@@ -96,16 +96,16 @@ public final class SparklingWatch {
 					replacementExpectedUntil.containsKey(sighting.critter()) || knownId);
 			}
 			if (replacement != null) {
-				boolean chatWasSent = chatAnnounced.remove(replacement);
+				boolean alertsWereSent = visuallyAnnounced.remove(replacement);
 				Outstanding previous = outstanding.remove(replacement);
 				outstanding.put(key, new Outstanding(sighting.critter(), pos,
 					visiblyConfirmed || previous != null && previous.visiblyConfirmed()));
-				if (chatWasSent) chatAnnounced.add(key);
+				if (alertsWereSent) visuallyAnnounced.add(key);
 				replacementExpectedUntil.remove(sighting.critter());
 				DebugLog.line("SPARKLING", "replacement " + sighting.critter().name()
 					+ " old=" + shortId(replacement) + " new=" + shortId(key)
 					+ " pos=" + pos(pos));
-				postVisibleChat(sighting, key);
+				postVisibleFoundAlerts(sighting, key);
 				continue;
 			}
 			if (knownId) continue;
@@ -114,9 +114,8 @@ public final class SparklingWatch {
 				+ " label=" + shortId(labelId) + " body=" + shortId(bodyId)
 				+ " key=" + shortId(key) + " pos=" + pos(pos)
 				+ " source=" + ParticleDiagnostics.source(sighting));
-			TicketTrading.onSparklingDetected();
-			EncounterAlerts.fireSparklingDetected(sighting.critter().name());
-			postVisibleChat(sighting, key);
+			TicketTrading.onSparklingDetected(sighting.critter());
+			postVisibleFoundAlerts(sighting, key);
 		}
 	}
 
@@ -125,9 +124,17 @@ public final class SparklingWatch {
 		if ("Hideyho".equals(sighting.critter().name())) {
 			return VisibilityCheck.canSee(sighting.label());
 		}
-		boolean mobVisible = sighting.mob() != null && VisibilityCheck.canSee(sighting.mob());
+		boolean mobVisible = bodyVisible(sighting);
 		return SafeMode.hiddenSpecies(sighting.critter())
 			? mobVisible : mobVisible || VisibilityCheck.canSeeVisibleName(sighting.label());
+	}
+
+	/** Duplico's body sits inside its disguise, so its prop-aware sight test is required. */
+	private static boolean bodyVisible(CritterEntities.Sighting sighting) {
+		if (sighting.mob() == null) return false;
+		return "Duplico".equals(sighting.critter().name())
+			? VisibilityCheck.canSeeDecoratedEntity(sighting.mob())
+			: VisibilityCheck.canSee(sighting.mob());
 	}
 
 	private static boolean presentable(Outstanding entry) {
@@ -199,20 +206,23 @@ public final class SparklingWatch {
 		return critter != null && !replacementExpectedUntil.containsKey(critter);
 	}
 
-	/** Sends public chat only after the named critter itself is visible on screen. */
-	private static void postVisibleChat(CritterEntities.Sighting sighting, UUID key) {
-		if (chatAnnounced.contains(key) || sighting.critter().biome() != SafariLocation.biome()) return;
-		boolean visible = VisibilityCheck.canSeeVisibleName(sighting.label())
-			|| sighting.mob() != null && VisibilityCheck.canSee(sighting.mob())
+	/** Fires every user-facing found alert together, on first genuine visual confirmation. */
+	private static void postVisibleFoundAlerts(CritterEntities.Sighting sighting, UUID key) {
+		if (visuallyAnnounced.contains(key)
+				|| sighting.critter().biome() != SafariLocation.biome()) return;
+		boolean visible = bodyVisible(sighting)
+			|| !SafeMode.hiddenSpecies(sighting.critter())
+				&& VisibilityCheck.canSeeVisibleName(sighting.label())
 			// Hideyho arrives as the named player entity itself rather than a separate
 			// visible-name label/body pair.
 			|| "Hideyho".equals(sighting.critter().name())
 				&& VisibilityCheck.canSee(sighting.label());
 		if (!visible) return;
 		SafariConfig config = ConfigManager.get();
-		chatAnnounced.add(key);
-		DebugLog.line("SPARKLING", "visible chat " + sighting.critter().name()
+		visuallyAnnounced.add(key);
+		DebugLog.line("SPARKLING", "visually announced " + sighting.critter().name()
 			+ " key=" + shortId(key) + " biome=" + SafariLocation.biome());
+		EncounterAlerts.fireSparklingDetected(sighting.critter().name());
 		EncounterAlerts.post(config.sparkling.detected(),
 			AlertText.format(config.sparkling.sparklingDetectedChatText,
 				"<CRITTER>", sighting.critter().name()));
@@ -281,7 +291,7 @@ public final class SparklingWatch {
 	public static void reset() {
 		announcedLabels.clear();
 		announcedBodies.clear();
-		chatAnnounced.clear();
+		visuallyAnnounced.clear();
 		outstanding.clear();
 		justCaught.clear();
 		replacementExpectedUntil.clear();

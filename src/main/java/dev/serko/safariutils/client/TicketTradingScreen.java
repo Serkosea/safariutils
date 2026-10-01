@@ -1,5 +1,10 @@
 package dev.serko.safariutils.client;
 
+import dev.serko.safariutils.client.SafariConfig.SparklingConfig;
+import dev.serko.safariutils.client.SafariConfig.SparklingConfig.TicketTraderProfile;
+import dev.serko.safariutils.data.Critter;
+import dev.serko.safariutils.data.Critters;
+import dev.serko.safariutils.data.SafariBiome;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
@@ -8,45 +13,64 @@ import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
-/** Compact editor for the explicitly trusted players used by ticket trading. */
+/** Responsive profile-and-slot editor for trusted Ticket Trading players. */
 public final class TicketTradingScreen extends Screen {
-	private int background;
-	private int surface;
-	private int card;
-	private int hover;
-	private int border;
-	private int primary;
-	private int secondary;
-	private int text;
-	private int label;
-	private int green;
-	private int red;
-
+	private static final List<List<Critter>> CRITTER_GROUPS = Critters.selectionBiomes().stream()
+		.map(biome -> Critters.selectionOrder().stream()
+			.filter(critter -> critter.biome() == biome).toList())
+		.toList();
+	private static final List<String> INFO_LINES = List.of(
+		"Ticket trading must be enabled for either role",
+		"Host: Must use a ticket before 20 seconds after joining a Safari run",
+		"- Normal profiles are invited automatically",
+		"- Trusted ✦ profiles are invited immediately for selected detected critters",
+		"- Offline active players are replaced by backup players after 3 seconds",
+		"- Any players who joined will be automatically warped",
+		"- Party disbands after the Host leaves the Safari run",
+		"Guest: Automatically accepts party invites from trusted active profiles",
+		"- Trusted ✦ profiles leave the current party before accepting");
+	private enum View { MAIN, INFO, EDITOR }
 	private record Hit(int x, int y, int w, int h, Runnable action) {
-		boolean contains(double mouseX, double mouseY) {
-			return mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
-		}
+		boolean contains(double mx, double my) { return inside(mx, my, x, y, w, h); }
+	}
+	private record DragHit(int x, int y, int w, int h, TicketTraderProfile profile, int slot) {
+		boolean contains(double mx, double my) { return inside(mx, my, x, y, w, h); }
 	}
 
 	private final Screen parent;
-	private final java.util.ArrayList<Hit> hits = new java.util.ArrayList<>();
-	private final EditBox[] names = new EditBox[3];
-	private final int[] nameHintPhases = {-1, -1, -1};
-	private static final String NAME_HINT = "Optional Minecraft username";
-	private static final Component NAME_HINT_COMPONENT = Component.literal(NAME_HINT);
-	private static final int ROW_MARGIN = 40;
-	private static final int LABEL_FIELD_GAP = 14;
-	private static final int SPARKLING_BUTTON_SIZE = 24;
-	private int left;
-	private int top;
-	private int panelWidth;
-	private int panelHeight;
-	private boolean showInfo;
-	private boolean stackedRows;
+	private final List<Hit> hits = new ArrayList<>();
+	private final List<DragHit> dragHits = new ArrayList<>();
+	private final int[] slotX = new int[TicketTradingProfiles.TOTAL_SLOTS];
+	private final int[] slotY = new int[TicketTradingProfiles.TOTAL_SLOTS];
+	private final int[] slotW = new int[TicketTradingProfiles.TOTAL_SLOTS];
+	private final int[] slotH = new int[TicketTradingProfiles.TOTAL_SLOTS];
+	private View view = View.MAIN;
+	private EditBox editorName;
+	private TicketTraderProfile editing;
+	private String previousName = "";
+	private boolean editorSparkling;
+	private long editorMask = Critters.allSelectionMask();
+	private String editorError = "";
+	private TicketTraderProfile dragged;
+	private int draggedFromSlot = -1;
+	private int savedScroll;
+	private int editorScroll;
+	private int editorMaxScroll;
+	private boolean savingProfile;
+	private List<TicketTraderProfile> allProfiles = List.of();
+	private List<TicketTraderProfile> savedProfiles = List.of();
 	private int cachedInfoWidth = -1;
-	private List<InfoLine> cachedInfoLines = List.of();
+	private List<String> cachedInfoLines = List.of();
+	private int left, top, panelWidth, panelHeight;
+	private int layoutWidth, layoutHeight;
+	private float responsiveScale = 1f;
+	private int savedPanelX, savedPanelY, savedPanelW, savedPanelH;
+	private int background, surface, card, hover, border, primary, secondary, text, label, green, red;
 
 	private TicketTradingScreen(Screen parent) {
 		super(Component.literal("Ticket Trading"));
@@ -63,37 +87,54 @@ public final class TicketTradingScreen extends Screen {
 	protected void init() {
 		applyTheme();
 		clearWidgets();
-		panelWidth = ResponsiveUI.panelWidth(width, 520, 300);
-		stackedRows = panelWidth < 410;
-		int preferredHeight = stackedRows ? 318 : 294;
-		panelHeight = Math.min(preferredHeight, Math.max(238,
-			height - ResponsiveUI.gutter(width) * 2));
-		if (stackedRows && panelHeight < 285) stackedRows = false;
-		left = (width - panelWidth) / 2;
-		top = (height - panelHeight) / 2;
-		SafariConfig.SparklingConfig config = ConfigManager.get().sparkling;
-		String[] values = {config.ticketTradingPlayer1, config.ticketTradingPlayer2,
-			config.ticketTradingPlayer3};
-		for (int i = 0; i < names.length; i++) {
-			int index = i;
-			int frameLeft = nameFrameLeft();
-			// Match Safari Settings' ordinary inline text editor exactly: the native
-			// The field is borderless and optically centered inside the 24px frame.
-			EditBox field = new EditBox(font, frameLeft + 8, nameFrameTop(i) + 8,
-				nameFrameWidth() - 16, 10, Component.literal("Username " + (i + 1)));
-			field.setMaxLength(16);
-			field.setBordered(false);
-			field.setValue(values[i] == null ? "" : values[i]);
-			field.setHint(NAME_HINT_COMPONENT);
-			field.setResponder(value -> setName(config, index, value));
-			field.setTextColor(text);
-			field.setTextColorUneditable(label);
-			UIDraw.rainbowEditBox(field, font,
-				() -> SpecialTheme.rainbow() || sparklingEnabled(config, index));
-			field.visible = !showInfo;
-			names[i] = field;
-			addRenderableWidget(field);
+		updateLayoutBounds();
+		TicketTradingProfiles.sanitize(config());
+		refreshProfileLists();
+		refreshCanonicalProfiles();
+		editorName = null;
+		if (view == View.EDITOR) createNameEditor();
+	}
+
+	private void updateLayoutBounds() {
+		int preferredWidth;
+		int preferredHeight;
+		if (view == View.INFO) {
+			int longestLine = INFO_LINES.stream().mapToInt(font::width).max().orElse(220);
+			preferredWidth = Math.max(260, Math.min(720,
+				Math.max(longestLine + 52, font.width("Ticket Trading") + 28)));
+			preferredHeight = 100 + INFO_LINES.size() * 16;
+		} else {
+			boolean compactLayout = width < 736 || height < 464;
+			preferredWidth = compactLayout ? 600 : 720;
+			preferredHeight = compactLayout ? 344 : view == View.MAIN ? 448 : 366;
 		}
+		responsiveScale = ResponsiveUI.fitScale(width, height,
+			preferredWidth, preferredHeight, 8);
+		layoutWidth = ResponsiveUI.logicalWidth(width, responsiveScale);
+		layoutHeight = ResponsiveUI.logicalHeight(height, responsiveScale);
+		panelWidth = Math.min(preferredWidth, layoutWidth - 16);
+		if (view == View.INFO) {
+			preferredHeight = 100 + wrappedInfoLines(panelWidth - 52).size() * 16;
+		}
+		panelHeight = Math.min(preferredHeight, layoutHeight - 16);
+		left = (layoutWidth - panelWidth) / 2;
+		top = (layoutHeight - panelHeight) / 2;
+	}
+
+	private void createNameEditor() {
+		int frameW = Math.min(240, panelWidth - 48);
+		int frameX = left + (panelWidth - frameW) / 2;
+		int frameY = top + 34;
+		editorName = new EditBox(font, frameX + 8, frameY + 8, frameW - 16, 10,
+			Component.literal("Minecraft username"));
+		editorName.setMaxLength(16);
+		editorName.setBordered(false);
+		editorName.setValue(editing == null ? "" : editing.username);
+		editorName.setHint(Component.literal("Minecraft username"));
+		editorName.setTextColor(text);
+		editorName.setTextColorUneditable(label);
+		UIDraw.rainbowEditBox(editorName, font, () -> SpecialTheme.rainbow() || editorSparkling);
+		addRenderableWidget(editorName);
 	}
 
 	@Override
@@ -104,99 +145,285 @@ public final class TicketTradingScreen extends Screen {
 			Integer.MIN_VALUE, partialTick);
 		else graphics.fill(0, 0, width, height, background);
 		graphics.fill(0, 0, width, height, 0x96000000);
+		int logicalMouseX = Math.round(mouseX / responsiveScale);
+		int logicalMouseY = Math.round(mouseY / responsiveScale);
+		graphics.pose().pushMatrix();
+		graphics.pose().scale(responsiveScale, responsiveScale);
 		graphics.fill(left, top, left + panelWidth, top + panelHeight, surface);
 		SpecialTheme.stars(graphics, left + 2, top + 2, panelWidth - 4, panelHeight - 4, 0.7f);
 		if (SpecialTheme.rainbow()) SpecialTheme.border(graphics, left, top, panelWidth, panelHeight, 1);
 		else UIDraw.outline(graphics, left, top, panelWidth, panelHeight, border);
 		hits.clear();
-
-		centered(graphics, "Ticket Trading", top + 17, text);
-		centered(graphics, "Timed invites for trusted players sharing Safari tickets", top + 35, label);
-
-		SafariConfig.SparklingConfig config = ConfigManager.get().sparkling;
-		if (!showInfo) {
-			button(graphics, left + 22, top + 57, 112, 22,
-				config.ticketTradingEnabled ? "Enabled" : "Disabled", mouseX, mouseY, () -> {
-					config.ticketTradingEnabled = !config.ticketTradingEnabled;
-					ConfigManager.save();
-				});
-			button(graphics, left + panelWidth - 48, top + 57, 26, 22, "i", mouseX, mouseY,
-				this::toggleInfo);
-			for (int i = 0; i < names.length; i++) {
-				int frameLeft = nameFrameLeft();
-				boolean sparkling = sparklingEnabled(config, i);
-				int rowBackground = sparkling ? sparklingRowBackground(i) : card;
-				String playerLabel = "Player " + (i + 1);
-				int labelX = stackedRows ? left + 20 : left + ROW_MARGIN;
-				int labelY = stackedRows ? nameFrameTop(i) - 11 : nameFrameTop(i) + 8;
-				if (sparkling) UIDraw.rainbowText(graphics, font, playerLabel,
-					labelX, labelY, 0.5f);
-				else SpecialTheme.text(graphics, font, Component.literal(playerLabel),
-					labelX, labelY, label);
-				graphics.fill(frameLeft, nameFrameTop(i),
-					frameLeft + nameFrameWidth(), nameFrameTop(i) + 24, card);
-				if (sparkling) {
-					graphics.fill(frameLeft + 1, nameFrameTop(i) + 1,
-						frameLeft + nameFrameWidth() - 1, nameFrameTop(i) + 23,
-						rowBackground);
-				}
-				if (SpecialTheme.rainbow() || sparkling) {
-					SpecialTheme.border(graphics, frameLeft, nameFrameTop(i),
-						nameFrameWidth(), 24, 1);
-				} else UIDraw.outline(graphics, frameLeft, nameFrameTop(i),
-					nameFrameWidth(), 24, border);
-				UIDraw.updateRainbowCaret(names[i], text,
-					SpecialTheme.rainbow() || sparkling);
-				nameHintPhases[i] = UIDraw.updateRainbowHint(names[i], font, NAME_HINT,
-					NAME_HINT_COMPONENT, nameHintPhases[i],
-					SpecialTheme.rainbow() || sparkling);
-				drawSparklingButton(graphics, config, i, rowBackground, mouseX, mouseY);
-			}
+		dragHits.clear();
+		centered(graphics, view == View.EDITOR ? "Trusted Player" : "Ticket Trading", top + 15, text);
+		if (view == View.MAIN) drawMain(graphics, logicalMouseX, logicalMouseY);
+		else if (view == View.INFO) drawInfo(graphics, logicalMouseX, logicalMouseY);
+		else drawEditor(graphics, logicalMouseX, logicalMouseY);
+		if (dragged != null && view == View.MAIN) {
+			drawDragged(graphics, logicalMouseX, logicalMouseY);
 		}
-
-		for (EditBox name : names) if (name != null) name.visible = !showInfo;
-		if (showInfo) drawInfo(graphics);
-		button(graphics, left + panelWidth / 2 - 52, top + panelHeight - 36,
-			104, 22, "Done", mouseX, mouseY, this::onClose);
-		// Minecraft's current GUI pipeline does not render child widgets implicitly
-		// when a screen overrides extraction. Submit the three EditBoxes after their
-		// themed frames so text, hints, selection, and the caret are actually visible.
-		if (!showInfo) super.extractRenderState(graphics, mouseX, mouseY, partialTick);
+		graphics.pose().popMatrix();
 	}
 
-	private void drawInfo(GuiGraphicsExtractor graphics) {
-		int x = left + 20;
-		int y = top + 52;
-		int w = panelWidth - 40;
-		List<InfoLine> lines = infoLines(w - 24);
-		int lineSpacing = 14;
-		int h = Math.min(panelHeight - 96, Math.max(112, 20 + lines.size() * lineSpacing));
-		graphics.fill(x, y, x + w, y + h, surface);
-		if (SpecialTheme.rainbow()) SpecialTheme.border(graphics, x, y, w, h, 1);
-		else UIDraw.outline(graphics, x, y, w, h, border);
-		for (int i = 0; i < lines.size(); i++) {
-			InfoLine info = lines.get(i);
-			String line = info.text();
-			int lineX = x + 12;
-			int lineY = y + 11 + i * lineSpacing;
-			if (info.role() != null) {
-				String role = info.role();
-				SpecialTheme.text(graphics, font, Component.literal(role), lineX, lineY, primary);
-				drawInfoText(graphics, line, lineX + font.width(role), lineY);
+	private void drawMain(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+		SparklingConfig config = config();
+		centered(graphics, "Drag saved players into active or backup slots", top + 32, label);
+		button(graphics, left + 18, top + 50, 104, 22,
+			config.ticketTradingEnabled ? "Enabled" : "Disabled", mouseX, mouseY, () -> {
+				config.ticketTradingEnabled = !config.ticketTradingEnabled;
+				ConfigManager.save();
+			});
+		button(graphics, left + panelWidth - 104, top + 50, 40, 22, "New", mouseX, mouseY,
+			() -> openEditor(null));
+		button(graphics, left + panelWidth - 54, top + 50, 36, 22, "i", mouseX, mouseY,
+			() -> switchView(View.INFO));
+
+		int contentTop = top + 84;
+		int contentBottom = top + panelHeight - 46;
+		int gap = 16;
+		int sectionWidth = (panelWidth - 36 - gap) / 2;
+		int slotGap = 10;
+		int slotPanelHeight = (contentBottom - contentTop - slotGap) / 2;
+		drawSlots(graphics, left + 18, contentTop, sectionWidth, slotPanelHeight,
+			"Active Slots", 0, mouseX, mouseY);
+		drawSlots(graphics, left + 18, contentTop + slotPanelHeight + slotGap,
+			sectionWidth, slotPanelHeight, "Backup Slots", 3, mouseX, mouseY);
+		drawSaved(graphics, left + 18 + sectionWidth + gap, contentTop,
+			sectionWidth, contentBottom - contentTop, mouseX, mouseY);
+		button(graphics, left + panelWidth / 2 - 50, top + panelHeight - 34,
+			100, 22, "Done", mouseX, mouseY, this::onClose);
+	}
+
+	private void drawSlots(GuiGraphicsExtractor graphics, int x, int y, int w, int h,
+			String title, int slotOffset, int mouseX, int mouseY) {
+		section(graphics, x, y, w, h, title);
+		int rowTop = y + 25;
+		int rowGap = 4;
+		int rowHeight = Math.min(34, Math.max(18, (h - 29 - rowGap * 2) / 3));
+		for (int row = 0; row < 3; row++) {
+			int index = slotOffset + row;
+			int slot = index;
+			int sy = rowTop + row * (rowHeight + rowGap);
+			slotX[index] = x + 8; slotY[index] = sy; slotW[index] = w - 16; slotH[index] = rowHeight;
+			TicketTraderProfile profile = TicketTradingProfiles.slot(config(), index);
+			int buttonX = slotX[index] + slotW[index] - 24;
+			int buttonY = sy + (rowHeight - 18) / 2;
+			boolean overButton = profile != null
+				&& inside(mouseX, mouseY, buttonX, buttonY, 18, 18);
+			boolean over = inside(mouseX, mouseY, slotX[index], sy, slotW[index], rowHeight)
+				&& !overButton;
+			int fill = profileRowBackground(profile, index, over);
+			graphics.fill(slotX[index], sy, slotX[index] + slotW[index], sy + rowHeight, fill);
+			if (profile != null && profile.sparklingOnly || SpecialTheme.rainbow()) {
+				SpecialTheme.border(graphics, slotX[index], sy, slotW[index], rowHeight, 1);
+			} else UIDraw.outline(graphics, slotX[index], sy, slotW[index], rowHeight, border);
+			String slotLabel = "Slot " + (row + 1);
+			int slotTextY = sy + Math.max(5, (rowHeight - 8) / 2);
+			if (profile != null && profile.sparklingOnly) {
+				UIDraw.rainbowText(graphics, font, Component.literal(slotLabel),
+					slotX[index] + 8, slotTextY, 0.5f, 0xFF, true);
+			} else SpecialTheme.text(graphics, font, Component.literal(slotLabel),
+				slotX[index] + 8, slotTextY, label);
+			if (profile == null) {
+				String empty = "Drop player here";
+				SpecialTheme.text(graphics, font, Component.literal(empty),
+					slotX[index] + slotW[index] - font.width(empty) - 8,
+					sy + Math.max(5, (rowHeight - 8) / 2), label);
 			} else {
-				drawInfoText(graphics, line, lineX, lineY);
+				int nameX = slotX[index] + 58;
+				int nameY = sy + (rowHeight >= 32 ? 6 : Math.max(2, (rowHeight - 8) / 2));
+				drawProfileName(graphics, profile, nameX, nameY);
+				if (rowHeight >= 32) {
+					String detail = profile.sparklingOnly
+						? Long.bitCount(profile.sparklingCritters) + "/37 Sparklings" : "All runs";
+					if (profile.sparklingOnly) UIDraw.rainbowText(graphics, font,
+						Component.literal(detail), nameX, sy + 20, 0.5f, 0xFF, true);
+					else SpecialTheme.text(graphics, font, Component.literal(detail), nameX, sy + 20, label);
+				} else {
+					String detail = profile.sparklingOnly
+						? Long.bitCount(profile.sparklingCritters) + "/37" : "All";
+					int detailX = buttonX - font.width(detail) - 6;
+					if (profile.sparklingOnly) UIDraw.rainbowText(graphics, font,
+						Component.literal(detail), detailX, nameY, 0.5f, 0xFF, true);
+					else SpecialTheme.text(graphics, font, Component.literal(detail),
+						detailX, nameY, label);
+				}
+				profileButton(graphics, buttonX, buttonY, 18, 18, "×", profile, index,
+					mouseX, mouseY, () -> clearSlot(slot));
+				dragHits.add(new DragHit(slotX[index], sy, slotW[index] - 30, rowHeight, profile, index));
 			}
 		}
 	}
 
-	private void drawInfoText(GuiGraphicsExtractor graphics, String line, int x, int y) {
-		int iconAt = line.indexOf('✦');
-		if (iconAt < 0) {
-			SpecialTheme.text(graphics, font, Component.literal(line), x, y, label);
+	private void drawSaved(GuiGraphicsExtractor graphics, int x, int y, int w, int h,
+			int mouseX, int mouseY) {
+		savedPanelX = x;
+		savedPanelY = y;
+		savedPanelW = w;
+		savedPanelH = h;
+		section(graphics, x, y, w, h, "Saved Players");
+		if (draggedFromSlot >= 0 && inside(mouseX, mouseY, x, y, w, h)) {
+			if (SpecialTheme.rainbow()) SpecialTheme.border(graphics, x, y, w, h, 1);
+			else UIDraw.outline(graphics, x, y, w, h, lighterHover(border));
+		}
+		int rowHeight = 38;
+		int viewportTop = y + 25;
+		int visible = Math.max(1, (h - 32) / rowHeight);
+		int maxScroll = Math.max(0, savedProfiles.size() - visible);
+		savedScroll = Math.clamp(savedScroll, 0, maxScroll);
+		for (int row = 0; row < visible && row + savedScroll < savedProfiles.size(); row++) {
+			TicketTraderProfile profile = savedProfiles.get(row + savedScroll);
+			int ry = viewportTop + row * rowHeight;
+			int buttonX = x + w - 48;
+			int buttonY = ry + 8;
+			boolean overButton = inside(mouseX, mouseY, buttonX, buttonY, 32, 18);
+			boolean over = inside(mouseX, mouseY, x + 8, ry, w - 16, 34) && !overButton;
+			int fill = profileRowBackground(profile, row, over);
+			graphics.fill(x + 8, ry, x + w - 8, ry + 34, fill);
+			if (profile.sparklingOnly || SpecialTheme.rainbow()) {
+				SpecialTheme.border(graphics, x + 8, ry, w - 16, 34, 1);
+			} else UIDraw.outline(graphics, x + 8, ry, w - 16, 34, border);
+			drawProfileName(graphics, profile, x + 16, ry + 6);
+			String detail = profile.sparklingOnly
+				? Long.bitCount(profile.sparklingCritters) + "/37" : "All runs";
+			if (profile.sparklingOnly) UIDraw.rainbowText(graphics, font,
+				Component.literal(detail), x + 16, ry + 20, 0.5f, 0xFF, true);
+			else SpecialTheme.text(graphics, font, Component.literal(detail), x + 16, ry + 20, label);
+			profileButton(graphics, buttonX, buttonY, 32, 18, "Edit", profile, row,
+				mouseX, mouseY, () -> openEditor(profile));
+			dragHits.add(new DragHit(x + 8, ry, w - 64, 34, profile, -1));
+		}
+		if (savedProfiles.isEmpty()) {
+			String empty = allProfiles.isEmpty() ? "Create a profile, then drag it into a slot"
+				: "All saved players are assigned";
+			centeredWithin(graphics, empty,
+				x, y + h / 2 - 4, w, label);
+		}
+	}
+
+	private void drawEditor(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+		int frameW = Math.min(240, panelWidth - 48);
+		int frameX = left + (panelWidth - frameW) / 2;
+		int frameY = top + 34;
+		graphics.fill(frameX, frameY, frameX + frameW, frameY + 26, card);
+		if (SpecialTheme.rainbow() || editorSparkling) SpecialTheme.border(graphics, frameX, frameY, frameW, 26, 1);
+		else UIDraw.outline(graphics, frameX, frameY, frameW, 26, border);
+		UIDraw.updateRainbowCaret(editorName, text, SpecialTheme.rainbow() || editorSparkling);
+		button(graphics, left + panelWidth / 2 - 94, top + 68, 188, 22,
+			editorSparkling ? "Sparkling Only" : "All Runs", mouseX, mouseY, () -> {
+				editorSparkling = !editorSparkling;
+				editorError = "";
+			});
+
+		int gridTop = top + 100;
+		int bottom = top + panelHeight - 45;
+		if (editorSparkling) {
+			SpecialTheme.text(graphics, font, Component.literal("Invite for these Sparklings"),
+				left + 154, gridTop + 5, label);
+			button(graphics, left + 22, gridTop, 66, 18, "Select All", mouseX, mouseY,
+				() -> editorMask = Critters.allSelectionMask());
+			button(graphics, left + 96, gridTop, 48, 18, "Clear", mouseX, mouseY,
+				() -> editorMask = 0L);
+			drawCritterGrid(graphics, gridTop + 25, bottom, mouseX, mouseY);
+		} else centered(graphics, "This player is invited to every ticket-trading run.",
+			gridTop + 24, label);
+		if (!editorError.isEmpty()) centered(graphics, editorError, bottom + 2, red);
+		int buttonY = top + panelHeight - 34;
+		button(graphics, left + 20, buttonY, 70, 22, "Cancel", mouseX, mouseY,
+			() -> switchView(View.MAIN));
+		if (editing != null) button(graphics, left + 98, buttonY, 62, 22, "Delete", mouseX, mouseY,
+			this::deleteEditing);
+		button(graphics, left + panelWidth - 90, buttonY, 70, 22, "Save", mouseX, mouseY,
+			this::saveEditing);
+		super.extractRenderState(graphics, mouseX, mouseY, 0f);
+	}
+
+	private void drawCritterGrid(GuiGraphicsExtractor graphics, int gridTop, int bottom,
+			int mouseX, int mouseY) {
+		int columns = panelWidth >= 650 ? 4 : 2;
+		int gap = 8, gridX = left + 20, gridW = panelWidth - 40;
+		int colW = (gridW - gap * (columns - 1)) / columns;
+		if (columns == 4) {
+			editorMaxScroll = 0;
+			editorScroll = 0;
+			for (int col = 0; col < 4; col++) {
+				int x = gridX + col * (colW + gap);
+				SafariBiome biome = Critters.selectionBiomes().get(col);
+				centeredWithin(graphics, biome.displayName(), x, gridTop, colW,
+					0xFF000000 | biome.colour());
+				for (int row = 0; row < CRITTER_GROUPS.get(col).size(); row++) {
+					drawCritterChoice(graphics, CRITTER_GROUPS.get(col).get(row), x,
+						gridTop + 15 + row * 18 - editorScroll, colW, mouseX, mouseY, gridTop, bottom);
+				}
+			}
+		} else {
+			int[] cursor = {gridTop, gridTop};
+			for (int group = 0; group < CRITTER_GROUPS.size(); group++) {
+				int col = group % 2;
+				int x = gridX + col * (colW + gap);
+				int headingY = cursor[col] - editorScroll;
+				SafariBiome biome = Critters.selectionBiomes().get(group);
+				if (headingY >= gridTop && headingY + 12 <= bottom) {
+					centeredWithin(graphics, biome.displayName(), x, headingY, colW,
+						0xFF000000 | biome.colour());
+				}
+				cursor[col] += 14;
+				for (Critter critter : CRITTER_GROUPS.get(group)) {
+					drawCritterChoice(graphics, critter, x, cursor[col] - editorScroll,
+						colW, mouseX, mouseY, gridTop, bottom);
+					cursor[col] += 18;
+				}
+				cursor[col] += 8;
+			}
+			editorMaxScroll = Math.max(0, Math.max(cursor[0], cursor[1]) - bottom);
+			editorScroll = Math.clamp(editorScroll, 0, editorMaxScroll);
+		}
+	}
+
+	private void drawCritterChoice(GuiGraphicsExtractor graphics, Critter critter, int x, int y,
+			int w, int mouseX, int mouseY, int clipTop, int clipBottom) {
+		if (y < clipTop || y + 16 > clipBottom) return;
+		long bit = Critters.selectionMask(critter);
+		boolean enabled = (editorMask & bit) != 0L;
+		graphics.fill(x, y, x + w, y + 16, inside(mouseX, mouseY, x, y, w, 16) ? hover : card);
+		UIDraw.outline(graphics, x, y, w, 16, enabled ? green : border);
+		SpecialTheme.text(graphics, font, Component.literal(enabled ? "✓" : "×"), x + 5, y + 4,
+			enabled ? green : red);
+		SpecialTheme.text(graphics, font, Component.literal(critter.name()), x + 17, y + 4,
+			0xFF000000 | critter.rarity().colour());
+		hits.add(new Hit(x, y, w, 16, () -> editorMask ^= bit));
+	}
+
+	private void drawInfo(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+		int boxX = left + 14, boxY = top + 34, boxW = panelWidth - 28;
+		List<String> lines = wrappedInfoLines(boxW - 24);
+		int boxH = 24 + lines.size() * 16;
+		graphics.fill(boxX, boxY, boxX + boxW, boxY + boxH, card);
+		if (SpecialTheme.rainbow()) SpecialTheme.border(graphics, boxX, boxY, boxW, boxH, 1);
+		else UIDraw.outline(graphics, boxX, boxY, boxW, boxH, border);
+		for (int index = 0; index < lines.size(); index++) {
+			String line = lines.get(index);
+			int lineX = boxX + 12, lineY = boxY + 12 + index * 16;
+			String role = line.startsWith("Host:") ? "Host"
+				: line.startsWith("Guest:") ? "Guest" : null;
+			if (role != null) {
+				SpecialTheme.text(graphics, font, Component.literal(role), lineX, lineY, primary);
+				drawInfoText(graphics, line.substring(role.length()),
+					lineX + font.width(role), lineY);
+			} else drawInfoText(graphics, line, lineX, lineY);
+		}
+		button(graphics, left + panelWidth / 2 - 50, boxY + boxH + 10,
+			100, 22, "Back", mouseX, mouseY, () -> switchView(View.MAIN));
+	}
+
+	private void drawInfoText(GuiGraphicsExtractor graphics, String value, int x, int y) {
+		int icon = value.indexOf('✦');
+		if (icon < 0) {
+			SpecialTheme.text(graphics, font, Component.literal(value), x, y, label);
 			return;
 		}
-		String before = line.substring(0, iconAt);
-		String after = line.substring(iconAt + 1);
+		String before = value.substring(0, icon);
+		String after = value.substring(icon + 1);
 		SpecialTheme.text(graphics, font, Component.literal(before), x, y, label);
 		int iconX = x + font.width(before);
 		UIDraw.rainbowText(graphics, font, Component.literal("✦"),
@@ -205,209 +432,281 @@ public final class TicketTradingScreen extends Screen {
 			iconX + font.width("✦"), y, label);
 	}
 
-	private record InfoLine(String role, String text) { }
-
-	private List<InfoLine> infoLines(int width) {
-		if (width == cachedInfoWidth) return cachedInfoLines;
-		List<InfoLine> result = new java.util.ArrayList<>();
-		addInfoLines(result, null, "Ticket trading must be enabled for either role", width);
-		addInfoLines(result, "Host", ": Must use a ticket before 20 seconds after joining a Safari run", width);
-		addInfoLines(result, null, "- Trusted players are automatically invited to the party", width);
-		addInfoLines(result, null, "- Trusted ✦ players will only be invited if a Sparkling is detected in time", width);
-		addInfoLines(result, null, "- Any players who joined will be automatically warped", width);
-		addInfoLines(result, null, "- Party will automatically disband after the Host leaves the Safari run", width);
-		addInfoLines(result, "Guest", ": Automatically accepts party invites from trusted players", width);
-		addInfoLines(result, null, "- Automatically leaves your current party for trusted ✦ players' invites", width);
+	private List<String> wrappedInfoLines(int width) {
+		if (cachedInfoWidth == width) return cachedInfoLines;
+		List<String> wrapped = new ArrayList<>();
+		for (String source : INFO_LINES) {
+			StringBuilder line = new StringBuilder();
+			for (String word : source.split("\\s+")) {
+				String next = line.isEmpty() ? word : line + " " + word;
+				if (!line.isEmpty() && font.width(next) > width) {
+					wrapped.add(line.toString());
+					line.setLength(0);
+				}
+				if (!line.isEmpty()) line.append(' ');
+				line.append(word);
+			}
+			if (!line.isEmpty()) wrapped.add(line.toString());
+		}
 		cachedInfoWidth = width;
-		cachedInfoLines = List.copyOf(result);
+		cachedInfoLines = List.copyOf(wrapped);
 		return cachedInfoLines;
 	}
 
-	private void addInfoLines(List<InfoLine> output, String role, String text, int width) {
-		int firstWidth = Math.max(20, width - (role == null ? 0 : font.width(role)));
-		List<String> wrapped = wrapPlain(text, firstWidth);
-		for (int i = 0; i < wrapped.size(); i++) {
-			output.add(new InfoLine(i == 0 ? role : null, wrapped.get(i)));
-		}
+	private void drawDragged(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+		int w = font.width(profileName(dragged)) + 16, h = 24;
+		int x = Math.clamp(mouseX + 8, 2, layoutWidth - w - 2);
+		int y = Math.clamp(mouseY + 8, 2, layoutHeight - h - 2);
+		graphics.fill(x, y, x + w, y + h, dragged.sparklingOnly ? sparklingRowBackground(1) : card);
+		SpecialTheme.border(graphics, x, y, w, h, 1);
+		drawProfileName(graphics, dragged, x + 8, y + 8);
 	}
 
-	private List<String> wrapPlain(String text, int width) {
-		List<String> lines = new java.util.ArrayList<>();
-		StringBuilder current = new StringBuilder();
-		for (String word : text.trim().split("\\s+")) {
-			String candidate = current.isEmpty() ? word : current + " " + word;
-			if (!current.isEmpty() && font.width(candidate) > width) {
-				lines.add(current.toString());
-				current.setLength(0);
-			}
-			if (!current.isEmpty()) current.append(' ');
-			current.append(word);
-		}
-		if (!current.isEmpty()) lines.add(current.toString());
-		return lines;
+	private void section(GuiGraphicsExtractor graphics, int x, int y, int w, int h, String title) {
+		graphics.fill(x, y, x + w, y + h, 0x66000000);
+		UIDraw.outline(graphics, x, y, w, h, border);
+		SpecialTheme.text(graphics, font, Component.literal(title), x + 8, y + 8, secondary);
 	}
 
-	private void toggleInfo() {
-		showInfo = !showInfo;
-		for (EditBox name : names) if (name != null) name.visible = !showInfo;
-		setFocused(null);
+	private void drawProfileName(GuiGraphicsExtractor graphics, TicketTraderProfile profile,
+			int x, int y) {
+		if (!profile.sparklingOnly) {
+			PlayerNameStyle.drawName(graphics, font, profile.username, x, y);
+			return;
+		}
+		UIDraw.rainbowText(graphics, font, Component.literal(profileName(profile)),
+			x, y, 0.5f, 0xFF, true);
+	}
+
+	private static String profileName(TicketTraderProfile profile) {
+		return profile.sparklingOnly ? "✦ " + profile.username + " ✦" : profile.username;
 	}
 
 	private void button(GuiGraphicsExtractor graphics, int x, int y, int w, int h,
-			String label, int mouseX, int mouseY, Runnable action) {
-		boolean hovered = mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
-		graphics.fill(x, y, x + w, y + h, hovered ? hover : card);
+			String value, int mouseX, int mouseY, Runnable action) {
+		boolean over = inside(mouseX, mouseY, x, y, w, h);
+		graphics.fill(x, y, x + w, y + h, over ? hover : card);
 		if (SpecialTheme.rainbow()) SpecialTheme.border(graphics, x, y, w, h, 1);
 		else UIDraw.outline(graphics, x, y, w, h, border);
-		int colour = label.equals("Enabled") ? green : label.equals("Disabled") ? red : text;
-		SpecialTheme.text(graphics, font, Component.literal(label),
-			x + (w - font.width(label)) / 2, y + (h - 8) / 2, colour);
+		int colour = value.equals("Enabled") ? green : value.equals("Disabled") ? red : text;
+		centeredWithin(graphics, value, x, y + (h - 8) / 2, w, colour);
 		hits.add(new Hit(x, y, w, h, action));
 	}
 
-	private void drawSparklingButton(GuiGraphicsExtractor graphics,
-			SafariConfig.SparklingConfig config, int index, int rowBackground,
-			int mouseX, int mouseY) {
-		int x = sparklingButtonLeft();
-		int y = nameFrameTop(index);
-		boolean active = sparklingEnabled(config, index);
-		boolean hovered = mouseX >= x && mouseX < x + SPARKLING_BUTTON_SIZE
-			&& mouseY >= y && mouseY < y + SPARKLING_BUTTON_SIZE;
-		graphics.fill(x, y, x + SPARKLING_BUTTON_SIZE, y + SPARKLING_BUTTON_SIZE,
-			active ? rowBackground : hovered ? hover : card);
-		if (SpecialTheme.rainbow() || active) {
-			SpecialTheme.border(graphics, x, y, SPARKLING_BUTTON_SIZE, SPARKLING_BUTTON_SIZE, 1);
-		} else {
-			UIDraw.outline(graphics, x, y, SPARKLING_BUTTON_SIZE, SPARKLING_BUTTON_SIZE, border);
+	private void profileButton(GuiGraphicsExtractor graphics, int x, int y, int w, int h,
+			String value, TicketTraderProfile profile, int phase, int mouseX, int mouseY,
+			Runnable action) {
+		boolean over = inside(mouseX, mouseY, x, y, w, h);
+		int fill = profile.sparklingOnly ? sparklingRowBackground(phase, over)
+			: over ? lighterHover(card) : card;
+		graphics.fill(x, y, x + w, y + h, fill);
+		if (profile.sparklingOnly || SpecialTheme.rainbow()) {
+			SpecialTheme.border(graphics, x, y, w, h, 1);
+		} else UIDraw.outline(graphics, x, y, w, h, border);
+		int textX = x + (w - font.width(value)) / 2;
+		int textY = y + (h - 8) / 2;
+		if (profile.sparklingOnly) UIDraw.rainbowText(graphics, font,
+			Component.literal(value), textX, textY, 0.5f, 0xFF, true);
+		else SpecialTheme.text(graphics, font, Component.literal(value), textX, textY, text);
+		hits.add(new Hit(x, y, w, h, action));
+	}
+
+	private void openEditor(TicketTraderProfile profile) {
+		editing = profile;
+		previousName = profile == null ? "" : profile.username;
+		editorSparkling = profile != null && profile.sparklingOnly;
+		editorMask = profile == null ? Critters.allSelectionMask() : profile.sparklingCritters;
+		editorError = "";
+		editorScroll = 0;
+		switchView(View.EDITOR);
+	}
+
+	private void saveEditing() {
+		if (savingProfile) return;
+		String requested = editorName.getValue().trim();
+		if (!requested.matches("[A-Za-z0-9_]{1,16}")) {
+			editorError = "Enter a valid Minecraft username";
+			return;
 		}
-		drawSparklingGlyph(graphics, x, y, active);
-		hits.add(new Hit(x, y, SPARKLING_BUTTON_SIZE, SPARKLING_BUTTON_SIZE, () -> {
-			setSparkling(config, index, !sparklingEnabled(config, index));
-			ConfigManager.save();
-		}));
+		TicketTraderProfile target = editing == null ? new TicketTraderProfile() : editing;
+		savingProfile = true;
+		editorError = "Checking Minecraft username…";
+		CanonicalPlayerNames.resolve(requested).whenComplete((canonical, error) ->
+			Minecraft.getInstance().execute(() -> {
+				savingProfile = false;
+				if (ClientCompat.screen() != this || view != View.EDITOR || editorName == null) return;
+				if (!editorName.getValue().trim().equals(requested)) {
+					editorError = "Name changed; save again";
+					return;
+				}
+				if (error != null) {
+					editorError = "Could not verify Minecraft username";
+					return;
+				}
+				if (!TicketTradingProfiles.save(config(), target, previousName,
+						canonical, editorSparkling, editorMask)) {
+					editorError = "That player is already saved";
+					return;
+				}
+				PlayerNameStyle.refreshColour(canonical);
+				ConfigManager.save();
+				switchView(View.MAIN);
+			}));
 	}
 
-	/** The standard Sparkling glyph, moderately enlarged and centered before its shadow. */
-	private void drawSparklingGlyph(GuiGraphicsExtractor graphics,
-			int buttonX, int buttonY, boolean active) {
-		String icon = "✦";
-		float scale = 1.65f;
-		float iconWidth = font.width(icon) * scale;
-		float iconHeight = 8f * scale;
-		// The glyph's advance box has more unused space on its right. One screen
-		// pixel of optical-bearing compensation centers the actual lit pixels.
-		float x = buttonX + (SPARKLING_BUTTON_SIZE - iconWidth) / 2f + 1f;
-		float y = buttonY + (SPARKLING_BUTTON_SIZE - iconHeight) / 2f;
-		graphics.pose().pushMatrix();
-		graphics.pose().translate(x, y);
-		graphics.pose().scale(scale, scale);
-		if (active) {
-			UIDraw.rainbowText(graphics, font, Component.literal(icon),
-				0, 0, 0.5f, 0xFF, true);
-		} else {
-			graphics.text(font, Component.literal(icon), 0, 0, label, true);
+	private void refreshCanonicalProfiles() {
+		for (TicketTraderProfile profile : List.copyOf(allProfiles)) {
+			CanonicalPlayerNames.resolve(profile.username).thenAccept(canonical ->
+				Minecraft.getInstance().execute(() -> {
+					PlayerNameStyle.refreshColour(canonical);
+					if (!TicketTradingProfiles.applyCanonicalName(config(), profile, canonical)) return;
+					refreshProfileLists();
+					ConfigManager.save();
+				})).exceptionally(error -> null);
 		}
-		graphics.pose().popMatrix();
 	}
 
-	private int sparklingRowBackground(int index) {
-		int accent = RainbowColours.shared(index * 0.17f, 0.42f);
-		float amount = 0.20f;
-		float inverse = 1f - amount;
-		int red = Math.round((card >> 16 & 0xFF) * inverse + (accent >> 16 & 0xFF) * amount);
-		int green = Math.round((card >> 8 & 0xFF) * inverse + (accent >> 8 & 0xFF) * amount);
-		int blue = Math.round((card & 0xFF) * inverse + (accent & 0xFF) * amount);
-		return 0xFF000000 | red << 16 | green << 8 | blue;
+	private void refreshProfileLists() {
+		allProfiles = TicketTradingProfiles.sorted(config());
+		Set<String> assigned = new HashSet<>();
+		for (int index = 0; index < TicketTradingProfiles.TOTAL_SLOTS; index++) {
+			String name = TicketTradingProfiles.slotName(config(), index);
+			if (!name.isBlank()) assigned.add(TicketTradingProfiles.normalize(name));
+		}
+		savedProfiles = allProfiles.stream()
+			.filter(profile -> !assigned.contains(TicketTradingProfiles.normalize(profile.username)))
+			.toList();
 	}
 
-	private void centered(GuiGraphicsExtractor graphics, String text, int y, int colour) {
-		SpecialTheme.text(graphics, font, Component.literal(text),
-			left + (panelWidth - font.width(text)) / 2, y, colour);
+	private void deleteEditing() {
+		TicketTradingProfiles.remove(config(), editing);
+		ConfigManager.save();
+		switchView(View.MAIN);
+	}
+
+	private void clearSlot(int index) {
+		TicketTradingProfiles.assign(config(), index, null);
+		refreshProfileLists();
+		ConfigManager.save();
+	}
+
+	private void switchView(View next) {
+		view = next;
+		savingProfile = false;
+		setFocused(null);
+		rebuildWidgets();
 	}
 
 	@Override
 	public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
-		if (showInfo) {
-			for (int i = hits.size() - 1; i >= 0; i--) {
-				Hit hit = hits.get(i);
-				if (hit.contains(event.x(), event.y())) {
-					hit.action().run();
-					return true;
-				}
-			}
-			toggleInfo();
-			return true;
-		}
-		for (int i = 0; i < names.length; i++) {
-			EditBox name = names[i];
-			int fieldTop = nameFrameTop(i);
-			int frameLeft = nameFrameLeft();
-			boolean overFrame = event.x() >= frameLeft && event.x() < frameLeft + nameFrameWidth()
-				&& event.y() >= fieldTop && event.y() < fieldTop + 24;
-			if (name != null && name.visible && overFrame) {
-				for (EditBox other : names) if (other != null) other.setFocused(other == name);
-				setFocused(name);
-				// The visible themed frame is slightly larger than the borderless native
-				// editor. Forward a clamped click so its caret always activates as well.
-				int editorLeft = frameLeft + 8;
-				int editorTop = nameFrameTop(i) + 8;
-				double x = Math.clamp(event.x(), editorLeft,
-					editorLeft + nameFrameWidth() - 17);
-				double y = Math.clamp(event.y(), editorTop, editorTop + 9);
-				name.mouseClicked(new MouseButtonEvent(x, y, event.buttonInfo()), doubled);
+		MouseButtonEvent logicalEvent = logicalEvent(event);
+		if (view == View.EDITOR && editorName != null) {
+			int frameW = Math.min(240, panelWidth - 48);
+			int frameX = left + (panelWidth - frameW) / 2;
+			int frameY = top + 34;
+			if (inside(logicalEvent.x(), logicalEvent.y(), frameX, frameY, frameW, 26)) {
+				editorName.setFocused(true);
+				setFocused(editorName);
+				editorName.mouseClicked(new MouseButtonEvent(
+					Math.clamp(logicalEvent.x(), frameX + 8, frameX + frameW - 9),
+					Math.clamp(logicalEvent.y(), frameY + 8, frameY + 17),
+					logicalEvent.buttonInfo()), doubled);
 				return true;
 			}
 		}
 		setFocused(null);
-		for (EditBox name : names) if (name != null) name.setFocused(false);
-		for (int i = hits.size() - 1; i >= 0; i--) {
-			Hit hit = hits.get(i);
-			if (hit.contains(event.x(), event.y())) {
+		if (editorName != null) editorName.setFocused(false);
+		for (int index = hits.size() - 1; index >= 0; index--) {
+			Hit hit = hits.get(index);
+			if (hit.contains(logicalEvent.x(), logicalEvent.y())) {
 				hit.action().run();
 				return true;
+			}
+		}
+		if (view == View.MAIN && logicalEvent.button() == 0) {
+			for (int index = dragHits.size() - 1; index >= 0; index--) {
+				DragHit hit = dragHits.get(index);
+				if (hit.contains(logicalEvent.x(), logicalEvent.y())) {
+					dragged = hit.profile();
+					draggedFromSlot = hit.slot();
+					return true;
+				}
 			}
 		}
 		return false;
 	}
 
-	private int nameFrameLeft() {
-		return stackedRows ? left + 20
-			: left + ROW_MARGIN + font.width("Player 3") + LABEL_FIELD_GAP;
+	@Override
+	public boolean mouseReleased(MouseButtonEvent event) {
+		MouseButtonEvent logicalEvent = logicalEvent(event);
+		if (dragged == null || view != View.MAIN) return super.mouseReleased(logicalEvent);
+		boolean changed = false;
+		for (int index = 0; index < TicketTradingProfiles.TOTAL_SLOTS; index++) {
+			if (!inside(logicalEvent.x(), logicalEvent.y(),
+				slotX[index], slotY[index], slotW[index], slotH[index])) continue;
+			TicketTraderProfile displaced = TicketTradingProfiles.slot(config(), index);
+			TicketTradingProfiles.assign(config(), index, dragged);
+			if (draggedFromSlot >= 0 && draggedFromSlot != index) {
+				TicketTradingProfiles.assign(config(), draggedFromSlot, displaced);
+			}
+			changed = true;
+			break;
+		}
+		if (!changed && draggedFromSlot >= 0
+				&& inside(logicalEvent.x(), logicalEvent.y(),
+					savedPanelX, savedPanelY, savedPanelW, savedPanelH)) {
+			TicketTradingProfiles.assign(config(), draggedFromSlot, null);
+			changed = true;
+		}
+		if (changed) {
+			refreshProfileLists();
+			ConfigManager.save();
+		}
+		dragged = null;
+		draggedFromSlot = -1;
+		return true;
 	}
 
-	private int nameFrameWidth() {
-		int oldWidth = stackedRows ? panelWidth - 40
-			: left + panelWidth - ROW_MARGIN - nameFrameLeft();
-		return oldWidth - LABEL_FIELD_GAP - SPARKLING_BUTTON_SIZE;
+	@Override
+	public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+		if (view == View.MAIN) {
+			savedScroll = Math.max(0, savedScroll + (scrollY < 0 ? 1 : -1));
+			return true;
+		}
+		if (view == View.EDITOR && editorSparkling) {
+			editorScroll = Math.clamp(editorScroll + (scrollY < 0 ? 18 : -18),
+				0, editorMaxScroll);
+			return true;
+		}
+		return super.mouseScrolled(mouseX / responsiveScale, mouseY / responsiveScale,
+			scrollX, scrollY);
 	}
 
-	private int sparklingButtonLeft() {
-		return nameFrameLeft() + nameFrameWidth() + LABEL_FIELD_GAP;
-	}
-
-	private int nameFrameTop(int index) {
-		return top + (stackedRows ? 99 + index * 45 : 89 + index * 35);
+	private MouseButtonEvent logicalEvent(MouseButtonEvent event) {
+		return new MouseButtonEvent(event.x() / responsiveScale,
+			event.y() / responsiveScale, event.buttonInfo());
 	}
 
 	@Override
 	public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
-		if ((event.key() == 257 || event.key() == 335) && getFocused() instanceof EditBox field) {
-			field.setFocused(false);
-			setFocused(null);
-			ConfigManager.save();
+		if (event.key() == 256) {
+			if (view != View.MAIN) switchView(View.MAIN);
+			else onClose();
 			return true;
 		}
-		if (getFocused() instanceof EditBox field && field.isFocused()) {
-			return field.keyPressed(event);
+		if ((event.key() == 257 || event.key() == 335) && editorName != null
+				&& editorName.isFocused()) {
+			editorName.setFocused(false);
+			setFocused(null);
+			return true;
 		}
+		if (editorName != null && editorName.isFocused()) return editorName.keyPressed(event);
 		return super.keyPressed(event);
 	}
 
 	@Override
 	public boolean charTyped(CharacterEvent event) {
-		if (getFocused() instanceof EditBox field && field.isFocused()) {
-			return field.charTyped(event);
-		}
+		if (editorName != null && editorName.isFocused()) return editorName.charTyped(event);
 		return super.charTyped(event);
 	}
 
@@ -418,57 +717,66 @@ public final class TicketTradingScreen extends Screen {
 		else super.onClose();
 	}
 
-	@Override
-	public boolean isPauseScreen() {
-		return false;
+	@Override public boolean isPauseScreen() { return false; }
+
+	private SparklingConfig config() { return ConfigManager.get().sparkling; }
+
+	private int sparklingRowBackground(int index) {
+		return sparklingRowBackground(index, false);
 	}
 
-	private static void setName(SafariConfig.SparklingConfig config, int index, String value) {
-		switch (index) {
-			case 0 -> config.ticketTradingPlayer1 = value;
-			case 1 -> config.ticketTradingPlayer2 = value;
-			case 2 -> config.ticketTradingPlayer3 = value;
-			default -> { }
+	private int sparklingRowBackground(int index, boolean hovered) {
+		int accent = RainbowColours.shared(index * 0.17f, 0.42f);
+		float amount = 0.20f, inverse = 1f - amount;
+		int r = Math.round((card >> 16 & 0xFF) * inverse + (accent >> 16 & 0xFF) * amount);
+		int g = Math.round((card >> 8 & 0xFF) * inverse + (accent >> 8 & 0xFF) * amount);
+		int b = Math.round((card & 0xFF) * inverse + (accent & 0xFF) * amount);
+		int base = 0xFF000000 | r << 16 | g << 8 | b;
+		if (!hovered) return base;
+		return lighterHover(base);
+	}
+
+	private int profileRowBackground(TicketTraderProfile profile, int phase, boolean hovered) {
+		if (profile != null && profile.sparklingOnly) {
+			return sparklingRowBackground(phase, hovered);
 		}
+		return hovered ? lighterHover(card) : card;
 	}
 
-	private static boolean sparklingEnabled(SafariConfig.SparklingConfig config, int index) {
-		return switch (index) {
-			case 0 -> config.ticketTradingSparkling1;
-			case 1 -> config.ticketTradingSparkling2;
-			case 2 -> config.ticketTradingSparkling3;
-			default -> false;
-		};
+	private static int lighterHover(int colour) {
+		return blendOpaque(colour, 0xFFFFFFFF, 0.14f);
 	}
 
-	private static void setSparkling(SafariConfig.SparklingConfig config,
-			int index, boolean enabled) {
-		switch (index) {
-			case 0 -> config.ticketTradingSparkling1 = enabled;
-			case 1 -> config.ticketTradingSparkling2 = enabled;
-			case 2 -> config.ticketTradingSparkling3 = enabled;
-			default -> { }
-		}
+	private static int blendOpaque(int first, int second, float amount) {
+		float inverse = 1f - amount;
+		int r = Math.round((first >> 16 & 0xFF) * inverse + (second >> 16 & 0xFF) * amount);
+		int g = Math.round((first >> 8 & 0xFF) * inverse + (second >> 8 & 0xFF) * amount);
+		int b = Math.round((first & 0xFF) * inverse + (second & 0xFF) * amount);
+		return 0xFF000000 | r << 16 | g << 8 | b;
+	}
+
+	private static boolean inside(double mx, double my, int x, int y, int w, int h) {
+		return mx >= x && mx < x + w && my >= y && my < y + h;
+	}
+
+	private void centered(GuiGraphicsExtractor graphics, String value, int y, int colour) {
+		centeredWithin(graphics, value, left, y, panelWidth, colour);
+	}
+
+	private void centeredWithin(GuiGraphicsExtractor graphics, String value,
+			int x, int y, int w, int colour) {
+		SpecialTheme.text(graphics, font, Component.literal(value),
+			x + (w - font.width(value)) / 2, y, colour);
 	}
 
 	private void applyTheme() {
 		int[] palette = SafariSettingsScreen.activeThemePalette();
-		background = palette[0];
-		surface = palette[1];
-		card = palette[2];
-		hover = palette[3];
-		border = palette[4];
-		primary = palette[5];
-		secondary = palette[6];
-		green = palette[7];
-		red = palette[8];
-		text = palette[10];
-		label = palette[11];
+		background = palette[0]; surface = palette[1]; card = palette[2]; hover = palette[3];
+		border = palette[4]; primary = palette[5]; secondary = palette[6]; green = palette[7];
+		red = palette[8]; text = palette[10]; label = palette[11];
 		if (SpecialTheme.rainbow()) {
-			primary = SpecialTheme.accent(0);
-			secondary = SpecialTheme.accent(18);
-			green = SpecialTheme.accent(36);
-			red = SpecialTheme.accent(54);
+			primary = SpecialTheme.accent(0); secondary = SpecialTheme.accent(18);
+			green = SpecialTheme.accent(36); red = SpecialTheme.accent(54);
 			border = SpecialTheme.accent(72);
 		}
 	}

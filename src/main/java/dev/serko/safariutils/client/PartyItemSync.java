@@ -903,7 +903,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		boolean done = forestDrops() >= 9 && totalFound() > 0 && used >= totalFound();
 		if (done && !feedDoneAnnounced) {
 			feedDoneAnnounced = true;
-			EncounterAlerts.onPrivateFeedDone(sendChat);
+			EncounterAlerts.onAllFeedDone(sendChat);
 		}
 		return done;
 	}

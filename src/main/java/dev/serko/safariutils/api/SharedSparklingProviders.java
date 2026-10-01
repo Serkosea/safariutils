@@ -41,6 +41,12 @@ public final class SharedSparklingProviders {
 		return PROVIDER.map(provider -> provider.nameColour(name)).orElse(-1);
 	}
 
+	public static java.util.concurrent.CompletableFuture<Integer> refreshNameColour(
+			String name, String uuid) {
+		return PROVIDER.map(provider -> provider.refreshNameColour(name, uuid))
+			.orElseGet(() -> java.util.concurrent.CompletableFuture.completedFuture(-1));
+	}
+
 	public static boolean specialName(String name) {
 		return PROVIDER.map(provider -> provider.specialName(name)).orElse(false);
 	}

@@ -12,6 +12,25 @@ import java.util.Set;
 final class PlayerNameStyle {
 	private PlayerNameStyle() { }
 
+	/** Private rank data wins; live tab-list colour is the public, zero-request fallback. */
+	static int colour(String name) {
+		int network = SharedSparklingProviders.nameColour(name);
+		return network == -1 ? PartyObjectiveHud.playerNameColour(name) : network;
+	}
+
+	static void refreshColour(String name) {
+		SharedSparklingProviders.refreshNameColour(name, CanonicalPlayerNames.uuid(name));
+	}
+
+	/** Draws one canonical username with UUID-backed owner styling or its rank colour. */
+	static String drawName(GuiGraphicsExtractor graphics, Font font, String name, int x, int y) {
+		String displayed = CanonicalPlayerNames.display(name);
+		if (SpecialTheme.rainbow() || SharedSparklingProviders.specialName(displayed)) {
+			UIDraw.rainbowText(graphics, font, displayed, x, y, 0.45f);
+		} else graphics.text(font, Component.literal(displayed), x, y, colour(displayed));
+		return displayed;
+	}
+
 	/** Draws mixed ordinary/rainbow text and returns whether a special name was present. */
 	static boolean drawIfPresent(GuiGraphicsExtractor graphics, Font font, Component component,
 			int x, int y, int fallbackColour) {

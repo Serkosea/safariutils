@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.4.0] - 2026-10-01
+
+### Changes & Additions
+
+- Replaced Ticket Trading's inline names with reusable saved-player profiles, three active slots, and three ordered backup slots
+- Added per-player Sparkling species filters so each Sparkling-only trader is invited only for selected critters
+- Migrated existing trusted names and Sparkling flags into profiles with all 37 species enabled
+- Added cached, API-key-free Minecraft profile resolution so saved and displayed player names use canonical capitalization and authoritative rank colors where available
+- Refined Ticket Trading with equal-width profile panels, shorter balanced active cards, compact dragged cards, and matching two-sided Sparkling styling
+- Invited qualifying Sparkling-only active players immediately outside the 17–20 second batch window and replaced confirmed offline active players from the ordered backup slots after three seconds
+- Made the Special Sparkling theme override player rank colors while retaining rainbow player rows for Sparkling-only trading profiles in every theme
+- Made Ticket Trading and Sparkling screens choose compact layouts and fallback scaling from the actual GUI canvas after Minecraft GUI Scale is applied
+
+### Fixes
+
+- Kept ordinary settings sourced from the shared advanced configuration, including Special Themes and Party Sync, visible without the star unlock
+- Restored All Feed Done banner, sound, and chat controls to every build while migrating their legacy private-prefixed setting keys
+- Preserved the selected settings tab's expanded dropdowns when reopening settings within the existing ten-second memory window
+- Restricted Ticket Trading invite, warp, and disband automation to the confirmed party leader
+- Reduced the Sparkling guest leave-to-accept delay to 250 milliseconds while retaining immediate accepts when no party must be left
+- Used Duplico's disguise-aware visibility check for its first visible Sparkling chat alert
+- Delayed every user-facing Sparkling found banner, sound, and chat alert until the critter is first visually confirmed
+
 ## [2.3.0] - 2026-09-30
 
 ### Changes & Additions

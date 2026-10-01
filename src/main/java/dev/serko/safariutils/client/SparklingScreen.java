@@ -124,13 +124,16 @@ public final class SparklingScreen extends Screen {
 	}
 
 	private void updatePanelBounds() {
-		biomeColumns = width < 600 ? 2 : 4;
+		float twoColumnScale = Math.min(1f, Math.min(width / 320f, height / 472f));
+		float fourColumnScale = Math.min(1f, Math.min(width / 560f, height / 330f));
+		// Pick the reflow that produces the largest readable result for the complete
+		// canvas. Short 16:9 windows often fit four columns better than two tall ones.
+		biomeColumns = fourColumnScale >= twoColumnScale ? 4 : 2;
 		int preferredHeight = biomeColumns == 2 ? 472 : 330;
 		int minimumWidth = biomeColumns == 2 ? 320 : 560;
 		// Reflow biome columns before scaling; scaling is reserved for canvases that
 		// cannot fit even the compact two-column layout or its vertical content.
-		scale = Math.min(1f, Math.min(width / (float) minimumWidth,
-			height / (float) preferredHeight));
+		scale = biomeColumns == 2 ? twoColumnScale : fourColumnScale;
 		int logicalWidth = ResponsiveUI.logicalWidth(width, scale);
 		int logicalHeight = ResponsiveUI.logicalHeight(height, scale);
 		int summaryWidth = font.width(collectionSummary().fullText()) + SUMMARY_EDGE_MARGIN * 2;
@@ -567,16 +570,10 @@ public final class SparklingScreen extends Screen {
 		int columnWidth = Math.min(150, (panelWidth - 24) / biomeColumns);
 		int x = biomeColumns == 2 ? panelLeft + 12
 			: panelLeft + (panelWidth - columnWidth * biomeColumns) / 2 + 8;
-		int rankColour = SharedSparklingProviders.nameColour(lastLookup.username());
-		int nameColour = rankColour == -1 ? AQUA : rankColour;
-		Component name = Component.literal(lastLookup.username())
-			.withStyle(style -> style.withColor(nameColour));
-		int nameX = biomeColumns == 2 ? panelLeft + (panelWidth - font.width(name)) / 2 : x;
-		if (SharedSparklingProviders.specialName(lastLookup.username())) {
-			UIDraw.rainbowText(graphics, font, lastLookup.username(), nameX, y, 0.45f);
-		} else {
-			SpecialTheme.text(graphics, font, name, nameX, y, nameColour);
-		}
+		String displayedName = CanonicalPlayerNames.display(lastLookup.username());
+		int nameX = biomeColumns == 2
+			? panelLeft + (panelWidth - font.width(displayedName)) / 2 : x;
+		PlayerNameStyle.drawName(graphics, font, displayedName, nameX, y);
 		String[] keys = {"Basic", "Economy", "Premium", "First Class"};
 		String[] labels = {"Basic", "Economy", "Premium", "First-Class"};
 		int[] colours = {0xFF55FF55, 0xFF5599FF, 0xFFAA55FF, 0xFFFFAA00};
@@ -596,7 +593,7 @@ public final class SparklingScreen extends Screen {
 			}
 			return y + 34;
 		}
-		int cursor = x + font.width(name) + font.width("  ");
+		int cursor = x + font.width(displayedName) + font.width("  ");
 		text(graphics, "(  ", cursor, y, WHITE);
 		cursor += font.width("(  ");
 		for (int i = 0; i < keys.length; i++) {
@@ -670,6 +667,7 @@ public final class SparklingScreen extends Screen {
 	}
 
 	private static void rememberLookup(SparklingPlayerLookup result) {
+		CanonicalPlayerNames.remember(result.username());
 		recentLookups.removeIf(saved -> saved.username().equalsIgnoreCase(result.username()));
 		recentLookups.addFirst(result);
 		while (recentLookups.size() > 10) recentLookups.removeLast();
@@ -692,15 +690,15 @@ public final class SparklingScreen extends Screen {
 		graphics.fill(x, y, x + width, y + height, hovered ? HOVER : SURFACE);
 		themedOutline(graphics, x, y, width, height, recentLookupsOpen ? AQUA : BORDER);
 		String buttonText = trimToWidth(selected, width - 25) + (recentLookupsOpen ? "  ▴" : "  ▾");
-		if (lastLookup != null && SharedSparklingProviders.specialName(lastLookup.username())) {
+		if (lastLookup != null && (SpecialTheme.rainbow()
+				|| SharedSparklingProviders.specialName(lastLookup.username()))) {
 			centeredRainbowName(graphics, "Recent: ", lastLookup.username(),
 				recentLookupsOpen ? "  ▴" : "  ▾", x, width, centeredTextY(y, height),
 				recentLookupsOpen ? AQUA : LABEL);
 		} else if (lastLookup != null) {
-			int rankColour = SharedSparklingProviders.nameColour(lastLookup.username());
 			centeredColouredName(graphics, "Recent: ", lastLookup.username(),
 				recentLookupsOpen ? "  ▴" : "  ▾", x, width, centeredTextY(y, height),
-				recentLookupsOpen ? AQUA : LABEL, rankColour == -1 ? LABEL : rankColour);
+				recentLookupsOpen ? AQUA : LABEL, PlayerNameStyle.colour(lastLookup.username()));
 		} else {
 			centered(graphics, buttonText, x, width, centeredTextY(y, height),
 				recentLookupsOpen ? AQUA : LABEL);
@@ -715,13 +713,14 @@ public final class SparklingScreen extends Screen {
 			graphics.fill(x, itemY, x + width, itemY + height, itemHovered ? HOVER : 0xFF141B25);
 			themedOutline(graphics, x, itemY, width, height, BORDER);
 			if (SharedSparklingProviders.specialName(saved.username())) {
-				UIDraw.rainbowText(graphics, font, saved.username(),
-					x + (width - font.width(saved.username())) / 2,
+				String displayedName = CanonicalPlayerNames.display(saved.username());
+				UIDraw.rainbowText(graphics, font, displayedName,
+					x + (width - font.width(displayedName)) / 2,
 					centeredTextY(itemY, height), 0.45f);
 			} else {
-				int rankColour = SharedSparklingProviders.nameColour(saved.username());
-				centered(graphics, saved.username(), x, width, centeredTextY(itemY, height),
-					rankColour == -1 ? (itemHovered ? WHITE : LABEL) : rankColour);
+				String displayedName = CanonicalPlayerNames.display(saved.username());
+				PlayerNameStyle.drawName(graphics, font, displayedName,
+					x + (width - font.width(displayedName)) / 2, centeredTextY(itemY, height));
 			}
 			hits.add(new Hit(x, itemY, width, height, "Recent Player", () -> selectRecent(saved)));
 		}
@@ -957,42 +956,40 @@ public final class SparklingScreen extends Screen {
 
 	private void centeredRainbowName(GuiGraphicsExtractor graphics, String prefix, String name,
 			String suffix, int x, int width, int y, int colour) {
-		int cursor = x + (width - font.width(prefix + name + suffix)) / 2;
+		String displayedName = CanonicalPlayerNames.display(name);
+		int cursor = x + (width - font.width(prefix + displayedName + suffix)) / 2;
 		text(graphics, prefix, cursor, y, colour);
 		cursor += font.width(prefix);
-		UIDraw.rainbowText(graphics, font, name, cursor, y, 0.45f);
-		cursor += font.width(name);
+		UIDraw.rainbowText(graphics, font, displayedName, cursor, y, 0.45f);
+		cursor += font.width(displayedName);
 		text(graphics, suffix, cursor, y, colour);
 	}
 
 	private void centeredColouredName(GuiGraphicsExtractor graphics, String prefix, String name,
 			String suffix, int x, int width, int y, int colour, int nameColour) {
-		int cursor = x + (width - font.width(prefix + name + suffix)) / 2;
+		String displayedName = CanonicalPlayerNames.display(name);
+		int cursor = x + (width - font.width(prefix + displayedName + suffix)) / 2;
 		text(graphics, prefix, cursor, y, colour);
 		cursor += font.width(prefix);
-		text(graphics, name, cursor, y, nameColour);
-		cursor += font.width(name);
+		graphics.text(font, Component.literal(displayedName), cursor, y, nameColour);
+		cursor += font.width(displayedName);
 		text(graphics, suffix, cursor, y, colour);
 	}
 
 	private void drawPartyMembers(GuiGraphicsExtractor graphics, List<String> members, int y) {
 		String prefix = "Party   ✦   ";
-		String joined = String.join(", ", members);
+		List<String> displayed = members.stream().map(CanonicalPlayerNames::display).toList();
+		String joined = String.join(", ", displayed);
 		int cursor = panelLeft + (panelWidth - font.width(prefix + joined)) / 2;
 		text(graphics, prefix, cursor, y, WHITE);
 		cursor += font.width(prefix);
-		for (int i = 0; i < members.size(); i++) {
+		for (int i = 0; i < displayed.size(); i++) {
 			if (i > 0) {
 				text(graphics, ", ", cursor, y, WHITE);
 				cursor += font.width(", ");
 			}
-			String name = members.get(i);
-			if (SharedSparklingProviders.specialName(name)) {
-				UIDraw.rainbowText(graphics, font, name, cursor, y, 0.45f);
-			} else {
-				int rankColour = SharedSparklingProviders.nameColour(name);
-				text(graphics, name, cursor, y, rankColour == -1 ? WHITE : rankColour);
-			}
+			String name = displayed.get(i);
+			PlayerNameStyle.drawName(graphics, font, name, cursor, y);
 			cursor += font.width(name);
 		}
 	}

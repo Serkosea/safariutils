@@ -34,6 +34,11 @@ public interface SharedSparklingProvider {
 		return -1;
 	}
 
+	/** Asynchronously primes the cached network-rank colour when this provider supports it. */
+	default CompletableFuture<Integer> refreshNameColour(String name, String uuid) {
+		return CompletableFuture.completedFuture(nameColour(name));
+	}
+
 	/** Whether a private build gives this UUID-backed player its special name style. */
 	default boolean specialName(String name) {
 		return false;

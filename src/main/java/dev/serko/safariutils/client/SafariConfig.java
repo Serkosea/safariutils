@@ -1334,9 +1334,9 @@ public class SafariConfig {
 		private static final int BIRDFEEDER_EMPTY = 124;
 		private static final int APPEAR_BIRDFEEDER_EMPTY = 125;
 		private static final int SOUND_SETTINGS_BIRDFEEDER_EMPTY = 126;
-		private static final int PRIVATE_FEED_DONE = 127;
-		private static final int PRIVATE_APPEAR_FEED_DONE = 128;
-		private static final int PRIVATE_SOUND_FEED_DONE = 129;
+		private static final int ALL_FEED_DONE = 127;
+		private static final int ALL_FEED_DONE_APPEARANCE = 128;
+		private static final int ALL_FEED_DONE_SOUND = 129;
 
 		@SettingInfo(name = "Mute Other Sounds", desc = "Mutes Minecraft audio except Safari Utils alert sounds and previews")
 		@SettingToggle @Expose
@@ -2658,48 +2658,57 @@ public class SafariConfig {
 		public float feedGoneSoundPitch = 0.5f;
 
 		@SettingInfo(name = "All Feed Done", desc = "")
-		@SettingSection(id = PRIVATE_FEED_DONE) @SettingGroup(id = BIRD_ALERTS)
-		public boolean privateFeedDoneAlertAccordion = false;
+		@SettingSection(id = ALL_FEED_DONE) @SettingGroup(id = BIRD_ALERTS)
+		public boolean allFeedDoneAlertAccordion = false;
 		@SettingInfo(name = "Play Alert", desc = "Plays when every synchronized feed item has spawned a bird")
 		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"})
-		@SettingGroup(id = PRIVATE_FEED_DONE) @Expose
-		public int privateFeedDoneSoundMode = 3;
+		@SettingGroup(id = ALL_FEED_DONE) @Expose
+		@SerializedName(value = "allFeedDoneSoundMode", alternate = "privateFeedDoneSoundMode")
+		public int allFeedDoneSoundMode = 3;
 		@SettingInfo(name = "Appearance Settings", desc = "")
-		@SettingSection(id = PRIVATE_APPEAR_FEED_DONE) @SettingGroup(id = PRIVATE_FEED_DONE)
-		public boolean privateFeedDoneAppearanceAccordion = false;
+		@SettingSection(id = ALL_FEED_DONE_APPEARANCE) @SettingGroup(id = ALL_FEED_DONE)
+		public boolean allFeedDoneAppearanceAccordion = false;
 		@SettingInfo(name = "Text", desc = "") @SettingText
-		@SettingGroup(id = PRIVATE_APPEAR_FEED_DONE) @Expose
-		public String privateFeedDoneText = "All Feed Done";
+		@SettingGroup(id = ALL_FEED_DONE_APPEARANCE) @Expose
+		@SerializedName(value = "allFeedDoneText", alternate = "privateFeedDoneText")
+		public String allFeedDoneText = "All Feed Done";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
 		@SettingRange(minValue = 0.1f, maxValue = 10f, minStep = 0.1f)
-		@SettingGroup(id = PRIVATE_APPEAR_FEED_DONE) @Expose
-		public float privateFeedDoneScale = 4f;
+		@SettingGroup(id = ALL_FEED_DONE_APPEARANCE) @Expose
+		@SerializedName(value = "allFeedDoneScale", alternate = "privateFeedDoneScale")
+		public float allFeedDoneScale = 4f;
 		@SettingInfo(name = "Vertical Position", desc = "How far down the screen this banner alert sits\n§7Always centered horizontally")
 		@SettingRange(minValue = 0f, maxValue = 1f, minStep = 0.01f)
-		@SettingGroup(id = PRIVATE_APPEAR_FEED_DONE) @Expose
-		public float privateFeedDoneVerticalPosition = 0.4f;
+		@SettingGroup(id = ALL_FEED_DONE_APPEARANCE) @Expose
+		@SerializedName(value = "allFeedDoneVerticalPosition", alternate = "privateFeedDoneVerticalPosition")
+		public float allFeedDoneVerticalPosition = 0.4f;
 		@SettingInfo(name = "Duration", desc = "How long this banner stays on screen, in seconds")
 		@SettingRange(minValue = 0.5f, maxValue = 30f, minStep = 0.5f)
-		@SettingGroup(id = PRIVATE_APPEAR_FEED_DONE) @Expose
-		public float privateFeedDoneDuration = 3f;
+		@SettingGroup(id = ALL_FEED_DONE_APPEARANCE) @Expose
+		@SerializedName(value = "allFeedDoneDuration", alternate = "privateFeedDoneDuration")
+		public float allFeedDoneDuration = 3f;
 		@SettingInfo(name = "Color", desc = "") @SettingColor
-		@SettingGroup(id = PRIVATE_APPEAR_FEED_DONE) @Expose
-		public String privateFeedDoneColour = DisplayConfig.colour(0x55, 0xFF, 0x55);
+		@SettingGroup(id = ALL_FEED_DONE_APPEARANCE) @Expose
+		@SerializedName(value = "allFeedDoneColour", alternate = "privateFeedDoneColour")
+		public String allFeedDoneColour = DisplayConfig.colour(0x55, 0xFF, 0x55);
 		@SettingInfo(name = "Sound Settings", desc = "")
-		@SettingSection(id = PRIVATE_SOUND_FEED_DONE) @SettingGroup(id = PRIVATE_FEED_DONE)
-		public boolean privateFeedDoneSoundAccordion = false;
+		@SettingSection(id = ALL_FEED_DONE_SOUND) @SettingGroup(id = ALL_FEED_DONE)
+		public boolean allFeedDoneSoundAccordion = false;
 		@SettingInfo(name = "Sound Choice", desc = "")
 		@SettingChoice(values = {"Challenge Complete", "Player Level Up", "Experience Orb", "Amethyst Chime", "Note Block Pling", "Note Block Bell", "Beacon Activate", "Button Click", "Totem Used", "Note Block Chime", "Note Block Xylophone", "Note Block Iron Xylophone", "Note Block Cow Bell", "Note Block Flute", "Note Block Harp", "Note Block Banjo", "Note Block Didgeridoo", "Enchanting Table", "Ender Chest Open", "Firework Twinkle"})
-		@SettingGroup(id = PRIVATE_SOUND_FEED_DONE) @Expose
-		public int privateFeedDoneSoundChoice = 9;
+		@SettingGroup(id = ALL_FEED_DONE_SOUND) @Expose
+		@SerializedName(value = "allFeedDoneSoundChoice", alternate = "privateFeedDoneSoundChoice")
+		public int allFeedDoneSoundChoice = 9;
 		@SettingInfo(name = "Volume", desc = "")
 		@SettingRange(minValue = 0f, maxValue = 20f, minStep = 0.1f)
-		@SettingGroup(id = PRIVATE_SOUND_FEED_DONE) @Expose
-		public float privateFeedDoneSoundVolume = 20f;
+		@SettingGroup(id = ALL_FEED_DONE_SOUND) @Expose
+		@SerializedName(value = "allFeedDoneSoundVolume", alternate = "privateFeedDoneSoundVolume")
+		public float allFeedDoneSoundVolume = 20f;
 		@SettingInfo(name = "Pitch", desc = "")
 		@SettingRange(minValue = 0.5f, maxValue = 2f, minStep = 0.1f)
-		@SettingGroup(id = PRIVATE_SOUND_FEED_DONE) @Expose
-		public float privateFeedDoneSoundPitch = 0.5f;
+		@SettingGroup(id = ALL_FEED_DONE_SOUND) @Expose
+		@SerializedName(value = "allFeedDoneSoundPitch", alternate = "privateFeedDoneSoundPitch")
+		public float allFeedDoneSoundPitch = 0.5f;
 
 		public boolean soundContestAlertsAccordion = false;
 
@@ -3069,7 +3078,7 @@ public class SafariConfig {
 		private static final int CHAT_TOTAL_FEED = 21;
 		private static final int CHAT_FEED_GONE = 22;
 		private static final int CHAT_STARTING_ITEMS = 23;
-		private static final int PRIVATE_CHAT_FEED_DONE = 24;
+		private static final int CHAT_ALL_FEED_DONE = 24;
 
 		@SettingInfo(name = "Safari Chat Alerts", desc = "")
 		@SettingSection(id = SAFARI_CHAT_ALERTS)
@@ -3237,15 +3246,17 @@ public class SafariConfig {
 		public String feedGoneChatText = "All Feed Used!";
 
 		@SettingInfo(name = "All Feed Done", desc = "")
-		@SettingSection(id = PRIVATE_CHAT_FEED_DONE) @SettingGroup(id = CHAT_BIRDS)
-		public boolean privateFeedDoneChatAccordion = false;
+		@SettingSection(id = CHAT_ALL_FEED_DONE) @SettingGroup(id = CHAT_BIRDS)
+		public boolean allFeedDoneChatAccordion = false;
 		@SettingInfo(name = "Send To", desc = "Sends when every synchronized feed item has spawned a bird")
 		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
-		@SettingGroup(id = PRIVATE_CHAT_FEED_DONE) @Expose
-		public int privateFeedDoneBroadcast = 1;
+		@SettingGroup(id = CHAT_ALL_FEED_DONE) @Expose
+		@SerializedName(value = "allFeedDoneBroadcast", alternate = "privateFeedDoneBroadcast")
+		public int allFeedDoneBroadcast = 1;
 		@SettingInfo(name = "Text", desc = "") @SettingText
-		@SettingGroup(id = PRIVATE_CHAT_FEED_DONE) @Expose
-		public String privateFeedDoneChatText = "All Feed Done!";
+		@SettingGroup(id = CHAT_ALL_FEED_DONE) @Expose
+		@SerializedName(value = "allFeedDoneChatText", alternate = "privateFeedDoneChatText")
+		public String allFeedDoneChatText = "All Feed Done!";
 
 		@SettingInfo(name = "Contest Chat Alerts", desc = "")
 		@SettingSection(id = CONTEST_CHAT_ALERTS)
@@ -3332,8 +3343,8 @@ public class SafariConfig {
 			return broadcast(feedGoneBroadcast);
 		}
 
-		public Broadcast privateFeedDone() {
-			return broadcast(privateFeedDoneBroadcast);
+		public Broadcast allFeedDone() {
+			return broadcast(allFeedDoneBroadcast);
 		}
 
 		public Broadcast hotspot() {
@@ -3390,12 +3401,27 @@ public class SafariConfig {
 
 		// Edited by the dedicated Ticket Trading screen rather than ordinary cards.
 		@Expose public boolean ticketTradingEnabled = false;
-		@Expose public String ticketTradingPlayer1 = "";
-		@Expose public String ticketTradingPlayer2 = "";
-		@Expose public String ticketTradingPlayer3 = "";
-		@Expose public boolean ticketTradingSparkling1 = false;
-		@Expose public boolean ticketTradingSparkling2 = false;
-		@Expose public boolean ticketTradingSparkling3 = false;
+		@Expose public java.util.List<TicketTraderProfile> ticketTradingProfiles = new java.util.ArrayList<>();
+		@Expose public String ticketTradingSlot1 = "";
+		@Expose public String ticketTradingSlot2 = "";
+		@Expose public String ticketTradingSlot3 = "";
+		@Expose public String ticketTradingBackupSlot1 = "";
+		@Expose public String ticketTradingBackupSlot2 = "";
+		@Expose public String ticketTradingBackupSlot3 = "";
+
+		public static class TicketTraderProfile {
+			@Expose public String username = "";
+			@Expose public boolean sparklingOnly = false;
+			@Expose public long sparklingCritters = dev.serko.safariutils.data.Critters.allSelectionMask();
+
+			public TicketTraderProfile() { }
+
+			public TicketTraderProfile(String username, boolean sparklingOnly, long sparklingCritters) {
+				this.username = username;
+				this.sparklingOnly = sparklingOnly;
+				this.sparklingCritters = sparklingCritters;
+			}
+		}
 
 		@SettingInfo(name = "Sparkling Mode Options", desc = "")
 		@SettingSection(id = SPARKLING_MODE_OPTIONS)

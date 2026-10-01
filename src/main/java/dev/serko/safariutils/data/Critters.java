@@ -114,6 +114,17 @@ public final class Critters {
 		return SELECTION_ORDER;
 	}
 
+	/** Bit mask containing every species in the shared picker order. */
+	public static long allSelectionMask() {
+		return (1L << SELECTION_ORDER.size()) - 1L;
+	}
+
+	/** Stable picker bit for one species, or zero for an unknown instance. */
+	public static long selectionMask(Critter critter) {
+		int index = SELECTION_ORDER.indexOf(critter);
+		return index < 0 ? 0L : 1L << index;
+	}
+
 	public static List<SafariBiome> selectionBiomes() {
 		return SELECTION_BIOMES;
 	}

@@ -10,7 +10,7 @@ Safari Utils is a Fabric mod made for Hypixel SkyBlock's Critter Safari. It keep
 - A dedicated Sparkling menu with editable collection totals, party-shared lists, Sparkling Mode, selectable always-active critters and waypoints, and special catch effects.
 - Helpful markers for Safari objectives and encounters.
 - Party-ready alerts and ticket protection while waiting for everyone to arrive.
-- Optional Ticket Trading for timed invites, Safari warping, cleanup, and per-player Sparkling-only transfers with up to three explicitly configured players.
+- Optional Ticket Trading with reusable player profiles, active and backup slots, timed Safari transfers, and per-player Sparkling species filters.
 - Optional Party Sync for sharing objective state through parsed party chat when every member uses Safari Utils and explicitly enables it.
 - Selective hiding for processed general chat and independently grouped Cavern, Icy, Haunted, and Forest objective messages.
 - Automatic Hideyho acceptance, Birdfeeder inventory/empty alerts, and configurable starting-item party messages.
@@ -25,8 +25,8 @@ Choose the jar that matches your Minecraft version.
 
 | Minecraft | Safe Mode | Extra |
 |---|---|---|
-| 26.1.2 | `safariutils-2.2.1+mc26.1.2.jar` | `safariutils-2.2.1-extra+mc26.1.2.jar` |
-| 26.2 | `safariutils-2.2.1+mc26.2.jar` | `safariutils-2.2.1-extra+mc26.2.jar` |
+| 26.1.2 | `safariutils-2.4.0+mc26.1.2.jar` | `safariutils-2.4.0-extra+mc26.1.2.jar` |
+| 26.2 | `safariutils-2.4.0+mc26.2.jar` | `safariutils-2.4.0-extra+mc26.2.jar` |
 
 The Safe Mode edition is the recommended download. Extra includes features that may provide information the player cannot directly see and may not be safe to use.
 

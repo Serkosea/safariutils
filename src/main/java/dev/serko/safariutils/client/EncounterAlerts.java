@@ -413,20 +413,20 @@ public final class EncounterAlerts implements HudElement {
 			a.birdfeederEmptyScale, a.birdfeederEmptyVerticalPosition);
 	}
 
-	/** Private synchronized completion: every discovered feed has produced a bird event. */
-	public static void onPrivateFeedDone(boolean sendChat) {
+	/** Every discovered feed has produced a bird event. */
+	public static void onAllFeedDone(boolean sendChat) {
 		SafariConfig config = ConfigManager.get();
 		SafariConfig.AlertConfig alerts = config.alerts;
-		if (birdBannerAllowed() && alerts.privateFeedDoneSoundMode != 0) {
-			banner(alerts.privateFeedDoneText,
-				Colours.argb(alerts.privateFeedDoneColour, 0xFF55FF55),
-				alerts.privateFeedDoneSoundPitch, alerts.privateFeedDoneDuration,
-				alerts.privateFeedDoneSoundMode, alerts.privateFeedDoneSoundChoice,
-				alerts.privateFeedDoneSoundVolume, alerts.privateFeedDoneScale,
-				alerts.privateFeedDoneVerticalPosition);
+		if (birdBannerAllowed() && alerts.allFeedDoneSoundMode != 0) {
+			banner(alerts.allFeedDoneText,
+				Colours.argb(alerts.allFeedDoneColour, 0xFF55FF55),
+				alerts.allFeedDoneSoundPitch, alerts.allFeedDoneDuration,
+				alerts.allFeedDoneSoundMode, alerts.allFeedDoneSoundChoice,
+				alerts.allFeedDoneSoundVolume, alerts.allFeedDoneScale,
+				alerts.allFeedDoneVerticalPosition);
 		}
 		if (sendChat && birdChatAllowed()) {
-			post(config.party.privateFeedDone(), config.party.privateFeedDoneChatText);
+			post(config.party.allFeedDone(), config.party.allFeedDoneChatText);
 		}
 	}
 

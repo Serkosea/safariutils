@@ -36,6 +36,14 @@ final class ResponsiveUI {
 		return Math.max(Math.min(minimum, available), Math.min(preferred, available));
 	}
 
+	/** Fits a fixed minimum layout inside a canvas while preserving an outer gutter. */
+	static float fitScale(int width, int height, int contentWidth, int contentHeight, int gutter) {
+		int paddedWidth = Math.max(1, contentWidth + gutter * 2);
+		int paddedHeight = Math.max(1, contentHeight + gutter * 2);
+		return Math.min(1f, Math.min(width / (float) paddedWidth,
+			height / (float) paddedHeight));
+	}
+
 	static int columns(int availableWidth, int preferredWidth, int minimumWidth, int maximum) {
 		if (availableWidth <= 0) return 1;
 		int preferred = Math.max(1, availableWidth / Math.max(1, preferredWidth));

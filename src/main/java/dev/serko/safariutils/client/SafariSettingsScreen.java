@@ -30,6 +30,7 @@ public final class SafariSettingsScreen extends Screen {
 	private static String rememberedSettingsArea;
 	private static String rememberedSettingsTab;
 	private static int rememberedScroll;
+	private static Set<String> rememberedExpandedSections = Set.of();
 	private static long rememberedAt;
 	private static final int WIDE_NAV_WIDTH = 136;
 	private static final int HEADER_HEIGHT = 48;
@@ -311,7 +312,17 @@ public final class SafariSettingsScreen extends Screen {
 			selectedArea = settingsAreas.stream().filter(area -> area.key.equals(rememberedSettingsArea))
 				.findFirst().orElse(selectedArea);
 			selectRememberedTab();
+			restoreRememberedSections();
 			scroll = rememberedScroll;
+		}
+	}
+
+	private void restoreRememberedSections() {
+		if (selectedTab == null || rememberedExpandedSections.isEmpty()) return;
+		for (SettingsPage page : selectedTab.pages) {
+			if (rememberedExpandedSections.contains(page.key)) {
+				expandedSettingSections.add(page.key);
+			}
 		}
 	}
 
@@ -323,7 +334,6 @@ public final class SafariSettingsScreen extends Screen {
 		for (Field field : SafariConfig.class.getFields()) {
 			SettingCategory category = field.getAnnotation(SettingCategory.class);
 			if (category == null) continue;
-			if (field.getName().equals("advanced") && !AdvancedUnlock.isUnlocked()) continue;
 			try {
 				categories.add(new SettingCategoryView(field.getName(), field, field.get(config), category));
 			} catch (IllegalAccessException ignored) {
@@ -808,6 +818,7 @@ public final class SafariSettingsScreen extends Screen {
 		rememberedSettingsArea = selectedArea == null ? null : selectedArea.key;
 		rememberedSettingsTab = selectedTab == null ? null : selectedTab.key;
 		rememberedScroll = scroll;
+		rememberedExpandedSections = Set.copyOf(expandedSettingSections);
 		rememberedAt = System.currentTimeMillis();
 	}
 
@@ -1568,7 +1579,7 @@ public final class SafariSettingsScreen extends Screen {
 			.toArray(Field[]::new));
 	}
 
-	/** Keeps developer tools private and hides Safe Mode controls in Safe Mode jars. */
+	/** Applies build-level availability; navigation separately gates Safe Mode and Developer areas. */
 	private static boolean visibleInThisBuild(Class<?> owner, Field field) {
 		if (field.getName().startsWith("private") && !BuildVersion.PRIVATE) return false;
 		if (owner == SafariConfig.AdvancedConfig.class

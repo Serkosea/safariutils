@@ -2,7 +2,7 @@ package dev.serko.safariutils.client;
 
 import net.minecraft.network.chat.Component;
 
-/** Hides Hypixel's not-in-a-party response only after a Safari Utils party send. */
+/** Hides Hypixel's not-in-a-party response only after a SafariUtils party send. */
 public final class PartyErrorSuppressor {
 	private static final String NOT_IN_PARTY = "You are not in a party right now.";
 	private static final long RESPONSE_WINDOW_MILLIS = 3_000L;

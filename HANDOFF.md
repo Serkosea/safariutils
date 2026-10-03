@@ -1,10 +1,10 @@
-# Safari Utils developer handoff
+# SafariUtils developer handoff
 
 This document records the invariants needed to maintain the current codebase. User-facing features, installation, and commands belong in [README.md](README.md); release history belongs in [CHANGELOG.md](CHANGELOG.md).
 
 ## Project and builds
 
-Safari Utils is a client-side Fabric mod for Hypixel SkyBlock's Critter Safari. It targets Java 25, Fabric Loader 0.19+, and the Minecraft profiles under `gradle/versions/`.
+SafariUtils is a client-side Fabric mod for Hypixel SkyBlock's Critter Safari. It targets Java 25, Fabric Loader 0.19+, and the Minecraft profiles under `gradle/versions/`.
 
 - Shared code: `src/main/java`
 - Profile compatibility code: `src/<profile>/java`
@@ -23,7 +23,7 @@ Mode options; Private adds the ignored API provider; Developer adds diagnostics 
 SafariUtils diagnostic files and their controls are Developer-only. Release variants
 still report failures to Minecraft's standard log without starting the custom writer.
 
-Build variants use separate output directories so stale private classes cannot enter public jars. `DeployBuilds` builds and deploys the 26.1.2 and 26.2 Developer jars, then mirrors Safari Utils configuration from the 26.2 main instance to the 26.2 Ticket Collecting instance. `BuildArtifacts` builds all eight profile/variant combinations sequentially and synchronizes only those current jars directly into the flat `release-artifacts/` folder.
+Build variants use separate output directories so stale private classes cannot enter public jars. `DeployBuilds` builds and deploys the 26.1.2 and 26.2 Developer jars, then mirrors SafariUtils configuration from the 26.2 main instance to the 26.2 Ticket Collecting instance. `BuildArtifacts` builds all eight profile/variant combinations sequentially and synchronizes only those current jars directly into the flat `release-artifacts/` folder.
 
 Artifact names place the variant after the version: no suffix for normal Safe Mode,
 `-extra`, `-private`, or `-developer`. Clean-build all eight profile/variant

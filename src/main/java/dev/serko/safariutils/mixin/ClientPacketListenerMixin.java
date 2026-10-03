@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Minimal packet hooks required by live Safari Utils features. */
+/** Minimal packet hooks required by live SafariUtils features. */
 @Mixin(ClientPacketListener.class)
 public abstract class ClientPacketListenerMixin {
 	@Inject(method = "handleLogin", at = @At("HEAD"))

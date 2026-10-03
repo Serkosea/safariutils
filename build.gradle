@@ -200,7 +200,7 @@ supportedDeveloperProfiles.each { profileName ->
 }
 
 tasks.register('DeployBuilds') {
-	description = 'Build and deploy both Developer jars, then mirror the 26.2 Safari Utils config one-way.'
+	description = 'Build and deploy both Developer jars, then mirror the 26.2 SafariUtils config one-way.'
 	group = 'fabric'
 	dependsOn deployProfiles.collect { developerBuildTasks[it] }
 	onlyIf {
@@ -234,13 +234,13 @@ tasks.register('DeployBuilds') {
 			def source = file(deployConfigSourceValue)
 			def target = file(deployConfigTargetValue)
 			if (!source.isDirectory()) {
-				throw new GradleException("Main Safari Utils config folder does not exist: ${source}")
+				throw new GradleException("Main SafariUtils config folder does not exist: ${source}")
 			}
 			fileSystemOperations.sync {
 				from source
 				into target
 			}
-			logger.lifecycle("Safari Utils config mirrored one-way: ${source} -> ${target}")
+			logger.lifecycle("SafariUtils config mirrored one-way: ${source} -> ${target}")
 		}
 	}
 }

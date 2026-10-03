@@ -1,7 +1,7 @@
 package dev.serko.safariutils.client;
 
 /**
- * Reads both Safari Utils hex colours and the legacy {@code speed:alpha:r:g:b}
+ * Reads both SafariUtils hex colours and the legacy {@code speed:alpha:r:g:b}
  * representation so existing settings migrate without visible changes.
  */
 public final class Colours {

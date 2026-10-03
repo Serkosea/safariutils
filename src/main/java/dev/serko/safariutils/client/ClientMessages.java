@@ -10,7 +10,7 @@ import net.minecraft.network.chat.MutableComponent;
 
 import java.net.URI;
 
-/** Builds client-only Safari Utils messages with one recognizable fixed palette. */
+/** Builds client-only SafariUtils messages with one recognizable fixed palette. */
 public final class ClientMessages {
 	public enum Tone { INFO, SUCCESS, WARNING, ERROR, MUTED }
 	private static final int BRACKET = 0xFFD45A;
@@ -30,7 +30,7 @@ public final class ClientMessages {
 	}
 
 	public static void sendUpdate(String available, URI release, String linkLabel) {
-		String body = "Safari Utils v" + available + " is available ";
+		String body = "SafariUtils v" + available + " is available ";
 		String linkText = "[" + linkLabel + "]";
 		MutableComponent message;
 		if (SpecialTheme.rainbow()) {
@@ -38,7 +38,7 @@ public final class ClientMessages {
 				.append(themedLink(linkText, release, linkLabel));
 		} else {
 			message = prefix()
-				.append(Component.literal("Safari Utils ").withStyle(style -> style.withColor(INFO)))
+				.append(Component.literal("SafariUtils ").withStyle(style -> style.withColor(INFO)))
 				.append(Component.literal("v" + available).withStyle(style ->
 					style.withColor(WARNING).withBold(true)))
 				.append(Component.literal(" is available ").withStyle(style -> style.withColor(INFO)))

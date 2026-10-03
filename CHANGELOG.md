@@ -332,7 +332,7 @@
 
 ### Alerts and birds
 
-- Added Mute Other Sounds to keep Safari Utils alerts and sound previews audible while muting other Minecraft audio
+- Added Mute Other Sounds to keep SafariUtils alerts and sound previews audible while muting other Minecraft audio
 - Changed an empty `<ALL_FEED>` value to `No Feed`
 - Removed the unintended local client-message copy of Biome Uniques Done chat alerts
 - Split Contest warning suppression into separate banner and chat settings
@@ -426,7 +426,7 @@
 
 ## [1.0.0] - 2026-08-29
 
-The first standalone Safari Utils release.
+The first standalone SafariUtils release.
 
 ### Safari tracking
 

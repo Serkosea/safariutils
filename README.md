@@ -1,6 +1,6 @@
-# Safari Utils
+# SafariUtils
 
-Safari Utils is a Fabric mod made for Hypixel SkyBlock's Critter Safari. It keeps the useful parts of a run in one place: catches, missing critters, profit, Sparkling progress, party readiness, and Miria's Contest information.
+SafariUtils is a Fabric mod made for Hypixel SkyBlock's Critter Safari. It keeps the useful parts of a run in one place: catches, missing critters, profit, Sparkling progress, party readiness, and Miria's Contest information.
 
 ## What it includes
 
@@ -11,7 +11,7 @@ Safari Utils is a Fabric mod made for Hypixel SkyBlock's Critter Safari. It keep
 - Helpful markers for Safari objectives and encounters.
 - Party-ready alerts and ticket protection while waiting for everyone to arrive.
 - Optional Ticket Trading with reusable player profiles, active and backup slots, timed Safari transfers, and per-player Sparkling species filters.
-- Optional Party Sync for sharing objective state through parsed party chat when every member uses Safari Utils and explicitly enables it.
+- Optional Party Sync for sharing objective state through parsed party chat when every member uses SafariUtils and explicitly enables it.
 - Selective hiding for processed general chat and independently grouped Cavern, Icy, Haunted, and Forest objective messages.
 - Automatic Hideyho acceptance, Birdfeeder inventory/empty alerts, and configurable starting-item party messages.
 - A real-time Miria's Contest timer with bracket, score, and ticket tracking.
@@ -34,15 +34,15 @@ The Safe Mode edition is the recommended download. Extra includes features that 
 
 The Minecraft 26.1.2 builds have received limited testing compared with the 26.2 builds.
 
-Safari Utils requires Java 25, Fabric Loader 0.19 or newer, and Fabric API. Mod Menu is optional.
+SafariUtils requires Java 25, Fabric Loader 0.19 or newer, and Fabric API. Mod Menu is optional.
 
 ## Install
 
 1. Install Fabric Loader and Fabric API for your Minecraft version.
-2. Put the matching Safari Utils jar in the instance's `mods` folder.
+2. Put the matching SafariUtils jar in the instance's `mods` folder.
 3. Start Minecraft and enter `/su` to open the settings.
 
-Existing Safari Utils settings and history are moved into `config/safariutils/` automatically when possible.
+Existing SafariUtils settings and history are moved into `config/safariutils/` automatically when possible.
 Important mod errors are recorded automatically in timestamped `SafariUtils_*.log` files under `config/safariutils/logs/`.
 
 Party Sync is disabled on every launch. When enabled under Gameplay's Safari tab, it sends one compact visible verification token for a new stable Safari party and exchanges parsed objective updates only after every member confirms the same capability. Verification and shutdown tokens are bound to their displayed sender and current Safari lobby. Disabling it during an active synchronized run visibly notifies the party and stops synchronization for everyone.
@@ -51,7 +51,7 @@ Party Sync is disabled on every launch. When enabled under Gameplay's Safari tab
 
 | Command | Usage |
 |---|---|
-| `/su`, `/safari`, `/safariutils` | Opens Safari Utils settings. |
+| `/su`, `/safari`, `/safariutils` | Opens SafariUtils settings. |
 | `/su gui` | Opens the HUD editor. |
 | `/safari stats` | Opens run history and statistics. |
 | `/sparkling` | Opens the Sparkling collection and party menu. |
@@ -60,8 +60,8 @@ The `/su`, `/safari`, and `/safariutils` aliases support the same subcommands.
 
 ## License
 
-Safari Utils is available under the [MIT License](LICENSE).
+SafariUtils is available under the [MIT License](LICENSE).
 
-Credits: Safari Utils began with the initial framework from MrCloudy2's CritterMod, but almost everything has since been substantially changed, revamped, fixed, or improved.
+Credits: SafariUtils began with the initial framework from MrCloudy2's CritterMod, but almost everything has since been substantially changed, revamped, fixed, or improved.
 
 This is an independent community project. It is not affiliated with or endorsed by Hypixel.

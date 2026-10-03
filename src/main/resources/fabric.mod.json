@@ -2,7 +2,7 @@
     "schemaVersion": 1,
     "id": "safariutils",
     "version": "${version}",
-    "name": "Safari Utils",
+    "name": "SafariUtils",
     "description": "Client-side Hypixel SkyBlock mod with run tracking and quality-of-life features for Critter Safari",
     "authors": ["Serkosea"],
     "icon": "assets/safariutils/icon.png",

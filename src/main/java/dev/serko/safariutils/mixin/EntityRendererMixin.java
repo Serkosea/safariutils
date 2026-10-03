@@ -9,7 +9,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/** Hides only vanilla labels that Safari Utils replaced during its last render pass. */
+/** Hides only vanilla labels that SafariUtils replaced during its last render pass. */
 @Mixin(EntityRenderer.class)
 public abstract class EntityRendererMixin<T extends Entity, S extends EntityRenderState> {
 	@Inject(method = "shouldShowName", at = @At("HEAD"), cancellable = true)

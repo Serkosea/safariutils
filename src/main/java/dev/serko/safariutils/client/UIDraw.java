@@ -13,7 +13,7 @@ import java.util.function.BooleanSupplier;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** Small drawing primitives shared by Safari Utils screens and HUDs. */
+/** Small drawing primitives shared by SafariUtils screens and HUDs. */
 final class UIDraw {
 	/** Fixed spatial wavelength keeps adjacent or changing-length text on one gradient. */
 	private static final float RAINBOW_CYCLE_PIXELS = 96f;

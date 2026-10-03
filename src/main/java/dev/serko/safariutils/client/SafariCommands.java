@@ -30,7 +30,7 @@ import java.util.List;
 import java.util.TreeMap;
 import java.util.Map;
 
-/** Registers Safari Utils commands and their short aliases. */
+/** Registers SafariUtils commands and their short aliases. */
 public final class SafariCommands {
 
 	/** Matches what the server actually loads out here — wider just adds empty scan time. */

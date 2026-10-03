@@ -9,7 +9,7 @@ import java.util.List;
 /**
  * Settings mapped to {@code config/safariutils/safariutils.json}. Public field names
  * are persistence keys unless an explicit {@link SerializedName} migration preserves
- * an older key; UI annotations are owned by Safari Utils.
+ * an older key; UI annotations are owned by SafariUtils.
  */
 public class SafariConfig {
 	public static class SavedAlertPreset {
@@ -1338,7 +1338,7 @@ public class SafariConfig {
 		private static final int ALL_FEED_DONE_APPEARANCE = 128;
 		private static final int ALL_FEED_DONE_SOUND = 129;
 
-		@SettingInfo(name = "Mute Other Sounds", desc = "Mutes Minecraft audio except Safari Utils alert sounds and previews")
+		@SettingInfo(name = "Mute Other Sounds", desc = "Mutes Minecraft audio except SafariUtils alert sounds and previews")
 		@SettingToggle @Expose
 		public boolean muteOtherSounds = false;
 

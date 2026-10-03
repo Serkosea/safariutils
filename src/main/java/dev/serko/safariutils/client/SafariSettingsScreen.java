@@ -21,7 +21,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/** Safari Utils' fast, dependency-free settings workspace. */
+/** SafariUtils' fast, dependency-free settings workspace. */
 public final class SafariSettingsScreen extends Screen {
 	private static final long REOPEN_MEMORY_MILLIS = 10_000L;
 	private static final Map<Class<?>, Field[]> PUBLIC_FIELDS = new HashMap<>();
@@ -307,7 +307,7 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	public SafariSettingsScreen(Screen parent) {
-		super(Component.literal("Safari Utils Settings"));
+		super(Component.literal("SafariUtils Settings"));
 		this.parent = parent;
 		loadCategories();
 		if (System.currentTimeMillis() - rememberedAt <= REOPEN_MEMORY_MILLIS) {
@@ -763,7 +763,7 @@ public final class SafariSettingsScreen extends Screen {
 		searchFrameWidth = searchWidth;
 		searchFrameHeight = 20;
 		// The native unbordered control puts text at its own top-left. Inset the
-		// widget itself while Safari Utils draws the themed outer shell.
+		// widget itself while SafariUtils draws the themed outer shell.
 		search = new EditBox(font, searchX + 4, searchFrameY + 6,
 			Math.max(8, searchWidth - 8), 9,
 			Component.literal("Search Settings"));
@@ -3479,7 +3479,7 @@ public final class SafariSettingsScreen extends Screen {
 			"Objective updates are then shared through parsed party messages.",
 			x + w / 2, y + 52, TEXT);
 		graphics.centeredText(font,
-			"It only activates when every party member has Safari Utils",
+			"It only activates when every party member has SafariUtils",
 			x + w / 2, y + 70, MUTED);
 		graphics.centeredText(font,
 			"and has Enable Party Sync turned on.", x + w / 2, y + 84, MUTED);

@@ -1,4 +1,4 @@
-"""Generate distinct loop/cadence OGG arrangements for Safari Utils."""
+"""Generate distinct loop/cadence OGG arrangements for SafariUtils."""
 
 from __future__ import annotations
 

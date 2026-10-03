@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.Properties;
 
-/** Build-time switches shared by every Safari Utils version. */
+/** Build-time switches shared by every SafariUtils version. */
 public final class BuildVersion {
 	private static final Properties PROPERTIES = load();
 	public static final boolean SAFE = flag("safe");

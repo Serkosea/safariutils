@@ -79,7 +79,7 @@ public final class UpdateChecker {
 	public static String publishedAt() { return publishedAt; }
 	public static URI releasePage() { return releasePage; }
 	public static String releaseLinkLabel() {
-		return BuildVersion.PRIVATE ? "Private Downloads" : "GitHub Release";
+		return BuildVersion.PRIVATE ? "Private Release" : "GitHub Release";
 	}
 
 	public static boolean updateAvailable() {

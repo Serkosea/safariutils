@@ -1,18 +1,15 @@
-# Safari Utils v2.5.0
+# SafariUtils v2.5.0
 
 ## New
 
 - Added a launch-time update indicator, clickable update message, and release-details screen
 - Added compact settings import/export with validation and automatic backups
 - Added run-history integrity checks and safe repair tools
-- Added a command-free Ticket Trading simulator to Developer builds
 
 ## Changes & Additions
 
 - Moved data tools into a themed menu in the settings header
 - Organized settings and run-history backups into separate folders
-- Updated Gradle to 9.8 and cleaned up build warnings
-- Added private download links for Private and Developer builds
 
 ## Fixes
 

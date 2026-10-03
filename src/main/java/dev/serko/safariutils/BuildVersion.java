@@ -10,8 +10,7 @@ public final class BuildVersion {
 	public static final boolean SAFE = flag("safe");
 	public static final boolean PRIVATE = flag("private");
 	public static final boolean DEVELOPER = flag("developer");
-	private static final URI PUBLIC_DOWNLOAD_PAGE = URI.create(
-		"https://github.com/Serkosea/safariutils/releases/latest");
+	private static final URI MOD_WEBSITE = URI.create("https://serkosea.dev/safariutils/");
 
 	private BuildVersion() {
 	}
@@ -36,14 +35,8 @@ public final class BuildVersion {
 		return SAFE ? "" : "-EXTRA";
 	}
 
-	/** Build-specific update destination; private URLs are supplied only to ignored local builds. */
+	/** Public update destination shared by every distributed build. */
 	public static URI downloadPage() {
-		String configured = PROPERTIES.getProperty("downloadPage", "").strip();
-		try {
-			URI page = URI.create(configured);
-			return "https".equalsIgnoreCase(page.getScheme()) ? page : PUBLIC_DOWNLOAD_PAGE;
-		} catch (RuntimeException invalid) {
-			return PUBLIC_DOWNLOAD_PAGE;
-		}
+		return MOD_WEBSITE;
 	}
 }

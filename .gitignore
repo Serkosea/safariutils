@@ -3,7 +3,11 @@
 .gradle-user/
 .gradle-verify/
 .grad-user/
+.pnpm-store/
 .wrangler/
+/cloudflare-api/
+.dev.vars*
+.env*
 build/
 release-artifacts/
 out/

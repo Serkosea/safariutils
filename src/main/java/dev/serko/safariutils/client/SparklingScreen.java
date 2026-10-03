@@ -20,9 +20,11 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -38,6 +40,7 @@ public final class SparklingScreen extends Screen {
 	private static final int BORDER = 0x38FFFFFF;
 	private static final int KEYLINE = 0x24FFFFFF;
 	private static final int GOLD = 0xFFFFD700;
+	private static final int COLLECTION_GOLD = 0xFFFFE08A;
 	private static final int AQUA = 0xFF55FFFF;
 	private static final int GREEN = 0xFF55FF55;
 	private static final int RED = 0xFFFF7777;
@@ -93,6 +96,7 @@ public final class SparklingScreen extends Screen {
 	private static SparklingPlayerLookup lastLookup;
 	private static String lastLookupName = "";
 	private static final List<SparklingPlayerLookup> recentLookups = new ArrayList<>();
+	private static final Map<String, Long> recentLookupCachedAt = new HashMap<>();
 	private static long dismissedImportFetchedAt;
 	private boolean recentLookupsOpen;
 	private SparklingPlayerLookup pendingImport;
@@ -190,7 +194,7 @@ public final class SparklingScreen extends Screen {
 		}
 		updateLookupHint();
 		UIDraw.updateRainbowCaret(lookupName, WHITE);
-		UIDraw.updateRainbowCaret(editor, 0xFFFFE08A);
+		UIDraw.updateRainbowCaret(editor, COLLECTION_GOLD);
 		super.extractRenderState(graphics, mx, my, partialTick);
 		if (editor != null && editingBounds != null) {
 			themedOutline(graphics, editingBounds.x(), editingBounds.y(),
@@ -278,7 +282,7 @@ public final class SparklingScreen extends Screen {
 		if (compactSummary) {
 			int firstX = panelLeft + (panelWidth - font.width(compactFirst)) / 2;
 			if (collectionComplete) SpecialTheme.rainbowText(graphics, font, compactFirst, firstX, top);
-			else text(graphics, compactFirst, firstX, top, 0xFFFFE08A);
+			else text(graphics, compactFirst, firstX, top, COLLECTION_GOLD);
 		}
 		if (collectionComplete) {
 			// Completion uses the same screen-positioned gradient as the special theme,
@@ -286,9 +290,9 @@ public final class SparklingScreen extends Screen {
 			SpecialTheme.rainbowText(graphics, font, shownPrefix + feathers + shownSuffix,
 				summaryX, featherY);
 		} else {
-			text(graphics, shownPrefix, summaryX, featherY, 0xFFFFE08A);
-			text(graphics, feathers, featherX, featherY, 0xFFFFE08A);
-			text(graphics, shownSuffix, featherX + font.width(feathers), featherY, 0xFFFFE08A);
+			text(graphics, shownPrefix, summaryX, featherY, COLLECTION_GOLD);
+			text(graphics, feathers, featherX, featherY, COLLECTION_GOLD);
+			text(graphics, shownSuffix, featherX + font.width(feathers), featherY, COLLECTION_GOLD);
 		}
 		numberHits.add(new NumberHit(featherHitX, featherY - 2, featherWidth, 12,
 			featherY, null, true));
@@ -526,7 +530,7 @@ public final class SparklingScreen extends Screen {
 			panelTop + panelHeight - 2, 0xA0000000);
 		graphics.fill(x, y, x + width, y + height, 0xFF141B25);
 		themedOutline(graphics, x, y, width, height, GOLD);
-		centered(graphics, "Import Your API Collection?", x, width, y + 12, 0xFFFFE08A);
+		centered(graphics, "Import Your API Collection?", x, width, y + 12, COLLECTION_GOLD);
 		centered(graphics, "Your saved collection does not match Hypixel", x, width, y + 31, WHITE);
 		centered(graphics, "Import sets every API-owned unique to at least 1 and saves",
 			x, width, y + 45, LABEL);
@@ -577,7 +581,10 @@ public final class SparklingScreen extends Screen {
 		String[] keys = {"Basic", "Economy", "Premium", "First Class"};
 		String[] labels = {"Basic", "Economy", "Premium", "First-Class"};
 		int[] colours = {0xFF55FF55, 0xFF5599FF, 0xFFAA55FF, 0xFFFFAA00};
+		long ticketTotal = 0L;
+		for (String key : keys) ticketTotal += lastLookup.tickets().getOrDefault(key, 0L);
 		if (biomeColumns == 2) {
+			centered(graphics, "Total  " + ticketTotal, panelLeft, panelWidth, y + 12, COLLECTION_GOLD);
 			for (int row = 0; row < 2; row++) {
 				String leftTicket = labels[row * 2] + "  "
 					+ lastLookup.tickets().getOrDefault(keys[row * 2], 0L);
@@ -585,22 +592,23 @@ public final class SparklingScreen extends Screen {
 					+ lastLookup.tickets().getOrDefault(keys[row * 2 + 1], 0L);
 				int totalWidth = font.width(leftTicket) + font.width("   │   ") + font.width(rightTicket);
 				int cursor = panelLeft + (panelWidth - totalWidth) / 2;
-				text(graphics, leftTicket, cursor, y + 12 + row * 11, colours[row * 2]);
+				text(graphics, leftTicket, cursor, y + 23 + row * 11, colours[row * 2]);
 				cursor += font.width(leftTicket);
-				text(graphics, "   │   ", cursor, y + 12 + row * 11, DIM);
+				text(graphics, "   │   ", cursor, y + 23 + row * 11, DIM);
 				cursor += font.width("   │   ");
-				text(graphics, rightTicket, cursor, y + 12 + row * 11, colours[row * 2 + 1]);
+				text(graphics, rightTicket, cursor, y + 23 + row * 11, colours[row * 2 + 1]);
 			}
-			return y + 34;
+			return y + 45;
 		}
 		int cursor = x + font.width(displayedName) + font.width("  ");
 		text(graphics, "(  ", cursor, y, WHITE);
 		cursor += font.width("(  ");
+		String total = "Total  " + ticketTotal;
+		text(graphics, total, cursor, y, COLLECTION_GOLD);
+		cursor += font.width(total);
 		for (int i = 0; i < keys.length; i++) {
-			if (i > 0) {
-				text(graphics, "  │   ", cursor, y, WHITE);
-				cursor += font.width("  │   ");
-			}
+			text(graphics, "  │   ", cursor, y, WHITE);
+			cursor += font.width("  │   ");
 			String value = labels[i] + "  " + lastLookup.tickets().getOrDefault(keys[i], 0L);
 			text(graphics, value, cursor, y, colours[i]);
 			cursor += font.width(value);
@@ -611,31 +619,41 @@ public final class SparklingScreen extends Screen {
 
 	private void drawLookupButton(GuiGraphicsExtractor graphics, int x, int y,
 			int mouseX, int mouseY) {
-		String entered = lookupName == null ? lastLookupName : lookupName.getValue().trim();
-		boolean same = lastLookup != null && entered.equalsIgnoreCase(lastLookup.username());
-		boolean stale = same && System.currentTimeMillis() - lastLookup.fetchedAt() >= LOOKUP_CACHE_MILLIS;
-		long cooldown = SharedSparklingProviders.provider()
-			.map(provider -> Math.max(0L, provider.lookupAvailableAt() - System.currentTimeMillis()))
-			.orElse(0L);
-		boolean freshCached = same && !stale;
-		boolean disabled = lookupLoading || freshCached || cooldown > 0;
-		String label = lookupLoading ? "Loading…" : freshCached ? "Cached"
-			: cooldown > 0 ? "Lookup " + ((cooldown + 999) / 1000) + "s"
-			: same ? "Refresh" : "Lookup";
-		int colour = disabled ? DIM : same ? GOLD : AQUA;
+		LookupState state = lookupState();
 		boolean hovered = contains(x, y, 72, 18, mouseX, mouseY);
 		graphics.fill(x, y, x + 72, y + 18, hovered ? HOVER : SURFACE);
-		themedOutline(graphics, x, y, 72, 18, colour);
-		centered(graphics, label, x, 72, centeredTextY(y, 18), colour);
-		if (!disabled) hits.add(new Hit(x, y, 72, 18, label, this::lookupPlayer));
+		themedOutline(graphics, x, y, 72, 18, state.colour());
+		centered(graphics, state.label(), x, 72, centeredTextY(y, 18), state.colour());
+		if (state.enabled()) {
+			hits.add(new Hit(x, y, 72, 18, state.label(), () -> lookupPlayer()));
+		}
 	}
 
-	private void lookupPlayer() {
-		if (lookupLoading || lookupName == null) return;
+	private LookupState lookupState() {
+		String entered = lookupName == null ? lastLookupName : lookupName.getValue().trim();
+		boolean same = lastLookup != null && entered.equalsIgnoreCase(lastLookup.username());
+		long now = System.currentTimeMillis();
+		long cachedAt = same ? recentLookupCachedAt.getOrDefault(
+			lastLookup.username().toLowerCase(Locale.ROOT), 0L) : 0L;
+		boolean freshCached = same && now - cachedAt < LOOKUP_CACHE_MILLIS;
+		long cooldown = SharedSparklingProviders.provider()
+			.map(provider -> Math.max(0L, provider.lookupAvailableAt() - now)).orElse(0L);
+		boolean enabled = !lookupLoading && !freshCached && cooldown == 0L
+			&& SharedSparklingProviders.available();
+		String label = lookupLoading ? "Loading…" : freshCached ? "Cached"
+			: cooldown > 0L ? "Lookup " + ((cooldown + 999L) / 1_000L) + "s"
+			: same ? "Refresh" : "Lookup";
+		int colour = enabled ? same ? COLLECTION_GOLD : AQUA : DIM;
+		return new LookupState(enabled, label, colour);
+	}
+
+	/** Starts a lookup only when the same state shown by the button allows it. */
+	private boolean lookupPlayer() {
+		if (lookupName == null || !lookupState().enabled()) return false;
 		String username = lookupName.getValue().trim();
 		if (!username.matches("[A-Za-z0-9_]{1,16}")) {
 			setStatus("Enter a valid Minecraft username", RED);
-			return;
+			return false;
 		}
 		lookupLoading = true;
 		setStatus("Looking up " + username + "…", DIM);
@@ -656,7 +674,10 @@ public final class SparklingScreen extends Screen {
 					offerImportIfLocal(result);
 				}
 			}));
+		return true;
 	}
+
+	private record LookupState(boolean enabled, String label, int colour) { }
 
 	private void offerImportIfLocal(SparklingPlayerLookup result) {
 		Minecraft client = Minecraft.getInstance();
@@ -668,9 +689,14 @@ public final class SparklingScreen extends Screen {
 
 	private static void rememberLookup(SparklingPlayerLookup result) {
 		CanonicalPlayerNames.remember(result.username());
+		String key = result.username().toLowerCase(Locale.ROOT);
 		recentLookups.removeIf(saved -> saved.username().equalsIgnoreCase(result.username()));
 		recentLookups.addFirst(result);
-		while (recentLookups.size() > 10) recentLookups.removeLast();
+		recentLookupCachedAt.put(key, System.currentTimeMillis());
+		while (recentLookups.size() > 10) {
+			SparklingPlayerLookup removed = recentLookups.removeLast();
+			recentLookupCachedAt.remove(removed.username().toLowerCase(Locale.ROOT));
+		}
 	}
 
 	/** Adds automatic party results to the same five-minute cache as manual lookups. */
@@ -714,9 +740,9 @@ public final class SparklingScreen extends Screen {
 			themedOutline(graphics, x, itemY, width, height, BORDER);
 			if (SharedSparklingProviders.specialName(saved.username())) {
 				String displayedName = CanonicalPlayerNames.display(saved.username());
-				UIDraw.rainbowText(graphics, font, displayedName,
+				rainbowText(graphics, displayedName,
 					x + (width - font.width(displayedName)) / 2,
-					centeredTextY(itemY, height), 0.45f);
+					centeredTextY(itemY, height));
 			} else {
 				String displayedName = CanonicalPlayerNames.display(saved.username());
 				PlayerNameStyle.drawName(graphics, font, displayedName,
@@ -765,7 +791,7 @@ public final class SparklingScreen extends Screen {
 		editor.setCentered(true);
 		editor.setMaxLength(7);
 		editor.setValue(String.valueOf(current));
-		editor.setTextColor(0xFFFFE08A);
+		editor.setTextColor(COLLECTION_GOLD);
 		UIDraw.rainbowEditBox(editor, font);
 		addRenderableWidget(editor);
 		setFocused(editor);
@@ -901,9 +927,10 @@ public final class SparklingScreen extends Screen {
 		}
 		if (tab == Tab.LOOKUP && lookupName != null && lookupName.isFocused()
 				&& (event.key() == 257 || event.key() == 335)) {
-			lookupName.setFocused(false);
-			setFocused(null);
-			lookupPlayer();
+			if (lookupPlayer()) {
+				lookupName.setFocused(false);
+				setFocused(null);
+			}
 			return true;
 		}
 		return super.keyPressed(event);
@@ -924,7 +951,8 @@ public final class SparklingScreen extends Screen {
 	}
 
 	private void rainbowText(GuiGraphicsExtractor graphics, String value, int x, int y) {
-		UIDraw.rainbowText(graphics, font, value, x, y, 0.45f);
+		if (SpecialTheme.rainbow()) SpecialTheme.rainbowText(graphics, font, value, x, y);
+		else UIDraw.rainbowText(graphics, font, value, x, y, 0.45f);
 	}
 
 	private void drawBiomeTitle(GuiGraphicsExtractor graphics, SafariBiome biome,
@@ -960,7 +988,9 @@ public final class SparklingScreen extends Screen {
 		int cursor = x + (width - font.width(prefix + displayedName + suffix)) / 2;
 		text(graphics, prefix, cursor, y, colour);
 		cursor += font.width(prefix);
-		UIDraw.rainbowText(graphics, font, displayedName, cursor, y, 0.45f);
+		if (SpecialTheme.rainbow()) {
+			SpecialTheme.rainbowText(graphics, font, displayedName, cursor, y);
+		} else UIDraw.rainbowText(graphics, font, displayedName, cursor, y, 0.45f);
 		cursor += font.width(displayedName);
 		text(graphics, suffix, cursor, y, colour);
 	}

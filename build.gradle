@@ -31,9 +31,6 @@ def extraBuild = privateApiBuild
 	|| project.findProperty('extraBuild')?.toString()?.toBoolean()
 	|| (deployRequested && project.findProperty('deployExtraBuild')?.toString()?.toBoolean())
 def safeBuild = !extraBuild
-def publicDownloadPage = 'https://github.com/Serkosea/safariutils/releases/latest'
-def privateDownloadPage = project.findProperty('privateDownloadUrl') ?: publicDownloadPage
-def downloadPage = privateApiBuild ? privateDownloadPage : publicDownloadPage
 def profileFile = file("gradle/versions/${minecraftProfile}.properties")
 if (!profileFile.isFile()) {
 	throw new GradleException("Unknown Minecraft profile '${minecraftProfile}' (${profileFile} not found)")
@@ -72,55 +69,11 @@ loom {
 // them, even when they exist in the developer's working copy.
 if (privateApiBuild) {
 	def privateSource = file('private-api/src/main/java')
-	def privateKeyFile = file('private-api/api-key.txt')
-	def generatedPrivateSource = layout.buildDirectory.dir('generated/sources/privateApi/java')
 	if (!privateSource.isDirectory()) {
 		throw new GradleException("Private API sources requested but ${privateSource} does not exist")
 	}
-	if (!privateKeyFile.isFile()) {
-		throw new GradleException("Private API build requested but ${privateKeyFile} does not exist")
-	}
 	sourceSets.main.java.srcDir(privateSource)
-	sourceSets.main.java.srcDir(generatedPrivateSource)
 	sourceSets.main.resources.srcDir('private-api/src/main/resources')
-
-	def generatePrivateApiKey = tasks.register('generatePrivateApiKey') {
-		inputs.file(privateKeyFile)
-		outputs.dir(generatedPrivateSource)
-		doLast {
-			def keys = privateKeyFile.readLines('UTF-8')
-				.collect { it.trim() }
-				.findAll { !it.isEmpty() && !it.startsWith('#') }
-				.unique()
-			if (keys.isEmpty()) throw new GradleException('Private API key file is empty')
-			def random = new java.security.SecureRandom()
-			def encoded = keys.collect { key ->
-				def pairs = key.chars().mapToObj { value ->
-					int mask = random.nextInt(0x10000)
-					"new int[]{${value ^ mask},${mask}}"
-				}.toList().join(',')
-				"new int[][]{${pairs}}"
-			}.join(',')
-			def target = generatedPrivateSource.get().file(
-				'dev/serko/safariutils/privateapi/EmbeddedApiKey.java').asFile
-			target.parentFile.mkdirs()
-			target.setText("""package dev.serko.safariutils.privateapi;
-
-final class EmbeddedApiKey {
-	private static final int[][][] DATA = new int[][][]{${encoded}};
-	private EmbeddedApiKey() {}
-	static java.util.List<String> load() {
-		return java.util.Arrays.stream(DATA).map(key -> {
-			StringBuilder value = new StringBuilder(key.length);
-			for (int[] pair : key) value.append((char) (pair[0] ^ pair[1]));
-			return value.toString();
-		}).toList();
-	}
-}
-""", 'UTF-8')
-		}
-	}
-	tasks.named('compileJava') { dependsOn generatePrivateApiKey }
 }
 
 repositories {
@@ -142,8 +95,7 @@ processResources {
 		minecraft_depends: project.minecraft_depends,
 		safe_build: safeBuild,
 		private_build: privateApiBuild,
-		developer_build: developerBuild,
-		download_page: downloadPage
+		developer_build: developerBuild
 	]
 	inputs.properties expandProps
 

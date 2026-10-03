@@ -15,9 +15,9 @@ SafariUtils is a client-side Fabric mod for Hypixel SkyBlock's Critter Safari. I
 - Private build: add `-PincludePrivateApi=true` (API plus Extra behavior, no developer tools)
 - Developer build: add `-PdeveloperBuild=true` (private API, Testing UI, commands, and automatic diagnostics)
 
-The star unlock gates only the Safe Mode and Developer settings categories. Ordinary
+Build type alone controls the Safe Mode and Developer settings categories. Ordinary
 settings remain visible regardless of the configuration class that owns their persisted
-field. Safe builds expose the locked Safe Mode explanation; Extra adds configurable Safe
+field. Safe builds expose the Safe Mode explanation; Extra adds configurable Safe
 Mode options; Private adds the ignored API provider; Developer adds diagnostics and testing.
 
 SafariUtils diagnostic files and their controls are Developer-only. Release variants
@@ -39,6 +39,12 @@ combinations before copying release artifacts so deleted classes cannot survive 
 4. Update starting inventory and objective state, then publish optional shared snapshots
 5. Scan entities once and update entity-dependent trackers
 6. Update session state, markers, catalogs, prices, chat, and configuration
+
+All server-derived tracking, rendering, chat processing, packet handling, and automatic
+commands are gated by an active `hypixel.net` connection. Automatic party-roster commands
+are narrower still and run only after SkyBlock or Safari is identified. Leaving Hypixel
+clears pending commands and transient alert state. The Contest HUD's Show Everywhere option
+may render its local timer in any world or server, but contest-score parsing remains Hypixel-only.
 
 Reuse `SafariLocation`, `WorldEntities`, `CritterEntities`, and existing tracker caches. Do not add independent scoreboard, tab-list, or world-wide entity scans.
 
@@ -107,7 +113,7 @@ Chat-message hiding is display-only. Its stable bit mask is serialized as `hidde
 
 `SafariConfig` fields annotated with `@Expose` are persistent keys. Rename them only with `@SerializedName` aliases or explicit `ConfigManager` migration. Deliberately transient session settings such as Party Sync must remain unexposed and be reset explicitly on load. Existing run history and settings must remain forward-compatible.
 
-`SafariSettingsScreen` presents one compact category sidebar plus a fixed wrapping tab header and collapsed, nested section accordions over the unchanged `SafariConfig` schema. Each logical section shares a card; collections of distinct waypoint features split into one toggle-and-color card per feature. Search follows the same area/tab/page/card order, preserves relevant shared cards, and appends feature names to broad section breadcrumbs. Changing tabs collapses the previous tab's sections, and collapsing a parent also collapses all descendants. Areas, tabs, and sections may reorganize controls across their source config classes, but they must retain the original owner and reflected `Field`; never move persisted fields merely to change navigation. Global search, tab reset, build visibility, warnings, and custom editors all reuse those same controls. Only the Safe Mode and Developer categories are unlock-gated, and Developer exists only in developer builds.
+`SafariSettingsScreen` presents one compact category sidebar plus a fixed wrapping tab header and collapsed, nested section accordions over the unchanged `SafariConfig` schema. Each logical section shares a card; collections of distinct waypoint features split into one toggle-and-color card per feature. Search follows the same area/tab/page/card order, preserves relevant shared cards, and appends feature names to broad section breadcrumbs. Changing tabs collapses the previous tab's sections, and collapsing a parent also collapses all descendants. Areas, tabs, and sections may reorganize controls across their source config classes, but they must retain the original owner and reflected `Field`; never move persisted fields merely to change navigation. Global search, tab reset, build visibility, warnings, and custom editors all reuse those same controls. Safe Mode controls follow the build variant, and Developer exists only in developer builds. Clicking the SafariUtils title opens the repeatable constellation Easter egg; completing it temporarily themes all SafariUtils UI and permanently unlocks the Astral special-theme choice.
 
 Display's Safari tab owns presentation-only chat filtering and screen-effect removal. Gameplay's Safari tab owns Hideyho convenience, ticket protection/trading, and Party Sync; Profit remains separate. These are navigation groupings only, and persisted fields remain in their existing config owners.
 
@@ -115,7 +121,7 @@ Responsive screens reflow before they scale. Settings narrows its single navigat
 
 UI centering always means optical/geometric centering of the visible pixels. Do not include glyph advance padding, transparent space, or text shadows when calculating centered positions; draw shadows only after the primary shape is centered.
 
-The settings footer shows the result of one asynchronous GitHub release check per launch. Release notes are wrapped and cached only when their source or width changes. Safe and Extra builds open GitHub; Private and Developer builds use the ignored `privateDownloadUrl` build property. Data Tools performs compact versioned settings transfer and on-demand run-history checks. Imports and repairs validate first, preserve the current file in `config/safariutils/backups/<type>/`, and never run from a render or tick path.
+The settings footer shows the result of one asynchronous GitHub release check per launch. Release notes are wrapped and cached only when their source or width changes. Every build opens the public SafariUtils website for downloads. Data Tools performs compact versioned settings transfer and on-demand run-history checks. Imports and repairs validate first, preserve the current file in `config/safariutils/backups/<type>/`, and never run from a render or tick path.
 
 Use `ResponsiveUI` for fixed logical canvases and convert mouse coordinates for scaled widgets. `HudBox` is the source of truth for live/editor positioning. The HUD editor keeps outlines one pixel inside each screen edge and supports unsnapped one-pixel arrow adjustments.
 

@@ -168,6 +168,16 @@ public final class OperationalLog {
 	public static HudElement hud(String name, HudElement delegate) {
 		String category = "RENDER/" + name;
 		return (graphics, delta) -> {
+			if (!HypixelConnection.active()) return;
+			try { delegate.extractRenderState(graphics, delta); }
+			catch (RuntimeException | LinkageError error) { error(category, error); }
+		};
+	}
+
+	/** Wraps the one HUD explicitly allowed outside Hypixel. */
+	public static HudElement hudEverywhere(String name, HudElement delegate) {
+		String category = "RENDER/" + name;
+		return (graphics, delta) -> {
 			try { delegate.extractRenderState(graphics, delta); }
 			catch (RuntimeException | LinkageError error) { error(category, error); }
 		};

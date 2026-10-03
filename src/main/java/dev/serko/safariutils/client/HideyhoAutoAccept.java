@@ -31,7 +31,8 @@ public final class HideyhoAutoAccept {
 	/** Returns true only when a validated action was actually handed to the connection. */
 	private static boolean sendAccept(ClickEvent accept) {
 		Minecraft client = Minecraft.getInstance();
-		if (client.player == null || client.getConnection() == null) return false;
+		if (!HypixelConnection.active() || client.player == null
+				|| client.getConnection() == null) return false;
 		try {
 			if (accept instanceof ClickEvent.Custom custom) {
 				client.getConnection().send(new ServerboundCustomClickActionPacket(

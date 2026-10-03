@@ -25,7 +25,9 @@ final class PlayerNameStyle {
 	/** Draws one canonical username with UUID-backed owner styling or its rank colour. */
 	static String drawName(GuiGraphicsExtractor graphics, Font font, String name, int x, int y) {
 		String displayed = CanonicalPlayerNames.display(name);
-		if (SpecialTheme.rainbow() || SharedSparklingProviders.specialName(displayed)) {
+		if (SpecialTheme.rainbow()) {
+			SpecialTheme.rainbowText(graphics, font, displayed, x, y);
+		} else if (SharedSparklingProviders.specialName(displayed)) {
 			UIDraw.rainbowText(graphics, font, displayed, x, y, 0.45f);
 		} else graphics.text(font, Component.literal(displayed), x, y, colour(displayed));
 		return displayed;
@@ -63,7 +65,9 @@ final class PlayerNameStyle {
 				cursor += font.width(segment);
 			}
 			String displayed = text.substring(at, at + match.length());
-			UIDraw.rainbowText(graphics, font, displayed, cursor, y, 0.45f);
+			if (SpecialTheme.rainbow()) {
+				SpecialTheme.rainbowText(graphics, font, displayed, cursor, y);
+			} else UIDraw.rainbowText(graphics, font, displayed, cursor, y, 0.45f);
 			cursor += font.width(displayed);
 			from = at + match.length();
 		}

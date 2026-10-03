@@ -435,6 +435,13 @@ public final class AlertSounds {
 		stopSparklingSongs(client);
 	}
 
+	/** Stops queued Safari audio when the client leaves Hypixel. */
+	public static void onConnectionExit() {
+		PENDING.clear();
+		SPARKLING_PENDING.clear();
+		stopSparklingSongs(Minecraft.getInstance());
+	}
+
 	private static void stopSparklingInstances(Minecraft client) {
 		for (SoundInstance sound : ACTIVE_SPARKLING_SOUNDS) {
 			client.getSoundManager().stop(sound);

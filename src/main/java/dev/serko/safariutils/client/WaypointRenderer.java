@@ -145,7 +145,7 @@ public final class WaypointRenderer {
 
 	private static void render(LevelRenderContext context) {
 		Minecraft client = Minecraft.getInstance();
-		if (client.player == null || ClientCompat.hudHidden()) return;
+		if (!HypixelConnection.active() || client.player == null || ClientCompat.hudHidden()) return;
 		if (!SafariLocation.inside()) return;
 		nextReplacedVanillaNames.clear();
 		framePartialTick = client.getDeltaTracker().getGameTimeDeltaPartialTick(false);
@@ -219,7 +219,7 @@ public final class WaypointRenderer {
 
 	/** Rendering-only test used by the entity-name mixin. */
 	public static boolean replacesVanillaName(Entity entity) {
-		if (showsVanillaNametags() || !SafariLocation.inside()) return false;
+		if (!HypixelConnection.active() || showsVanillaNametags() || !SafariLocation.inside()) return false;
 		if (replacedVanillaNames.contains(entity.getUUID())) return true;
 		// Entity render states may be extracted before this frame's waypoint pass.
 		// Evaluate the shared hitbox conditions directly instead of depending only on
@@ -339,7 +339,6 @@ public final class WaypointRenderer {
 	private static void renderDiagnosticHitboxes(LevelRenderContext context,
 			WaypointRenderBackend backend, Vec3 camera) {
 		if (!BuildVersion.DEVELOPER) return;
-		if (!AdvancedUnlock.isUnlocked()) return;
 		SafariConfig.AdvancedConfig advanced = ConfigManager.get().advanced;
 		if (!advanced.showAllArmorStands && !advanced.showAllItemDisplays && !advanced.showAllInteractions
 			&& !advanced.showAllBlockDisplays && !advanced.showAllTextDisplays) {
@@ -453,7 +452,7 @@ public final class WaypointRenderer {
 				if (SafeMode.hiddenCritter(sighting.critter(), sparkling)
 					&& !VisibilityCheck.canSeeVisibleName(sighting.label())) continue;
 
-				boolean diagnostic = BuildVersion.DEVELOPER && AdvancedUnlock.isUnlocked()
+				boolean diagnostic = BuildVersion.DEVELOPER
 					&& ConfigManager.get().advanced.showAllCritterHitboxes;
 				int colour = critterHitboxColour(sighting.critter(), sparkling);
 				AABB box = provisionalCritterHitbox(sighting.critter(), sighting.label());
@@ -482,7 +481,7 @@ public final class WaypointRenderer {
 
 			// Diagnostic, Sparkling, unique-status, and configured colors apply in that order.
 			if (SparklingMode.hideOrdinaryHitbox(sighting.critter(), sparkling)) continue;
-			boolean diagnostic = BuildVersion.DEVELOPER && AdvancedUnlock.isUnlocked()
+			boolean diagnostic = BuildVersion.DEVELOPER
 				&& ConfigManager.get().advanced.showAllCritterHitboxes;
 			int uniqueColour = SparklingMode.uniqueHitboxColour(sighting.critter(),
 				SessionManager.current());
@@ -807,7 +806,7 @@ public final class WaypointRenderer {
 					SessionManager.current());
 
 				// Use the shared entity color rules; diagnostic color has highest priority.
-				boolean diagnostic = BuildVersion.DEVELOPER && AdvancedUnlock.isUnlocked()
+				boolean diagnostic = BuildVersion.DEVELOPER
 					&& ConfigManager.get().advanced.showAllCritterHitboxes;
 				int baseColour = diagnostic ? 0xFFFF00FF
 					: display.hitboxEntityColorOverride
@@ -1279,7 +1278,7 @@ public final class WaypointRenderer {
 	/** The same priority chain used by ordinary critter hitboxes and recatch markers. */
 	public static int critterHitboxColour(Critter critter, boolean sparkling) {
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
-		boolean diagnostic = BuildVersion.DEVELOPER && AdvancedUnlock.isUnlocked()
+		boolean diagnostic = BuildVersion.DEVELOPER
 			&& ConfigManager.get().advanced.showAllCritterHitboxes;
 		boolean dedicatedWaypointCritter = EXCLUDED_FROM_HITBOXES.contains(critter.name())
 			|| "Hideyho".equals(critter.name());

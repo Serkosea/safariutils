@@ -2,6 +2,7 @@ package dev.serko.safariutils.mixin;
 
 import dev.serko.safariutils.client.AlertSounds;
 import dev.serko.safariutils.client.ConfigManager;
+import dev.serko.safariutils.client.HypixelConnection;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.client.sounds.ChannelAccess;
 import net.minecraft.client.sounds.SoundEngine;
@@ -33,7 +34,8 @@ public abstract class SoundEngineMixin {
 	private void safariutils$filterPlayback(SoundInstance sound,
 			CallbackInfoReturnable<SoundEngine.PlayResult> callback) {
 		if (AlertSounds.playingAlert()) safariutils$alerts.add(sound);
-		if (ConfigManager.get().alerts.muteOtherSounds && !safariutils$alerts.contains(sound)) {
+		if (HypixelConnection.active() && ConfigManager.get().alerts.muteOtherSounds
+				&& !safariutils$alerts.contains(sound)) {
 			callback.setReturnValue(SoundEngine.PlayResult.NOT_STARTED);
 		}
 	}
@@ -41,14 +43,15 @@ public abstract class SoundEngineMixin {
 	@Inject(method = "calculateVolume(Lnet/minecraft/client/resources/sounds/SoundInstance;)F",
 		at = @At("HEAD"), cancellable = true)
 	private void safariutils$muteTickingSound(SoundInstance sound, CallbackInfoReturnable<Float> callback) {
-		if (ConfigManager.get().alerts.muteOtherSounds && !safariutils$alerts.contains(sound)) {
+		if (HypixelConnection.active() && ConfigManager.get().alerts.muteOtherSounds
+				&& !safariutils$alerts.contains(sound)) {
 			callback.setReturnValue(0f);
 		}
 	}
 
 	@Inject(method = "tick", at = @At("HEAD"))
 	private void safariutils$refreshExistingSounds(boolean paused, CallbackInfo callback) {
-		boolean muted = ConfigManager.get().alerts.muteOtherSounds;
+		boolean muted = HypixelConnection.active() && ConfigManager.get().alerts.muteOtherSounds;
 		if (muted == safariutils$wasMuted) return;
 		safariutils$wasMuted = muted;
 		// Existing music and loops need one gain update when the setting changes.

@@ -39,6 +39,10 @@ public final class PartyRosterWatch {
 	private PartyRosterWatch() {}
 
 	public static void tick() {
+		if (!eligible()) {
+			resetConnectionState();
+			return;
+		}
 		long now = System.currentTimeMillis();
 		boolean connected = Minecraft.getInstance().getConnection() != null;
 		if (connected && !wasConnected) {
@@ -68,6 +72,7 @@ public final class PartyRosterWatch {
 	}
 
 	public static boolean allow(Component message, boolean overlay) {
+		if (!eligible()) return true;
 		if (overlay || message == null) return true;
 		String line = LEGACY_COLOURS.matcher(message.getString()).replaceAll("").trim();
 		String lower = line.toLowerCase(Locale.ROOT);
@@ -169,7 +174,7 @@ public final class PartyRosterWatch {
 	private static void request() {
 		requestAt = 0;
 		Minecraft client = Minecraft.getInstance();
-		if (client.getConnection() == null) return;
+		if (!eligible() || client.getConnection() == null) return;
 		announceCurrentRefresh = announceScheduledRefresh;
 		announceScheduledRefresh = false;
 		capturing = true;
@@ -182,6 +187,29 @@ public final class PartyRosterWatch {
 		suppressRosterTailUntil = captureUntil + RESPONSE_TAIL_MILLIS;
 		client.getConnection().sendCommand("party list");
 		DebugLog.line("PARTYTIME", "automatic /party list requested");
+	}
+
+	private static boolean eligible() {
+		return HypixelConnection.active()
+			&& (SafariLocation.inSkyblock() || SafariLocation.inSafari());
+	}
+
+	/** Clears all automatic command and capture state at a server boundary. */
+	public static void resetConnectionState() {
+		known = false;
+		sawLeader = false;
+		capturing = false;
+		requestAt = 0;
+		refreshDeferredUntil = 0;
+		announceScheduledRefresh = false;
+		announceCurrentRefresh = false;
+		captureUntil = 0;
+		suppressRosterTailUntil = 0;
+		pendingRosterLines.clear();
+		rosterLines = List.of();
+		rosterCapturedAt = 0L;
+		wasInsideSafari = false;
+		wasConnected = false;
 	}
 
 	private static void finishCapture() {

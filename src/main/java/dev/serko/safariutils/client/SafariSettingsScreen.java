@@ -39,7 +39,21 @@ public final class SafariSettingsScreen extends Screen {
 	private static final int THEME_BUTTON_WIDTH = 126;
 	private static final int DATA_BUTTON_SIZE = 28;
 	private static final int SETTINGS_GAP = 6;
-	private static final int[] CONSTELLATION_ORDER = {0, 4, 8, 3, 7, 2, 6, 1, 5};
+	private static final int[] CONSTELLATION_ORDER = {
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+	};
+	private static final float[][] CONSTELLATION_LAYOUT = {
+		{0.11f, 0.62f}, {0.18f, 0.38f}, {0.34f, 0.20f}, {0.56f, 0.16f},
+		{0.77f, 0.28f}, {0.88f, 0.50f}, {0.79f, 0.72f}, {0.59f, 0.83f},
+		{0.37f, 0.76f}, {0.23f, 0.58f}, {0.28f, 0.41f}, {0.42f, 0.29f},
+		{0.60f, 0.31f}, {0.71f, 0.46f}, {0.65f, 0.62f}, {0.49f, 0.64f}
+	};
+	private static final long CONSTELLATION_FADE_MS = 450L;
+	private static final long ASTRAL_STAR_START_MS = 400L;
+	private static final long ASTRAL_STAR_LINE_MS = 95L;
+	private static final int ASTRAL_STAR_POINTS = 17;
+	private static final long ASTRAL_BEACON_START_MS = 2_100L;
+	private static final long CONSTELLATION_COMPLETION_MS = 3_650L;
 	private static final String[] CRITTER_CHOICES = Critters.selectionOrder().stream()
 		.map(critter -> critter.name()).toArray(String[]::new);
 	private static final String[] CRITTER_GROUPS = Critters.selectionBiomes().stream()
@@ -137,8 +151,8 @@ public final class SafariSettingsScreen extends Screen {
 	private SettingRange draggingRange;
 	private int draggingLeft;
 	private int draggingWidth;
-	private int unlockProgress;
-	private boolean unlockPanel;
+	private int constellationProgress;
+	private boolean constellationPanel;
 	private boolean customThemePanel;
 	private boolean specialSparklingConfirmation;
 	private boolean customSparklingPanel;
@@ -178,16 +192,17 @@ public final class SafariSettingsScreen extends Screen {
 	private boolean partySyncConfirmation;
 	private int pendingSparklingIntensity = -1;
 	private int pendingSparklingSourcePreset = -1;
-	private long signalCompletedAt;
+	private long constellationCompletedAt;
 	private int constellationLeft = Integer.MIN_VALUE;
 	private int constellationTop;
-	private int constellationSize;
-	private final int[][] constellationNodes = new int[9][2];
-	private long unlockGeometryFrame = Long.MIN_VALUE;
-	private int unlockGeometryProgress = -1;
-	private boolean unlockGeometryComplete;
-	private final UnlockQuadBuilder unlockGeometry = new UnlockQuadBuilder(12_000);
-	private int unlockGeometryLength;
+	private int constellationWidth;
+	private int constellationHeight;
+	private final int[][] constellationNodes = new int[CONSTELLATION_LAYOUT.length][2];
+	private long constellationGeometryFrame = Long.MIN_VALUE;
+	private int constellationGeometryProgress = -1;
+	private boolean constellationGeometryComplete;
+	private final ConstellationQuadBuilder constellationGeometry = new ConstellationQuadBuilder(12_000);
+	private int constellationGeometryLength;
 	private int modalHitStart = -1;
 	private long resetArmedUntil;
 
@@ -355,9 +370,9 @@ public final class SafariSettingsScreen extends Screen {
 		SettingsArea gameplay = area("gameplay", "Gameplay", "Safari behavior, party tools, and profit tracking");
 		SettingsArea alerts = area("alerts", "Alerts", "On-screen and outgoing chat alerts");
 		SettingsArea sparkling = area("sparkling", "Sparkling", "Sparkling hunting, detection, and celebrations");
-		SettingsArea advanced = AdvancedUnlock.isUnlocked()
-			? area("advanced", "Safe Mode", "Visibility-based detection and waypoint behavior") : null;
-		SettingsArea developer = AdvancedUnlock.isUnlocked() && BuildVersion.DEVELOPER
+		SettingsArea advanced = BuildVersion.SAFE ? null : area("advanced", "Safe Mode",
+			"Visibility-based detection and waypoint behavior");
+		SettingsArea developer = BuildVersion.DEVELOPER
 			? area("developer", "Developer", "Diagnostics, research, and test-run controls") : null;
 
 		SettingCategoryView displaySource = source("display");
@@ -400,13 +415,8 @@ public final class SafariSettingsScreen extends Screen {
 		organizeSparklingAlertSettings(sparkling);
 
 		if (advanced != null && advancedSource != null) {
-			if (BuildVersion.SAFE) {
-				addRootPage(advanced, advancedSource, "advanced.safe-mode.locked", "Safe Mode",
-					"Safe Mode build information", "safeModeLockedNotice");
-			} else {
-				appendNamedSection(advanced, advancedSource, "safeModeAccordion", 0, "Advanced");
-				organizeSafeModeSettings(advanced);
-			}
+			appendNamedSection(advanced, advancedSource, "safeModeAccordion", 0, "Advanced");
+			organizeSafeModeSettings(advanced);
 		}
 		if (developer != null && advancedSource != null) {
 			appendNamedSection(developer, advancedSource, "testingAccordion", 0, "Developer");
@@ -847,7 +857,7 @@ public final class SafariSettingsScreen extends Screen {
 		boolean editingSameSlider = editingInlineText && editingNumber && editor != null
 			&& inside(mouseX, mouseY, editingSliderLeft, editingSliderTop,
 				editingSliderRight, editingSliderBottom);
-		boolean modalOpen = unlockPanel || customThemePanel || customSparklingPanel
+		boolean modalOpen = constellationPanel || customThemePanel || customSparklingPanel
 			|| specialSparklingConfirmation
 			|| partySyncConfirmation
 			|| editor != null && !editingInlineText || choiceField != null || editingSameSlider;
@@ -864,7 +874,6 @@ public final class SafariSettingsScreen extends Screen {
 			// independent particle systems or allocate effects while scrolling.
 			SpecialTheme.stars(graphics, 0, 0, width, height, 0.7f);
 		}
-		drawBrand(graphics);
 		hits.clear();
 		soundPreviewHits.clear();
 		customCalloutBounds.clear();
@@ -873,6 +882,7 @@ public final class SafariSettingsScreen extends Screen {
 		customPresetNameBounds.clear();
 		modalHitStart = -1;
 		customPresetHitStart = -1;
+		drawBrand(graphics);
 		drawSearchFieldFrame(graphics);
 		drawThemeControl(graphics, backgroundMouseX, backgroundMouseY);
 		drawDataControl(graphics, backgroundMouseX, backgroundMouseY);
@@ -880,9 +890,9 @@ public final class SafariSettingsScreen extends Screen {
 		drawCategoryHeader(graphics, backgroundMouseX, backgroundMouseY);
 		drawContent(graphics, backgroundMouseX, backgroundMouseY);
 		drawFooter(graphics, backgroundMouseX, backgroundMouseY);
-		if (unlockPanel) {
+		if (constellationPanel) {
 			modalHitStart = hits.size();
-			drawUnlockPanel(graphics);
+			drawConstellationPanel(graphics);
 		}
 		if (customThemePanel) {
 			modalHitStart = hits.size();
@@ -1074,6 +1084,8 @@ public final class SafariSettingsScreen extends Screen {
 		int blockTop = Math.max(0,
 			(HEADER_HEIGHT - 1 - titleHeight - versionHeight - BRAND_LINE_GAP) / 2 + 1);
 		int titleLeft = Math.round(navWidth / 2f / titleScale - titleWidth / 2f);
+		int titleScreenLeft = Math.round(titleLeft * titleScale);
+		int titleScreenWidth = Math.round(titleWidth * titleScale);
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(titleScale, titleScale);
 		drawText(graphics, safariTitle, titleLeft, Math.round(blockTop / titleScale), safariColour);
@@ -1081,6 +1093,9 @@ public final class SafariSettingsScreen extends Screen {
 		graphics.pose().popMatrix();
 		drawScaledCenteredText(graphics, version, navWidth / 2,
 			blockTop + titleHeight + BRAND_LINE_GAP, versionScale, MUTED);
+		hits.add(new Hit(titleScreenLeft, blockTop,
+			titleScreenLeft + titleScreenWidth, blockTop + titleHeight,
+			this::openConstellationPanel));
 	}
 
 	/** Header-only theme picker kept out of Display's ordinary setting cards. */
@@ -1162,18 +1177,6 @@ public final class SafariSettingsScreen extends Screen {
 			y += 36;
 		}
 
-		if (!AdvancedUnlock.isUnlocked()) {
-			int lockY = y + 8;
-			boolean hovered = mouseX >= 0 && mouseX < navWidth && mouseY >= lockY && mouseY < lockY + 32;
-			if (hovered) graphics.fill(0, lockY, navWidth - 1, lockY + 32, CARD_HOVER);
-			drawText(graphics, "◇  Locked", 12,
-				lockY + (32 - font.lineHeight) / 2, hovered ? GOLD : DIM);
-			if (lockY + 32 > top && lockY < bottom) {
-				hits.add(new Hit(0, Math.max(lockY, top), navWidth,
-					Math.min(lockY + 32, bottom), this::openUnlockPanel));
-			}
-			y = lockY + 32;
-		}
 		navigationContentHeight = Math.max(0, y + navigationScroll - (HEADER_HEIGHT + 8));
 		graphics.disableScissor();
 		drawUpdateStatus(graphics, mouseX, mouseY);
@@ -1261,16 +1264,16 @@ public final class SafariSettingsScreen extends Screen {
 			Math.max(66, Math.min(180, font.width(tab.name) + 24)));
 	}
 
-	private void openUnlockPanel() {
-		unlockPanel = true;
+	private void openConstellationPanel() {
+		constellationPanel = true;
 		setFocused(null);
 		if (search != null) search.visible = false;
 	}
 
-	private void closeUnlockPanel() {
-		unlockPanel = false;
-		unlockProgress = 0;
-		signalCompletedAt = 0;
+	private void closeConstellationPanel() {
+		constellationPanel = false;
+		constellationProgress = 0;
+		constellationCompletedAt = 0;
 		if (search != null) {
 			search.visible = true;
 			search.active = true;
@@ -1651,11 +1654,9 @@ public final class SafariSettingsScreen extends Screen {
 			.toArray(Field[]::new));
 	}
 
-	/** Applies build-level availability; navigation separately gates Safe Mode and Developer areas. */
+	/** Applies build-level availability for Safe Mode, private, and Developer settings. */
 	private static boolean visibleInThisBuild(Class<?> owner, Field field) {
 		if (field.getName().startsWith("private") && !BuildVersion.PRIVATE) return false;
-		if (owner == SafariConfig.AdvancedConfig.class
-				&& field.getName().equals("safeModeLockedNotice")) return BuildVersion.SAFE;
 		if (owner == SafariConfig.AdvancedConfig.class && field.getName().equals("safeMode")) return false;
 		if (owner != SafariConfig.AdvancedConfig.class || BuildVersion.DEVELOPER) return true;
 		if (field.getName().equals("specialTheme")
@@ -1770,11 +1771,9 @@ public final class SafariSettingsScreen extends Screen {
 		int split = description.indexOf('\n');
 		String main = clean(split < 0 ? description : description.substring(0, split));
 		String tag = split < 0 ? "" : clean(description.substring(split + 1));
-		boolean readOnlyNotice = isReadOnlyNotice(field);
-		boolean stacked = !readOnlyNotice && stackedSetting(left, right);
+		boolean stacked = stackedSetting(left, right);
 		int controlWidth = settingControlWidth(left, right, stacked);
-		int descriptionWidth = readOnlyNotice ? Math.max(40, right - left - 24)
-			: stacked ? Math.max(40, right - left - 24)
+		int descriptionWidth = stacked ? Math.max(40, right - left - 24)
 			: Math.max(40, right - controlWidth - 24 - (left + 12));
 		List<String> mainLines = main.isBlank() ? List.of() : wrap(main, descriptionWidth);
 		List<String> tagLines = tag.isBlank() ? List.of() : wrap(tag, descriptionWidth);
@@ -1821,11 +1820,10 @@ public final class SafariSettingsScreen extends Screen {
 		boolean rowHovered = inside(mouseX, mouseY, left, y, right, y + height);
 		boolean controlHovered = inside(mouseX, mouseY, controlX, controlY,
 			controlX + controlWidth, controlY + 22);
-		boolean interactive = !isReadOnlyNotice(field);
-		boolean hovered = interactive && (field.isAnnotationPresent(SettingToggle.class)
+		boolean hovered = field.isAnnotationPresent(SettingToggle.class)
 			? rowHovered : field.isAnnotationPresent(SettingRange.class)
 				? inside(mouseX, mouseY, controlX, y, right, y + height)
-				: controlHovered);
+				: controlHovered;
 		graphics.fill(left, y, right, y + height, hovered ? CARD_HOVER : CARD);
 		outline(graphics, left, y, right - left, height, hovered ? CYAN : BORDER);
 		drawText(graphics, displayName(option.name()), left + 12, y + 9, TEXT);
@@ -1838,12 +1836,8 @@ public final class SafariSettingsScreen extends Screen {
 			drawText(graphics, line, left + 12, lineY, layout.safeModeComparison ? MUTED : CYAN);
 			lineY += 11;
 		}
-		if (interactive) drawControl(graphics, owner, field, left, right, y, height, mouseX, mouseY);
+		drawControl(graphics, owner, field, left, right, y, height, mouseX, mouseY);
 		return y + height + SETTINGS_GAP;
-	}
-
-	private static boolean isReadOnlyNotice(Field field) {
-		return field.getName().equals("safeModeLockedNotice");
 	}
 
 	private void drawControl(GuiGraphicsExtractor graphics, Object owner, Field field,
@@ -2139,12 +2133,25 @@ public final class SafariSettingsScreen extends Screen {
 	private List<String> choiceLabels() {
 		if (isSoundChoice(choiceField)) return SOUND_LABELS;
 		if (isThemeChoice(choiceField)) return THEME_LABELS;
+		if (isSpecialThemeChoice(choiceField)) {
+			return ConfigManager.get().advanced.constellationThemeUnlocked
+				? List.of("None", "Astral", "Rainbow")
+				: List.of("None", "Rainbow");
+		}
 		return List.of(choiceDropdown.values());
 	}
 
 	private int choiceStoredValue(int visibleIndex) {
 		if (isSoundChoice(choiceField)) return AlertSounds.alphabetical().get(visibleIndex).id();
 		if (isThemeChoice(choiceField)) return THEMES.get(visibleIndex).id();
+		if (isSpecialThemeChoice(choiceField)) {
+			if (!ConfigManager.get().advanced.constellationThemeUnlocked) return visibleIndex;
+			return switch (visibleIndex) {
+				case 1 -> SpecialTheme.CONSTELLATION;
+				case 2 -> SpecialTheme.RAINBOW;
+				default -> SpecialTheme.OFF;
+			};
+		}
 		return visibleIndex;
 	}
 
@@ -3931,35 +3938,36 @@ public final class SafariSettingsScreen extends Screen {
 		if (search != null) search.visible = !customThemePanel && !customSparklingPanel;
 	}
 
-	private void drawUnlockPanel(GuiGraphicsExtractor graphics) {
+	private void drawConstellationPanel(GuiGraphicsExtractor graphics) {
 		long now = System.currentTimeMillis();
-		if (signalCompletedAt > 0 && now - signalCompletedAt >= 900L) {
-			completeAdvancedUnlock();
+		if (constellationCompletedAt > 0
+				&& now - constellationCompletedAt >= CONSTELLATION_COMPLETION_MS) {
+			completeConstellation();
 			return;
 		}
-		int size = Math.min(340, Math.min(width - 30, height - 30));
-		int w = size;
-		int h = size;
+		int w = Math.min(480, Math.max(1, width - 24));
+		int h = Math.min(300, Math.max(1, height - 24));
 		int x = (width - w) / 2;
 		int y = (height - h) / 2;
 		graphics.fill(0, 0, width, height, 0xAA000000);
-		graphics.fillGradient(x, y, x + w, y + h, BACKGROUND, SURFACE);
-		SpecialTheme.stars(graphics, x + 2, y + 2, w - 4, h - 4, 2.15f, true);
-		SpecialTheme.border(graphics, x, y, w, h, 2);
-		int[][] nodes = constellation(x, y, size);
-		boolean completedEffect = signalCompletedAt > 0;
+		graphics.fillGradient(x, y, x + w, y + h, 0xF0060A18, 0xF0111730);
+		SpecialTheme.constellationStars(graphics, x + 2, y + 2, w - 4, h - 4, 2.15f);
+		SpecialTheme.constellationBorder(graphics, x, y, w, h, 2);
+		int[][] nodes = constellation(x, y, w, h);
+		boolean completedEffect = constellationCompletedAt > 0;
 		long frame = RainbowColours.frameId();
-		if (unlockGeometryFrame != frame || unlockGeometryProgress != unlockProgress
-			|| unlockGeometryComplete != completedEffect) {
-			unlockGeometryLength = buildUnlockGeometry(unlockGeometry,
-				nodes, x + w / 2, y + h / 2,
-				unlockProgress, completedEffect, now);
-			unlockGeometryFrame = frame;
-			unlockGeometryProgress = unlockProgress;
-			unlockGeometryComplete = completedEffect;
+		if (constellationGeometryFrame != frame
+			|| constellationGeometryProgress != constellationProgress
+			|| constellationGeometryComplete != completedEffect) {
+			constellationGeometryLength = buildConstellationGeometry(constellationGeometry,
+				nodes, x, y, w, h,
+				constellationProgress, completedEffect, now);
+			constellationGeometryFrame = frame;
+			constellationGeometryProgress = constellationProgress;
+			constellationGeometryComplete = completedEffect;
 		}
 		GuiQuadBatchRenderState.submit(graphics, 0, 0, width, height,
-			unlockGeometry.values(), unlockGeometryLength);
+			constellationGeometry.values(), constellationGeometryLength);
 		for (int i = 0; i < nodes.length; i++) {
 			int index = i;
 			if (!completedEffect) {
@@ -3969,108 +3977,170 @@ public final class SafariSettingsScreen extends Screen {
 		}
 	}
 
-	private int[][] constellation(int x, int y, int size) {
-		if (constellationLeft != x || constellationTop != y || constellationSize != size) {
+	private int[][] constellation(int x, int y, int width, int height) {
+		if (constellationLeft != x || constellationTop != y
+				|| constellationWidth != width || constellationHeight != height) {
 			constellationLeft = x;
 			constellationTop = y;
-			constellationSize = size;
-			int centreX = x + size / 2;
-			int centreY = y + size / 2;
-			int radius = Math.max(18, Math.min(116, (size - 64) / 2));
+			constellationWidth = width;
+			constellationHeight = height;
+			int insetX = Math.max(16, width / 18);
+			int insetY = Math.max(16, height / 14);
+			int usableWidth = Math.max(1, width - insetX * 2);
+			int usableHeight = Math.max(1, height - insetY * 2);
 			for (int i = 0; i < constellationNodes.length; i++) {
-				double angle = -Math.PI / 2 + i * Math.PI * 2 / constellationNodes.length;
-				constellationNodes[i][0] = centreX + (int) Math.round(Math.cos(angle) * radius);
-				constellationNodes[i][1] = centreY + (int) Math.round(Math.sin(angle) * radius);
+				constellationNodes[i][0] = x + insetX
+					+ Math.round(CONSTELLATION_LAYOUT[i][0] * usableWidth);
+				constellationNodes[i][1] = y + insetY
+					+ Math.round(CONSTELLATION_LAYOUT[i][1] * usableHeight);
 			}
 		}
 		return constellationNodes;
 	}
 
 	private void clickConstellation(int index) {
-		if (index != CONSTELLATION_ORDER[unlockProgress]) {
+		if (index != CONSTELLATION_ORDER[constellationProgress]) {
 			AlertSounds.play(Minecraft.getInstance(), 21, 0.8f, 0.65f);
-			unlockProgress = index == CONSTELLATION_ORDER[0] ? 1 : 0;
+			constellationProgress = index == CONSTELLATION_ORDER[0] ? 1 : 0;
 			return;
 		}
-		AlertSounds.play(Minecraft.getInstance(), 4, 0.65f, 0.85f + unlockProgress * 0.16f);
-		if (++unlockProgress == CONSTELLATION_ORDER.length) {
-			signalCompletedAt = System.currentTimeMillis();
+		float pitch = Math.min(2f, 0.85f + constellationProgress * 0.07f);
+		AlertSounds.play(Minecraft.getInstance(), 4, 0.65f, pitch);
+		if (++constellationProgress == CONSTELLATION_ORDER.length) {
+			constellationCompletedAt = System.currentTimeMillis();
 		}
 	}
 
-	private void completeAdvancedUnlock() {
-		unlockPanel = false;
-		signalCompletedAt = 0;
-		AdvancedUnlock.unlock();
-		loadCategories();
-		selectedArea = settingsAreas.stream().filter(area -> area.key.equals("advanced"))
-			.findFirst().orElse(selectedArea);
-		selectedTab = null;
-		ensureSelectedTab();
-		scroll = 0;
+	private void completeConstellation() {
+		constellationPanel = false;
+		constellationCompletedAt = 0;
+		constellationProgress = 0;
+		SpecialTheme.completeConstellation();
 		if (search != null) {
-			search.setValue("");
 			search.visible = true;
+			search.active = true;
 		}
 	}
 
-	private static int signalColour(int step, long now) {
-		return RainbowColours.phased((now % 3_000L) / 3_000f,
-			step * 0.105f, 0.5f, 1f);
+	private static int signalColour(int step) {
+		return SpecialTheme.colourAt(SpecialTheme.CONSTELLATION,
+			step * 13f, 0.65f);
 	}
 
-	private int buildUnlockGeometry(UnlockQuadBuilder quads, int[][] nodes, int centreX, int centreY,
+	private int buildConstellationGeometry(ConstellationQuadBuilder quads, int[][] nodes,
+			int panelX, int panelY, int panelWidth, int panelHeight,
 			int progress, boolean complete, long now) {
 		quads.reset();
+		int centreX = panelX + panelWidth / 2;
+		int centreY = panelY + panelHeight / 2;
+		long age = complete ? now - constellationCompletedAt : 0L;
+		float puzzleOpacity = complete
+			? Math.clamp(1f - age / (float) CONSTELLATION_FADE_MS, 0f, 1f) : 1f;
 		int completedLines = Math.max(0, progress - 1);
 		for (int step = 0; step < completedLines; step++) {
 			int from = CONSTELLATION_ORDER[step];
 			int to = CONSTELLATION_ORDER[step + 1];
 			addSignalLine(quads, nodes[from][0], nodes[from][1], nodes[to][0], nodes[to][1],
-				signalColour(step, now));
-		}
-		if (complete) {
-			int last = CONSTELLATION_ORDER[CONSTELLATION_ORDER.length - 1];
-			addSignalLine(quads, nodes[last][0], nodes[last][1],
-				nodes[CONSTELLATION_ORDER[0]][0], nodes[CONSTELLATION_ORDER[0]][1],
-				signalColour(CONSTELLATION_ORDER.length, now));
+				multiplyAlpha(signalColour(step), puzzleOpacity));
 		}
 		for (int i = 0; i < nodes.length; i++) {
 			boolean visited = false;
 			for (int step = 0; step < progress; step++) visited |= CONSTELLATION_ORDER[step] == i;
 			boolean next = progress < CONSTELLATION_ORDER.length
 				&& CONSTELLATION_ORDER[progress] == i;
-			int colour = complete ? signalColour(i, now) : visited ? GREEN : next ? CYAN : DIM;
-			int pulse = complete ? 6 + (int) (3 * Math.abs(Math.sin((now - signalCompletedAt) / 90.0)))
+			int colour = complete ? signalColour(i)
+				: visited ? signalColour(i)
+				: next ? 0xFFFFE5A3 : 0xFF53617A;
+			colour = multiplyAlpha(colour, puzzleOpacity);
+			int pulse = complete ? 6 + (int) (3 * Math.abs(Math.sin(age / 90.0)))
 				: next ? 8 : 6;
 			addDiamond(quads, nodes[i][0], nodes[i][1], pulse, colour);
 		}
-
-		// Orbiting sparks make the unlock feel distinct without creating independent
-		// widgets; all geometry is rebuilt together on the shared 40 FPS clock.
-		int orbit = Math.max(26, constellationSize / 3);
-		float phase = (now % 4_000L) / 4_000f;
-		for (int i = 0; i < 24; i++) {
-			double angle = (phase + i / 24f) * Math.PI * 2;
-			int radius = orbit + (i % 3) * 9;
-			int sx = centreX + (int) Math.round(Math.cos(angle) * radius);
-			int sy = centreY + (int) Math.round(Math.sin(angle) * radius);
-			int colour = signalColour(i, now);
-			quads.add(sx - 2, sy, sx + 3, sy + 1, colour);
-			quads.add(sx, sy - 2, sx + 1, sy + 3, colour);
-		}
 		if (complete) {
-			long age = now - signalCompletedAt;
-			for (int ring = 0; ring < 3; ring++) {
-				int radius = 8 + (int) (age / 18L) + ring * 13;
-				addDiamondOutline(quads, centreX, centreY, radius,
-					signalColour((int) age / 80 + ring * 3, now));
+			drawSeventeenPointStar(quads, centreX, centreY,
+				Math.max(24, Math.round(Math.min(panelWidth, panelHeight) * 0.31f)), age);
+			if (age >= ASTRAL_BEACON_START_MS) {
+				drawAstralBeacon(quads, centreX, centreY, panelY, panelHeight, age);
 			}
 		}
 		return quads.size();
 	}
 
-	private static void addSignalLine(UnlockQuadBuilder quads,
+	private static void drawSeventeenPointStar(ConstellationQuadBuilder quads,
+			int centreX, int centreY, int radius, long age) {
+		float lineProgress = Math.max(0f,
+			(age - ASTRAL_STAR_START_MS) / (float) ASTRAL_STAR_LINE_MS);
+		int completeLines = Math.min(ASTRAL_STAR_POINTS, (int) lineProgress);
+		float partial = Math.clamp(lineProgress - completeLines, 0f, 1f);
+		for (int line = 0; line < completeLines; line++) {
+			addStarLine(quads, centreX, centreY, radius, line, 1f,
+				signalColour(line));
+		}
+		if (completeLines < ASTRAL_STAR_POINTS && partial > 0f) {
+			addStarLine(quads, centreX, centreY, radius, completeLines, partial,
+				signalColour(completeLines));
+		}
+		int revealedPoints = Math.min(ASTRAL_STAR_POINTS, completeLines + (partial > 0f ? 1 : 0));
+		for (int point = 0; point < revealedPoints; point++) {
+			int index = Math.floorMod(point * 8, ASTRAL_STAR_POINTS);
+			double angle = -Math.PI / 2 + index * Math.PI * 2 / ASTRAL_STAR_POINTS;
+			int x = centreX + (int) Math.round(Math.cos(angle) * radius);
+			int y = centreY + (int) Math.round(Math.sin(angle) * radius);
+			addDiamond(quads, x, y, 2, signalColour(point + 4));
+		}
+	}
+
+	private static void addStarLine(ConstellationQuadBuilder quads,
+			int centreX, int centreY, int radius, int line, float amount, int colour) {
+		int fromIndex = Math.floorMod(line * 8, ASTRAL_STAR_POINTS);
+		int toIndex = Math.floorMod((line + 1) * 8, ASTRAL_STAR_POINTS);
+		double fromAngle = -Math.PI / 2 + fromIndex * Math.PI * 2 / ASTRAL_STAR_POINTS;
+		double toAngle = -Math.PI / 2 + toIndex * Math.PI * 2 / ASTRAL_STAR_POINTS;
+		int fromX = centreX + (int) Math.round(Math.cos(fromAngle) * radius);
+		int fromY = centreY + (int) Math.round(Math.sin(fromAngle) * radius);
+		int toX = centreX + (int) Math.round(Math.cos(toAngle) * radius);
+		int toY = centreY + (int) Math.round(Math.sin(toAngle) * radius);
+		toX = Math.round(fromX + (toX - fromX) * amount);
+		toY = Math.round(fromY + (toY - fromY) * amount);
+		addSignalLine(quads, fromX, fromY, toX, toY, colour);
+	}
+
+	private static void drawAstralBeacon(ConstellationQuadBuilder quads,
+			int centreX, int centreY, int panelTop, int panelHeight, long age) {
+		float progress = Math.clamp((age - ASTRAL_BEACON_START_MS)
+			/ (float) (CONSTELLATION_COMPLETION_MS - ASTRAL_BEACON_START_MS), 0f, 1f);
+		int top = Math.round(centreY + (panelTop + 8 - centreY) * progress);
+		for (int layer = 4; layer >= 1; layer--) {
+			int halfWidth = Math.max(1, Math.round(progress * layer * 3.5f));
+			int alpha = Math.round((34 + layer * 22) * progress);
+			quads.add(centreX - halfWidth, top, centreX + halfWidth + 1, centreY,
+				multiplyAlpha(signalColour(layer * 3), alpha / 255f));
+		}
+		int maxRadius = Math.max(20, panelHeight / 2 - 14);
+		for (int ring = 0; ring < 4; ring++) {
+			float ringProgress = Math.clamp(progress * 1.35f - ring * 0.16f, 0f, 1f);
+			if (ringProgress <= 0f) continue;
+			int radius = 8 + Math.round(maxRadius * ringProgress);
+			addDiamondOutline(quads, centreX, centreY, radius,
+				multiplyAlpha(signalColour(ring * 5), 1f - ringProgress * 0.72f));
+		}
+		for (int ray = 0; ray < ASTRAL_STAR_POINTS; ray++) {
+			double angle = -Math.PI / 2 + ray * Math.PI * 2 / ASTRAL_STAR_POINTS;
+			int length = Math.round((18 + (ray % 3) * 7) * progress);
+			int x = centreX + (int) Math.round(Math.cos(angle) * length);
+			int y = centreY + (int) Math.round(Math.sin(angle) * length);
+			addSignalLine(quads, centreX, centreY, x, y,
+				multiplyAlpha(signalColour(ray), 0.72f * progress));
+		}
+		addDiamond(quads, centreX, centreY, 5 + Math.round(progress * 8f), 0xFFFFF2C2);
+	}
+
+	private static int multiplyAlpha(int colour, float amount) {
+		int alpha = Math.round((colour >>> 24) * Math.clamp(amount, 0f, 1f));
+		return alpha << 24 | colour & 0xFFFFFF;
+	}
+
+	private static void addSignalLine(ConstellationQuadBuilder quads,
 			int x0, int y0, int x1, int y1, int colour) {
 		int dx = Math.abs(x1 - x0);
 		int sx = x0 < x1 ? 1 : -1;
@@ -4086,7 +4156,7 @@ public final class SafariSettingsScreen extends Screen {
 		}
 	}
 
-	private static void addDiamondOutline(UnlockQuadBuilder quads,
+	private static void addDiamondOutline(ConstellationQuadBuilder quads,
 			int x, int y, int radius, int colour) {
 		for (int row = -radius; row <= radius; row++) {
 			int half = radius - Math.abs(row);
@@ -4095,7 +4165,7 @@ public final class SafariSettingsScreen extends Screen {
 		}
 	}
 
-	private static void addDiamond(UnlockQuadBuilder quads, int x, int y, int radius, int colour) {
+	private static void addDiamond(ConstellationQuadBuilder quads, int x, int y, int radius, int colour) {
 		for (int row = -radius; row <= radius; row++) {
 			int half = radius - Math.abs(row);
 			quads.add(x - half, y + row, x + half + 1, y + row + 1, colour);
@@ -4110,11 +4180,11 @@ public final class SafariSettingsScreen extends Screen {
 		}
 	}
 
-	private static final class UnlockQuadBuilder {
+	private static final class ConstellationQuadBuilder {
 		private int[] values;
 		private int size;
 
-		private UnlockQuadBuilder(int initialInts) {
+		private ConstellationQuadBuilder(int initialInts) {
 			values = new int[initialInts];
 		}
 
@@ -4439,8 +4509,8 @@ public final class SafariSettingsScreen extends Screen {
 			closeCustomSparklingPanel();
 			return true;
 		}
-		if (unlockPanel && event.key() == 256) {
-			closeUnlockPanel();
+		if (constellationPanel && event.key() == 256) {
+			closeConstellationPanel();
 			return true;
 		}
 		return super.keyPressed(event);
@@ -4474,6 +4544,14 @@ public final class SafariSettingsScreen extends Screen {
 				int position = 0;
 				for (int i = 0; i < THEMES.size(); i++) if (THEMES.get(i).id() == current) position = i;
 				field.setInt(owner, THEMES.get(Math.floorMod(position + direction, THEMES.size())).id());
+			} else if (isSpecialThemeChoice(field)) {
+				int[] choices = ConfigManager.get().advanced.constellationThemeUnlocked
+					? new int[] {SpecialTheme.OFF, SpecialTheme.CONSTELLATION, SpecialTheme.RAINBOW}
+					: new int[] {SpecialTheme.OFF, SpecialTheme.RAINBOW};
+				int position = 0;
+				for (int i = 0; i < choices.length; i++) if (choices[i] == current) position = i;
+				int selected = choices[Math.floorMod(position + direction, choices.length)];
+				field.setInt(owner, selected);
 			} else {
 				field.setInt(owner, Math.floorMod(current + direction, dropdown.values().length));
 			}
@@ -4490,6 +4568,8 @@ public final class SafariSettingsScreen extends Screen {
 			}
 			return "Default";
 		}
+		if (isSpecialThemeChoice(field) && value == SpecialTheme.CONSTELLATION
+				&& !ConfigManager.get().advanced.constellationThemeUnlocked) return "None";
 		return value >= 0 && value < dropdown.values().length ? dropdown.values()[value] : dropdown.values()[0];
 	}
 
@@ -4499,6 +4579,10 @@ public final class SafariSettingsScreen extends Screen {
 
 	private static boolean isThemeChoice(Field field) {
 		return field != null && field.getName().equals("settingsTheme");
+	}
+
+	private static boolean isSpecialThemeChoice(Field field) {
+		return field != null && field.getName().equals("specialTheme");
 	}
 
 	private static boolean isHeaderOnly(Field field) {
@@ -4552,8 +4636,7 @@ public final class SafariSettingsScreen extends Screen {
 			&& (field.getName().equals("sparklingBannerScale")
 				|| field.getName().equals("sparklingBannerVerticalPosition"));
 		if (oldAlertPlacement || oldSparklingPlacement) return false;
-		return isReadOnlyNotice(field)
-			|| field.isAnnotationPresent(SettingToggle.class)
+		return field.isAnnotationPresent(SettingToggle.class)
 			|| field.isAnnotationPresent(SettingChoice.class)
 			|| field.isAnnotationPresent(SettingMultiChoice.class)
 			|| field.isAnnotationPresent(SettingRange.class)

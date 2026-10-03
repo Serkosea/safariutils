@@ -93,6 +93,10 @@ public final class TicketTrading {
 	}
 
 	public static void tick() {
+		if (!HypixelConnection.active()) {
+			onDisconnect();
+			return;
+		}
 		if (testMode) return;
 		long now = System.currentTimeMillis();
 		if (pendingAcceptAt > 0L) {
@@ -293,7 +297,7 @@ public final class TicketTrading {
 
 	private static void sendCommand(String command) {
 		Minecraft client = Minecraft.getInstance();
-		if (client.getConnection() == null) return;
+		if (!HypixelConnection.active() || client.getConnection() == null) return;
 		client.getConnection().sendCommand(command);
 		OperationalLog.info("TICKET_TRADE", "Sent /" + command.split(" ")[0] + " "
 			+ command.split(" ")[1]);

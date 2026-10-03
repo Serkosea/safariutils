@@ -74,12 +74,11 @@ public final class ClientMessages {
 		String complete = "[SafariUtils] " + text;
 		int bodyStart = "[SafariUtils] ".length();
 		Font font = Minecraft.getInstance().font;
-		float phase = RainbowColours.phase(RainbowColours.frameId());
 		MutableComponent result = Component.empty();
 		int cursor = 0;
 		for (int index = 0; index < complete.length(); index++) {
 			String character = String.valueOf(complete.charAt(index));
-			int colour = RainbowColours.phased(phase, cursor / 96f, 0.5f, 1f) & 0xFFFFFF;
+			int colour = SpecialTheme.colourAt(cursor, 0.5f) & 0xFFFFFF;
 			boolean bold = boldBody && index >= bodyStart;
 			Component segment = Component.literal(character).withStyle(style ->
 				style.withColor(colour).withBold(bold));
@@ -91,14 +90,13 @@ public final class ClientMessages {
 
 	private static Component themedLink(String text, URI release, String linkLabel) {
 		Font font = Minecraft.getInstance().font;
-		float phase = RainbowColours.phase(RainbowColours.frameId());
 		ClickEvent click = new ClickEvent.OpenUrl(release);
 		HoverEvent hover = new HoverEvent.ShowText(Component.literal("Open " + linkLabel));
 		MutableComponent result = Component.empty();
 		int cursor = 0;
 		for (int index = 0; index < text.length(); index++) {
 			String character = String.valueOf(text.charAt(index));
-			int colour = RainbowColours.phased(phase, cursor / 96f, 0.5f, 1f) & 0xFFFFFF;
+			int colour = SpecialTheme.colourAt(cursor, 0.5f) & 0xFFFFFF;
 			Component segment = Component.literal(character).withStyle(style -> style
 				.withColor(colour).withBold(true).withUnderlined(true)
 				.withClickEvent(click).withHoverEvent(hover));

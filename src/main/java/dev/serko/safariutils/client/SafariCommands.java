@@ -58,75 +58,73 @@ public final class SafariCommands {
 			if (BuildVersion.DEVELOPER) {
 				var debugRoot = ClientCommands.literal("debug")
 				.executes(ctx -> {
-					requireUnlocked(ctx.getSource(), () -> debug(ctx.getSource()));
+					debug(ctx.getSource());
 					return 1;
 				})
 				.then(ClientCommands.literal("entities").executes(ctx -> {
-					requireUnlocked(ctx.getSource(), () -> entities(ctx.getSource()));
+					entities(ctx.getSource());
 					return 1;
 				}))
 				.then(ClientCommands.literal("nearby").executes(ctx -> {
-					requireUnlocked(ctx.getSource(), () -> nearby(ctx.getSource()));
+					nearby(ctx.getSource());
 					return 1;
 				}))
 				.then(ClientCommands.literal("run").executes(ctx -> {
-					requireUnlocked(ctx.getSource(), () -> runState(ctx.getSource()));
+					runState(ctx.getSource());
 					return 1;
 				}))
 				.then(ClientCommands.literal("log").executes(ctx -> {
-					requireUnlocked(ctx.getSource(), () -> logStatus(ctx.getSource()));
+					logStatus(ctx.getSource());
 					return 1;
 				}))
 				.then(ClientCommands.literal("jointimer").executes(ctx -> {
-					requireUnlocked(ctx.getSource(), () -> joinTimer(ctx.getSource()));
+					joinTimer(ctx.getSource());
 					return 1;
 				}))
 				.then(ClientCommands.literal("room").executes(ctx -> {
-					requireUnlocked(ctx.getSource(), () -> roomIdentity(ctx.getSource()));
+					roomIdentity(ctx.getSource());
 					return 1;
 				}))
 				.then(ClientCommands.literal("critters").executes(ctx -> {
-					requireUnlocked(ctx.getSource(), () -> critterPairings(ctx.getSource()));
+					critterPairings(ctx.getSource());
 					return 1;
 				}))
 				.then(ClientCommands.literal("catalogs").executes(ctx -> {
-					requireUnlocked(ctx.getSource(), () -> catalogs(ctx.getSource()));
+					catalogs(ctx.getSource());
 					return 1;
 				}))
 				.then(ClientCommands.literal("block").executes(ctx -> {
-					requireUnlocked(ctx.getSource(), () -> block(ctx.getSource()));
+					block(ctx.getSource());
 					return 1;
 				}))
 				.then(ClientCommands.literal("tablist").executes(ctx -> {
-					requireUnlocked(ctx.getSource(), () -> tablist(ctx.getSource()));
+					tablist(ctx.getSource());
 					return 1;
 				}))
 				.then(ClientCommands.literal("waypoints").executes(ctx -> {
-					requireUnlocked(ctx.getSource(), () -> waypoints(ctx.getSource()));
+					waypoints(ctx.getSource());
 					return 1;
 				}))
 				.then(ClientCommands.literal("testalert").executes(ctx -> {
-					requireUnlocked(ctx.getSource(), () -> {
-						// Walks every stage without waiting for a real encounter.
-						EncounterAlerts.whileTesting(() -> {
-							EncounterAlerts.onChatMessage("A rumbling sound can be heard, and the door at the back of the chamber opens...");
-							EncounterAlerts.onChatMessage("You hear the sound of massive footsteps echoing through the Icy Biome... What could it be?");
-							EncounterAlerts.onChatMessage("The Wumpa has awoken.");
-							EncounterAlerts.onChatMessage("The cave opens up again...");
-							EncounterAlerts.onChatMessage("Your ritual summoned a Doomspiral into this world. Stay still.");
-							EncounterAlerts.onChatMessage("The Doomspiral retreats back underground...");
-							for (int i = 0; i < 3; i++) EncounterAlerts.onCatch("Gemzie");
-							EncounterAlerts.onBiomeComplete(SafariBiome.CAVERN);
-							EncounterAlerts.onAllButMacaw();
-							EncounterAlerts.onAllDone();
-						});
-						BirdfeederWatch.onChatMessage("A Bluebird was attracted to the Birdfeeder!");
-						BirdfeederWatch.onChatMessage("Two Macaws were attracted to the Birdfeeder!");
-						HotspotWatch.onChatMessage("HOTSPOT! Your Hunting Hotspot is the Icy Biome!");
-						FullScreenAlert.show("SPARKLING!", "Rockmite", "Cavern -96 40 42",
-							FullScreenAlert.SPARKLING);
-						copyResult(ctx.getSource(), "Safari alert test triggered\n");
+					// Walks every stage without waiting for a real encounter.
+					EncounterAlerts.whileTesting(() -> {
+						EncounterAlerts.onChatMessage("A rumbling sound can be heard, and the door at the back of the chamber opens...");
+						EncounterAlerts.onChatMessage("You hear the sound of massive footsteps echoing through the Icy Biome... What could it be?");
+						EncounterAlerts.onChatMessage("The Wumpa has awoken.");
+						EncounterAlerts.onChatMessage("The cave opens up again...");
+						EncounterAlerts.onChatMessage("Your ritual summoned a Doomspiral into this world. Stay still.");
+						EncounterAlerts.onChatMessage("The Doomspiral retreats back underground...");
+						for (int i = 0; i < 3; i++) EncounterAlerts.onCatch("Gemzie");
+						EncounterAlerts.onBiomeComplete(SafariBiome.CAVERN);
+						EncounterAlerts.onAllButMacaw();
+						EncounterAlerts.onAllDone();
 					});
+					BirdfeederWatch.onChatMessage("A Bluebird was attracted to the Birdfeeder!");
+					BirdfeederWatch.onChatMessage("Two Macaws were attracted to the Birdfeeder!");
+					HotspotWatch.onChatMessage("HOTSPOT! Your Hunting Hotspot is the Icy Biome!");
+					FullScreenAlert.show("SPARKLING!", "Rockmite", "Cavern -96 40 42",
+						FullScreenAlert.SPARKLING);
+					copyResult(ctx.getSource(), "Safari alert test triggered\n");
 					return 1;
 				}));
 
@@ -645,19 +643,6 @@ public final class SafariCommands {
 
 	private static String stripCodes(String text) {
 		return text.replaceAll("\u00a7.", "").replaceAll("[\\p{Cf}\\p{Co}]", "").trim();
-	}
-
-	/**
-	 * Runs {@code action} if Advanced has been unlocked this session, otherwise says
-	 * so and does nothing else — the one gate every diagnostic command but
-	 * {@code unlock} itself goes through.
-	 */
-	private static void requireUnlocked(FabricClientCommandSource source, Runnable action) {
-		if (!AdvancedUnlock.isUnlocked()) {
-			failReport(source, "Advanced settings are locked this session");
-			return;
-		}
-		action.run();
 	}
 
 	private static Component header(String text) {

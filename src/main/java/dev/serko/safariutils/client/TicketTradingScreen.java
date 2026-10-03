@@ -225,8 +225,7 @@ public final class TicketTradingScreen extends Screen {
 			String slotLabel = "Slot " + (row + 1);
 			int slotTextY = sy + Math.max(5, (rowHeight - 8) / 2);
 			if (profile != null && profile.sparklingOnly) {
-				UIDraw.rainbowText(graphics, font, Component.literal(slotLabel),
-					slotX[index] + 8, slotTextY, 0.5f, 0xFF, true);
+				drawSparklingText(graphics, slotLabel, slotX[index] + 8, slotTextY);
 			} else SpecialTheme.text(graphics, font, Component.literal(slotLabel),
 				slotX[index] + 8, slotTextY, label);
 			if (profile == null) {
@@ -241,15 +240,13 @@ public final class TicketTradingScreen extends Screen {
 				if (rowHeight >= 32) {
 					String detail = profile.sparklingOnly
 						? Long.bitCount(profile.sparklingCritters) + "/37 Sparklings" : "All runs";
-					if (profile.sparklingOnly) UIDraw.rainbowText(graphics, font,
-						Component.literal(detail), nameX, sy + 20, 0.5f, 0xFF, true);
+					if (profile.sparklingOnly) drawSparklingText(graphics, detail, nameX, sy + 20);
 					else SpecialTheme.text(graphics, font, Component.literal(detail), nameX, sy + 20, label);
 				} else {
 					String detail = profile.sparklingOnly
 						? Long.bitCount(profile.sparklingCritters) + "/37" : "All";
 					int detailX = buttonX - font.width(detail) - 6;
-					if (profile.sparklingOnly) UIDraw.rainbowText(graphics, font,
-						Component.literal(detail), detailX, nameY, 0.5f, 0xFF, true);
+					if (profile.sparklingOnly) drawSparklingText(graphics, detail, detailX, nameY);
 					else SpecialTheme.text(graphics, font, Component.literal(detail),
 						detailX, nameY, label);
 				}
@@ -291,8 +288,7 @@ public final class TicketTradingScreen extends Screen {
 			drawProfileName(graphics, profile, x + 16, ry + 6);
 			String detail = profile.sparklingOnly
 				? Long.bitCount(profile.sparklingCritters) + "/37" : "All runs";
-			if (profile.sparklingOnly) UIDraw.rainbowText(graphics, font,
-				Component.literal(detail), x + 16, ry + 20, 0.5f, 0xFF, true);
+			if (profile.sparklingOnly) drawSparklingText(graphics, detail, x + 16, ry + 20);
 			else SpecialTheme.text(graphics, font, Component.literal(detail), x + 16, ry + 20, label);
 			profileButton(graphics, buttonX, buttonY, 32, 18, "Edit", profile, row,
 				mouseX, mouseY, () -> openEditor(profile));
@@ -431,8 +427,7 @@ public final class TicketTradingScreen extends Screen {
 		String after = value.substring(icon + 1);
 		SpecialTheme.text(graphics, font, Component.literal(before), x, y, label);
 		int iconX = x + font.width(before);
-		UIDraw.rainbowText(graphics, font, Component.literal("✦"),
-			iconX, y, 0.5f, 0xFF, true);
+		drawSparklingText(graphics, "✦", iconX, y);
 		SpecialTheme.text(graphics, font, Component.literal(after),
 			iconX + font.width("✦"), y, label);
 	}
@@ -479,7 +474,15 @@ public final class TicketTradingScreen extends Screen {
 			PlayerNameStyle.drawName(graphics, font, profile.username, x, y);
 			return;
 		}
-		UIDraw.rainbowText(graphics, font, Component.literal(profileName(profile)),
+		if (SpecialTheme.rainbow()) {
+			SpecialTheme.rainbowText(graphics, font, profileName(profile), x, y);
+		} else UIDraw.rainbowText(graphics, font, Component.literal(profileName(profile)),
+			x, y, 0.5f, 0xFF, true);
+	}
+
+	private void drawSparklingText(GuiGraphicsExtractor graphics, String value, int x, int y) {
+		if (SpecialTheme.rainbow()) SpecialTheme.rainbowText(graphics, font, value, x, y);
+		else UIDraw.rainbowText(graphics, font, Component.literal(value),
 			x, y, 0.5f, 0xFF, true);
 	}
 
@@ -510,8 +513,7 @@ public final class TicketTradingScreen extends Screen {
 		} else UIDraw.outline(graphics, x, y, w, h, border);
 		int textX = x + (w - font.width(value)) / 2;
 		int textY = y + (h - 8) / 2;
-		if (profile.sparklingOnly) UIDraw.rainbowText(graphics, font,
-			Component.literal(value), textX, textY, 0.5f, 0xFF, true);
+		if (profile.sparklingOnly) drawSparklingText(graphics, value, textX, textY);
 		else SpecialTheme.text(graphics, font, Component.literal(value), textX, textY, text);
 		hits.add(new Hit(x, y, w, h, action));
 	}

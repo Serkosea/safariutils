@@ -491,7 +491,9 @@ public final class HudPanel {
 
 	private static void rainbowText(GuiGraphicsExtractor graphics, Font font,
 								 String text, int x, int y) {
-		UIDraw.rainbowText(graphics, font, text, x, y, 0.45f);
+		if (SpecialTheme.rainbow()) {
+			SpecialTheme.rainbowText(graphics, font, text, x, y);
+		} else UIDraw.rainbowText(graphics, font, text, x, y, 0.45f);
 	}
 
 	private static String mark(boolean known, boolean complete) {

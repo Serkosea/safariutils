@@ -21,7 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 
 /** Cached, API-key-free Minecraft username capitalization. */
-final class CanonicalPlayerNames {
+public final class CanonicalPlayerNames {
 	private static final Pattern USERNAME = Pattern.compile("[A-Za-z0-9_]{1,16}");
 	private static final int CACHE_LIMIT = 512;
 	private static final String LOOKUP =
@@ -55,6 +55,15 @@ final class CanonicalPlayerNames {
 			NAMES.put(key, valid);
 		}
 		return valid;
+	}
+
+	/** Caches an authoritative player profile already observed elsewhere in the mod. */
+	public static String rememberProfile(String value, String uuid) {
+		String canonical = remember(value);
+		if (!canonical.isEmpty() && uuid != null && !uuid.isBlank()) {
+			UUIDS.put(normalize(canonical), uuid.replace("-", "").toLowerCase(Locale.ROOT));
+		}
+		return canonical;
 	}
 
 	static String uuid(String value) {
@@ -127,11 +136,7 @@ final class CanonicalPlayerNames {
 	}
 
 	private static String rememberOnline(String name, String uuid) {
-		String canonical = remember(name);
-		if (!canonical.isEmpty() && uuid != null) {
-			UUIDS.put(normalize(canonical), uuid.replace("-", "").toLowerCase(Locale.ROOT));
-		}
-		return canonical;
+		return rememberProfile(name, uuid);
 	}
 
 	private static String normalize(String value) {

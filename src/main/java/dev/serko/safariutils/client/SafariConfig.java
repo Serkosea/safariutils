@@ -374,15 +374,15 @@ public class SafariConfig {
 		@Expose
 		public boolean showContestHud = true;
 
-		@SettingInfo(name = "Show Everywhere",
-			desc = "Show Contest HUD on all Islands, not just Torrhus Canyon and Safari")
+		@SettingInfo(name = "Show on All Islands",
+			desc = "Show Contest HUD on all SkyBlock islands, not just Torrhus Canyon and Safari")
 		@SettingToggle
 		@SettingGroup(id = CONTEST_HUD)
 		@Expose
 		public boolean contestShowEverywhere = true;
 
-		@SettingInfo(name = "Show Outside SkyBlock",
-			desc = "Show Contest HUD outside of SkyBlock")
+		@SettingInfo(name = "Show Everywhere",
+			desc = "Show Contest HUD in all Minecraft worlds and servers")
 		@SettingToggle
 		@SettingGroup(id = CONTEST_HUD)
 		@Expose
@@ -1017,15 +1017,15 @@ public class SafariConfig {
 		private static final int SAFE_HIDDEN_CRITTERS = 22;
 		private static final int SAFE_STATIC_OBJECTIVES = 23;
 
-		@SettingInfo(name = "Safe Mode Required",
-			desc = "Safe Mode is always enabled in this version. Use the Extra version to configure or disable it.")
-		public transient String safeModeLockedNotice = "";
-
 		@SettingInfo(name = "Special Themes",
 			desc = "Applies a special theme to settings and all HUDs")
-		@SettingChoice(values = {"Off", "Rainbow"})
+		@SettingChoice(values = {"None", "Rainbow", "Astral"})
 		@Expose
 		public int specialTheme = 0;
+
+		/** Persisted Easter-egg reward; intentionally absent from the settings list. */
+		@Expose
+		public boolean constellationThemeUnlocked = false;
 
 		@SettingInfo(name = "Enable Party Sync",
 			desc = "Shares Safari objective information with other party members through parsed party chat messages")

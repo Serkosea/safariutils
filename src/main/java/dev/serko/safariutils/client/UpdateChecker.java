@@ -79,7 +79,7 @@ public final class UpdateChecker {
 	public static String publishedAt() { return publishedAt; }
 	public static URI releasePage() { return releasePage; }
 	public static String releaseLinkLabel() {
-		return BuildVersion.PRIVATE ? "Private Release" : "GitHub Release";
+		return "Mod Website";
 	}
 
 	public static boolean updateAvailable() {
@@ -106,12 +106,6 @@ public final class UpdateChecker {
 			releaseTitle = string(release, "name");
 			releaseNotes = string(release, "body");
 			publishedAt = string(release, "published_at");
-			String page = string(release, "html_url");
-			if (!BuildVersion.PRIVATE && !page.isBlank()) {
-				URI candidate = URI.create(page);
-				if ("https".equalsIgnoreCase(candidate.getScheme())
-						&& "github.com".equalsIgnoreCase(candidate.getHost())) releasePage = candidate;
-			}
 			if (newer(latest, current)) {
 				availableVersion = latest;
 				status = Status.AVAILABLE;

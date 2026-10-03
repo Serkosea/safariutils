@@ -1,6 +1,7 @@
 package dev.serko.safariutils.mixin;
 
 import dev.serko.safariutils.client.ConfigManager;
+import dev.serko.safariutils.client.HypixelConnection;
 import dev.serko.safariutils.client.SafariLocation;
 import net.minecraft.client.gui.Hud;
 import net.minecraft.client.player.LocalPlayer;
@@ -14,7 +15,8 @@ public abstract class GuiMixin {
 	@Redirect(method = "extractCameraOverlays", at = @At(value = "INVOKE",
 		target = "Lnet/minecraft/client/player/LocalPlayer;getTicksFrozen()I"))
 	private int safariutils$removeSafariColdOverlay(LocalPlayer player) {
-		return ConfigManager.get().display.removeColdOverlay && SafariLocation.inSafari()
+		return HypixelConnection.active() && ConfigManager.get().display.removeColdOverlay
+			&& SafariLocation.inSafari()
 			? 0 : player.getTicksFrozen();
 	}
 }

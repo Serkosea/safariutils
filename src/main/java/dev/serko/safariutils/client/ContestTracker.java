@@ -56,6 +56,16 @@ public final class ContestTracker implements HudElement {
 
 	/** Updates the clock alerts and reads exact contest values while on Torrhus Canyon. */
 	public static void tick() {
+		tick(true);
+	}
+
+	/** Keeps the real-time clock current off Hypixel without reading server state. */
+	public static void tickOutsideHypixel() {
+		SafariConfig.DisplayConfig display = ConfigManager.get().display;
+		if (display.showContestHud && display.contestShowOutsideSkyblock) tick(false);
+	}
+
+	private static void tick(boolean readServerResult) {
 		if (Minecraft.getInstance().player == null) return;
 
 		long now = System.currentTimeMillis();
@@ -81,7 +91,7 @@ public final class ContestTracker implements HudElement {
 		firePendingStartAlert();
 
 		boolean resultGuardElapsed = remaining <= ACTIVE_MILLIS - RESULT_START_GUARD_MILLIS;
-		if (remaining >= 0 && resultGuardElapsed
+		if (readServerResult && remaining >= 0 && resultGuardElapsed
 			&& "Torrhus Canyon".equals(SafariLocation.tabListArea())) {
 			List<String> entries = SafariLocation.tabListEntries();
 			if (!entries.equals(lastParsedTabList)) {
@@ -271,6 +281,7 @@ public final class ContestTracker implements HudElement {
 	private static boolean shouldShow() {
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
 		if (!display.showContestHud || display.contestHideOnComplete && ticket) return false;
+		if (!HypixelConnection.active()) return display.contestShowOutsideSkyblock;
 		if (!SafariLocation.inSkyblock()) return display.contestShowOutsideSkyblock;
 		if (display.contestShowEverywhere) return true;
 		String area = SafariLocation.tabListArea();

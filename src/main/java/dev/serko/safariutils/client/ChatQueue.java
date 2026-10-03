@@ -86,6 +86,10 @@ public final class ChatQueue {
 
 	/** Drains at most one queued line per call; wired to the client tick. */
 	public static void tick() {
+		if (!HypixelConnection.active()) {
+			clear();
+			return;
+		}
 		if (pending.isEmpty()) return;
 
 		long now = System.currentTimeMillis();

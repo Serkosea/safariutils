@@ -26,6 +26,7 @@ import dev.serko.safariutils.client.TicketProtection;
 import dev.serko.safariutils.client.TicketTrading;
 import dev.serko.safariutils.client.StillCritters;
 import dev.serko.safariutils.client.HotspotWatch;
+import dev.serko.safariutils.client.HypixelConnection;
 import dev.serko.safariutils.client.JoinWindowDiagnostics;
 import dev.serko.safariutils.client.BirdfeederWatch;
 import dev.serko.safariutils.client.ShiningCoinWatch;
@@ -94,10 +95,12 @@ public class SafariUtils implements ClientModInitializer {
 		OperationalLog.start();
 		UpdateChecker.start();
 		ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> OperationalLog.run("SCREEN/INIT", () -> {
+			if (!HypixelConnection.active()) return;
 			InteractionDebugLog.onScreenInit(client, screen, width, height);
 			TicketProtection.onScreenInit(screen);
 		}));
 		ClientReceiveMessageEvents.ALLOW_GAME.register((message, overlay) -> {
+			if (!HypixelConnection.active()) return true;
 			return OperationalLog.get("CHAT/FILTER", () -> {
 				// Log before optional automation hides a clickable server prompt.
 				InteractionDebugLog.onGameMessage(message, overlay);
@@ -113,7 +116,8 @@ public class SafariUtils implements ClientModInitializer {
 				return false;
 			}, true);
 		});
-		ClientReceiveMessageEvents.MODIFY_GAME.register(ChatMessageFilter::modify);
+		ClientReceiveMessageEvents.MODIFY_GAME.register((message, overlay) ->
+			HypixelConnection.active() ? ChatMessageFilter.modify(message, overlay) : message);
 		// Hypixel sends catch messages as system chat, which is what GAME covers.
 		// This fires upstream of chat-compacting mods, so the duplicate counters
 		// they append never reach the parser.
@@ -122,6 +126,14 @@ public class SafariUtils implements ClientModInitializer {
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			if (UpdateChecker.noticePending()) tickSafely("update-notice", UpdateChecker::tick);
+			boolean hypixel = HypixelConnection.refresh();
+			if (!hypixel) {
+				PartyRosterWatch.resetConnectionState();
+				ChatQueue.clear();
+				tickSafely("config", ConfigManager::tick);
+				tickSafely("contest", ContestTracker::tickOutsideHypixel);
+				return;
+			}
 			tickSafely("alerts", AlertSounds::tick);
 			// Next, and only here: everything below asks it where the player is.
 			tickSafely("location", SafariLocation::tick);
@@ -178,7 +190,14 @@ public class SafariUtils implements ClientModInitializer {
 		// Hypixel never says you have left the Safari, but moving island reconnects, so
 		// this is the one moment the chat-driven flag is known to be stale.
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> OperationalLog.run("CONNECTION/JOIN", () -> {
-			OperationalLog.info("LIFECYCLE", "Joined a server world");
+			if (!HypixelConnection.refresh()) {
+				leaveHypixel();
+				return;
+			}
+			OperationalLog.info("LIFECYCLE", "Joined a Hypixel server world");
+			ChatQueue.clear();
+			PartyRosterWatch.resetConnectionState();
+			PartyObjectiveHud.invalidatePlayerColours();
 			if (BuildVersion.DEVELOPER) JoinWindowDiagnostics.onConnectionJoin();
 			SessionManager.onConnectionJoin();
 			TicketTrading.onConnectionJoin();
@@ -186,13 +205,13 @@ public class SafariUtils implements ClientModInitializer {
 			SessionManager.onWorldChange();
 		}));
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> OperationalLog.run("CONNECTION/DISCONNECT", () -> {
-			OperationalLog.info("LIFECYCLE", "Disconnected from server world");
-			SafariLocation.onWorldChange();
-			SessionManager.onWorldChange();
-			TicketTrading.onDisconnect();
+			OperationalLog.info("LIFECYCLE", "Disconnected from Hypixel/server world");
+			HypixelConnection.onDisconnect();
+			leaveHypixel();
 		}));
 
 		AttackBlockCallback.EVENT.register((player, level, hand, pos, direction) -> {
+			if (!HypixelConnection.active()) return InteractionResult.PASS;
 			return OperationalLog.get("INTERACTION/ATTACK_BLOCK", () -> {
 				NestTracker.onInteract(pos);
 				// A drop being picked up would clear itself a few seconds later anyway;
@@ -202,6 +221,7 @@ public class SafariUtils implements ClientModInitializer {
 			}, InteractionResult.PASS);
 		});
 		AttackEntityCallback.EVENT.register((player, level, hand, entity, hitResult) -> {
+			if (!HypixelConnection.active()) return InteractionResult.PASS;
 			return OperationalLog.get("INTERACTION/ATTACK_ENTITY", () -> {
 				MoundSpotter.onAttack(entity);
 				InteractionDebugLog.onEntityInteraction("attack", entity, hand.toString());
@@ -210,6 +230,7 @@ public class SafariUtils implements ClientModInitializer {
 			}, InteractionResult.PASS);
 		});
 		UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
+			if (!HypixelConnection.active()) return InteractionResult.PASS;
 			return OperationalLog.get("INTERACTION/USE_BLOCK", () -> {
 				NestTracker.onInteract(hit.getBlockPos());
 				FloorDrops.onInteract(hit.getBlockPos());
@@ -217,6 +238,7 @@ public class SafariUtils implements ClientModInitializer {
 			}, InteractionResult.PASS);
 		});
 		UseEntityCallback.EVENT.register((player, level, hand, entity, hitResult) -> {
+			if (!HypixelConnection.active()) return InteractionResult.PASS;
 			return OperationalLog.get("INTERACTION/USE_ENTITY", () -> {
 				SafariPartyWatch.onEntityUse(entity);
 				BirdfeederWatch.onEntityUse(entity);
@@ -240,7 +262,7 @@ public class SafariUtils implements ClientModInitializer {
 		HudElementRegistry.attachElementBefore(
 			VanillaHudElements.CHAT,
 			Identifier.fromNamespaceAndPath(MOD_ID, "contest_tracker"),
-			OperationalLog.hud("contest", new ContestTracker()));
+			OperationalLog.hudEverywhere("contest", new ContestTracker()));
 		HudElementRegistry.attachElementBefore(
 			VanillaHudElements.CHAT,
 			Identifier.fromNamespaceAndPath(MOD_ID, "party_objectives"),
@@ -265,6 +287,7 @@ public class SafariUtils implements ClientModInitializer {
 	}
 
 	private static void handleGameMessage(Component message, boolean overlay) {
+		if (!HypixelConnection.active()) return;
 		OperationalLog.run("CHAT/HANDLE", () -> {
 			if (overlay) return;
 			// Multi-line server components must be split before matching individual events.
@@ -294,5 +317,16 @@ public class SafariUtils implements ClientModInitializer {
 
 	private static void tickSafely(String tracker, Runnable action) {
 		OperationalLog.run(tracker, action);
+	}
+
+	/** Clears server-derived state and every pending automatic command off Hypixel. */
+	private static void leaveHypixel() {
+		SafariLocation.onWorldChange();
+		SessionManager.onWorldChange();
+		TicketTrading.onDisconnect();
+		PartyRosterWatch.resetConnectionState();
+		ChatQueue.clear();
+		AlertSounds.onConnectionExit();
+		FullScreenAlert.clear();
 	}
 }

@@ -66,7 +66,7 @@ public final class ParticleDiagnostics {
 	}
 
 	public static void onParticle(ClientboundLevelParticlesPacket packet) {
-		if (!SafariLocation.inSafari()) return;
+		if (!HypixelConnection.active() || !SafariLocation.inSafari()) return;
 		Vec3 position = new Vec3(packet.getX(), packet.getY(), packet.getZ());
 		if (sparklingPattern(packet)) observeSparklingPattern(
 			position);

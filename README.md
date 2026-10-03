@@ -16,6 +16,8 @@ Safari Utils is a Fabric mod made for Hypixel SkyBlock's Critter Safari. It keep
 - Automatic Hideyho acceptance, Birdfeeder inventory/empty alerts, and configurable starting-item party messages.
 - A real-time Miria's Contest timer with bracket, score, and ticket tracking.
 - A custom settings screen with search, themes, sounds, colors, and editable alert text.
+- Launch-time update checks with release details and direct download links.
+- Compact settings transfer plus safe run-history validation and repair tools.
 - Banner-only, sound-only, or combined playback for each banner alert.
 - A Safe Mode edition for ordinary use and an Extra edition with additional information features.
 
@@ -25,8 +27,8 @@ Choose the jar that matches your Minecraft version.
 
 | Minecraft | Safe Mode | Extra |
 |---|---|---|
-| 26.1.2 | `safariutils-2.4.0+mc26.1.2.jar` | `safariutils-2.4.0-extra+mc26.1.2.jar` |
-| 26.2 | `safariutils-2.4.0+mc26.2.jar` | `safariutils-2.4.0-extra+mc26.2.jar` |
+| 26.1.2 | `safariutils-2.5.0+mc26.1.2.jar` | `safariutils-2.5.0-extra+mc26.1.2.jar` |
+| 26.2 | `safariutils-2.5.0+mc26.2.jar` | `safariutils-2.5.0-extra+mc26.2.jar` |
 
 The Safe Mode edition is the recommended download. Extra includes features that may provide information the player cannot directly see and may not be safe to use.
 

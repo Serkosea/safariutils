@@ -37,6 +37,8 @@ public final class SafariSettingsScreen extends Screen {
 	private static final int BRAND_LINE_GAP = 4;
 	private static final int FOOTER_HEIGHT = 30;
 	private static final int THEME_BUTTON_WIDTH = 126;
+	private static final int DATA_BUTTON_SIZE = 28;
+	private static final int SETTINGS_GAP = 6;
 	private static final int[] CONSTELLATION_ORDER = {0, 4, 8, 3, 7, 2, 6, 1, 5};
 	private static final String[] CRITTER_CHOICES = Critters.selectionOrder().stream()
 		.map(critter -> critter.name()).toArray(String[]::new);
@@ -491,7 +493,6 @@ public final class SafariSettingsScreen extends Screen {
 			page -> !page.breadcrumb.contains("Data Collecting"));
 		addTab(developer, "data", "Data Collection", "Test-run persistence and learned locations",
 			page -> page.breadcrumb.contains("Data Collecting"));
-
 		// Any future setting section remains reachable even before its navigation is
 		// intentionally categorized.
 		for (SettingsArea area : settingsAreas) {
@@ -644,16 +645,29 @@ public final class SafariSettingsScreen extends Screen {
 	private void addRootPage(SettingsArea area, SettingCategoryView source, String key,
 			String name, String description, String... fieldNames) {
 		if (area == null || source == null) return;
-		Set<String> requested = Set.of(fieldNames);
 		List<Field> fields = new ArrayList<>();
-		for (Field field : publicFields(source.value.getClass())) {
-			if (field.getAnnotation(SettingInfo.class) == null || isHeaderOnly(field)
-					|| field.getAnnotation(SettingSection.class) != null || !hasEditor(field)
-					|| !belongsTo(field, null)) continue;
-			if (requested.isEmpty() || requested.contains(field.getName())) fields.add(field);
+		if (fieldNames.length == 0) {
+			for (Field field : publicFields(source.value.getClass())) {
+				if (rootSetting(field)) fields.add(field);
+			}
+		} else {
+			Map<String, Field> available = new HashMap<>();
+			for (Field field : publicFields(source.value.getClass())) {
+				if (rootSetting(field)) available.put(field.getName(), field);
+			}
+			for (String fieldName : fieldNames) {
+				Field field = available.get(fieldName);
+				if (field != null) fields.add(field);
+			}
 		}
 		if (!fields.isEmpty()) area.pages.add(new SettingsPage(key, name, description,
 			area.name + "  ›  " + name, source.value, List.copyOf(fields), 0));
+	}
+
+	private static boolean rootSetting(Field field) {
+		return field.getAnnotation(SettingInfo.class) != null && !isHeaderOnly(field)
+			&& field.getAnnotation(SettingSection.class) == null && hasEditor(field)
+			&& belongsTo(field, null);
 	}
 
 	private void appendAllSections(SettingsArea area, SettingCategoryView source,
@@ -741,7 +755,8 @@ public final class SafariSettingsScreen extends Screen {
 		clearWidgets();
 		int gutter = ResponsiveUI.gutter(width);
 		int searchX = workspaceLeft + gutter;
-		int themeLeft = width - gutter - themeButtonWidth;
+		int dataLeft = width - gutter - DATA_BUTTON_SIZE;
+		int themeLeft = dataLeft - SETTINGS_GAP - themeButtonWidth;
 		int searchWidth = Math.max(24, themeLeft - 8 - searchX);
 		searchFrameX = searchX;
 		searchFrameY = (HEADER_HEIGHT - 20) / 2 - 1;
@@ -806,6 +821,10 @@ public final class SafariSettingsScreen extends Screen {
 		ClientCompat.setScreen(parent);
 	}
 
+	Screen parentScreen() {
+		return parent;
+	}
+
 	@Override
 	public void removed() {
 		if (customSparklingPanel) AlertSounds.stopSparklingPreview(Minecraft.getInstance());
@@ -856,6 +875,7 @@ public final class SafariSettingsScreen extends Screen {
 		customPresetHitStart = -1;
 		drawSearchFieldFrame(graphics);
 		drawThemeControl(graphics, backgroundMouseX, backgroundMouseY);
+		drawDataControl(graphics, backgroundMouseX, backgroundMouseY);
 		drawNavigation(graphics, backgroundMouseX, backgroundMouseY);
 		drawCategoryHeader(graphics, backgroundMouseX, backgroundMouseY);
 		drawContent(graphics, backgroundMouseX, backgroundMouseY);
@@ -1065,7 +1085,8 @@ public final class SafariSettingsScreen extends Screen {
 
 	/** Header-only theme picker kept out of Display's ordinary setting cards. */
 	private void drawThemeControl(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-		int x = width - ResponsiveUI.gutter(width) - themeButtonWidth;
+		int x = width - ResponsiveUI.gutter(width) - DATA_BUTTON_SIZE
+			- SETTINGS_GAP - themeButtonWidth;
 		int y = (HEADER_HEIGHT - 28) / 2 - 1;
 		boolean hovered = inside(mouseX, mouseY, x, y, x + themeButtonWidth, y + 28);
 		graphics.fillGradient(x, y, x + themeButtonWidth, y + 28,
@@ -1078,6 +1099,26 @@ public final class SafariSettingsScreen extends Screen {
 		} else drawText(graphics, trim(currentThemeLabel(), themeButtonWidth - 30), x + 24, y + 10,
 			hovered ? TEXT : MUTED);
 		hits.add(new Hit(x, y, x + themeButtonWidth, y + 28, this::openThemePicker));
+	}
+
+	private void drawDataControl(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+		int x = width - ResponsiveUI.gutter(width) - DATA_BUTTON_SIZE;
+		int y = (HEADER_HEIGHT - DATA_BUTTON_SIZE) / 2 - 1;
+		boolean hovered = inside(mouseX, mouseY, x, y,
+			x + DATA_BUTTON_SIZE, y + DATA_BUTTON_SIZE);
+		graphics.fillGradient(x, y, x + DATA_BUTTON_SIZE, y + DATA_BUTTON_SIZE,
+			hovered ? SELECTED : CARD, hovered ? SUB_SELECTED : SURFACE);
+		outline(graphics, x, y, DATA_BUTTON_SIZE, DATA_BUTTON_SIZE, hovered ? CYAN : BORDER);
+		Component icon = Component.literal("⚙").withStyle(style -> style.withBold(true));
+		float iconScale = 1.45f;
+		float iconWidth = font.width(icon) * iconScale;
+		float iconHeight = (font.lineHeight - 1) * iconScale;
+		drawScaledText(graphics, icon,
+			x + (DATA_BUTTON_SIZE - iconWidth) / 2f + 1,
+			y + (DATA_BUTTON_SIZE - iconHeight) / 2f - 1,
+			iconScale, hovered ? TEXT : MUTED);
+		hits.add(new Hit(x, y, x + DATA_BUTTON_SIZE, y + DATA_BUTTON_SIZE,
+			DataToolsScreen::open));
 	}
 
 	private String currentThemeLabel() {
@@ -1112,7 +1153,7 @@ public final class SafariSettingsScreen extends Screen {
 			Component categoryTitle = Component.literal(trim(area.name, navWidth - 20))
 				.withStyle(style -> style.withBold(true));
 			drawText(graphics, categoryTitle, 12,
-				y + (32 - font.lineHeight) / 2, active ? TEXT : MUTED);
+				y + (32 - font.lineHeight) / 2 + 1, active ? TEXT : MUTED);
 			int rowY = y;
 			if (rowY + 32 > top && rowY < bottom) {
 				hits.add(new Hit(0, Math.max(rowY, top), navWidth,
@@ -1135,6 +1176,40 @@ public final class SafariSettingsScreen extends Screen {
 		}
 		navigationContentHeight = Math.max(0, y + navigationScroll - (HEADER_HEIGHT + 8));
 		graphics.disableScissor();
+		drawUpdateStatus(graphics, mouseX, mouseY);
+	}
+
+	private void drawUpdateStatus(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+		UpdateChecker.Status status = UpdateChecker.status();
+		if (status == UpdateChecker.Status.NOT_STARTED
+				|| status == UpdateChecker.Status.UNAVAILABLE) return;
+		int rowY = height - FOOTER_HEIGHT;
+		String symbol;
+		String label;
+		int colour;
+		if (status == UpdateChecker.Status.AVAILABLE) {
+			symbol = "↑";
+			label = "  Update " + UpdateChecker.availableVersion();
+			colour = GOLD;
+		} else if (status == UpdateChecker.Status.CURRENT) {
+			symbol = "✓";
+			label = "  Up to date";
+			colour = GREEN;
+		} else {
+			symbol = "◇";
+			label = "  Checking updates";
+			colour = DIM;
+		}
+		Component statusText = Component.literal(symbol)
+			.withStyle(style -> style.withBold(true))
+			.append(Component.literal(label));
+		boolean hovered = inside(mouseX, mouseY, 0, rowY, navWidth, height);
+		graphics.fill(0, rowY, navWidth - 1, height, hovered ? CARD_HOVER : CARD);
+		graphics.fill(0, rowY, 3, height, colour);
+		drawText(graphics, statusText, 12,
+			rowY + (FOOTER_HEIGHT - font.lineHeight) / 2 + 2, colour);
+		hits.add(new Hit(0, rowY, navWidth, height,
+			UpdateDetailsScreen::open));
 	}
 
 	private void drawCategoryHeader(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
@@ -1239,9 +1314,6 @@ public final class SafariSettingsScreen extends Screen {
 		if (query.isEmpty()) {
 			y = drawTabPages(graphics, selectedTab.pages, left, right, y, mouseX, mouseY);
 		} else {
-			drawText(graphics, "Search Results", left + 4, y + 2, TEXT);
-			drawText(graphics, "All visible settings", left + 4, y + 17, MUTED);
-			y += 38;
 			y = drawSearchResults(graphics, query, left, right, y, mouseX, mouseY);
 		}
 		contentHeight = Math.max(0, y + scroll - top);
@@ -1354,7 +1426,7 @@ public final class SafariSettingsScreen extends Screen {
 					() -> toggleSettingSection(page.key)));
 			}
 		}
-		return y + height + 6;
+		return y + height + SETTINGS_GAP;
 	}
 
 	private void toggleSettingSection(String key) {
@@ -1397,7 +1469,7 @@ public final class SafariSettingsScreen extends Screen {
 
 	private List<List<Field>> settingCards(SettingsPage page) {
 		if (page.key.equals("display.waypoint-settings")) {
-			return page.fields.stream().map(List::of).toList();
+			return List.of(page.fields);
 		}
 		if (page.key.equals("display.waypoint-settings.objectives")
 				|| page.key.equals("display.waypoint-settings.critters")) {
@@ -1662,7 +1734,7 @@ public final class SafariSettingsScreen extends Screen {
 		if (hoveredY != Integer.MIN_VALUE) {
 			outline(graphics, left, hoveredY, right - left, hoveredHeight + 1, CYAN);
 		}
-		return y + totalHeight + 6;
+		return y + totalHeight + SETTINGS_GAP;
 	}
 
 	private boolean settingControlHovered(Field field, int left, int right, int y, int height,
@@ -1744,7 +1816,7 @@ public final class SafariSettingsScreen extends Screen {
 		int controlX = stacked ? left + 12 : right - controlWidth - 10;
 		int controlY = stacked ? y + height - 28 : y + (height - 22) / 2;
 		if (y + height <= contentViewportTop || y >= contentViewportBottom) {
-			return y + height + 6;
+			return y + height + SETTINGS_GAP;
 		}
 		boolean rowHovered = inside(mouseX, mouseY, left, y, right, y + height);
 		boolean controlHovered = inside(mouseX, mouseY, controlX, controlY,
@@ -1767,7 +1839,7 @@ public final class SafariSettingsScreen extends Screen {
 			lineY += 11;
 		}
 		if (interactive) drawControl(graphics, owner, field, left, right, y, height, mouseX, mouseY);
-		return y + height + 6;
+		return y + height + SETTINGS_GAP;
 	}
 
 	private static boolean isReadOnlyNotice(Field field) {
@@ -3444,7 +3516,8 @@ public final class SafariSettingsScreen extends Screen {
 		String description = trim(selectedTab.description,
 			Math.max(40, closeX - workspaceLeft - 32));
 		if (closeX - workspaceLeft > 150) drawScaledText(graphics, description, workspaceLeft + 12,
-			footerTop + (FOOTER_HEIGHT - font.lineHeight) / 2f, 1.0f, MUTED);
+			footerTop + (FOOTER_HEIGHT - font.lineHeight) / 2f + 1, 1.0f,
+			MUTED);
 		boolean armed = System.currentTimeMillis() < resetArmedUntil;
 		drawButton(graphics, closeX, y, closeWidth, "Done", mouseX, mouseY);
 		drawButton(graphics, resetX, y, resetWidth,

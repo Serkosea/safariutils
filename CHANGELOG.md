@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.5.0] - 2026-10-02
+
+### New
+
+- Added a launch-time update indicator, clickable update message, and release-details screen
+- Added compact settings import/export with validation and automatic backups
+- Added run-history integrity checks and safe structural repair with automatic backups
+- Added a command-free Developer Ticket Trading simulator
+
+### Changes & Additions
+
+- Moved data tools into a themed settings-header menu and organized backups by data type
+- Updated the Gradle wrapper to 9.8 and removed the project resource-filtering warning
+- Added build-specific download destinations for Private and Developer updates
+- Named timing, timeout, and backup-path rules shared by the new systems
+
+### Fixes
+
+- Increased Sparkling guest leave-to-accept timing to account for Hypixel's party-command cooldown
+- Deferred automatic party-list refreshes during time-sensitive Ticket Trading commands
+- Preserved setting order when grouped controls appear in search results
+- Standardized card spacing and combined the general waypoint controls
+
 ## [2.4.0] - 2026-10-01
 
 ### Changes & Additions

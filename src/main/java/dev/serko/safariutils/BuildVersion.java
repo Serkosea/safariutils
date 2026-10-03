@@ -1,6 +1,7 @@
 package dev.serko.safariutils;
 
 import java.io.IOException;
+import java.net.URI;
 import java.util.Properties;
 
 /** Build-time switches shared by every Safari Utils version. */
@@ -9,6 +10,8 @@ public final class BuildVersion {
 	public static final boolean SAFE = flag("safe");
 	public static final boolean PRIVATE = flag("private");
 	public static final boolean DEVELOPER = flag("developer");
+	private static final URI PUBLIC_DOWNLOAD_PAGE = URI.create(
+		"https://github.com/Serkosea/safariutils/releases/latest");
 
 	private BuildVersion() {
 	}
@@ -31,5 +34,16 @@ public final class BuildVersion {
 		if (DEVELOPER) return "-DEV";
 		if (PRIVATE) return "-PRIV";
 		return SAFE ? "" : "-EXTRA";
+	}
+
+	/** Build-specific update destination; private URLs are supplied only to ignored local builds. */
+	public static URI downloadPage() {
+		String configured = PROPERTIES.getProperty("downloadPage", "").strip();
+		try {
+			URI page = URI.create(configured);
+			return "https".equalsIgnoreCase(page.getScheme()) ? page : PUBLIC_DOWNLOAD_PAGE;
+		} catch (RuntimeException invalid) {
+			return PUBLIC_DOWNLOAD_PAGE;
+		}
 	}
 }

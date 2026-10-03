@@ -3,8 +3,12 @@ package dev.serko.safariutils.client;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
+
+import java.net.URI;
 
 /** Builds client-only Safari Utils messages with one recognizable fixed palette. */
 public final class ClientMessages {
@@ -23,6 +27,24 @@ public final class ClientMessages {
 
 	public static void send(String text, Tone tone) {
 		ClientCompat.addSystemMessage(prefixed(text, tone));
+	}
+
+	public static void sendUpdate(String available, URI release, String linkLabel) {
+		String body = "Safari Utils v" + available + " is available ";
+		String linkText = "[" + linkLabel + "]";
+		MutableComponent message;
+		if (SpecialTheme.rainbow()) {
+			message = themedMessage(body, false).copy()
+				.append(themedLink(linkText, release, linkLabel));
+		} else {
+			message = prefix()
+				.append(Component.literal("Safari Utils ").withStyle(style -> style.withColor(INFO)))
+				.append(Component.literal("v" + available).withStyle(style ->
+					style.withColor(WARNING).withBold(true)))
+				.append(Component.literal(" is available ").withStyle(style -> style.withColor(INFO)))
+				.append(link(linkText, release, linkLabel));
+		}
+		ClientCompat.addSystemMessage(message);
 	}
 
 	public static Component prefixed(String text, Tone tone) {
@@ -65,6 +87,32 @@ public final class ClientMessages {
 			cursor += font.width(segment);
 		}
 		return result;
+	}
+
+	private static Component themedLink(String text, URI release, String linkLabel) {
+		Font font = Minecraft.getInstance().font;
+		float phase = RainbowColours.phase(RainbowColours.frameId());
+		ClickEvent click = new ClickEvent.OpenUrl(release);
+		HoverEvent hover = new HoverEvent.ShowText(Component.literal("Open " + linkLabel));
+		MutableComponent result = Component.empty();
+		int cursor = 0;
+		for (int index = 0; index < text.length(); index++) {
+			String character = String.valueOf(text.charAt(index));
+			int colour = RainbowColours.phased(phase, cursor / 96f, 0.5f, 1f) & 0xFFFFFF;
+			Component segment = Component.literal(character).withStyle(style -> style
+				.withColor(colour).withBold(true).withUnderlined(true)
+				.withClickEvent(click).withHoverEvent(hover));
+			result.append(segment);
+			cursor += font.width(segment);
+		}
+		return result;
+	}
+
+	private static Component link(String text, URI release, String linkLabel) {
+		return Component.literal(text).withStyle(style -> style
+			.withColor(NAME_LEFT).withBold(true).withUnderlined(true)
+			.withClickEvent(new ClickEvent.OpenUrl(release))
+			.withHoverEvent(new HoverEvent.ShowText(Component.literal("Open " + linkLabel))));
 	}
 
 	/** Turns common API outages into a useful message while preserving specific errors. */

@@ -3,6 +3,7 @@
 .gradle-user/
 .gradle-verify/
 .grad-user/
+.wrangler/
 build/
 release-artifacts/
 out/

@@ -1,5 +1,6 @@
 package dev.serko.safariutils.client;
 
+import dev.serko.safariutils.BuildVersion;
 import dev.serko.safariutils.client.SafariConfig.SparklingConfig;
 import dev.serko.safariutils.client.SafariConfig.SparklingConfig.TicketTraderProfile;
 import dev.serko.safariutils.data.Critter;
@@ -173,6 +174,10 @@ public final class TicketTradingScreen extends Screen {
 				config.ticketTradingEnabled = !config.ticketTradingEnabled;
 				ConfigManager.save();
 			});
+		if (BuildVersion.DEVELOPER) {
+			button(graphics, left + 132, top + 50, 54, 22, "Test", mouseX, mouseY,
+				() -> TicketTradingTestScreen.open(this));
+		}
 		button(graphics, left + panelWidth - 104, top + 50, 40, 22, "New", mouseX, mouseY,
 			() -> openEditor(null));
 		button(graphics, left + panelWidth - 54, top + 50, 36, 22, "i", mouseX, mouseY,

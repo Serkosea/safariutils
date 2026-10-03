@@ -31,6 +31,9 @@ def extraBuild = privateApiBuild
 	|| project.findProperty('extraBuild')?.toString()?.toBoolean()
 	|| (deployRequested && project.findProperty('deployExtraBuild')?.toString()?.toBoolean())
 def safeBuild = !extraBuild
+def publicDownloadPage = 'https://github.com/Serkosea/safariutils/releases/latest'
+def privateDownloadPage = project.findProperty('privateDownloadUrl') ?: publicDownloadPage
+def downloadPage = privateApiBuild ? privateDownloadPage : publicDownloadPage
 def profileFile = file("gradle/versions/${minecraftProfile}.properties")
 if (!profileFile.isFile()) {
 	throw new GradleException("Unknown Minecraft profile '${minecraftProfile}' (${profileFile} not found)")
@@ -139,12 +142,14 @@ processResources {
 		minecraft_depends: project.minecraft_depends,
 		safe_build: safeBuild,
 		private_build: privateApiBuild,
-		developer_build: developerBuild
+		developer_build: developerBuild,
+		download_page: downloadPage
 	]
 	inputs.properties expandProps
 
 	filesMatching(["fabric.mod.json", "safariutils-build.properties"]) {
-		expand expandProps
+		org.gradle.api.file.FileCopyDetails details ->
+		details.expand(expandProps)
 	}
 }
 

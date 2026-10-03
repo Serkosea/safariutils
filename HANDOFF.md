@@ -92,7 +92,7 @@ Manual profile lookups have a ten-second request cooldown and a five-minute resu
 
 Party Sync is public, opt-in, and party-chat-backed. Its transient setting resets off each launch. A client sends one compact visible verification token only after the complete Safari roster is present and stable; the token is derived from its displayed username, the current lobby ID, and its action. Parsed objective traffic remains disabled until every current member has confirmed the same protocol. Local state is tracked before confirmation, then sent as a coalesced authoritative snapshot with batched confirmed hives. Disabling sync during an active synchronized run sends the matching sender/lobby-bound shutdown token, immediately stopping transport for every client while preserving local state. Departures retain confirmed remaining members, while a newly added member requires a fresh readiness check on the next stable Safari visit. Solo has complete local state without sending messages. Any future remote transport remains deferred and must preserve the documented privacy design: short-lived end-to-end-encrypted rooms, no credentials or private account data, and no developer/user access to connection metadata beyond what a trusted provider must process.
 
-Ticket Trading resets disabled each launch. Reusable profiles, their normal/Sparkling-only role, 37-species masks, three active slots, and three backup slots persist; existing inline-name settings migrate into all-species profiles. Sparkling profiles remain rainbow in the trading screen; the global Special Sparkling theme overrides rank colors everywhere. A Sparkling-only guest leaves an existing or not-yet-known party, waits 250 milliseconds for the server to process that command, then accepts the trusted host; a guest already known to be solo accepts immediately. The confirmed host disbands after leaving the ticketed Safari, or at the invite deadline when nobody joined.
+Ticket Trading resets disabled each launch. Reusable profiles, their normal/Sparkling-only role, 37-species masks, three active slots, and three backup slots persist; existing inline-name settings migrate into all-species profiles. Sparkling profiles remain rainbow in the trading screen; the global Special Sparkling theme overrides rank colors everywhere. A Sparkling-only guest leaves an existing or not-yet-known party, waits 1.1 seconds for the server to process that command, then accepts the trusted host; a guest already known to be solo accepts immediately. Automatic party-list refreshes remain deferred around this sequence. The confirmed host disbands after leaving the ticketed Safari, or at the invite deadline when nobody joined.
 
 Player names shown by the mod use authoritative capitalization from the live player list,
 private lookup results, or the cached unauthenticated Minecraft profile lookup. Rank colors
@@ -114,6 +114,8 @@ Display's Safari tab owns presentation-only chat filtering and screen-effect rem
 Responsive screens reflow before they scale. Settings narrows its single navigation rail, wraps meaningful tabs, stacks controls below descriptions, and caches static text layouts by reflected field and available width; Sparkling collection, party, and lookup views switch from four biome columns to two; Ticket Trading wraps and stacks its content. Dense dashboard tables may use content-measured fallback scaling only when their real minimum width or height does not fit. Keep scrolling content clipped below fixed headers and off-screen rows culled without removing them from tab reset coverage.
 
 UI centering always means optical/geometric centering of the visible pixels. Do not include glyph advance padding, transparent space, or text shadows when calculating centered positions; draw shadows only after the primary shape is centered.
+
+The settings footer shows the result of one asynchronous GitHub release check per launch. Release notes are wrapped and cached only when their source or width changes. Safe and Extra builds open GitHub; Private and Developer builds use the ignored `privateDownloadUrl` build property. Data Tools performs compact versioned settings transfer and on-demand run-history checks. Imports and repairs validate first, preserve the current file in `config/safariutils/backups/<type>/`, and never run from a render or tick path.
 
 Use `ResponsiveUI` for fixed logical canvases and convert mouse coordinates for scaled widgets. `HudBox` is the source of truth for live/editor positioning. The HUD editor keeps outlines one pixel inside each screen edge and supports unsnapped one-pixel arrow adjustments.
 
@@ -143,6 +145,9 @@ config/safariutils/
 ├── safariutils.json
 ├── safariutils-runs.json
 ├── safariutils-sparkling.json
+├── backups/
+│   ├── runs/
+│   └── settings/
 └── logs/
     ├── SafariUtils_<Month>-<day><suffix>-<year>_<hour>H-<minute>M.log
     └── SafariUtils_<Month>-<day><suffix>-<year>_<hour>H-<minute>M_P2.log
@@ -158,6 +163,6 @@ Public jars may contain only the public party-sync service. They must contain no
 2. Build Safe, Extra, private, and developer jars for every supported profile
 3. Inspect jar names, metadata, class lists, services, and public-key absence
 4. Test lifecycle, Starting Items, objectives, mode/settings toggles, HUD editing, Sparkling UI, and Contest visibility
-5. Before preparing v2.3.0 or later release text, ask the user for their final exact wording and formatting; preserve it instead of regenerating prior wording
+5. Keep release notes concise, use only non-empty New, Changes & Additions, Fixes, and Downloads sections, and preserve the established Downloads wording unless the user changes it
 6. Synchronize README, CHANGELOG, RELEASE_NOTES, and this handoff
 7. Push or publish only after explicit user approval

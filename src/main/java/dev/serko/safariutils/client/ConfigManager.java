@@ -36,6 +36,26 @@ public final class ConfigManager {
 		return config;
 	}
 
+	static JsonObject settingsJson() {
+		return GSON.toJsonTree(get()).getAsJsonObject();
+	}
+
+	/** Parses and migrates an imported copy without changing live settings. */
+	static SafariConfig validateImported(JsonObject root) {
+		SafariConfig imported = parseSettings(root);
+		if (imported == null) throw new IllegalArgumentException("Settings were empty");
+		return imported;
+	}
+
+	/** Replaces settings only after the transfer layer has validated and backed them up. */
+	static synchronized void importSettings(JsonObject root) throws IOException {
+		SafariConfig imported = parseSettings(root);
+		if (imported == null) throw new IllegalArgumentException("Settings were empty");
+		AtomicFiles.writeString(SafariPaths.settings(), GSON.toJson(imported));
+		config = imported;
+		revision++;
+	}
+
 	public static long revision() {
 		return revision;
 	}
@@ -50,23 +70,28 @@ public final class ConfigManager {
 		if (!Files.isRegularFile(path)) return new SafariConfig();
 		try {
 			JsonObject root = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
-			migrateBannerPlayback(root);
-			migrateSparklingCatchIntensity(root);
-			migrateSafeModeOptions(root);
-			migrateTicketTradingProfiles(root);
-			SafariConfig loaded = GSON.fromJson(root, SafariConfig.class);
-			if (loaded == null) loaded = new SafariConfig();
-			TicketTradingProfiles.sanitize(loaded.sparkling);
-			if (loaded.sparkling.sparklingUniqueHitboxColours) {
-				loaded.display.uniqueHitboxColours = true;
-				loaded.sparkling.sparklingUniqueHitboxColours = false;
-			}
-			resetSessionOptions(loaded);
-			return loaded;
+			SafariConfig loaded = parseSettings(root);
+			return loaded == null ? new SafariConfig() : loaded;
 		} catch (RuntimeException | IOException malformed) {
 			OperationalLog.error("CONFIG/LOAD", malformed);
 			return new SafariConfig();
 		}
+	}
+
+	private static SafariConfig parseSettings(JsonObject root) {
+		migrateBannerPlayback(root);
+		migrateSparklingCatchIntensity(root);
+		migrateSafeModeOptions(root);
+		migrateTicketTradingProfiles(root);
+		SafariConfig loaded = GSON.fromJson(root, SafariConfig.class);
+		if (loaded == null) return null;
+		TicketTradingProfiles.sanitize(loaded.sparkling);
+		if (loaded.sparkling.sparklingUniqueHitboxColours) {
+			loaded.display.uniqueHitboxColours = true;
+			loaded.sparkling.sparklingUniqueHitboxColours = false;
+		}
+		resetSessionOptions(loaded);
+		return loaded;
 	}
 
 	/** Converts the former three inline names into reusable profiles without changing behavior. */

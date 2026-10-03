@@ -46,6 +46,7 @@ import dev.serko.safariutils.client.ParticleDiagnostics;
 import dev.serko.safariutils.client.SafariObjectives;
 import dev.serko.safariutils.client.WaypointRenderer;
 import dev.serko.safariutils.client.EncounterAlerts;
+import dev.serko.safariutils.client.UpdateChecker;
 import dev.serko.safariutils.api.SharedSparklingProviders;
 import dev.serko.safariutils.api.PartyItemSyncProviders;
 import dev.serko.safariutils.parse.ChatParser;
@@ -91,6 +92,7 @@ public class SafariUtils implements ClientModInitializer {
 		// diagnostic file or start its background writer.
 		ConfigManager.get();
 		OperationalLog.start();
+		UpdateChecker.start();
 		ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> OperationalLog.run("SCREEN/INIT", () -> {
 			InteractionDebugLog.onScreenInit(client, screen, width, height);
 			TicketProtection.onScreenInit(screen);
@@ -119,6 +121,7 @@ public class SafariUtils implements ClientModInitializer {
 			handleGameMessage(message, overlay));
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
+			if (UpdateChecker.noticePending()) tickSafely("update-notice", UpdateChecker::tick);
 			tickSafely("alerts", AlertSounds::tick);
 			// Next, and only here: everything below asks it where the player is.
 			tickSafely("location", SafariLocation::tick);

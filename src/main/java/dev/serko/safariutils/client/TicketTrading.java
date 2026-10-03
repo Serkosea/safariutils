@@ -1,5 +1,6 @@
 package dev.serko.safariutils.client;
 
+import dev.serko.safariutils.BuildVersion;
 import dev.serko.safariutils.session.SessionManager;
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.Critters;
@@ -16,17 +17,17 @@ import java.util.regex.Pattern;
 
 /** Timed, opt-in party commands for trading Safari entry windows with trusted players. */
 public final class TicketTrading {
-	private static final long INVITE_AT_MILLIS = 20_000L;
-	private static final long SPARKLING_BATCH_FROM_MILLIS = 17_000L;
-	private static final long WARP_AT_MILLIS = 27_000L;
-	private static final long LAST_WARP_AT_MILLIS = 29_500L;
-	private static final long SPARKLING_INVITE_DEADLINE_MILLIS = 25_000L;
-	private static final long COMMAND_COOLDOWN_MILLIS = 3_100L;
-	private static final long BACKUP_INVITE_DEADLINE_MILLIS =
+	static final long INVITE_AT_MILLIS = 20_000L;
+	static final long SPARKLING_BATCH_FROM_MILLIS = 17_000L;
+	static final long WARP_AT_MILLIS = 27_000L;
+	static final long LAST_WARP_AT_MILLIS = 29_500L;
+	static final long SPARKLING_INVITE_DEADLINE_MILLIS = 25_000L;
+	static final long COMMAND_COOLDOWN_MILLIS = 3_100L;
+	static final long BACKUP_INVITE_DEADLINE_MILLIS =
 		LAST_WARP_AT_MILLIS - COMMAND_COOLDOWN_MILLIS - 100L;
-	private static final long BACKUP_INVITE_DELAY_MILLIS = 3_000L;
-	private static final long INVITE_RESPONSE_WINDOW_MILLIS = 5_000L;
-	private static final long GUEST_LEAVE_SETTLE_MILLIS = 250L;
+	static final long BACKUP_INVITE_DELAY_MILLIS = 3_000L;
+	static final long INVITE_RESPONSE_WINDOW_MILLIS = 5_000L;
+	static final long GUEST_LEAVE_SETTLE_MILLIS = 1_100L;
 	private static final long ROSTER_CONFIRM_AT_MILLIS = 60_000L;
 	private static final Pattern INVITE = Pattern.compile(
 		"^(?:You have been invited to join\\s+)?(?:\\[[^]]+]\\s*)?([A-Za-z0-9_]{1,16})(?:'s party| has invited you to join (?:their|his|her) party)!?$",
@@ -60,6 +61,7 @@ public final class TicketTrading {
 	private static long lastAcceptedAt;
 	private static String pendingAcceptInviter = "";
 	private static long pendingAcceptAt;
+	private static boolean testMode;
 
 	private record ConfiguredPlayer(String name, boolean sparklingOnly, long sparklingCritters) { }
 
@@ -68,6 +70,7 @@ public final class TicketTrading {
 	/** Snapshots trusted names, then waits for current-instance proof that this client is host. */
 	public static void onRunStarted() {
 		resetRunAutomation();
+		if (testMode) return;
 		if (!ConfigManager.get().sparkling.ticketTradingEnabled) return;
 		long elapsed = SessionManager.ticketWindowElapsedMillis();
 		if (elapsed < 0L || elapsed >= INVITE_AT_MILLIS) {
@@ -90,6 +93,7 @@ public final class TicketTrading {
 	}
 
 	public static void tick() {
+		if (testMode) return;
 		long now = System.currentTimeMillis();
 		if (pendingAcceptAt > 0L) {
 			if (!ConfigManager.get().sparkling.ticketTradingEnabled) clearPendingAccept();
@@ -165,6 +169,7 @@ public final class TicketTrading {
 
 	/** Qualifies Sparkling-only traders while a pre-ticket or active invite window remains. */
 	public static void onSparklingDetected(Critter critter) {
+		if (testMode) return;
 		long bit = Critters.selectionMask(critter);
 		if (bit == 0L || (sparklingFoundThisVisit & bit) != 0L) return;
 		sparklingFoundThisVisit |= bit;
@@ -174,6 +179,7 @@ public final class TicketTrading {
 
 	/** Handles trusted invitations and observes the host party filling up. */
 	public static void onChatMessage(String line) {
+		if (testMode) return;
 		if (line == null || line.isBlank()) return;
 		long now = System.currentTimeMillis();
 		if (hostScheduled && now <= inviteResponseUntil && isOfflineInviteFailure(line)) {
@@ -201,6 +207,9 @@ public final class TicketTrading {
 		lastAcceptedAt = now;
 		if (trusted.sparklingOnly()
 				&& (!PartyRosterWatch.known() || PartyRosterWatch.inParty())) {
+			// Leave and accept share Hypixel's short command cooldown. Keep the
+			// automatic roster refresh from occupying either side of that window.
+			PartyRosterWatch.deferRefreshUntil(now + GUEST_LEAVE_SETTLE_MILLIS * 2L);
 			sendCommand("party leave");
 			pendingAcceptInviter = inviter;
 			pendingAcceptAt = now + GUEST_LEAVE_SETTLE_MILLIS;
@@ -212,6 +221,7 @@ public final class TicketTrading {
 
 	/** A loot share proves that an invited trader participated, even if they leave early. */
 	public static void onSharedCatch(String catcher) {
+		if (testMode) return;
 		String normalized = normalizeName(catcher);
 		if (tradeRunActive && activeTargets.contains(normalized)) {
 			confirmRunMember(normalized, catcher, "loot share");
@@ -220,6 +230,12 @@ public final class TicketTrading {
 
 	/** Leaving the host's ticketed instance closes a successfully warped trading party. */
 	public static void onConnectionJoin() {
+		if (testMode) {
+			resetRunAutomation();
+			clearPendingAccept();
+			sparklingFoundThisVisit = 0L;
+			return;
+		}
 		if (hostOwnedRun && tradeRunActive && warpSent) sendCommand("party disband");
 		resetRunAutomation();
 		sparklingFoundThisVisit = 0L;
@@ -234,6 +250,20 @@ public final class TicketTrading {
 	public static List<String> configuredPlayers() {
 		return configuredPlayerEntries(0, TicketTradingProfiles.TOTAL_SLOTS).stream()
 			.map(ConfiguredPlayer::name).toList();
+	}
+
+	static void beginTestMode() {
+		if (!BuildVersion.DEVELOPER) return;
+		resetRunAutomation();
+		clearPendingAccept();
+		testMode = true;
+	}
+
+	static void endTestMode() {
+		if (!testMode) return;
+		testMode = false;
+		resetRunAutomation();
+		clearPendingAccept();
 	}
 
 	private static List<ConfiguredPlayer> configuredPlayerEntries(int from, int to) {

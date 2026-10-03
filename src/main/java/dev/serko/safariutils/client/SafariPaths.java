@@ -12,6 +12,9 @@ public final class SafariPaths {
 	private static final Path CONFIG = FabricLoader.getInstance().getConfigDir();
 	private static final Path ROOT = CONFIG.resolve("safariutils");
 	private static final Path LOGS = ROOT.resolve("logs");
+	private static final Path BACKUPS = ROOT.resolve("backups");
+	private static final Path RUN_BACKUPS = BACKUPS.resolve("runs");
+	private static final Path SETTINGS_BACKUPS = BACKUPS.resolve("settings");
 
 	private SafariPaths() {
 	}
@@ -36,6 +39,23 @@ public final class SafariPaths {
 		return LOGS;
 	}
 
+	public static Path runBackups() {
+		return RUN_BACKUPS;
+	}
+
+	public static Path settingsBackups() {
+		return SETTINGS_BACKUPS;
+	}
+
+	/** Returns the first unused JSON backup path, preserving every earlier backup. */
+	public static Path uniqueJsonBackup(Path directory, String stem) {
+		Path candidate = directory.resolve(stem + ".json");
+		for (int part = 2; Files.exists(candidate); part++) {
+			candidate = directory.resolve(stem + "_P" + part + ".json");
+		}
+		return candidate;
+	}
+
 	public static Path operationalLog() {
 		return LOGS.resolve("safariutils.log");
 	}
@@ -49,9 +69,13 @@ public final class SafariPaths {
 	public static void migrateLegacyFiles() {
 		try {
 			Files.createDirectories(LOGS);
+			Files.createDirectories(RUN_BACKUPS);
+			Files.createDirectories(SETTINGS_BACKUPS);
 			moveIfNeeded(CONFIG.resolve("safariutils.json"), settings());
 			moveIfNeeded(CONFIG.resolve("safariutils-runs.json"), runHistory());
 			moveLegacyOutputLogs(CONFIG.resolve("safariutils-debug-logs"));
+			moveRootBackups("safariutils-runs-backup-", RUN_BACKUPS);
+			moveRootBackups("safariutils-settings-backup-", SETTINGS_BACKUPS);
 		} catch (IOException migrationError) {
 			OperationalLog.error("CONFIG/MIGRATION", migrationError);
 		}
@@ -71,6 +95,23 @@ public final class SafariPaths {
 		}
 		try (var remaining = Files.list(legacyDirectory)) {
 			if (remaining.findAny().isEmpty()) Files.delete(legacyDirectory);
+		}
+	}
+
+	private static void moveRootBackups(String prefix, Path destinationDirectory) throws IOException {
+		try (var files = Files.list(ROOT)) {
+			for (Path source : files.filter(Files::isRegularFile)
+					.filter(path -> path.getFileName().toString().startsWith(prefix)).toList()) {
+				String fileName = source.getFileName().toString();
+				int extension = fileName.lastIndexOf('.');
+				String stem = extension < 0 ? fileName : fileName.substring(0, extension);
+				String suffix = extension < 0 ? "" : fileName.substring(extension);
+				Path destination = destinationDirectory.resolve(fileName);
+				for (int part = 2; Files.exists(destination); part++) {
+					destination = destinationDirectory.resolve(stem + "_P" + part + suffix);
+				}
+				Files.move(source, destination);
+			}
 		}
 	}
 }

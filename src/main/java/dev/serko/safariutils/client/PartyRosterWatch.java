@@ -10,6 +10,9 @@ import java.util.regex.Pattern;
 
 /** Quietly reads /party list so attendance can be compared with the real party size. */
 public final class PartyRosterWatch {
+	private static final long REFRESH_DELAY_MILLIS = 250L;
+	private static final long CAPTURE_TIMEOUT_MILLIS = 3_000L;
+	private static final long RESPONSE_TAIL_MILLIS = 300L;
 	private static final Pattern COUNT = Pattern.compile("^Party Members \\((\\d+)\\)$", Pattern.CASE_INSENSITIVE);
 	private static final Pattern LEGACY_COLOURS = Pattern.compile("§.");
 	private static int expectedPlayers;
@@ -23,6 +26,7 @@ public final class PartyRosterWatch {
 	private static boolean sawLeaderThisCapture;
 	private static long captureUntil;
 	private static long requestAt;
+	private static long refreshDeferredUntil;
 	private static boolean announceScheduledRefresh;
 	private static boolean announceCurrentRefresh;
 	private static boolean wasInsideSafari;
@@ -46,6 +50,7 @@ public final class PartyRosterWatch {
 			sawLeader = false;
 			capturing = false;
 			requestAt = 0;
+			refreshDeferredUntil = 0;
 			announceScheduledRefresh = false;
 			announceCurrentRefresh = false;
 			captureUntil = 0;
@@ -147,9 +152,18 @@ public final class PartyRosterWatch {
 	}
 
 	private static void schedule(boolean announce) {
-		long when = System.currentTimeMillis() + 250L;
+		long when = Math.max(System.currentTimeMillis() + REFRESH_DELAY_MILLIS,
+			refreshDeferredUntil);
 		if (requestAt == 0 || when < requestAt) requestAt = when;
 		announceScheduledRefresh |= announce;
+	}
+
+	/** Keeps automatic roster commands out of a time-sensitive command sequence. */
+	static void deferRefreshUntil(long when) {
+		refreshDeferredUntil = Math.max(refreshDeferredUntil, when);
+		if (requestAt > 0L && requestAt < refreshDeferredUntil) {
+			requestAt = refreshDeferredUntil;
+		}
 	}
 
 	private static void request() {
@@ -164,8 +178,8 @@ public final class PartyRosterWatch {
 		pendingLocalLeader = false;
 		sawLeaderThisCapture = false;
 		pendingRosterLines.clear();
-		captureUntil = System.currentTimeMillis() + 3_000L;
-		suppressRosterTailUntil = captureUntil + 300L;
+		captureUntil = System.currentTimeMillis() + CAPTURE_TIMEOUT_MILLIS;
+		suppressRosterTailUntil = captureUntil + RESPONSE_TAIL_MILLIS;
 		client.getConnection().sendCommand("party list");
 		DebugLog.line("PARTYTIME", "automatic /party list requested");
 	}

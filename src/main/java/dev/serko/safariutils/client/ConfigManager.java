@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import dev.serko.safariutils.BuildVersion;
 import dev.serko.safariutils.io.AtomicFiles;
 import net.minecraft.client.gui.screens.Screen;
 
@@ -82,10 +83,12 @@ public final class ConfigManager {
 		migrateBannerPlayback(root);
 		migrateSparklingCatchIntensity(root);
 		migrateSafeModeOptions(root);
-		migrateTicketTradingProfiles(root);
+		if (BuildVersion.PRIVATE) migrateTicketTradingProfiles(root);
 		SafariConfig loaded = GSON.fromJson(root, SafariConfig.class);
 		if (loaded == null) return null;
-		TicketTradingProfiles.sanitize(loaded.sparkling);
+		if (BuildVersion.PRIVATE) {
+			dev.serko.safariutils.api.SharedSparklingProviders.sanitizePrivateSettings(loaded.sparkling);
+		}
 		if (loaded.sparkling.sparklingUniqueHitboxColours) {
 			loaded.display.uniqueHitboxColours = true;
 			loaded.sparkling.sparklingUniqueHitboxColours = false;

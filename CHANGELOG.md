@@ -23,7 +23,6 @@
 - Added a launch-time update indicator, clickable update message, and release-details screen
 - Added compact settings import/export with validation and automatic backups
 - Added run-history integrity checks and safe structural repair with automatic backups
-- Added a command-free Developer Ticket Trading simulator
 
 ### Changes & Additions
 
@@ -35,7 +34,6 @@
 ### Fixes
 
 - Increased Sparkling guest leave-to-accept timing to account for Hypixel's party-command cooldown
-- Deferred automatic party-list refreshes during time-sensitive Ticket Trading commands
 - Preserved setting order when grouped controls appear in search results
 - Standardized card spacing and combined the general waypoint controls
 
@@ -43,21 +41,18 @@
 
 ### Changes & Additions
 
-- Replaced Ticket Trading's inline names with reusable saved-player profiles, three active slots, and three ordered backup slots
 - Added per-player Sparkling species filters so each Sparkling-only trader is invited only for selected critters
 - Migrated existing trusted names and Sparkling flags into profiles with all 37 species enabled
 - Added cached, API-key-free Minecraft profile resolution so saved and displayed player names use canonical capitalization and authoritative rank colors where available
-- Refined Ticket Trading with equal-width profile panels, shorter balanced active cards, compact dragged cards, and matching two-sided Sparkling styling
 - Invited qualifying Sparkling-only active players immediately outside the 17–20 second batch window and replaced confirmed offline active players from the ordered backup slots after three seconds
 - Made the Special Sparkling theme override player rank colors while retaining rainbow player rows for Sparkling-only trading profiles in every theme
-- Made Ticket Trading and Sparkling screens choose compact layouts and fallback scaling from the actual GUI canvas after Minecraft GUI Scale is applied
+- Made Sparkling screens choose compact layouts and fallback scaling from the actual GUI canvas after Minecraft GUI Scale is applied
 
 ### Fixes
 
 - Kept ordinary settings sourced from the shared advanced configuration, including Special Themes and Party Sync, visible without the star unlock
 - Restored All Feed Done banner, sound, and chat controls to every build while migrating their legacy private-prefixed setting keys
 - Preserved the selected settings tab's expanded dropdowns when reopening settings within the existing ten-second memory window
-- Restricted Ticket Trading invite, warp, and disband automation to the confirmed party leader
 - Reduced the Sparkling guest leave-to-accept delay to 250 milliseconds while retaining immediate accepts when no party must be left
 - Used Duplico's disguise-aware visibility check for its first visible Sparkling chat alert
 - Delayed every user-facing Sparkling found banner, sound, and chat alert until the critter is first visually confirmed
@@ -80,10 +75,9 @@
 - Added a directly accessible Safe Mode Sparkling Critters toggle and flattened hidden-critter controls into the Critter Overlays accordion
 - Kept Safe Mode visible in regular builds with a clear read-only explanation that its controls require Extra
 - Added responsive navigation widths, wrapped fixed headers, stacked setting controls, adaptive collection/party columns, wrapped ticket-trading content, and content-aware dashboard scaling
-- Grouped Safari convenience, ticket trading, and party sync under Gameplay while moving presentation-only chat and screen-effect controls under Display
+- Grouped Safari convenience and party sync under Gameplay while moving presentation-only chat and screen-effect controls under Display
 - Clarified Sparkling Mode guidance and ordered its alert groups as Banner, Chat, and Special Catch
 - Added optional NPC and expanded Scrappy dialogue filtering, with dynamic colored Shard Trader summaries, preserved clickable choices, and traded shards included in run profit
-- Added per-player Sparkling-only ticket trading, including detection-gated host invites and safe leave-then-accept guest transfers
 - Matched each enabled Sparkling-trading button and username field with one shared animated row tint
 - Matched settings category and accordion typography and refreshed the default HUD layout from the maintained configuration
 - Kept Reset Layout synchronized with canonical HUD defaults and layered recently moved HUDs above editor headings and controls until stationary
@@ -119,7 +113,6 @@
 - Added always-visible Progress HUD profit and independent total/biome progress toggles
 - Added developer-only run-saving and learned-location controls plus optional automatic-log disabling
 - Anchored the Join countdown to the destination play connection, displaying `Closing` at zero and `Closed` once the Safari Manager begins the lockout dialogue
-- Added opt-in Ticket Trading with a 20-second one-command multi-invite, joined-player-only warping from 27–29 seconds, host-departure cleanup, exact-name invitation acceptance, and provisional late-arrival roster confirmation
 - Limited routine `DeployBuilds` development deployment to Minecraft 26.2 while retaining an explicit 26.1.2 compatibility-build task
 
 ### Fixes
@@ -130,8 +123,7 @@
 - Hid vanilla critter nametags only while that exact critter has a rendered mod hitbox
 - Kept custom Hideon and Hideyho geometry consistent for movement, Sparkling states, and recatch pins
 - Delayed Sparkling Hideyho completion alerts until the authoritative completion message
-- Corrected player lookup casing, rank colors, focus behavior, and Ticket Trading text input
-- Kept successfully warped Ticket Trading parties together until the host leaves the ticketed Safari instance
+- Corrected player lookup casing, rank colors, and focus behavior
 - Kept custom alert fields and preview state stable through focus changes and window switching
 
 ## [2.1.1] - 2026-09-23

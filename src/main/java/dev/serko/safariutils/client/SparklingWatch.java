@@ -114,7 +114,7 @@ public final class SparklingWatch {
 				+ " label=" + shortId(labelId) + " body=" + shortId(bodyId)
 				+ " key=" + shortId(key) + " pos=" + pos(pos)
 				+ " source=" + ParticleDiagnostics.source(sighting));
-			TicketTrading.onSparklingDetected(sighting.critter());
+			dev.serko.safariutils.api.SharedSparklingProviders.onSparklingDetected(sighting.critter());
 			postVisibleFoundAlerts(sighting, key);
 		}
 	}

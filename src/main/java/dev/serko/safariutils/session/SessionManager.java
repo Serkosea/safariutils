@@ -27,7 +27,6 @@ import dev.serko.safariutils.client.OperationalLog;
 import dev.serko.safariutils.api.PartyItemSyncProviders;
 import dev.serko.safariutils.client.WallTracker;
 import dev.serko.safariutils.client.SafeMode;
-import dev.serko.safariutils.client.TicketTrading;
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.CritterSpawnRanges;
 import dev.serko.safariutils.parse.ChatParser;
@@ -328,7 +327,7 @@ public final class SessionManager {
 		}
 		current.record(event, now);
 		if (event.type() == CritterEvent.Type.SHARED_CATCH) {
-			TicketTrading.onSharedCatch(event.catcher());
+			dev.serko.safariutils.api.SharedSparklingProviders.onLootSharedBy(event.catcher());
 		}
 		if (event.isCatch()) {
 			int caught = current.partyCatches(event.critter());
@@ -420,7 +419,7 @@ public final class SessionManager {
 		announcedAllButMacaw = false;
 		announcedAllDone = false;
 		PartyItemSyncProviders.onRunStarted();
-		TicketTrading.onRunStarted();
+		dev.serko.safariutils.api.SharedSparklingProviders.onRunStarted();
 	}
 
 	/** Clears one Safari instance's transient trackers before any ticket is submitted. */

@@ -1,11 +1,30 @@
 package dev.serko.safariutils.api;
 
+import java.net.URI;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
+import dev.serko.safariutils.client.SafariConfig;
+import dev.serko.safariutils.data.Critter;
+
 /** Optional source for the Sparkling species shared by a party. */
 public interface SharedSparklingProvider {
+	/** Optional build-specific update destination; public builds use the mod website. */
+	default Optional<URI> updatePage() {
+		return Optional.empty();
+	}
+
+	default void tickPrivateFeatures() { }
+	default void onConnectionJoin() { }
+	default void onConnectionExit() { }
+	default void onServerMessage(String line) { }
+	default void onRunStarted() { }
+	default void onSparklingDetected(Critter critter) { }
+	default void onLootSharedBy(String player) { }
+	default void sanitizePrivateSettings(SafariConfig.SparklingConfig config) { }
+	default void openPrivateSettings() { }
+
 	/** Reports automatic loading state and whether manual fallback controls are needed. */
 	default PartyRefreshStatus partyRefreshStatus() {
 		return new PartyRefreshStatus(null, false);

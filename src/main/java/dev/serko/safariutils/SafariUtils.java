@@ -23,7 +23,6 @@ import dev.serko.safariutils.client.HideyhoAutoAccept;
 import dev.serko.safariutils.client.PartyErrorSuppressor;
 import dev.serko.safariutils.client.PartyRosterWatch;
 import dev.serko.safariutils.client.TicketProtection;
-import dev.serko.safariutils.client.TicketTrading;
 import dev.serko.safariutils.client.StillCritters;
 import dev.serko.safariutils.client.HotspotWatch;
 import dev.serko.safariutils.client.HypixelConnection;
@@ -162,7 +161,7 @@ public class SafariUtils implements ClientModInitializer {
 			tickSafely("still-critters", StillCritters::tick);
 			tickSafely("detected-critters", DetectedCritters::tick);
 			tickSafely("session", SessionManager::tick);
-			tickSafely("ticket-trading", TicketTrading::tick);
+			tickSafely("private-features", SharedSparklingProviders::tickPrivateFeatures);
 			tickSafely("critter-spotter", CritterSpotter::tick);
 			tickSafely("nests", NestTracker::tick);
 			tickSafely("sparkling-watch", SparklingWatch::tick);
@@ -200,7 +199,7 @@ public class SafariUtils implements ClientModInitializer {
 			PartyObjectiveHud.invalidatePlayerColours();
 			if (BuildVersion.DEVELOPER) JoinWindowDiagnostics.onConnectionJoin();
 			SessionManager.onConnectionJoin();
-			TicketTrading.onConnectionJoin();
+			SharedSparklingProviders.onConnectionJoin();
 			SafariLocation.onWorldChange();
 			SessionManager.onWorldChange();
 		}));
@@ -299,7 +298,7 @@ public class SafariUtils implements ClientModInitializer {
 				SafariLocation.onChatMessage(line);
 				SparklingMode.onChatMessage(line);
 				SessionManager.onChatMessage(line);
-				TicketTrading.onChatMessage(line);
+				SharedSparklingProviders.onServerMessage(line);
 				if (BuildVersion.DEVELOPER) JoinWindowDiagnostics.onChatMessage(line);
 				EncounterAlerts.onChatMessage(line);
 				RecatchSpots.onChatMessage(line);
@@ -323,7 +322,7 @@ public class SafariUtils implements ClientModInitializer {
 	private static void leaveHypixel() {
 		SafariLocation.onWorldChange();
 		SessionManager.onWorldChange();
-		TicketTrading.onDisconnect();
+		SharedSparklingProviders.onConnectionExit();
 		PartyRosterWatch.resetConnectionState();
 		ChatQueue.clear();
 		AlertSounds.onConnectionExit();

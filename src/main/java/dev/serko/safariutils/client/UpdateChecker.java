@@ -3,6 +3,7 @@ package dev.serko.safariutils.client;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.serko.safariutils.BuildVersion;
+import dev.serko.safariutils.api.SharedSparklingProviders;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 
@@ -28,7 +29,8 @@ public final class UpdateChecker {
 	private static volatile String releaseTitle = "";
 	private static volatile String releaseNotes = "";
 	private static volatile String publishedAt = "";
-	private static volatile URI releasePage = BuildVersion.downloadPage();
+	private static volatile URI releasePage =
+		SharedSparklingProviders.updatePage(BuildVersion.downloadPage());
 	private static volatile Status status = Status.NOT_STARTED;
 	private static boolean notified;
 

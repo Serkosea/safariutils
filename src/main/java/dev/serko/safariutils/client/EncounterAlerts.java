@@ -68,10 +68,11 @@ public final class EncounterAlerts implements HudElement {
 	private static boolean sparklingBannerBorder;
 	private static boolean sparklingBannerGeometryValid;
 	private static final int BANNER_HORIZONTAL_PADDING = 8;
-	private static final int BANNER_VERTICAL_PADDING = 4;
+	private static final int BANNER_BASE_HEIGHT = 18;
+	private static final int BANNER_TEXT_TOP_PADDING = 5;
 	private static final int BANNER_LINE_SPACING = 3;
 
-	private record BannerTextLayout(List<Component> lines, int width, int height) { }
+	private record BannerTextLayout(List<Component> lines, int width) { }
 
 	public enum Stage {READY, STARTED, DONE}
 	public enum Preview {FULL_PARTY, HOTSPOT, FLOOR_DROPS, BIOME_UNIQUES, ALL_BUT_MACAW, ALL_DONE,
@@ -992,11 +993,8 @@ public final class EncounterAlerts implements HudElement {
 		BannerTextLayout layout = bannerTextLayout(font, renderMessage, reminderAction,
 			appearance.bannerFont, maximumTextWidth);
 		int frameWidth = layout.width() + BANNER_HORIZONTAL_PADDING * 2;
-		int borderInset = appearance.bannerBorder
-			? Math.max(1, Math.round(appearance.bannerBorderThickness)) : 0;
-		int topInset = borderInset + (!reminder && appearance.bannerTopBar != 0 ? 1 : 0);
-		int bottomInset = borderInset + (!reminder && appearance.bannerBottomBar != 0 ? 1 : 0);
-		int frameHeight = layout.height() + BANNER_VERTICAL_PADDING * 2 + topInset + bottomInset;
+		int frameHeight = BANNER_BASE_HEIGHT + Math.max(0, layout.lines().size() - 1)
+			* (font.lineHeight + BANNER_LINE_SPACING);
 		int visualWidth = frameWidth + effectMarginX * 2;
 		int visualHeight = frameHeight + effectMarginY * 2;
 		float scale = Math.min(baseScale, Math.min(
@@ -1022,9 +1020,7 @@ public final class EncounterAlerts implements HudElement {
 		int frameCentreY = Math.round(physicalVerticalCentre / scale);
 		int frameTop = frameCentreY - frameHeight / 2;
 		int frameBottom = frameTop + frameHeight;
-		int textTop = frameTop + topInset + BANNER_VERTICAL_PADDING
-			+ Math.max(0, (frameHeight - topInset - bottomInset
-				- BANNER_VERTICAL_PADDING * 2 - layout.height()) / 2);
+		int textTop = frameTop + BANNER_TEXT_TOP_PADDING;
 
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(scale, scale);
@@ -1287,13 +1283,11 @@ public final class EncounterAlerts implements HudElement {
 		if (action != null) wrapBannerText(font, action, fontStyle, maximumWidth, lines);
 		if (lines.isEmpty()) lines.add(styledBannerText("", fontStyle));
 		int width = lines.stream().mapToInt(font::width).max().orElse(0);
-		int height = lines.size() * font.lineHeight
-			+ Math.max(0, lines.size() - 1) * BANNER_LINE_SPACING;
 		cachedLayoutMessage = message;
 		cachedLayoutAction = action;
 		cachedLayoutFont = fontStyle;
 		cachedLayoutWidth = maximumWidth;
-		cachedBannerLayout = new BannerTextLayout(List.copyOf(lines), width, height);
+		cachedBannerLayout = new BannerTextLayout(List.copyOf(lines), width);
 		return cachedBannerLayout;
 	}
 

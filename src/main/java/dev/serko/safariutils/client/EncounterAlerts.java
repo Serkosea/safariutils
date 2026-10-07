@@ -13,7 +13,9 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -45,17 +47,31 @@ public final class EncounterAlerts implements HudElement {
 	private static float displayedHorizontalPosition = 0.5f;
 	private static float displayedVerticalPosition = 0.4f;
 	private static boolean rainbowMessage;
-	private static String cachedStyledText;
-	private static int cachedStyledFont = Integer.MIN_VALUE;
-	private static Component cachedStyledMessage;
+	private static String ticketReminderTitle;
+	private static boolean ticketReminderUseTicket;
+	private static long ticketReminderStartedAt;
+	private static long ticketReminderUntil;
+	private static long ticketReminderFadeUntil;
+	private static String cachedLayoutMessage;
+	private static String cachedLayoutAction;
+	private static int cachedLayoutFont = Integer.MIN_VALUE;
+	private static int cachedLayoutWidth = Integer.MIN_VALUE;
+	private static BannerTextLayout cachedBannerLayout;
 	private static final int[] BANNER_QUADS = new int[5 * 512];
 	private static final int[] PROGRESS_QUADS = new int[10];
+	private static final int SPARKLING_BANNER_MARGIN_X = 20;
+	private static final int SPARKLING_BANNER_MARGIN_Y = 8;
 	private static int bannerQuadLength;
 	private static long sparklingBannerFrame = Long.MIN_VALUE;
 	private static int sparklingBannerWidth, sparklingBannerHeight;
 	private static int sparklingBannerThickness;
 	private static boolean sparklingBannerBorder;
 	private static boolean sparklingBannerGeometryValid;
+	private static final int BANNER_HORIZONTAL_PADDING = 8;
+	private static final int BANNER_VERTICAL_PADDING = 4;
+	private static final int BANNER_LINE_SPACING = 3;
+
+	private record BannerTextLayout(List<Component> lines, int width, int height) { }
 
 	public enum Stage {READY, STARTED, DONE}
 	public enum Preview {FULL_PARTY, HOTSPOT, FLOOR_DROPS, BIOME_UNIQUES, ALL_BUT_MACAW, ALL_DONE,
@@ -758,6 +774,41 @@ public final class EncounterAlerts implements HudElement {
 			config.sparklingBannerVerticalPosition);
 	}
 
+	/** Persistent ticket-trading reminder; ordinary alerts temporarily draw over it. */
+	public static void showTicketTradingSparklingReminder(String critters, long untilMillis,
+			boolean useTicket, boolean playSound) {
+		long now = System.currentTimeMillis();
+		ticketReminderTitle = "SPARKLING " + critters + " Found!";
+		ticketReminderUseTicket = useTicket;
+		ticketReminderFadeUntil = 0L;
+		if (ticketReminderStartedAt == 0L || now >= ticketReminderUntil) {
+			ticketReminderStartedAt = now;
+		}
+		ticketReminderUntil = Math.max(now + 1_000L, untilMillis);
+		if (playSound) playTicketTradingSparklingSound();
+	}
+
+	public static void playTicketTradingSparklingSound() {
+		SafariConfig.SparklingConfig config = ConfigManager.get().sparkling;
+		AlertSounds.playTicketTradingReminder(Minecraft.getInstance(),
+			config.sparklingBannerSoundVolume, config.sparklingBannerSoundPitch);
+	}
+
+	public static void clearTicketTradingSparklingReminder() {
+		if (ticketReminderTitle != null && ticketReminderFadeUntil == 0L) {
+			ticketReminderFadeUntil = System.currentTimeMillis() + 500L;
+		}
+		AlertSounds.stopTicketTradingReminder();
+	}
+
+	private static void finishTicketTradingSparklingReminder() {
+		ticketReminderTitle = null;
+		ticketReminderUseTicket = false;
+		ticketReminderStartedAt = 0L;
+		ticketReminderUntil = 0L;
+		ticketReminderFadeUntil = 0L;
+	}
+
 	public static void fireTestSparklingDetected() {
 		ClientCompat.setScreen(null);
 		SafariConfig.SparklingConfig config = ConfigManager.get().sparkling;
@@ -881,26 +932,43 @@ public final class EncounterAlerts implements HudElement {
 	public static void reset() {
 		lastFired.clear();
 		gemzieRemaining = 0;
+		clearTicketTradingSparklingReminder();
 	}
 
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker deltaTracker) {
-		if (message == null) return;
-
-		long age = System.currentTimeMillis() - shownAtMillis;
-		if (age > displayMillis) {
+		long now = System.currentTimeMillis();
+		long age = now - shownAtMillis;
+		if (message != null && age > displayMillis) {
 			message = null;
-			return;
 		}
+		if (ticketReminderTitle != null && ticketReminderFadeUntil == 0L
+				&& now > ticketReminderUntil) {
+			clearTicketTradingSparklingReminder();
+		}
+		if (ticketReminderFadeUntil > 0L && now >= ticketReminderFadeUntil) {
+			finishTicketTradingSparklingReminder();
+		}
+		boolean reminder = message == null && ticketReminderTitle != null;
+		if (message == null && !reminder) return;
+		String renderMessage = reminder ? ticketReminderTitle : message;
+		long renderStartedAt = reminder ? ticketReminderStartedAt : shownAtMillis;
+		long renderDisplayMillis = reminder ? Long.MAX_VALUE : displayMillis;
+		age = now - renderStartedAt;
+		boolean renderRainbow = reminder || rainbowMessage;
+		int renderColour = reminder ? 0xFFFFFFFF : colour;
 
 		Minecraft client = Minecraft.getInstance();
 		if (client.player == null || ClientCompat.hudHidden()) return;
 
 		// Fade over the last second so it does not simply vanish.
 		int alpha = 0xFF;
-		long fadeStart = displayMillis - 1000;
-		if (age > fadeStart) {
-			alpha = (int) (0xFF * (displayMillis - age) / 1000.0);
+		long fadeStart = renderDisplayMillis - 1000;
+		if (!reminder && age > fadeStart) {
+			alpha = (int) (0xFF * (renderDisplayMillis - age) / 1000.0);
+		} else if (reminder && ticketReminderFadeUntil > 0L) {
+			alpha = (int) (0xFF * Math.clamp(
+				(ticketReminderFadeUntil - now) / 500.0, 0.0, 1.0));
 		}
 		// A short ease-in gives the panel a modern appearance without retaining
 		// animation objects or doing work while no banner is visible.
@@ -908,47 +976,83 @@ public final class EncounterAlerts implements HudElement {
 
 		Font font = client.font;
 		SafariConfig.AlertConfig appearance = ConfigManager.get().alerts;
-		Component styledMessage = cachedStyledBannerText(message, appearance.bannerFont);
-		int frameWidth = font.width(styledMessage) + 16;
+		String reminderAction = reminder && ticketReminderUseTicket ? "USE YOUR TICKET!" : null;
 		int edgeMargin = 5;
 		int availableWidth = Math.max(1, graphics.guiWidth() - edgeMargin * 2);
-		float scale = Math.min(displayedScale
-			* ResponsiveUI.scale(graphics.guiWidth(), graphics.guiHeight()),
-			availableWidth / (float) frameWidth);
+		int availableHeight = Math.max(1, graphics.guiHeight() - edgeMargin * 2);
+		float chosenScale = reminder
+			? ConfigManager.get().sparkling.sparklingBannerScale * .82f : displayedScale;
+		float baseScale = chosenScale
+			* ResponsiveUI.scale(graphics.guiWidth(), graphics.guiHeight());
+		int effectMarginX = renderRainbow ? SPARKLING_BANNER_MARGIN_X : 0;
+		int effectMarginY = renderRainbow ? SPARKLING_BANNER_MARGIN_Y : 0;
+		int maximumFrameWidth = Math.max(48,
+			(int) Math.floor(availableWidth / Math.max(.01f, baseScale)) - effectMarginX * 2);
+		int maximumTextWidth = Math.max(32, maximumFrameWidth - BANNER_HORIZONTAL_PADDING * 2);
+		BannerTextLayout layout = bannerTextLayout(font, renderMessage, reminderAction,
+			appearance.bannerFont, maximumTextWidth);
+		int frameWidth = layout.width() + BANNER_HORIZONTAL_PADDING * 2;
+		int borderInset = appearance.bannerBorder
+			? Math.max(1, Math.round(appearance.bannerBorderThickness)) : 0;
+		int topInset = borderInset + (!reminder && appearance.bannerTopBar != 0 ? 1 : 0);
+		int bottomInset = borderInset + (!reminder && appearance.bannerBottomBar != 0 ? 1 : 0);
+		int frameHeight = layout.height() + BANNER_VERTICAL_PADDING * 2 + topInset + bottomInset;
+		int visualWidth = frameWidth + effectMarginX * 2;
+		int visualHeight = frameHeight + effectMarginY * 2;
+		float scale = Math.min(baseScale, Math.min(
+			availableWidth / (float) visualWidth,
+			availableHeight / (float) visualHeight));
 		// Expand around the configured anchor, shift away from either edge only as
 		// needed, then shrink as a last resort when the full banner cannot fit.
-		float scaledWidth = frameWidth * scale;
-		float desiredCentre = graphics.guiWidth() * displayedHorizontalPosition;
+		float scaledWidth = visualWidth * scale;
+		float chosenHorizontal = reminder ? 0.5f : displayedHorizontalPosition;
+		float desiredCentre = graphics.guiWidth() * chosenHorizontal;
 		float minimumCentre = edgeMargin + scaledWidth / 2f;
 		float maximumCentre = graphics.guiWidth() - edgeMargin - scaledWidth / 2f;
 		float physicalCentre = Math.clamp(desiredCentre, minimumCentre, maximumCentre);
 		int centreX = Math.round(physicalCentre / scale);
-		int y = Math.round(graphics.guiHeight() * displayedVerticalPosition / scale);
+		float chosenVertical = reminder
+			? ConfigManager.get().sparkling.sparklingBannerVerticalPosition : displayedVerticalPosition;
+		float scaledHeight = visualHeight * scale;
+		float desiredVerticalCentre = graphics.guiHeight() * chosenVertical;
+		float minimumVerticalCentre = edgeMargin + scaledHeight / 2f;
+		float maximumVerticalCentre = graphics.guiHeight() - edgeMargin - scaledHeight / 2f;
+		float physicalVerticalCentre = Math.clamp(desiredVerticalCentre,
+			minimumVerticalCentre, maximumVerticalCentre);
+		int frameCentreY = Math.round(physicalVerticalCentre / scale);
+		int frameTop = frameCentreY - frameHeight / 2;
+		int frameBottom = frameTop + frameHeight;
+		int textTop = frameTop + topInset + BANNER_VERTICAL_PADDING
+			+ Math.max(0, (frameHeight - topInset - bottomInset
+				- BANNER_VERTICAL_PADDING * 2 - layout.height()) / 2);
 
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(scale, scale);
-		drawBannerFrame(graphics, font, styledMessage, centreX, y, alpha, rainbowMessage,
-			appearance, age,
-			(float) Math.clamp(1.0 - age / (double) displayMillis, 0.0, 1.0));
-		if (rainbowMessage) {
-			rainbowCenteredText(graphics, font, message, centreX, y + 1, alpha,
-				appearance.bannerFont, appearance.bannerTextShadow);
-		} else {
-			graphics.text(font, styledMessage, centreX - font.width(styledMessage) / 2, y + 1,
-				(alpha << 24) | (colour & 0xFFFFFF), appearance.bannerTextShadow);
+		drawBannerFrame(graphics, frameWidth, centreX, frameTop, frameBottom,
+			alpha, renderRainbow, renderColour, appearance, age,
+			!reminder, reminder ? 1f
+				: (float) Math.clamp(1.0 - age / (double) renderDisplayMillis, 0.0, 1.0));
+		for (int index = 0; index < layout.lines().size(); index++) {
+			Component line = layout.lines().get(index);
+			int lineY = textTop + index * (font.lineHeight + BANNER_LINE_SPACING);
+			if (renderRainbow) {
+				rainbowCenteredText(graphics, font, line, centreX, lineY, alpha,
+					appearance.bannerTextShadow);
+			} else {
+				graphics.text(font, line, centreX - font.width(line) / 2, lineY,
+					(alpha << 24) | (renderColour & 0xFFFFFF), appearance.bannerTextShadow);
+			}
 		}
 		graphics.pose().popMatrix();
 	}
 
-	private static void drawBannerFrame(GuiGraphicsExtractor graphics, Font font, Component text,
-			int centreX, int textY, int alpha, boolean rainbow,
-			SafariConfig.AlertConfig appearance, long age, float remaining) {
-		int width = font.width(text) + 16;
+	private static void drawBannerFrame(GuiGraphicsExtractor graphics, int width,
+			int centreX, int top, int bottom, int alpha, boolean rainbow, int alertColour,
+			SafariConfig.AlertConfig appearance, long age,
+			boolean showProgress, float remaining) {
 		int left = centreX - width / 2;
 		int right = left + width;
-		int top = textY - 4;
-		int bottom = textY + 14;
-		int leftAccent = colour & 0xFFFFFF;
+		int leftAccent = alertColour & 0xFFFFFF;
 		int rightAccent = leftAccent;
 		if (rainbow) {
 			leftAccent = RainbowColours.shared(0f, 0.55f) & 0xFFFFFF;
@@ -991,16 +1095,19 @@ public final class EncounterAlerts implements HudElement {
 			GuiQuadBatchRenderState.submit(graphics, left, top, widthPixels, heightPixels,
 				BANNER_QUADS, bannerQuadLength);
 		}
-		drawSmoothProgress(graphics, left, right, top, bottom, progressColor, remaining,
-			appearance.bannerTopBar, appearance.bannerBottomBar, appearance.bannerBorder ? thickness : 0);
+		if (showProgress) {
+			drawSmoothProgress(graphics, left, right, top, bottom, progressColor, remaining,
+				appearance.bannerTopBar, appearance.bannerBottomBar,
+				appearance.bannerBorder ? thickness : 0);
+		}
 	}
 
 	/** Sparkling detection uses a banner-centered effect rather than the catch celebration. */
 	private static void drawSparklingBannerEffects(GuiGraphicsExtractor graphics,
 			int left, int top, int right, int bottom, int thickness, int alpha, long age,
 			boolean showBorder) {
-		int marginX = 20;
-		int marginY = 8;
+		int marginX = SPARKLING_BANNER_MARGIN_X;
+		int marginY = SPARKLING_BANNER_MARGIN_Y;
 		int width = right - left;
 		int height = bottom - top;
 		int canvasWidth = width + marginX * 2;
@@ -1168,13 +1275,58 @@ public final class EncounterAlerts implements HudElement {
 		};
 	}
 
-	private static Component cachedStyledBannerText(String text, int fontStyle) {
-		if (!text.equals(cachedStyledText) || fontStyle != cachedStyledFont) {
-			cachedStyledText = text;
-			cachedStyledFont = fontStyle;
-			cachedStyledMessage = styledBannerText(text, fontStyle);
+	private static BannerTextLayout bannerTextLayout(Font font, String message, String action,
+			int fontStyle, int maximumWidth) {
+		if (cachedBannerLayout != null && message.equals(cachedLayoutMessage)
+				&& java.util.Objects.equals(action, cachedLayoutAction)
+				&& fontStyle == cachedLayoutFont && maximumWidth == cachedLayoutWidth) {
+			return cachedBannerLayout;
 		}
-		return cachedStyledMessage;
+		List<Component> lines = new ArrayList<>();
+		wrapBannerText(font, message, fontStyle, maximumWidth, lines);
+		if (action != null) wrapBannerText(font, action, fontStyle, maximumWidth, lines);
+		if (lines.isEmpty()) lines.add(styledBannerText("", fontStyle));
+		int width = lines.stream().mapToInt(font::width).max().orElse(0);
+		int height = lines.size() * font.lineHeight
+			+ Math.max(0, lines.size() - 1) * BANNER_LINE_SPACING;
+		cachedLayoutMessage = message;
+		cachedLayoutAction = action;
+		cachedLayoutFont = fontStyle;
+		cachedLayoutWidth = maximumWidth;
+		cachedBannerLayout = new BannerTextLayout(List.copyOf(lines), width, height);
+		return cachedBannerLayout;
+	}
+
+	private static void wrapBannerText(Font font, String text, int fontStyle,
+			int maximumWidth, List<Component> output) {
+		for (String paragraph : text.split("\\n", -1)) {
+			if (paragraph.isEmpty()) {
+				output.add(styledBannerText("", fontStyle));
+				continue;
+			}
+			StringBuilder line = new StringBuilder();
+			for (String word : paragraph.trim().split("\\s+")) {
+				String candidate = line.isEmpty() ? word : line + " " + word;
+				if (!line.isEmpty() && font.width(styledBannerText(candidate, fontStyle)) > maximumWidth) {
+					output.add(styledBannerText(line.toString(), fontStyle));
+					line.setLength(0);
+				}
+				if (font.width(styledBannerText(word, fontStyle)) <= maximumWidth) {
+					if (!line.isEmpty()) line.append(' ');
+					line.append(word);
+					continue;
+				}
+				for (int index = 0; index < word.length(); index++) {
+					String next = line.toString() + word.charAt(index);
+					if (!line.isEmpty() && font.width(styledBannerText(next, fontStyle)) > maximumWidth) {
+						output.add(styledBannerText(line.toString(), fontStyle));
+						line.setLength(0);
+					}
+					line.append(word.charAt(index));
+				}
+			}
+			if (!line.isEmpty()) output.add(styledBannerText(line.toString(), fontStyle));
+		}
 	}
 
 	private static int mixWithWhite(int rgb, float amount) {
@@ -1210,8 +1362,7 @@ public final class EncounterAlerts implements HudElement {
 	}
 
 	private static void rainbowCenteredText(GuiGraphicsExtractor graphics, Font font,
-			String text, int centreX, int y, int alpha, int fontStyle, boolean shadow) {
-		Component styled = cachedStyledBannerText(text, fontStyle);
+			Component styled, int centreX, int y, int alpha, boolean shadow) {
 		int x = centreX - font.width(styled) / 2;
 		UIDraw.rainbowText(graphics, font, styled, x, y, 0.45f, alpha, shadow);
 	}

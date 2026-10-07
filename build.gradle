@@ -75,6 +75,13 @@ if (privateApiBuild) {
 	sourceSets.main.java.srcDir(privateSource)
 	sourceSets.main.resources.srcDir('private-api/src/main/resources')
 }
+if (developerBuild) {
+	def developerSource = file('private-api/src/developer/java')
+	if (!developerSource.isDirectory()) {
+		throw new GradleException("Developer sources requested but ${developerSource} does not exist")
+	}
+	sourceSets.main.java.srcDir(developerSource)
+}
 
 repositories {
 	maven { name = 'TerraformersMC'; url = 'https://maven.terraformersmc.com/' }
@@ -125,7 +132,7 @@ supportedDeveloperProfiles.each { profileName ->
 		description = "Build the ${profileName} Developer jar for local deployment."
 		group = 'fabric'
 		workingDir projectDir
-		commandLine 'cmd', '/c', 'gradlew.bat', 'jar',
+		commandLine 'cmd', '/c', 'gradlew.bat', 'clean', 'jar',
 			"-PminecraftProfile=${profileName}", '-PdeveloperBuild=true'
 	}
 	developerBuildTasks[profileName] = buildTask
@@ -225,7 +232,7 @@ supportedDeveloperProfiles.each { profileName ->
 				description = "Build the ${profileName} ${variant.label} release jar."
 				group = 'fabric'
 				workingDir projectDir
-				commandLine(['cmd', '/c', 'gradlew.bat', 'jar',
+				commandLine(['cmd', '/c', 'gradlew.bat', 'clean', 'jar',
 					"-PminecraftProfile=${profileName}"] + variant.arguments)
 			}
 		}

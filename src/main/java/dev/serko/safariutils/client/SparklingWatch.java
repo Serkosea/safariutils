@@ -114,7 +114,7 @@ public final class SparklingWatch {
 				+ " label=" + shortId(labelId) + " body=" + shortId(bodyId)
 				+ " key=" + shortId(key) + " pos=" + pos(pos)
 				+ " source=" + ParticleDiagnostics.source(sighting));
-			dev.serko.safariutils.api.SharedSparklingProviders.onSparklingDetected(sighting.critter());
+			TicketTrading.onSparklingDetected(sighting.critter());
 			postVisibleFoundAlerts(sighting, key);
 		}
 	}
@@ -206,7 +206,7 @@ public final class SparklingWatch {
 		return critter != null && !replacementExpectedUntil.containsKey(critter);
 	}
 
-	/** Fires every user-facing found alert together, on first genuine visual confirmation. */
+	/** Safe Mode waits for sight; Extra announces the first trustworthy remote detection. */
 	private static void postVisibleFoundAlerts(CritterEntities.Sighting sighting, UUID key) {
 		if (visuallyAnnounced.contains(key)
 				|| sighting.critter().biome() != SafariLocation.biome()) return;
@@ -217,10 +217,11 @@ public final class SparklingWatch {
 			// visible-name label/body pair.
 			|| "Hideyho".equals(sighting.critter().name())
 				&& VisibilityCheck.canSee(sighting.label());
-		if (!visible) return;
+		if (SafeMode.sparklingCritters() && !visible) return;
 		SafariConfig config = ConfigManager.get();
 		visuallyAnnounced.add(key);
-		DebugLog.line("SPARKLING", "visually announced " + sighting.critter().name()
+		DebugLog.line("SPARKLING", (visible ? "visually announced " : "remotely announced ")
+			+ sighting.critter().name()
 			+ " key=" + shortId(key) + " biome=" + SafariLocation.biome());
 		EncounterAlerts.fireSparklingDetected(sighting.critter().name());
 		EncounterAlerts.post(config.sparkling.detected(),

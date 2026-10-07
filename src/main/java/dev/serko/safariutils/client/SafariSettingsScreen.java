@@ -396,14 +396,9 @@ public final class SafariSettingsScreen extends Screen {
 
 		addRootPage(gameplay, gameplaySource, "gameplay.auto-hideyho", "Hideyho",
 			"Automatically accept Hideyho's Hide N' Seek game", "autoAcceptHideyho");
-		if (BuildVersion.PRIVATE) {
-			addRootPage(gameplay, gameplaySource, "gameplay.tickets", "Tickets",
-				"Protect tickets and configure trusted players for timed ticket trading",
-				"protectSafariTicket", "privateConfigureTicketTrading");
-		} else {
-			addRootPage(gameplay, gameplaySource, "gameplay.tickets", "Tickets",
-				"Protect Safari tickets until the party is ready", "protectSafariTicket");
-		}
+		addRootPage(gameplay, gameplaySource, "gameplay.tickets", "Tickets",
+			"Protect tickets and configure trusted players for timed ticket trading",
+			"protectSafariTicket", "configureTicketTrading");
 		if (advancedSource != null) addRootPage(gameplay, advancedSource, "gameplay.party", "Party Sync",
 			"Share objective progress with a fully participating modded party", "enablePartySync");
 		addRootPage(gameplay, profitSource, "gameplay.profit", "Profit Tracking",

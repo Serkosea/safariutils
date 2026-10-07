@@ -2,8 +2,6 @@ package dev.serko.safariutils.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.PlayerInfo;
-import net.minecraft.world.entity.player.Inventory;
-import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,7 +14,6 @@ public final class DebugStateLog {
 	private static List<String> lastRoster = List.of();
 	private static List<String> lastTabList = List.of();
 	private static List<String> lastScoreboard = List.of();
-	private static List<String> lastInventory = List.of();
 	private static String lastObjectives;
 	private static int ticks;
 
@@ -69,18 +66,12 @@ public final class DebugStateLog {
 		}
 
 		if (safari) {
-			List<String> inventory = inventorySnapshot();
-			if (!inventory.equals(lastInventory)) {
-				lastInventory = inventory;
-				DebugLog.line("INVENTORY", snapshot(inventory));
-			}
 			String objective = objectiveSnapshot();
 			if (!Objects.equals(objective, lastObjectives)) {
 				lastObjectives = objective;
 				DebugLog.line("OBJECTIVE", objective);
 			}
 		} else {
-			lastInventory = List.of();
 			lastObjectives = null;
 		}
 	}
@@ -119,19 +110,6 @@ public final class DebugStateLog {
 				+ " shown=\"" + shown + "\"");
 		}
 		result.sort(String.CASE_INSENSITIVE_ORDER);
-		return List.copyOf(result);
-	}
-
-	private static List<String> inventorySnapshot() {
-		Minecraft client = Minecraft.getInstance();
-		if (client.player == null) return List.of();
-		Inventory inventory = client.player.getInventory();
-		List<String> result = new ArrayList<>();
-		for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
-			ItemStack stack = inventory.getItem(slot);
-			if (!stack.isEmpty()) result.add(slot + "=" + stack.getCount() + "x "
-				+ stack.getHoverName().getString());
-		}
 		return List.copyOf(result);
 	}
 

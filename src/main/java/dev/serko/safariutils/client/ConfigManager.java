@@ -83,12 +83,10 @@ public final class ConfigManager {
 		migrateBannerPlayback(root);
 		migrateSparklingCatchIntensity(root);
 		migrateSafeModeOptions(root);
-		if (BuildVersion.PRIVATE) migrateTicketTradingProfiles(root);
+		migrateTicketTradingProfiles(root);
 		SafariConfig loaded = GSON.fromJson(root, SafariConfig.class);
 		if (loaded == null) return null;
-		if (BuildVersion.PRIVATE) {
-			dev.serko.safariutils.api.SharedSparklingProviders.sanitizePrivateSettings(loaded.sparkling);
-		}
+		TicketTrading.sanitizeSettings(loaded.sparkling);
 		if (loaded.sparkling.sparklingUniqueHitboxColours) {
 			loaded.display.uniqueHitboxColours = true;
 			loaded.sparkling.sparklingUniqueHitboxColours = false;

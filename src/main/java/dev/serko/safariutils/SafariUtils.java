@@ -23,6 +23,7 @@ import dev.serko.safariutils.client.HideyhoAutoAccept;
 import dev.serko.safariutils.client.PartyErrorSuppressor;
 import dev.serko.safariutils.client.PartyRosterWatch;
 import dev.serko.safariutils.client.TicketProtection;
+import dev.serko.safariutils.client.TicketTrading;
 import dev.serko.safariutils.client.StillCritters;
 import dev.serko.safariutils.client.HotspotWatch;
 import dev.serko.safariutils.client.HypixelConnection;
@@ -103,7 +104,8 @@ public class SafariUtils implements ClientModInitializer {
 			return OperationalLog.get("CHAT/FILTER", () -> {
 				// Log before optional automation hides a clickable server prompt.
 				InteractionDebugLog.onGameMessage(message, overlay);
-				boolean allowed = PartyRosterWatch.allow(message, overlay)
+				boolean allowed = TicketTrading.allowMessage(message, overlay)
+					&& PartyRosterWatch.allow(message, overlay)
 					&& PartyErrorSuppressor.allow(message, overlay)
 					&& HideyhoAutoAccept.allow(message, overlay)
 					&& PartyItemSyncProviders.allowMessage(message, overlay);
@@ -161,7 +163,7 @@ public class SafariUtils implements ClientModInitializer {
 			tickSafely("still-critters", StillCritters::tick);
 			tickSafely("detected-critters", DetectedCritters::tick);
 			tickSafely("session", SessionManager::tick);
-			tickSafely("private-features", SharedSparklingProviders::tickPrivateFeatures);
+			tickSafely("ticket-trading", TicketTrading::tick);
 			tickSafely("critter-spotter", CritterSpotter::tick);
 			tickSafely("nests", NestTracker::tick);
 			tickSafely("sparkling-watch", SparklingWatch::tick);
@@ -195,11 +197,11 @@ public class SafariUtils implements ClientModInitializer {
 			}
 			OperationalLog.info("LIFECYCLE", "Joined a Hypixel server world");
 			ChatQueue.clear();
-			PartyRosterWatch.resetConnectionState();
+			PartyRosterWatch.onConnectionJoin();
 			PartyObjectiveHud.invalidatePlayerColours();
 			if (BuildVersion.DEVELOPER) JoinWindowDiagnostics.onConnectionJoin();
 			SessionManager.onConnectionJoin();
-			SharedSparklingProviders.onConnectionJoin();
+			TicketTrading.onConnectionJoin();
 			SafariLocation.onWorldChange();
 			SessionManager.onWorldChange();
 		}));
@@ -298,7 +300,7 @@ public class SafariUtils implements ClientModInitializer {
 				SafariLocation.onChatMessage(line);
 				SparklingMode.onChatMessage(line);
 				SessionManager.onChatMessage(line);
-				SharedSparklingProviders.onServerMessage(line);
+				TicketTrading.onChatMessage(line);
 				if (BuildVersion.DEVELOPER) JoinWindowDiagnostics.onChatMessage(line);
 				EncounterAlerts.onChatMessage(line);
 				RecatchSpots.onChatMessage(line);
@@ -322,7 +324,7 @@ public class SafariUtils implements ClientModInitializer {
 	private static void leaveHypixel() {
 		SafariLocation.onWorldChange();
 		SessionManager.onWorldChange();
-		SharedSparklingProviders.onConnectionExit();
+		TicketTrading.onDisconnect();
 		PartyRosterWatch.resetConnectionState();
 		ChatQueue.clear();
 		AlertSounds.onConnectionExit();

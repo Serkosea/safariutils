@@ -1,26 +1,28 @@
-# SafariUtils v2.6.0
+## New
+
+- Added Ticket Trading with trusted profiles, active and backup slots, per-critter Sparkling filters, timed invites, warps, and guest acceptance
+- Added compact party Sparkling signals and a persistent ticket reminder for waiting guests
 
 ## Changes & Additions
 
-- Clarified Contest HUD visibility options and allowed its timer to display anywhere in Minecraft
-- Removed the Advanced Mode gate so build-appropriate settings and Developer commands are immediately available
-- Added special Easter egg with an unlockable special theme
-- Removed the informational Safe Mode category from regular builds
+- Improved party-state tracking across rapid joins, leaves, disbands, transfers, and server changes
+- Made Extra announce Sparkling detections immediately while Safe Mode continues to wait for visible confirmation
 
 ## Fixes
 
-- Fixed update links to open the SafariUtils website
-- Restricted Safari tracking, overlays, packet processing, and automatic commands to Hypixel
-- Restricted automatic party-roster checks to SkyBlock and Safari
-- Cleared pending Safari commands and transient alerts when leaving Hypixel or changing servers
+- Prevented confirmed solo players from sending queued party chat or leaving a nonexistent party
+- Paused automatic Ticket Trading acceptance after a failed server join to avoid repeated disconnects
+- Hid floor-drop block faces until a Safari run has started
+- Fixed stale party snapshots and delayed refreshes during rapid Ticket Trading transitions
+- Centered banner text and wrapped long alerts without clipping Sparkling effects
 
 ## Downloads
 
 Choose one jar for your Minecraft version:
 
-- `safariutils-2.6.0+mc26.1.2.jar`
-- `safariutils-2.6.0-extra+mc26.1.2.jar`
-- `safariutils-2.6.0+mc26.2.jar`
-- `safariutils-2.6.0-extra+mc26.2.jar`
+- `safariutils-2.7.0+mc26.1.2.jar`
+- `safariutils-2.7.0-extra+mc26.1.2.jar`
+- `safariutils-2.7.0+mc26.2.jar`
+- `safariutils-2.7.0-extra+mc26.2.jar`
 
 The regular jars use Safe Mode; Extra includes toggles in the Safe Mode category that when turned off, provide information the player cannot directly see and may not be safe to use; Minecraft 26.1.2 builds have received limited testing compared to 26.2.

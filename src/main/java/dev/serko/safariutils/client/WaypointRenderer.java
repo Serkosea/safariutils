@@ -391,7 +391,7 @@ public final class WaypointRenderer {
 	private static void renderFloorDropFaces(LevelRenderContext context,
 			WaypointRenderBackend backend, Vec3 camera) {
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
-		if (!display.floorDrops) return;
+		if (!display.floorDrops || SessionManager.current() == null) return;
 		SafariBiome biome = SafariLocation.biome();
 		if (biome == null) return;
 		if (SparklingMode.hideFloorDrops(biome, SessionManager.current())) return;

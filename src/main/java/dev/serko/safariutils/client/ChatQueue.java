@@ -105,6 +105,7 @@ public final class ChatQueue {
 		String line = queued.line();
 		if (line.startsWith("/")) {
 			if (line.regionMatches(true, 1, "pc ", 0, 3)) {
+				if (queued.verifiedParty() && PartyRosterWatch.confirmedSolo()) return;
 				if (!queued.verifiedParty() && !PartyRosterWatch.canSendPartyChat()) return;
 				PartyErrorSuppressor.expectResponse();
 			}

@@ -92,6 +92,11 @@ public final class AlertSounds {
 		.sorted(Comparator.comparing(Choice::label, String.CASE_INSENSITIVE_ORDER)).toList();
 	private static final String[] LABELS = labelsById();
 	private static final List<Pending> PENDING = new ArrayList<>();
+	private static final List<Pending> TICKET_REMINDER_PENDING = new ArrayList<>();
+	private static final List<Note> TICKET_REMINDER_MELODY = ticketReminderMelody();
+	private static boolean ticketReminderActive;
+	private static float ticketReminderVolume;
+	private static float ticketReminderPitch;
 	private static final Deque<Pending> SPARKLING_PENDING = new ArrayDeque<>();
 	private static final float SPARKLING_BASE_VOLUME_GAIN = 3.75f;
 	public static final int SPARKLING_SONG_COUNT = 11;
@@ -292,6 +297,65 @@ public final class AlertSounds {
 	public static void preview(Minecraft client, int id, float volume, float pitch) {
 		PENDING.clear();
 		play(client, id, volume, pitch);
+	}
+
+	/** A continuous rising and falling discovery call reserved for ticket-trading guests. */
+	public static void playTicketTradingReminder(Minecraft client, float volume, float pitch) {
+		if (client.player == null || volume <= 0f) return;
+		ticketReminderVolume = volume;
+		ticketReminderPitch = pitch;
+		if (ticketReminderActive) return;
+		ticketReminderActive = true;
+		TICKET_REMINDER_PENDING.clear();
+		queueLayers(TICKET_REMINDER_PENDING, TICKET_REMINDER_MELODY,
+			ticketReminderVolume, ticketReminderPitch);
+	}
+
+	private static List<Note> ticketReminderMelody() {
+		SoundEvent chime = SoundEvents.NOTE_BLOCK_CHIME.value();
+		return List.of(
+			new Note(chime, 0, .63f), new Note(chime, 3, .71f),
+			new Note(chime, 6, .79f), new Note(chime, 9, .89f),
+			new Note(chime, 12, 1f), new Note(chime, 15, 1.12f),
+			new Note(chime, 18, 1.26f), new Note(chime, 21, 1.41f),
+			new Note(chime, 24, 1.26f), new Note(chime, 27, 1.12f),
+			new Note(chime, 30, 1f), new Note(chime, 33, .89f),
+			new Note(chime, 36, .79f), new Note(chime, 39, .71f),
+			new Note(chime, 42, .63f));
+	}
+
+	public static void stopTicketTradingReminder() {
+		if (!ticketReminderActive) {
+			TICKET_REMINDER_PENDING.clear();
+			return;
+		}
+		ticketReminderActive = false;
+		TICKET_REMINDER_PENDING.clear();
+		SoundEvent chime = SoundEvents.NOTE_BLOCK_CHIME.value();
+		queueLayeredNote(TICKET_REMINDER_PENDING, chime, 0,
+			ticketReminderVolume * .55f, ticketReminderPitch * .79f);
+		queueLayeredNote(TICKET_REMINDER_PENDING, chime, 4,
+			ticketReminderVolume * .30f, ticketReminderPitch * .71f);
+		queueLayeredNote(TICKET_REMINDER_PENDING, chime, 8,
+			ticketReminderVolume * .12f, ticketReminderPitch * .63f);
+	}
+
+	private static void queueLayers(List<Pending> target, List<Note> notes,
+			float volume, float pitch) {
+		for (Note note : notes) {
+			queueLayeredNote(target, note.sound, note.delay, volume, pitch * note.pitch);
+		}
+	}
+
+	private static void queueLayeredNote(List<Pending> target, SoundEvent sound,
+			int delay, float volume, float pitch) {
+		int layers = Math.max(1, (int) Math.ceil(volume));
+		for (int layer = 0; layer < layers; layer++) {
+			float layerVolume = Math.min(1f, volume - layer);
+			if (layerVolume > 0f) {
+				target.add(new Pending(sound, tick + delay, layerVolume, pitch));
+			}
+		}
 	}
 
 	public static String sparklingIntensityLabel(int theme) {
@@ -746,6 +810,8 @@ public final class AlertSounds {
 		Minecraft client = Minecraft.getInstance();
 		if (client.player == null) {
 			PENDING.clear();
+			TICKET_REMINDER_PENDING.clear();
+			ticketReminderActive = false;
 			SPARKLING_PENDING.clear();
 			stopSparklingSongs(client);
 			return;
@@ -756,6 +822,11 @@ public final class AlertSounds {
 			playSparklingScoreTick(client);
 		}
 		drain(client, PENDING);
+		drain(client, TICKET_REMINDER_PENDING);
+		if (ticketReminderActive && TICKET_REMINDER_PENDING.isEmpty()) {
+			queueLayers(TICKET_REMINDER_PENDING, TICKET_REMINDER_MELODY,
+				ticketReminderVolume, ticketReminderPitch);
+		}
 		drainSparkling(client);
 	}
 

@@ -631,26 +631,34 @@ public final class SparklingScreen extends Screen {
 
 	private LookupState lookupState() {
 		String entered = lookupName == null ? lastLookupName : lookupName.getValue().trim();
-		boolean same = lastLookup != null && entered.equalsIgnoreCase(lastLookup.username());
+		boolean blank = entered.isEmpty();
+		boolean displayed = lastLookup != null;
 		long now = System.currentTimeMillis();
-		long cachedAt = same ? recentLookupCachedAt.getOrDefault(
+		long cachedAt = displayed ? recentLookupCachedAt.getOrDefault(
 			lastLookup.username().toLowerCase(Locale.ROOT), 0L) : 0L;
-		boolean freshCached = same && now - cachedAt < LOOKUP_CACHE_MILLIS;
+		boolean freshCached = displayed && now - cachedAt < LOOKUP_CACHE_MILLIS;
 		long cooldown = SharedSparklingProviders.provider()
 			.map(provider -> Math.max(0L, provider.lookupAvailableAt() - now)).orElse(0L);
-		boolean enabled = !lookupLoading && !freshCached && cooldown == 0L
-			&& SharedSparklingProviders.available();
-		String label = lookupLoading ? "Loading…" : freshCached ? "Cached"
-			: cooldown > 0L ? "Lookup " + ((cooldown + 999L) / 1_000L) + "s"
-			: same ? "Refresh" : "Lookup";
-		int colour = enabled ? same ? COLLECTION_GOLD : AQUA : DIM;
+		boolean available = SharedSparklingProviders.available();
+		boolean refreshable = blank && displayed && !freshCached && cooldown == 0L && available;
+		boolean enabled = !lookupLoading && (refreshable
+			|| !blank && cooldown == 0L && available);
+		String label;
+		if (lookupLoading) label = "Loading…";
+		else if (blank && displayed) label = refreshable ? "Refresh" : "Loaded";
+		else if (!blank && cooldown > 0L) {
+			label = "Lookup " + ((cooldown + 999L) / 1_000L) + "s";
+		} else label = "Lookup";
+		int colour = enabled ? refreshable ? COLLECTION_GOLD : AQUA : DIM;
 		return new LookupState(enabled, label, colour);
 	}
 
 	/** Starts a lookup only when the same state shown by the button allows it. */
 	private boolean lookupPlayer() {
 		if (lookupName == null || !lookupState().enabled()) return false;
-		String username = lookupName.getValue().trim();
+		String entered = lookupName.getValue().trim();
+		String username = entered.isEmpty() && lastLookup != null
+			? lastLookup.username() : entered;
 		if (!username.matches("[A-Za-z0-9_]{1,16}")) {
 			setStatus("Enter a valid Minecraft username", RED);
 			return false;
@@ -690,6 +698,9 @@ public final class SparklingScreen extends Screen {
 	private static void rememberLookup(SparklingPlayerLookup result) {
 		CanonicalPlayerNames.remember(result.username());
 		String key = result.username().toLowerCase(Locale.ROOT);
+		if (lastLookup != null && lastLookup.username().equalsIgnoreCase(result.username())) {
+			lastLookup = result;
+		}
 		recentLookups.removeIf(saved -> saved.username().equalsIgnoreCase(result.username()));
 		recentLookups.addFirst(result);
 		recentLookupCachedAt.put(key, System.currentTimeMillis());
@@ -754,8 +765,12 @@ public final class SparklingScreen extends Screen {
 
 	private void selectRecent(SparklingPlayerLookup saved) {
 		lastLookup = saved;
-		lastLookupName = saved.username();
-		if (lookupName != null) lookupName.setValue(saved.username());
+		lastLookupName = "";
+		if (lookupName != null) {
+			lookupName.setValue("");
+			lookupName.setFocused(false);
+		}
+		setFocused(null);
 		recentLookupsOpen = false;
 		status = defaultStatus(Tab.LOOKUP);
 		statusColour = DIM;

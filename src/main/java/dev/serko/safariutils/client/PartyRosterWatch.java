@@ -10,6 +10,8 @@ import java.util.regex.Pattern;
 
 /** Quietly reads /party list so attendance can be compared with the real party size. */
 public final class PartyRosterWatch {
+	public enum State { UNKNOWN, SOLO, PARTY, TRANSITIONING }
+
 	private static final long REFRESH_DELAY_MILLIS = 250L;
 	private static final long CAPTURE_TIMEOUT_MILLIS = 3_000L;
 	private static final long RESPONSE_TAIL_MILLIS = 300L;
@@ -35,6 +37,8 @@ public final class PartyRosterWatch {
 	private static final List<String> pendingRosterLines = new ArrayList<>();
 	private static List<String> rosterLines = List.of();
 	private static long rosterCapturedAt;
+	private static State state = State.UNKNOWN;
+	private static long generation;
 
 	private PartyRosterWatch() {}
 
@@ -76,7 +80,25 @@ public final class PartyRosterWatch {
 		if (overlay || message == null) return true;
 		String line = LEGACY_COLOURS.matcher(message.getString()).replaceAll("").trim();
 		String lower = line.toLowerCase(Locale.ROOT);
-		if (membershipChanged(lower)) schedule(joinedParty(lower));
+		if (membershipChanged(lower)) {
+			generation++;
+			if (authoritativeSolo(lower)) {
+				expectedPlayers = 1;
+				known = true;
+				localLeader = true;
+				sawLeader = true;
+				state = State.SOLO;
+				rosterLines = List.of();
+				rosterCapturedAt = System.currentTimeMillis();
+				capturing = false;
+				requestAt = 0L;
+				pendingRosterLines.clear();
+				DebugLog.line("PARTYTIME", "authoritative solo transition generation=" + generation);
+			} else {
+				state = State.TRANSITIONING;
+				schedule(joinedParty(lower));
+			}
+		}
 		var count = COUNT.matcher(line);
 		if (!capturing) {
 			return System.currentTimeMillis() > suppressRosterTailUntil
@@ -117,16 +139,29 @@ public final class PartyRosterWatch {
 	}
 
 	public static int expectedPlayers() {
-		return known ? Math.max(1, expectedPlayers) : 1;
+		return known() ? Math.max(1, expectedPlayers) : 1;
 	}
 
 	public static boolean known() {
-		return known;
+		return known && state != State.TRANSITIONING;
+	}
+
+	public static State state() {
+		return state;
+	}
+
+	/** Changes whenever an authoritative party composition event is observed. */
+	public static long generation() {
+		return generation;
 	}
 
 	/** Whether the last authoritative party-list response contains another player. */
 	public static boolean inParty() {
-		return known && expectedPlayers > 1;
+		return known() && state == State.PARTY && expectedPlayers > 1;
+	}
+
+	public static boolean confirmedSolo() {
+		return known() && state == State.SOLO;
 	}
 
 	/** Last complete roster response. Failed refreshes never erase this stable snapshot. */
@@ -136,7 +171,7 @@ public final class PartyRosterWatch {
 
 	/** True only for a name in the most recently confirmed party-list response. */
 	public static boolean isListedMember(String name) {
-		if (!known || name == null || name.isBlank()) return false;
+		if (!known() || name == null || name.isBlank()) return false;
 		Pattern exactName = Pattern.compile("(?i)(?<![A-Za-z0-9_])"
 			+ Pattern.quote(name) + "(?![A-Za-z0-9_])");
 		return rosterLines.stream().anyMatch(line -> exactName.matcher(line).find());
@@ -146,14 +181,14 @@ public final class PartyRosterWatch {
 		return rosterCapturedAt;
 	}
 
-	/** Unknown status fails open; a confirmed solo player does not send party chat. */
+	/** Ordinary party chat is sent only from a currently confirmed multi-player party. */
 	public static boolean canSendPartyChat() {
-		return !known || expectedPlayers > 1;
+		return inParty();
 	}
 
 	/** The Manager itself is guarded only for the party leader; members may open its ticket menu. */
 	public static boolean localPlayerIsLeader() {
-		return known && sawLeader && localLeader;
+		return known() && sawLeader && localLeader;
 	}
 
 	private static void schedule(boolean announce) {
@@ -169,6 +204,19 @@ public final class PartyRosterWatch {
 		if (requestAt > 0L && requestAt < refreshDeferredUntil) {
 			requestAt = refreshDeferredUntil;
 		}
+	}
+
+	/** Preserves the last snapshot across a Hypixel server transfer while requesting a fresh one. */
+	public static void onConnectionJoin() {
+		capturing = false;
+		requestAt = 0L;
+		captureUntil = 0L;
+		suppressRosterTailUntil = 0L;
+		pendingRosterLines.clear();
+		state = known ? State.TRANSITIONING : State.UNKNOWN;
+		wasConnected = true;
+		wasInsideSafari = false;
+		schedule(false);
 	}
 
 	private static void request() {
@@ -196,6 +244,8 @@ public final class PartyRosterWatch {
 
 	/** Clears all automatic command and capture state at a server boundary. */
 	public static void resetConnectionState() {
+		boolean hadState = known || state != State.UNKNOWN || capturing || requestAt > 0L
+			|| !rosterLines.isEmpty();
 		known = false;
 		sawLeader = false;
 		capturing = false;
@@ -208,6 +258,8 @@ public final class PartyRosterWatch {
 		pendingRosterLines.clear();
 		rosterLines = List.of();
 		rosterCapturedAt = 0L;
+		state = State.UNKNOWN;
+		if (hadState) generation++;
 		wasInsideSafari = false;
 		wasConnected = false;
 	}
@@ -219,12 +271,21 @@ public final class PartyRosterWatch {
 		// A missing or malformed response must fail open: ticket protection should
 		// never strand the player because Hypixel did not answer /party list.
 		if (complete) {
+			boolean changed = !known || expectedPlayers != pendingExpectedPlayers
+				|| localLeader != pendingLocalLeader
+				|| !rosterLines.equals(pendingRosterLines);
 			expectedPlayers = pendingExpectedPlayers;
 			localLeader = pendingLocalLeader;
 			sawLeader = true;
 			known = true;
 			rosterLines = List.copyOf(pendingRosterLines);
 			rosterCapturedAt = System.currentTimeMillis();
+			state = expectedPlayers > 1 ? State.PARTY : State.SOLO;
+			if (changed) generation++;
+		} else {
+			// A timed-out refresh must not leave a previously confirmed snapshot in
+			// TRANSITIONING forever. Keep it available until another complete reply.
+			state = known ? (expectedPlayers > 1 ? State.PARTY : State.SOLO) : State.UNKNOWN;
 		}
 		capturing = false;
 		sawCount = false;
@@ -241,9 +302,14 @@ public final class PartyRosterWatch {
 		return line.endsWith(" joined the party.") || line.endsWith(" has left the party.")
 			|| line.contains(" was removed from your party") || line.contains("removed from the party")
 			|| line.contains(" was kicked from the party") || line.contains("you left the party")
-			|| line.contains("party was disbanded")
+			|| line.contains("party was disbanded") || line.contains("has disbanded the party")
 			|| line.contains("party was transferred to") || line.contains(" has promoted ")
 			|| line.contains("you have joined ") && line.endsWith("'s party!");
+	}
+
+	private static boolean authoritativeSolo(String line) {
+		return line.contains("you left the party") || line.contains("party was disbanded")
+			|| line.contains("has disbanded the party");
 	}
 
 	private static boolean joinedParty(String line) {

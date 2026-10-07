@@ -5,8 +5,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
-import dev.serko.safariutils.client.SafariConfig;
-import dev.serko.safariutils.data.Critter;
+import net.minecraft.client.gui.screens.Screen;
 
 /** Optional source for the Sparkling species shared by a party. */
 public interface SharedSparklingProvider {
@@ -15,15 +14,7 @@ public interface SharedSparklingProvider {
 		return Optional.empty();
 	}
 
-	default void tickPrivateFeatures() { }
-	default void onConnectionJoin() { }
-	default void onConnectionExit() { }
-	default void onServerMessage(String line) { }
-	default void onRunStarted() { }
-	default void onSparklingDetected(Critter critter) { }
-	default void onLootSharedBy(String player) { }
-	default void sanitizePrivateSettings(SafariConfig.SparklingConfig config) { }
-	default void openPrivateSettings() { }
+	default void openTicketTradingTest(Screen parent) { }
 
 	/** Reports automatic loading state and whether manual fallback controls are needed. */
 	default PartyRefreshStatus partyRefreshStatus() {

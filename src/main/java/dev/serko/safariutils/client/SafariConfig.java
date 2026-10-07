@@ -110,8 +110,7 @@ public class SafariConfig {
 		@SettingInfo(name = "Ticket Trading",
 			desc = "Configure trusted players for timed Safari ticket trading")
 		@SettingAction(buttonText = "Configure")
-		public Runnable privateConfigureTicketTrading =
-			dev.serko.safariutils.api.SharedSparklingProviders::openPrivateSettings;
+		public Runnable configureTicketTrading = TicketTradingScreen::open;
 	}
 
 	public static class DisplayConfig {

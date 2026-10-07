@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.7.0] - 2026-10-07
+
+### New
+
+- Added Ticket Trading to every build with trusted profiles, active and backup slots, per-critter Sparkling filters, timed invites, warps, and guest acceptance
+- Added compact party Sparkling signals and a persistent ticket reminder for waiting guests
+
+### Changes & Additions
+
+- Improved party-state tracking across rapid joins, leaves, disbands, transfers, and server changes
+- Made Extra announce Sparkling detections immediately while Safe Mode continues to wait for visible confirmation
+- Reduced automatic diagnostic noise while retaining focused party, run, and Sparkling state changes
+
+### Fixes
+
+- Prevented confirmed solo players from sending queued party chat or leaving a nonexistent party
+- Paused automatic Ticket Trading acceptance after a failed server join to avoid repeated disconnects
+- Hid floor-drop block faces until a Safari run has started
+- Fixed stale party snapshots and delayed refreshes during rapid Ticket Trading transitions
+- Centered banner text and wrapped long alerts without clipping Sparkling effects
+
 ## [2.6.0] - 2026-10-03
 
 ### Changes & Additions

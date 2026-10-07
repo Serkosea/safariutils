@@ -106,7 +106,7 @@ public final class SparklingMode {
 			|| lower.contains(" was kicked from the party")
 			|| (lower.startsWith("you have joined ") && lower.endsWith("'s party!"))
 			|| lower.contains("you left the party")
-			|| lower.contains("party was disbanded");
+			|| lower.contains("party was disbanded") || lower.contains("has disbanded the party");
 		if (membershipChanged) {
 			// Keep the current result until the next run's stable roster replaces it.
 			// Clearing first can lose a valid cached result when the same party reconnects.

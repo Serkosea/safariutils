@@ -24,6 +24,7 @@ import dev.serko.safariutils.client.StartingItemsWatch;
 import dev.serko.safariutils.client.PartyRosterWatch;
 import dev.serko.safariutils.client.SafariPartyWatch;
 import dev.serko.safariutils.client.OperationalLog;
+import dev.serko.safariutils.client.TicketTrading;
 import dev.serko.safariutils.api.PartyItemSyncProviders;
 import dev.serko.safariutils.client.WallTracker;
 import dev.serko.safariutils.client.SafeMode;
@@ -246,6 +247,7 @@ public final class SessionManager {
 		ChatParser.SparklingCatch sparkling = ChatParser.sparklingCatch(line);
 		if (sparkling != null) {
 			SparklingWatch.onCaught(sparkling.critter());
+			TicketTrading.onSparklingCaught(sparkling.critter());
 			if (current != null) {
 				SparklingMode.onSparklingCaught(sparkling.critter());
 				current.recordSparkling(sparkling.critter(), sparkling.catcher(), now);
@@ -327,7 +329,7 @@ public final class SessionManager {
 		}
 		current.record(event, now);
 		if (event.type() == CritterEvent.Type.SHARED_CATCH) {
-			dev.serko.safariutils.api.SharedSparklingProviders.onLootSharedBy(event.catcher());
+			TicketTrading.onSharedCatch(event.catcher());
 		}
 		if (event.isCatch()) {
 			int caught = current.partyCatches(event.critter());
@@ -419,7 +421,7 @@ public final class SessionManager {
 		announcedAllButMacaw = false;
 		announcedAllDone = false;
 		PartyItemSyncProviders.onRunStarted();
-		dev.serko.safariutils.api.SharedSparklingProviders.onRunStarted();
+		TicketTrading.onRunStarted();
 	}
 
 	/** Clears one Safari instance's transient trackers before any ticket is submitted. */
@@ -512,6 +514,7 @@ public final class SessionManager {
 		long now = System.currentTimeMillis();
 		boolean alreadyRecorded = current != null && current.sparklings().contains(critter);
 		SparklingWatch.onCaught(critter);
+		TicketTrading.onSparklingCaught(critter);
 		if (current == null) return;
 		SparklingMode.onSparklingCaught(critter);
 		// Hideyho normally has no global catch line, but remain idempotent if Hypixel

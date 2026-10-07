@@ -7,8 +7,7 @@ import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.Set;
 
-import dev.serko.safariutils.client.SafariConfig;
-import dev.serko.safariutils.data.Critter;
+import net.minecraft.client.gui.screens.Screen;
 
 /** Loads the ignored private provider when it was explicitly included in a build. */
 public final class SharedSparklingProviders {
@@ -29,40 +28,8 @@ public final class SharedSparklingProviders {
 		return PROVIDER.flatMap(SharedSparklingProvider::updatePage).orElse(fallback);
 	}
 
-	public static void tickPrivateFeatures() {
-		PROVIDER.ifPresent(SharedSparklingProvider::tickPrivateFeatures);
-	}
-
-	public static void onConnectionJoin() {
-		PROVIDER.ifPresent(SharedSparklingProvider::onConnectionJoin);
-	}
-
-	public static void onConnectionExit() {
-		PROVIDER.ifPresent(SharedSparklingProvider::onConnectionExit);
-	}
-
-	public static void onServerMessage(String line) {
-		PROVIDER.ifPresent(provider -> provider.onServerMessage(line));
-	}
-
-	public static void onRunStarted() {
-		PROVIDER.ifPresent(SharedSparklingProvider::onRunStarted);
-	}
-
-	public static void onSparklingDetected(Critter critter) {
-		PROVIDER.ifPresent(provider -> provider.onSparklingDetected(critter));
-	}
-
-	public static void onLootSharedBy(String player) {
-		PROVIDER.ifPresent(provider -> provider.onLootSharedBy(player));
-	}
-
-	public static void sanitizePrivateSettings(SafariConfig.SparklingConfig config) {
-		PROVIDER.ifPresent(provider -> provider.sanitizePrivateSettings(config));
-	}
-
-	public static void openPrivateSettings() {
-		PROVIDER.ifPresent(SharedSparklingProvider::openPrivateSettings);
+	public static void openTicketTradingTest(Screen parent) {
+		PROVIDER.ifPresent(provider -> provider.openTicketTradingTest(parent));
 	}
 
 	public static void tick() {

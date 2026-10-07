@@ -8,7 +8,9 @@ SafariUtils is a client-side Fabric mod for Hypixel SkyBlock's Critter Safari. I
 
 - Shared code: `src/main/java`
 - Profile compatibility code: `src/<profile>/java`
-- Optional ignored extension: `private-api/`
+- Shared Ticket Trading: `src/main/java/dev/serko/safariutils/client/TicketTrading*.java`
+- Optional ignored API extension: `private-api/src/main/`
+- Developer-only simulator: `private-api/src/developer/`
 - Safe build: `./gradlew build`
 - Extra build: `./gradlew build -PextraBuild=true`
 - Other profile: add `-PminecraftProfile=<profile>`
@@ -17,8 +19,8 @@ SafariUtils is a client-side Fabric mod for Hypixel SkyBlock's Critter Safari. I
 
 Build type alone controls the Safe Mode and Developer settings categories. Ordinary
 settings remain visible regardless of the configuration class that owns their persisted
-field. Safe builds expose the Safe Mode explanation; Extra adds configurable Safe
-Mode options; Private adds the ignored API provider; Developer adds diagnostics and testing.
+field. Safe builds force Safe Mode; Extra adds configurable Safe Mode options; Private
+adds the ignored API provider; Developer adds diagnostics and the command-free Ticket Trading simulator.
 
 SafariUtils diagnostic files and their controls are Developer-only. Release variants
 still report failures to Minecraft's standard log without starting the custom writer.
@@ -96,6 +98,14 @@ Manual profile lookups have a ten-second request cooldown and a five-minute resu
 
 Party Sync is public, opt-in, and party-chat-backed. Its transient setting resets off each launch. A client sends one compact visible verification token only after the complete Safari roster is present and stable; the token is derived from its displayed username, the current lobby ID, and its action. Parsed objective traffic remains disabled until every current member has confirmed the same protocol. Local state is tracked before confirmation, then sent as a coalesced authoritative snapshot with batched confirmed hives. Disabling sync during an active synchronized run sends the matching sender/lobby-bound shutdown token, immediately stopping transport for every client while preserving local state. Departures retain confirmed remaining members, while a newly added member requires a fresh readiness check on the next stable Safari visit. Solo has complete local state without sending messages. Any future remote transport remains deferred and must preserve the documented privacy design: short-lived end-to-end-encrypted rooms, no credentials or private account data, and no developer/user access to connection metadata beyond what a trusted provider must process.
 
+Ticket Trading is public, opt-in, and resets off each launch. The shared implementation owns
+trusted profiles, active and backup slots, timed party commands, Sparkling filters, and compact
+lobby-bound Sparkling notices. Host automation requires a fresh authoritative roster proving
+local leadership; confirmed solo guests accept directly, confirmed party guests leave before
+accepting Sparkling invites, and unknown party state retries only after Hypixel proves a party
+conflict. Failed server joins suspend guest acceptance for 45 seconds. The command-free simulator
+and randomized invariant audit compile only into Developer jars from `private-api/src/developer/`.
+
 Player names shown by the mod use authoritative capitalization from the live player list,
 private lookup results, or the cached unauthenticated Minecraft profile lookup. Rank colors
 come from cached tab-list styles or the optional private provider; unknown colors fall back
@@ -117,7 +127,7 @@ Responsive screens reflow before they scale. Settings narrows its single navigat
 
 UI centering always means optical/geometric centering of the visible pixels. Do not include glyph advance padding, transparent space, or text shadows when calculating centered positions; draw shadows only after the primary shape is centered.
 
-The settings footer shows the result of one asynchronous GitHub release check per launch. Release notes are wrapped and cached only when their source or width changes. Every build opens the public SafariUtils website for downloads. Data Tools performs compact versioned settings transfer and on-demand run-history checks. Imports and repairs validate first, preserve the current file in `config/safariutils/backups/<type>/`, and never run from a render or tick path.
+The settings footer shows the result of one asynchronous GitHub release check per launch. Release notes are wrapped and cached only when their source or width changes. Every public build opens the SafariUtils website, whose download modal links directly to the latest GitHub release assets so GitHub retains download statistics; do not copy public jars into the site deployment. Private builds retain their separate private page and hosted jars. Data Tools performs compact versioned settings transfer and on-demand run-history checks. Imports and repairs validate first, preserve the current file in `config/safariutils/backups/<type>/`, and never run from a render or tick path.
 
 Use `ResponsiveUI` for fixed logical canvases and convert mouse coordinates for scaled widgets. `HudBox` is the source of truth for live/editor positioning. The HUD editor keeps outlines one pixel inside each screen edge and supports unsnapped one-pixel arrow adjustments.
 
@@ -157,7 +167,7 @@ config/safariutils/
 
 The optional static-entities JSON appears only when Hideonfloor research saves a new candidate. Settings, history, and research data use atomic replacement. Party Sync resets each launch.
 
-Public jars may contain only the public party-sync service. They must contain no private API classes or services, saved owner identities or UUIDs, API keys, or generated key payloads. Public documentation and release notes must not advertise private-only API behavior. Never commit `private-api/`, key files, generated private sources, user configuration/history/logs, or built jars.
+Public jars may contain the shared Party Sync and Ticket Trading implementations. They must contain no private API classes or services, saved owner identities or UUIDs, API keys, generated key payloads, or Developer simulator classes. Public documentation and release notes must not advertise private-only API behavior. Never commit `private-api/`, key files, generated private sources, user configuration/history/logs, or built jars.
 
 ## Release checklist
 

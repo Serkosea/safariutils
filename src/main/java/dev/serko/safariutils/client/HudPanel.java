@@ -289,7 +289,7 @@ public final class HudPanel {
 					   int borderColour) {
 		if (rows.isEmpty()) return;
 		if (SpecialTheme.rainbow()) {
-			renderSpecialRainbow(graphics, font, x, y, scale);
+			renderSpecialRainbow(graphics, font, x, y, scale, SpecialTheme.mode());
 			return;
 		}
 		if (scale == 1.0f) {
@@ -306,14 +306,14 @@ public final class HudPanel {
 	/** Draws this panel with the same continuous animated rainbow used by Sparkling. */
 	public void renderRainbow(GuiGraphicsExtractor graphics, Font font, int x, int y, float scale) {
 		if (rows.isEmpty()) return;
-		renderSpecialRainbow(graphics, font, x, y, scale);
+		renderSpecialRainbow(graphics, font, x, y, scale, SpecialTheme.RAINBOW);
 	}
 
 	/** Draws ordinary panel content with only the frame changed to rainbow. */
 	public void renderRainbowBorder(GuiGraphicsExtractor graphics, Font font, int x, int y, float scale) {
 		if (rows.isEmpty()) return;
 		if (SpecialTheme.rainbow()) {
-			renderSpecialRainbow(graphics, font, x, y, scale);
+			renderSpecialRainbow(graphics, font, x, y, scale, SpecialTheme.mode());
 			return;
 		}
 		if (scale == 1.0f) {
@@ -332,18 +332,18 @@ public final class HudPanel {
 	}
 
 	private void renderSpecialRainbow(GuiGraphicsExtractor graphics, Font font,
-								  int x, int y, float scale) {
+			int x, int y, float scale, int theme) {
 		if (scale == 1.0f) {
-			draw(graphics, font, x, y, 0, true, true);
-			SpecialTheme.border(graphics, x, y, width(font), height(), 1);
+			draw(graphics, font, x, y, 0, true, true, theme);
+			SpecialTheme.border(graphics, x, y, width(font), height(), 1, null, theme);
 			drawInnerKeyline(graphics, x, y, width(font), height());
 			return;
 		}
 		graphics.pose().pushMatrix();
 		graphics.pose().translate(x, y);
 		graphics.pose().scale(scale, scale);
-		draw(graphics, font, 0, 0, 0, true, true);
-		SpecialTheme.border(graphics, 0, 0, width(font), height(), 1);
+		draw(graphics, font, 0, 0, 0, true, true, theme);
+		SpecialTheme.border(graphics, 0, 0, width(font), height(), 1, null, theme);
 		drawInnerKeyline(graphics, 0, 0, width(font), height());
 		graphics.pose().popMatrix();
 	}
@@ -359,6 +359,12 @@ public final class HudPanel {
 
 	private void draw(GuiGraphicsExtractor graphics, Font font, int left, int y,
 					  int borderColour, boolean rainbowTitle, boolean rainbowAll) {
+		draw(graphics, font, left, y, borderColour, rainbowTitle, rainbowAll,
+			SpecialTheme.mode());
+	}
+
+	private void draw(GuiGraphicsExtractor graphics, Font font, int left, int y,
+			int borderColour, boolean rainbowTitle, boolean rainbowAll, int theme) {
 		Layout measured = layout(font);
 		int panelWidth = measured.width();
 		int panelHeight = height();
@@ -368,7 +374,7 @@ public final class HudPanel {
 			BACKGROUND_TOP, BACKGROUND_BOTTOM);
 		UIDraw.outline(graphics, left + 1, y + 1, panelWidth - 2, panelHeight - 2, INNER_KEYLINE);
 		if (rainbowAll) SpecialTheme.stars(graphics, left + 2, y + 2,
-			panelWidth - 4, panelHeight - 4, 1.5f, true);
+			panelWidth - 4, panelHeight - 4, 1.5f, theme);
 		if ((borderColour >>> 24) != 0) {
 			UIDraw.outline(graphics, left, y, panelWidth, panelHeight, borderColour);
 		}
@@ -384,25 +390,25 @@ public final class HudPanel {
 				case BLANK -> {
 				}
 				case TITLE -> {
-					if (rainbowTitle) rainbowText(graphics, font, row.label(), textLeft, rowY);
+					if (rainbowTitle) rainbowText(graphics, font, row.label(), textLeft, rowY, theme);
 					else drawText(graphics, font, Component.literal(row.label()), textLeft, rowY,
 						row.labelColour());
 				}
 				case OBJECTIVE_TITLE -> {
-					if (rainbowTitle) rainbowText(graphics, font, row.label(), textLeft, rowY);
+					if (rainbowTitle) rainbowText(graphics, font, row.label(), textLeft, rowY, theme);
 					else drawText(graphics, font, Component.literal(row.label()), textLeft, rowY,
 						row.labelColour());
 					drawObjectiveStatus(graphics, font, textLeft + font.width(row.label()), rowY,
 						row.current(), row.max(), row.valueColour(), left + panelWidth);
 				}
 				case TEXT -> {
-					if (rainbowAll) rainbowText(graphics, font, row.label(), textLeft, rowY);
+					if (rainbowAll) rainbowText(graphics, font, row.label(), textLeft, rowY, theme);
 					else drawText(graphics, font, Component.literal(row.label()),
 						textLeft, rowY, row.labelColour());
 				}
 				case TITLE_SUFFIX -> {
 					if (rainbowTitle) {
-						rainbowText(graphics, font, row.label() + row.value(), textLeft, rowY);
+						rainbowText(graphics, font, row.label() + row.value(), textLeft, rowY, theme);
 					} else {
 						drawText(graphics, font, Component.literal(row.label()), textLeft, rowY, row.labelColour());
 						drawText(graphics, font, Component.literal(row.value()),
@@ -411,44 +417,44 @@ public final class HudPanel {
 				}
 				case SPARKLING_MODE_TITLE -> {
 					if (rainbowTitle) {
-						rainbowText(graphics, font, row.label() + row.value(), textLeft, rowY);
+						rainbowText(graphics, font, row.label() + row.value(), textLeft, rowY, theme);
 					} else {
 						drawText(graphics, font, Component.literal(row.label()), textLeft, rowY, row.labelColour());
 						rainbowText(graphics, font, row.value(),
-							textLeft + font.width(row.label()), rowY);
+							textLeft + font.width(row.label()), rowY, theme);
 					}
 				}
 				case PAIR, COMPACT_PAIR, BOLD_PAIR -> {
-					if (rainbowAll) rainbowText(graphics, font, row.label(), textLeft, rowY);
+					if (rainbowAll) rainbowText(graphics, font, row.label(), textLeft, rowY, theme);
 					else drawText(graphics, font, Component.literal(row.label()), textLeft, rowY, row.labelColour());
 					Component value = value(row);
-					if (rainbowAll) SpecialTheme.rainbowText(graphics, font, value,
-						valueRight - font.width(value), rowY);
+					if (rainbowAll) rainbowText(graphics, font, value,
+						valueRight - font.width(value), rowY, theme);
 					else drawText(graphics, font, value,
 						valueRight - font.width(value), rowY, row.valueColour());
 				}
 				case ICON_PAIR, RAINBOW_ICON_PAIR -> {
 					if (rainbowAll || row.kind() == Kind.RAINBOW_ICON_PAIR)
-						rainbowText(graphics, font, row.label(), textLeft, rowY);
+						rainbowText(graphics, font, row.label(), textLeft, rowY, theme);
 					else drawText(graphics, font, Component.literal(row.label()),
 						textLeft, rowY, row.labelColour());
 					// Icons retain their semantic feed/bird colours under every panel theme.
 					drawIconValue(graphics, font, row.icons(),
-						valueRight - iconValueWidth(font, row.icons()), rowY, rainbowAll);
+						valueRight - iconValueWidth(font, row.icons()), rowY, rainbowAll, theme);
 				}
 				case RAINBOW_PAIR -> {
-					rainbowText(graphics, font, row.label(), textLeft, rowY);
+					rainbowText(graphics, font, row.label(), textLeft, rowY, theme);
 					Component value = Component.literal(row.value());
 					rainbowText(graphics, font, row.value(),
-						valueRight - font.width(value), rowY);
+						valueRight - font.width(value), rowY, theme);
 				}
 				case STATUS_PAIR -> {
 					String mark = row.label().substring(0, 1);
 					String name = row.label().substring(1);
 					if (rainbowAll) {
-						rainbowText(graphics, font, row.label(), textLeft, rowY);
+						rainbowText(graphics, font, row.label(), textLeft, rowY, theme);
 						rainbowText(graphics, font, row.value(),
-							valueRight - font.width(row.value()), rowY);
+							valueRight - font.width(row.value()), rowY, theme);
 					} else {
 						drawText(graphics, font, Component.literal(mark), textLeft, rowY,
 							row.current() == 1 ? 0xFF55FF55 : 0xFFFF5555);
@@ -460,7 +466,7 @@ public final class HudPanel {
 				}
 				case BAR, CHECKED_BAR -> {
 					String label = row.kind() == Kind.CHECKED_BAR ? row.label() + " ✔" : row.label();
-					if (rainbowAll) rainbowText(graphics, font, label, textLeft, rowY);
+					if (rainbowAll) rainbowText(graphics, font, label, textLeft, rowY, theme);
 					else {
 						drawText(graphics, font, Component.literal(row.label()), textLeft, rowY, row.labelColour());
 						if (row.kind() == Kind.CHECKED_BAR) {
@@ -469,7 +475,7 @@ public final class HudPanel {
 						}
 					}
 					if (rainbowAll) rainbowText(graphics, font, row.value(),
-						valueRight - font.width(row.value()), rowY);
+						valueRight - font.width(row.value()), rowY, theme);
 					else drawText(graphics, font, Component.literal(row.value()),
 						valueRight - font.width(row.value()), rowY, row.valueColour());
 				}
@@ -480,7 +486,8 @@ public final class HudPanel {
 
 	private static void drawRainbowBorder(GuiGraphicsExtractor graphics, int left, int top,
 									  int panelWidth, int panelHeight) {
-		SpecialTheme.border(graphics, left, top, panelWidth, panelHeight, 1);
+		SpecialTheme.border(graphics, left, top, panelWidth, panelHeight, 1,
+			null, SpecialTheme.RAINBOW);
 	}
 
 	private static void drawInnerKeyline(GuiGraphicsExtractor graphics, int left, int top,
@@ -491,9 +498,19 @@ public final class HudPanel {
 
 	private static void rainbowText(GuiGraphicsExtractor graphics, Font font,
 								 String text, int x, int y) {
-		if (SpecialTheme.rainbow()) {
-			SpecialTheme.rainbowText(graphics, font, text, x, y);
-		} else UIDraw.rainbowText(graphics, font, text, x, y, 0.45f);
+		rainbowText(graphics, font, text, x, y,
+			SpecialTheme.rainbow() ? SpecialTheme.mode() : SpecialTheme.RAINBOW);
+	}
+
+	private static void rainbowText(GuiGraphicsExtractor graphics, Font font,
+			String text, int x, int y, int theme) {
+		rainbowText(graphics, font, Component.literal(text), x, y, theme);
+	}
+
+	private static void rainbowText(GuiGraphicsExtractor graphics, Font font,
+			Component text, int x, int y, int theme) {
+		UIDraw.specialText(graphics, font, text, x, y, 0.45f,
+			theme == SpecialTheme.OFF ? SpecialTheme.RAINBOW : theme);
 	}
 
 	private static String mark(boolean known, boolean complete) {
@@ -592,7 +609,7 @@ public final class HudPanel {
 	}
 
 	private static void drawIconValue(GuiGraphicsExtractor graphics, Font font,
-			List<IconValue> values, int x, int y, boolean rainbowCounts) {
+			List<IconValue> values, int x, int y, boolean rainbowCounts, int theme) {
 		int cursor = x;
 		for (int i = 0; i < values.size(); i++) {
 			if (i > 0) cursor += 5;
@@ -603,7 +620,7 @@ public final class HudPanel {
 			cursor += iconWidth(value.icon()) + 2;
 			if ("✔".equals(value.text())) {
 				graphics.text(font, Component.literal(value.text()), cursor, y, 0xFF55FF55);
-			} else if (rainbowCounts) rainbowText(graphics, font, value.text(), cursor, y);
+			} else if (rainbowCounts) rainbowText(graphics, font, value.text(), cursor, y, theme);
 			else graphics.text(font, Component.literal(value.text()), cursor, y, 0xFFFFFFFF);
 			cursor += font.width(value.text());
 		}

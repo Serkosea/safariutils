@@ -15,6 +15,7 @@
 - Hid floor-drop block faces until a Safari run has started
 - Fixed stale party snapshots and delayed refreshes during rapid Ticket Trading transitions
 - Centered banner text and wrapped long alerts without clipping Sparkling effects
+- Kept Sparkling-detected HUDs on the Rainbow theme instead of inheriting Astral effects
 
 ## Downloads
 

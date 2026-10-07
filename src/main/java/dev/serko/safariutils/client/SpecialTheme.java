@@ -150,22 +150,16 @@ public final class SpecialTheme {
 
 	public static void stars(GuiGraphicsExtractor graphics, int left, int top,
 						 int width, int height, float density) {
-		stars(graphics, left, top, width, height, density, false);
+		stars(graphics, left, top, width, height, density, mode());
 	}
 
-	/** Cached star field which can also be used by the constellation preview. */
-	static void stars(GuiGraphicsExtractor graphics, int left, int top,
-			int width, int height, float density, boolean force) {
-		stars(graphics, left, top, width, height, density,
-			force && mode() == OFF ? CONSTELLATION : mode());
-	}
-
+	/** Cached star field which can also be used by explicit theme previews. */
 	static void constellationStars(GuiGraphicsExtractor graphics, int left, int top,
 			int width, int height, float density) {
 		stars(graphics, left, top, width, height, density, CONSTELLATION);
 	}
 
-	private static void stars(GuiGraphicsExtractor graphics, int left, int top,
+	static void stars(GuiGraphicsExtractor graphics, int left, int top,
 			int width, int height, float density, int theme) {
 		if (theme == OFF || width < 8 || height < 8) return;
 		int densityKey = Math.max(1, Math.round(density * 100f));
@@ -270,7 +264,7 @@ public final class SpecialTheme {
 		border(graphics, left, top, width, height, thickness, null, CONSTELLATION);
 	}
 
-	private static void border(GuiGraphicsExtractor graphics, int left, int top,
+	static void border(GuiGraphicsExtractor graphics, int left, int top,
 			int width, int height, int thickness, ScreenRectangle scissorArea, int theme) {
 		if (width <= 0 || height <= 0) return;
 		int xPhase = Math.floorMod(left, 96);

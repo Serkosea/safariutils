@@ -88,8 +88,12 @@ final class UIDraw {
 
 	static void specialText(GuiGraphicsExtractor graphics, Font font,
 			Component component, int x, int y, float saturation) {
-		Component themed = cachedThemeComponent(font, component, x, saturation,
-			SpecialTheme.mode());
+		specialText(graphics, font, component, x, y, saturation, SpecialTheme.mode());
+	}
+
+	static void specialText(GuiGraphicsExtractor graphics, Font font,
+			Component component, int x, int y, float saturation, int theme) {
+		Component themed = cachedThemeComponent(font, component, x, saturation, theme);
 		graphics.text(font, themed, x, y, 0xFFFFFFFF);
 	}
 

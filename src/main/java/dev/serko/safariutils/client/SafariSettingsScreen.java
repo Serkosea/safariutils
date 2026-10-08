@@ -10,7 +10,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
-import net.fabricmc.loader.api.FabricLoader;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -59,9 +58,7 @@ public final class SafariSettingsScreen extends Screen {
 	private static final String[] CRITTER_GROUPS = Critters.selectionBiomes().stream()
 		.map(biome -> biome.displayName()).toArray(String[]::new);
 	private static final int[] CRITTER_GROUP_STARTS = critterGroupStarts();
-	private static final String MOD_VERSION = FabricLoader.getInstance().getModContainer("safariutils")
-		.map(container -> releaseVersion(container.getMetadata().getVersion().getFriendlyString()))
-		.orElse("unknown");
+	private static final String MOD_VERSION = BuildVersion.releaseVersion();
 	private int CARD;
 	private int CARD_HOVER;
 	private int BACKGROUND;
@@ -313,12 +310,6 @@ public final class SafariSettingsScreen extends Screen {
 		boolean contains(double x, double y) {
 			return x >= left && x < right && y >= top && y < bottom;
 		}
-	}
-
-	private static String releaseVersion(String version) {
-		int profileSuffix = version.indexOf("+mc");
-		String release = profileSuffix < 0 ? version : version.substring(0, profileSuffix);
-		return release.replaceFirst("-(?:extra|private|developer)$", "");
 	}
 
 	public SafariSettingsScreen(Screen parent) {

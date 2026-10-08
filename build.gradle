@@ -99,6 +99,7 @@ dependencies {
 processResources {
 	def expandProps = [
 		version: project.version,
+		component_version: selectedReleaseVersion,
 		minecraft_depends: project.minecraft_depends,
 		safe_build: safeBuild,
 		private_build: privateApiBuild,

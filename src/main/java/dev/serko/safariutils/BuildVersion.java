@@ -28,6 +28,11 @@ public final class BuildVersion {
 		return Boolean.parseBoolean(PROPERTIES.getProperty(name, "false"));
 	}
 
+	/** Standalone SafariUtils release version, also available when embedded in another mod. */
+	public static String releaseVersion() {
+		return PROPERTIES.getProperty("version", "unknown").strip();
+	}
+
 	/** Compact suffix used by the settings title for the four distributed builds. */
 	public static String titleSuffix() {
 		if (DEVELOPER) return "-DEV";

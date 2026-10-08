@@ -4,7 +4,6 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.serko.safariutils.BuildVersion;
 import dev.serko.safariutils.api.SharedSparklingProviders;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 
 import java.net.URI;
@@ -22,7 +21,7 @@ public final class UpdateChecker {
 	private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(8);
 	private static final URI LATEST_RELEASE = URI.create(
 		"https://api.github.com/repos/Serkosea/safariutils/releases/latest");
-	private static final String INSTALLED_VERSION = readCurrentVersion();
+	private static final String INSTALLED_VERSION = BuildVersion.releaseVersion();
 	private static final AtomicBoolean STARTED = new AtomicBoolean();
 	private static volatile String availableVersion = "";
 	private static volatile String latestVersion = "";
@@ -121,12 +120,6 @@ public final class UpdateChecker {
 
 	private static String string(JsonObject object, String key) {
 		return object.has(key) && !object.get(key).isJsonNull() ? object.get(key).getAsString() : "";
-	}
-
-	private static String readCurrentVersion() {
-		return FabricLoader.getInstance().getModContainer("safariutils")
-			.map(container -> normalize(container.getMetadata().getVersion().getFriendlyString()))
-			.orElse("0.0.0");
 	}
 
 	private static String normalize(String version) {

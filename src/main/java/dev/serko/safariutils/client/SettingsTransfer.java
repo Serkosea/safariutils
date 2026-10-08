@@ -2,8 +2,8 @@ package dev.serko.safariutils.client;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import dev.serko.safariutils.BuildVersion;
 import dev.serko.safariutils.io.AtomicFiles;
-import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -148,9 +148,7 @@ final class SettingsTransfer {
 	}
 
 	private static String currentVersion() {
-		return FabricLoader.getInstance().getModContainer("safariutils")
-			.map(container -> normalize(container.getMetadata().getVersion().getFriendlyString()))
-			.orElse("0.0.0");
+		return BuildVersion.releaseVersion();
 	}
 
 	private static boolean isNewer(String candidate, String current) {

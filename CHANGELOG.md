@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Changes & Additions
+
+- Added shared settings components for responsive cards, toggles, and option pickers
+- Standardized inline fields to show the start of long values while idle and the caret at the end while editing
+- Standardized update-status labels across settings
+
+### Fixes
+
+- Prevented Tab and Alt+Tab from changing hidden settings or moving focus into inactive controls
+
 ## [2.7.0] - 2026-10-07
 
 ### New

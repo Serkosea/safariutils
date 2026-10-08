@@ -131,6 +131,7 @@ public final class TicketTradingScreen extends Screen {
 		editorName.setMaxLength(16);
 		editorName.setBordered(false);
 		editorName.setValue(editing == null ? "" : editing.username);
+		SettingsUiKit.showStart(editorName);
 		editorName.setHint(Component.literal("Minecraft username"));
 		editorName.setTextColor(text);
 		editorName.setTextColorUneditable(label);
@@ -613,17 +614,13 @@ public final class TicketTradingScreen extends Screen {
 			int frameX = left + (panelWidth - frameW) / 2;
 			int frameY = top + 34;
 			if (inside(logicalEvent.x(), logicalEvent.y(), frameX, frameY, frameW, 26)) {
-				editorName.setFocused(true);
 				setFocused(editorName);
-				editorName.mouseClicked(new MouseButtonEvent(
-					Math.clamp(logicalEvent.x(), frameX + 8, frameX + frameW - 9),
-					Math.clamp(logicalEvent.y(), frameY + 8, frameY + 17),
-					logicalEvent.buttonInfo()), doubled);
+				SettingsUiKit.focusEnd(editorName);
 				return true;
 			}
 		}
 		setFocused(null);
-		if (editorName != null) editorName.setFocused(false);
+		if (editorName != null) SettingsUiKit.blurToStart(editorName);
 		for (int index = hits.size() - 1; index >= 0; index--) {
 			Hit hit = hits.get(index);
 			if (hit.contains(logicalEvent.x(), logicalEvent.y())) {
@@ -697,6 +694,7 @@ public final class TicketTradingScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
+		if (event.key() == 258) return true;
 		if (event.key() == 256) {
 			if (view != View.MAIN) switchView(View.MAIN);
 			else onClose();
@@ -704,7 +702,7 @@ public final class TicketTradingScreen extends Screen {
 		}
 		if ((event.key() == 257 || event.key() == 335) && editorName != null
 				&& editorName.isFocused()) {
-			editorName.setFocused(false);
+			SettingsUiKit.blurToStart(editorName);
 			setFocused(null);
 			return true;
 		}

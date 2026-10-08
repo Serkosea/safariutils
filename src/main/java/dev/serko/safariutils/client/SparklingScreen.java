@@ -155,6 +155,7 @@ public final class SparklingScreen extends Screen {
 			Component.literal("Minecraft username"));
 		lookupName.setMaxLength(16);
 		lookupName.setValue(lastLookupName);
+		SettingsUiKit.showStart(lookupName);
 		lookupName.setResponder(value -> lastLookupName = value);
 		lookupName.setHint(LOOKUP_HINT_COMPONENT);
 		lookupName.setTextColor(WHITE);
@@ -675,7 +676,7 @@ public final class SparklingScreen extends Screen {
 					lastLookupName = "";
 					if (lookupName != null) {
 						lookupName.setValue("");
-						lookupName.setFocused(false);
+						SettingsUiKit.blurToStart(lookupName);
 					}
 					setFocused(null);
 					setStatus("Loaded " + result.username() + "'s Profile", GREEN);
@@ -768,7 +769,7 @@ public final class SparklingScreen extends Screen {
 		lastLookupName = "";
 		if (lookupName != null) {
 			lookupName.setValue("");
-			lookupName.setFocused(false);
+			SettingsUiKit.blurToStart(lookupName);
 		}
 		setFocused(null);
 		recentLookupsOpen = false;
@@ -876,9 +877,14 @@ public final class SparklingScreen extends Screen {
 	public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
 		double mouseX = event.x() / scale;
 		double mouseY = event.y() / scale;
+		if (lookupName != null && lookupName.isMouseOver(mouseX, mouseY)) {
+			setFocused(lookupName);
+			SettingsUiKit.focusEnd(lookupName);
+			return true;
+		}
 		if (lookupName != null && lookupName.isFocused()
 				&& !lookupName.isMouseOver(mouseX, mouseY)) {
-			lookupName.setFocused(false);
+			SettingsUiKit.blurToStart(lookupName);
 			setFocused(null);
 		}
 		MouseButtonEvent scaledEvent = scale == 1f ? event
@@ -936,6 +942,7 @@ public final class SparklingScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(KeyEvent event) {
+		if (event.key() == 258) return true;
 		if (editor != null && (event.key() == 257 || event.key() == 335)) {
 			commitEditor();
 			return true;
@@ -943,7 +950,7 @@ public final class SparklingScreen extends Screen {
 		if (tab == Tab.LOOKUP && lookupName != null && lookupName.isFocused()
 				&& (event.key() == 257 || event.key() == 335)) {
 			if (lookupPlayer()) {
-				lookupName.setFocused(false);
+				SettingsUiKit.blurToStart(lookupName);
 				setFocused(null);
 			}
 			return true;

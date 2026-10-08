@@ -777,6 +777,7 @@ public final class SafariSettingsScreen extends Screen {
 		search.setHint(searchHintNormal);
 		search.setMaxLength(80);
 		search.setValue(preservedSearch);
+		if (!searchFocused) SettingsUiKit.showStart(search);
 		search.setBordered(false);
 		search.setResponder(value -> {
 			scroll = 0;
@@ -1183,15 +1184,15 @@ public final class SafariSettingsScreen extends Screen {
 		int colour;
 		if (status == UpdateChecker.Status.AVAILABLE) {
 			symbol = "↑";
-			label = "  Update " + UpdateChecker.availableVersion();
+			label = "  UPDATE " + UpdateChecker.availableVersion();
 			colour = GOLD;
 		} else if (status == UpdateChecker.Status.CURRENT) {
 			symbol = "✓";
-			label = "  Up to date";
+			label = "  UP TO DATE";
 			colour = GREEN;
 		} else {
 			symbol = "◇";
-			label = "  Checking updates";
+			label = "  CHECKING UPDATES";
 			colour = DIM;
 		}
 		Component statusText = Component.literal(symbol)
@@ -1681,52 +1682,23 @@ public final class SafariSettingsScreen extends Screen {
 
 	private int drawCombinedSettings(GuiGraphicsExtractor graphics, Object owner,
 			List<Field> fields, int left, int right, int y, int mouseX, int mouseY) {
-		int totalHeight = 0;
-		for (Field field : fields) {
-			totalHeight += settingTextLayout(field,
-				field.getAnnotation(SettingInfo.class), left, right).height;
-		}
-		boolean visible = y + totalHeight > contentViewportTop && y < contentViewportBottom;
-		if (visible) {
-			graphics.fill(left, y, right, y + totalHeight, CARD);
-			int dividerY = y;
-			for (int index = 1; index < fields.size(); index++) {
-				Field previous = fields.get(index - 1);
-				dividerY += settingTextLayout(previous,
-					previous.getAnnotation(SettingInfo.class), left, right).height;
-				graphics.fill(left + 8, dividerY, right - 8, dividerY + 1, BORDER);
-			}
-		}
-
-		int rowY = y;
+		List<SettingsUiKit.CardRow> rows = new ArrayList<>(fields.size());
 		String previousName = null;
-		int hoveredY = Integer.MIN_VALUE;
-		int hoveredHeight = 0;
-		for (int index = 0; index < fields.size(); index++) {
-			Field field = fields.get(index);
+		for (Field field : fields) {
 			SettingInfo option = field.getAnnotation(SettingInfo.class);
 			int rowHeight = settingTextLayout(field, option, left, right).height;
-			if (rowY + rowHeight > contentViewportTop && rowY < contentViewportBottom) {
-				boolean hovered = settingControlHovered(field, left, right, rowY, rowHeight,
-					mouseX, mouseY);
-				if (hovered) graphics.fill(left + 1, rowY, right - 1, rowY + rowHeight, CARD_HOVER);
-				if (hovered) {
-					hoveredY = rowY;
-					hoveredHeight = rowHeight;
-				}
-				drawCombinedSettingRow(graphics, owner, field, option, previousName,
-					left, right, rowY, rowHeight, mouseX, mouseY);
-			}
+			String priorName = previousName;
+			rows.add(new SettingsUiKit.CardRow(rowHeight,
+				(rowTop, height) -> settingControlHovered(field, left, right,
+					rowTop, height, mouseX, mouseY),
+				(rowTop, height) -> drawCombinedSettingRow(graphics, owner, field,
+					option, priorName, left, right, rowTop, height, mouseX, mouseY)));
 			previousName = displayName(option.name());
-			rowY += rowHeight;
 		}
-		// Shared rows meet on their exclusive bottom coordinate. Include that
-		// boundary so the final card edge and every hovered divider are complete.
-		if (visible) outline(graphics, left, y, right - left, totalHeight + 1, BORDER);
-		if (hoveredY != Integer.MIN_VALUE) {
-			outline(graphics, left, hoveredY, right - left, hoveredHeight + 1, CYAN);
-		}
-		return y + totalHeight + SETTINGS_GAP;
+		return SettingsUiKit.drawCombinedCard(graphics, left, right, y,
+			contentViewportTop, contentViewportBottom, rows, CARD, CARD_HOVER,
+			BORDER, CYAN, (x, top, width, height, colour) ->
+				outline(graphics, x, top, width, height, colour)) + SETTINGS_GAP;
 	}
 
 	private boolean settingControlHovered(Field field, int left, int right, int y, int height,
@@ -1921,19 +1893,17 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private static boolean stackedSetting(int left, int right) {
-		return right - left < 430;
+		return SettingsUiKit.stacked(left, right);
 	}
 
 	private static int settingControlWidth(int left, int right, boolean stacked) {
-		return stacked ? Math.max(80, right - left - 24)
-			: Math.clamp((right - left) / 3, 116, 210);
+		return SettingsUiKit.controlWidth(left, right, stacked);
 	}
 
 	private void drawToggle(GuiGraphicsExtractor graphics, int x, int y, boolean enabled) {
-		graphics.fill(x, y, x + 38, y + 18, enabled ? shade(BLUE, 0.48f) : SURFACE);
-		outline(graphics, x, y, 38, 18, enabled ? BLUE : BORDER);
-		int knob = enabled ? x + 23 : x + 3;
-		graphics.fill(knob, y + 3, knob + 12, y + 15, enabled ? CYAN : MUTED);
+		SettingsUiKit.drawToggle(graphics, x, y, enabled, SURFACE, shade(BLUE, 0.48f),
+			BLUE, BORDER, CYAN, MUTED, (left, top, width, height, colour) ->
+				outline(graphics, left, top, width, height, colour));
 	}
 
 	private static int shade(int colour, float amount) {
@@ -1984,13 +1954,13 @@ public final class SafariSettingsScreen extends Screen {
 		List<String> labels = choiceLabels();
 		boolean soundChoice = isSoundChoice(choiceField);
 		int hintHeight = soundChoice ? 12 : 0;
-		int maxRows = Math.max(1, (height - 98 - hintHeight) / 27);
-		int columns = Math.clamp((labels.size() + maxRows - 1) / maxRows, 2, 6);
-		int rows = (labels.size() + columns - 1) / columns;
-		int w = Math.min(680, width - 30);
-		int h = Math.min(height - 30, 68 + hintHeight + rows * 27);
-		int x = (width - w) / 2;
-		int y = (height - h) / 2;
+		SettingsUiKit.ChoiceGrid grid = SettingsUiKit.choiceGrid(width, height,
+			labels.size(), hintHeight);
+		int columns = grid.columns();
+		int w = grid.width();
+		int h = grid.height();
+		int x = grid.left();
+		int y = grid.top();
 		graphics.fill(0, 0, width, height, 0xAA000000);
 		graphics.fill(x, y, x + w, y + h, SURFACE);
 		outline(graphics, x, y, w, h, CYAN);
@@ -1999,7 +1969,7 @@ public final class SafariSettingsScreen extends Screen {
 		if (soundChoice) {
 			drawText(graphics, "Right-click a sound to preview it", x + 14, y + 26, CYAN);
 		}
-		int cellWidth = (w - 28 - (columns - 1) * 6) / columns;
+		int cellWidth = grid.cellWidth();
 		int current = choiceValue();
 		for (int index = 0; index < labels.size(); index++) {
 			int column = index % columns;
@@ -2330,6 +2300,7 @@ public final class SafariSettingsScreen extends Screen {
 		customCalloutEditor.setBordered(false);
 		customCalloutEditor.setMaxLength(48);
 		customCalloutEditor.setValue(ConfigManager.get().sparkling.customAlertCalloutText);
+		SettingsUiKit.showStart(customCalloutEditor);
 		customCalloutEditor.setResponder(value -> {
 			ConfigManager.get().sparkling.customAlertCalloutText = value;
 			SparklingAlertStyle.invalidateCustom();
@@ -2342,7 +2313,7 @@ public final class SafariSettingsScreen extends Screen {
 		customDurationEditor.setMaxLength(5);
 		customDurationEditor.setValue(formatDuration(
 			ConfigManager.get().sparkling.customAlertDuration));
-		customDurationEditor.setCursorPosition(customDurationEditor.getValue().length());
+		SettingsUiKit.showStart(customDurationEditor);
 		customDurationEditor.setResponder(this::previewCustomDuration);
 		UIDraw.rainbowEditBox(customDurationEditor, font);
 		addRenderableWidget(customDurationEditor);
@@ -2352,7 +2323,7 @@ public final class SafariSettingsScreen extends Screen {
 		customVolumeEditor.setMaxLength(3);
 		customVolumeEditor.setValue(Integer.toString(
 			ConfigManager.get().sparkling.customAlertSoundVolume));
-		customVolumeEditor.setCursorPosition(customVolumeEditor.getValue().length());
+		SettingsUiKit.showStart(customVolumeEditor);
 		customVolumeEditor.setResponder(this::previewCustomVolume);
 		UIDraw.rainbowEditBox(customVolumeEditor, font);
 		addRenderableWidget(customVolumeEditor);
@@ -2368,7 +2339,7 @@ public final class SafariSettingsScreen extends Screen {
 		customPreviewResuming = false;
 		setFocused(null);
 		if (search != null) {
-			search.setFocused(false);
+			SettingsUiKit.blurToStart(search);
 			search.visible = false;
 			search.active = false;
 		}
@@ -2379,7 +2350,7 @@ public final class SafariSettingsScreen extends Screen {
 			int mouseX, int mouseY) {
 		updateCustomPreviewSong();
 		if (search != null) {
-			search.setFocused(false);
+			SettingsUiKit.blurToStart(search);
 			search.visible = false;
 			search.active = false;
 		}
@@ -2519,12 +2490,12 @@ public final class SafariSettingsScreen extends Screen {
 		if (customDurationEditor != null) {
 			customDurationEditor.visible = globalEditorsVisible;
 			customDurationEditor.active = globalEditorsVisible;
-			if (!globalEditorsVisible) customDurationEditor.setFocused(false);
+			if (!globalEditorsVisible) SettingsUiKit.blurToStart(customDurationEditor);
 		}
 		if (customVolumeEditor != null) {
 			customVolumeEditor.visible = globalEditorsVisible;
 			customVolumeEditor.active = globalEditorsVisible;
-			if (!globalEditorsVisible) customVolumeEditor.setFocused(false);
+			if (!globalEditorsVisible) SettingsUiKit.blurToStart(customVolumeEditor);
 		}
 		if (globalControls) {
 		int durationY = controlsTop;
@@ -2613,7 +2584,7 @@ public final class SafariSettingsScreen extends Screen {
 		if (customCalloutEditor != null) {
 			customCalloutEditor.visible = globalEditorsVisible;
 			customCalloutEditor.active = globalEditorsVisible;
-			if (!globalEditorsVisible) customCalloutEditor.setFocused(false);
+			if (!globalEditorsVisible) SettingsUiKit.blurToStart(customCalloutEditor);
 			if (globalControls) {
 				int fieldX = x + 112;
 				int fieldWidth = w - 126;
@@ -2908,11 +2879,11 @@ public final class SafariSettingsScreen extends Screen {
 		customPresetNameEditor.setBordered(false);
 		customPresetNameEditor.setMaxLength(40);
 		customPresetNameEditor.setValue(initialValue);
-		customPresetNameEditor.setCursorPosition(customPresetNameEditor.getValue().length());
+		SettingsUiKit.focusEnd(customPresetNameEditor);
 		UIDraw.rainbowEditBox(customPresetNameEditor, font);
 		addRenderableWidget(customPresetNameEditor);
 		setFocused(customPresetNameEditor);
-		customPresetNameEditor.setFocused(true);
+		SettingsUiKit.focusEnd(customPresetNameEditor);
 	}
 
 	private void finishPresetSave() {
@@ -2939,7 +2910,7 @@ public final class SafariSettingsScreen extends Screen {
 		customPresetNaming = false;
 		customPresetRenaming = false;
 		if (customPresetNameEditor != null) {
-			customPresetNameEditor.setFocused(false);
+			SettingsUiKit.blurToStart(customPresetNameEditor);
 			removeWidget(customPresetNameEditor);
 			customPresetNameEditor = null;
 		}
@@ -4308,16 +4279,8 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private boolean focusEditorFrame(MouseButtonEvent event, boolean doubled, EditBox field) {
-		boolean overNativeField = field.isMouseOver(event.x(), event.y());
-		if (overNativeField) super.mouseClicked(event, doubled);
 		setFocused(field);
-		field.setFocused(true);
-		if (!overNativeField) {
-			if (event.x() <= field.getX()) field.setCursorPosition(0);
-			else if (event.x() >= field.getX() + field.getWidth()) {
-				field.setCursorPosition(field.getValue().length());
-			}
-		}
+		SettingsUiKit.focusEnd(field);
 		return true;
 	}
 
@@ -4325,58 +4288,58 @@ public final class SafariSettingsScreen extends Screen {
 		if (search != null && search.isFocused()
 				&& !inside(mouseX, mouseY, searchFrameX, searchFrameY,
 					searchFrameX + searchFrameWidth, searchFrameY + searchFrameHeight)) {
-			search.setFocused(false);
+			SettingsUiKit.blurToStart(search);
 			setFocused(null);
 		}
 		if (customCalloutEditor != null && customCalloutEditor.isFocused()
 				&& !customCalloutBounds.contains(mouseX, mouseY)) {
-			customCalloutEditor.setFocused(false);
+			SettingsUiKit.blurToStart(customCalloutEditor);
 			setFocused(null);
 		}
 		if (customDurationEditor != null && customDurationEditor.isFocused()
 				&& !customDurationBounds.contains(mouseX, mouseY)) {
 			applyCustomDurationEditor();
-			customDurationEditor.setFocused(false);
+			SettingsUiKit.blurToStart(customDurationEditor);
 			setFocused(null);
 		}
 		if (customVolumeEditor != null && customVolumeEditor.isFocused()
 				&& !customVolumeBounds.contains(mouseX, mouseY)) {
 			applyCustomVolumeEditor();
-			customVolumeEditor.setFocused(false);
+			SettingsUiKit.blurToStart(customVolumeEditor);
 			setFocused(null);
 		}
 		if (customPresetNameEditor != null && customPresetNameEditor.isFocused()
 				&& !customPresetNameBounds.contains(mouseX, mouseY)) {
-			customPresetNameEditor.setFocused(false);
+			SettingsUiKit.blurToStart(customPresetNameEditor);
 			setFocused(null);
 		}
 	}
 
 	private boolean blurFocusedInlineField() {
 		if (customPresetNameEditor != null && customPresetNameEditor.isFocused()) {
-			customPresetNameEditor.setFocused(false);
+			SettingsUiKit.blurToStart(customPresetNameEditor);
 			setFocused(null);
 			return true;
 		}
 		if (customCalloutEditor != null && customCalloutEditor.isFocused()) {
-			customCalloutEditor.setFocused(false);
+			SettingsUiKit.blurToStart(customCalloutEditor);
 			setFocused(null);
 			return true;
 		}
 		if (customDurationEditor != null && customDurationEditor.isFocused()) {
 			applyCustomDurationEditor();
-			customDurationEditor.setFocused(false);
+			SettingsUiKit.blurToStart(customDurationEditor);
 			setFocused(null);
 			return true;
 		}
 		if (customVolumeEditor != null && customVolumeEditor.isFocused()) {
 			applyCustomVolumeEditor();
-			customVolumeEditor.setFocused(false);
+			SettingsUiKit.blurToStart(customVolumeEditor);
 			setFocused(null);
 			return true;
 		}
 		if (search != null && search.isFocused()) {
-			search.setFocused(false);
+			SettingsUiKit.blurToStart(search);
 			setFocused(null);
 			return true;
 		}
@@ -4460,6 +4423,7 @@ public final class SafariSettingsScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(KeyEvent event) {
+		if (event.key() == 258) return true;
 		if (customSparklingPanel && customPresetNaming && event.key() == 257) {
 			finishPresetSave();
 			return true;
@@ -4467,7 +4431,6 @@ public final class SafariSettingsScreen extends Screen {
 		if (event.key() == 257 && blurFocusedInlineField()) return true;
 		// Alt+Tab can deliver the Tab key before Windows removes focus. Do not let
 		// Minecraft cycle focus into hidden widgets behind this modal.
-		if (customSparklingPanel && event.key() == 258) return true;
 		if (customSparklingPanel && customPresetMenu && event.key() == 256) {
 			closeCustomPresetMenu();
 			return true;

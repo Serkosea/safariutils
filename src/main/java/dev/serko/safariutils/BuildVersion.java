@@ -33,6 +33,16 @@ public final class BuildVersion {
 		return PROPERTIES.getProperty("version", "unknown").strip();
 	}
 
+	/** Relative config directory used by standalone and embedded distributions. */
+	public static String configDirectory() {
+		String directory = PROPERTIES.getProperty("config_dir", "safariutils").strip();
+		if (directory.isEmpty() || directory.startsWith("/") || directory.startsWith("\\")
+				|| directory.contains("..") || directory.contains(":")) {
+			return "safariutils";
+		}
+		return directory;
+	}
+
 	/** Compact suffix used by the settings title for the four distributed builds. */
 	public static String titleSuffix() {
 		if (DEVELOPER) return "-DEV";

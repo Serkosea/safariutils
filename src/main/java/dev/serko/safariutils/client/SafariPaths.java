@@ -1,5 +1,6 @@
 package dev.serko.safariutils.client;
 
+import dev.serko.safariutils.BuildVersion;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.IOException;
@@ -10,7 +11,8 @@ import java.nio.file.Path;
 public final class SafariPaths {
 
 	private static final Path CONFIG = FabricLoader.getInstance().getConfigDir();
-	private static final Path ROOT = CONFIG.resolve("safariutils");
+	private static final Path STANDALONE_ROOT = CONFIG.resolve("safariutils");
+	private static final Path ROOT = CONFIG.resolve(BuildVersion.configDirectory()).normalize();
 	private static final Path LOGS = ROOT.resolve("logs");
 	private static final Path BACKUPS = ROOT.resolve("backups");
 	private static final Path RUN_BACKUPS = BACKUPS.resolve("runs");
@@ -68,6 +70,7 @@ public final class SafariPaths {
 	/** Moves legacy files into the organized layout without overwriting any destination. */
 	public static void migrateLegacyFiles() {
 		try {
+			seedEmbeddedConfig();
 			Files.createDirectories(LOGS);
 			Files.createDirectories(RUN_BACKUPS);
 			Files.createDirectories(SETTINGS_BACKUPS);
@@ -79,6 +82,20 @@ public final class SafariPaths {
 		} catch (IOException migrationError) {
 			OperationalLog.error("CONFIG/MIGRATION", migrationError);
 		}
+	}
+
+	private static void seedEmbeddedConfig() throws IOException {
+		if (ROOT.equals(STANDALONE_ROOT) || Files.exists(ROOT) || !Files.isDirectory(STANDALONE_ROOT)) return;
+		Files.createDirectories(ROOT);
+		copyIfNeeded(STANDALONE_ROOT.resolve("safariutils.json"), settings());
+		copyIfNeeded(STANDALONE_ROOT.resolve("safariutils-runs.json"), runHistory());
+		copyIfNeeded(STANDALONE_ROOT.resolve("safariutils-sparkling.json"), sparklingStats());
+		copyIfNeeded(STANDALONE_ROOT.resolve("safariutils-static-entities.json"), staticEntities());
+	}
+
+	private static void copyIfNeeded(Path source, Path destination) throws IOException {
+		if (!Files.isRegularFile(source) || Files.exists(destination)) return;
+		Files.copy(source, destination);
 	}
 
 	private static void moveIfNeeded(Path source, Path destination) throws IOException {

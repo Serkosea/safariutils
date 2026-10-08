@@ -130,14 +130,19 @@ java {
 def supportedDeveloperProfiles = ['26.1.2', '26.2']
 def deployProfiles = supportedDeveloperProfiles
 def developerBuildTasks = [:]
+def externalPrivateSourceArgument = project.findProperty('privateSourceRoot')
+	? "-PprivateSourceRoot=${privateSourceRoot.absolutePath}" : null
+def nestedGradleCommand = { List<String> arguments ->
+	externalPrivateSourceArgument ? arguments + externalPrivateSourceArgument : arguments
+}
 supportedDeveloperProfiles.each { profileName ->
 	def taskSuffix = profileName.replace('.', '_')
 	def buildTask = tasks.register("buildDeveloper${taskSuffix}", Exec) {
 		description = "Build the ${profileName} Developer jar for local deployment."
 		group = 'fabric'
 		workingDir projectDir
-		commandLine 'cmd', '/c', 'gradlew.bat', 'clean', 'jar',
-			"-PminecraftProfile=${profileName}", '-PdeveloperBuild=true'
+		commandLine nestedGradleCommand(['cmd', '/c', 'gradlew.bat', 'clean', 'jar',
+			"-PminecraftProfile=${profileName}", '-PdeveloperBuild=true'])
 	}
 	developerBuildTasks[profileName] = buildTask
 }
@@ -236,7 +241,7 @@ supportedDeveloperProfiles.each { profileName ->
 				description = "Build the ${profileName} ${variant.label} release jar."
 				group = 'fabric'
 				workingDir projectDir
-				commandLine(['cmd', '/c', 'gradlew.bat', 'clean', 'jar',
+				commandLine nestedGradleCommand(['cmd', '/c', 'gradlew.bat', 'clean', 'jar',
 					"-PminecraftProfile=${profileName}"] + variant.arguments)
 			}
 		}

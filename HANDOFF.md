@@ -74,7 +74,7 @@ Forest retains its nine-drop count because every feed matters. Cavern and Haunte
 
 Safe Mode exposes visible or otherwise player-observable evidence. Extra Mode may expose additional internal detections. Its feature toggles apply independently; the former master switch is retained only as a one-time configuration migration source. Presentation settings never discard tracker state: switching modes or toggles mid-run must immediately render the appropriate already-known subset. Caches that affect presentation include the configuration revision.
 
-- Bee Nests clear only after a left/right interaction is followed by a new nearby Honeybug within five seconds
+- Bee Nests clear after a left/right interaction is followed within five seconds by either a new nearby Honeybug or Hypixel's empty-hive confirmation
 - Loaded air alone never completes an objective candidate
 - Ordinary capsule failures against non-Common capturable critters create recatch pins
 - Commons, Masterful Capsule attempts, confirmed catches, and Hideyho do not retain pins

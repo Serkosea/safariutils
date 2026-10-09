@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -35,7 +35,7 @@ public final class NestTracker {
 	private static final Set<BlockPos> safePunched = new LinkedHashSet<>();
 	private static final long SPAWN_CONFIRM_WINDOW_MILLIS = 5_000;
 	private static final double SPAWN_CONFIRM_RADIUS_SQ = 12.0 * 12.0;
-	private static final Map<BlockPos, PendingInteraction> pending = new HashMap<>();
+	private static final Map<BlockPos, PendingInteraction> pending = new LinkedHashMap<>();
 	private static long checkedSightingScan = Long.MIN_VALUE;
 	private record PendingInteraction(long startedAt, Set<UUID> existingHoneybugs) { }
 	/**
@@ -68,9 +68,22 @@ public final class NestTracker {
 		BlockPos immutable = pos.immutable();
 		known.add(immutable);
 		present.add(immutable);
-		pending.computeIfAbsent(immutable, ignored -> new PendingInteraction(
-			System.currentTimeMillis(), currentHoneybugIds()));
+		// Refresh the evidence on every click. An already-empty nest can be checked
+		// repeatedly without producing a sighting scan between interactions.
+		pending.put(immutable, new PendingInteraction(System.currentTimeMillis(), currentHoneybugIds()));
 		cachedTick = Long.MIN_VALUE;
+	}
+
+	/** Resolves the exact recently clicked nest when Hypixel confirms it is already empty. */
+	public static void onChatMessage(String line) {
+		if (!"Looks like the hive is empty now...".equals(line) || pending.isEmpty()) return;
+		long now = System.currentTimeMillis();
+		Map.Entry<BlockPos, PendingInteraction> latest = pending.entrySet().stream()
+			.filter(entry -> now - entry.getValue().startedAt() <= SPAWN_CONFIRM_WINDOW_MILLIS)
+			.max(Map.Entry.comparingByValue(java.util.Comparator.comparingLong(
+				PendingInteraction::startedAt)))
+			.orElse(null);
+		if (latest != null) resolve(latest.getKey(), true, "empty response");
 	}
 
 	public static void tick() {
@@ -116,23 +129,23 @@ public final class NestTracker {
 					entry.getKey().getX() + 0.5, entry.getKey().getY() + 0.5, entry.getKey().getZ() + 0.5);
 				if (distanceSq < nearestSq) { nearestSq = distanceSq; nearest = entry; }
 			}
-			if (nearest != null) confirm(nearest.getKey(), true);
+			if (nearest != null) resolve(nearest.getKey(), true, "Honeybug spawn");
 		}
 	}
 
-	private static void confirm(BlockPos pos, boolean share) {
+	private static void resolve(BlockPos pos, boolean share, String evidence) {
 		BlockPos immutable = pos.immutable();
 		known.add(immutable);
 		punched.add(immutable);
 		safePunched.add(immutable);
 		pending.remove(immutable);
 		cachedTick = Long.MIN_VALUE;
-		DebugLog.line("NEST", "confirmed Honeybug spawn at " + immutable.toShortString());
+		DebugLog.line("NEST", "resolved " + immutable.toShortString() + " via " + evidence);
 		if (share) PartyItemSyncProviders.onNestConfirmed(immutable);
 	}
 
 	/** Applies a confirmed nest interaction received from an approved private party member. */
-	public static void onPartyConfirmed(BlockPos pos) { confirm(pos, false); }
+	public static void onPartyConfirmed(BlockPos pos) { resolve(pos, false, "party sync"); }
 
 	/** Incrementally scans only the nearby loaded volume. */
 	private static void topUp() {

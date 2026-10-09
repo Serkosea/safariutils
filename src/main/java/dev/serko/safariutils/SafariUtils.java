@@ -304,6 +304,7 @@ public class SafariUtils implements ClientModInitializer {
 				if (BuildVersion.DEVELOPER) JoinWindowDiagnostics.onChatMessage(line);
 				EncounterAlerts.onChatMessage(line);
 				RecatchSpots.onChatMessage(line);
+				NestTracker.onChatMessage(line);
 				BirdfeederWatch.onChatMessage(line);
 				ShiningCoinWatch.onChatMessage(line);
 				SafariObjectives.onChatMessage(line);

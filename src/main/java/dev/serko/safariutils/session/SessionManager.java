@@ -531,6 +531,10 @@ public final class SessionManager {
 		suppressCurrentRunPersistence = false;
 		runLobbyId = null;
 		SparklingWatch.reset();
+		// No recatch marker can remain meaningful after the reward summary closes.
+		// Clear unresolved pins immediately instead of retaining them until timeout or
+		// the next Safari visit.
+		RecatchSpots.clear();
 		if (finished == null || finished.isEmpty()) return;
 		finished.finish(System.currentTimeMillis());
 		OperationalLog.info("RUN", "Finished Safari run");

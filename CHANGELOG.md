@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.7.1] - 2026-10-09
 
 ### Changes & Additions
 
@@ -11,6 +11,8 @@
 ### Fixes
 
 - Prevented Tab and Alt+Tab from changing hidden settings or moving focus into inactive controls
+- Fixed nearby Hideons and Bloodbats interfering with each other's catch waypoints
+- Cleared Bee Nest waypoints when Hypixel confirms a party member already emptied the nest
 
 ## [2.7.0] - 2026-10-07
 

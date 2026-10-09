@@ -59,6 +59,8 @@ public final class RecatchSpots {
 	/** One pin, for callers outside this class — which species, where, which individual, sparkling or not. */
 	public record ActivePin(Critter critter, AABB box, UUID entityId, boolean sparkling) {
 	}
+	/** Exact aim-selected body for the ATTEMPT event currently being dispatched. */
+	public record CatchTarget(Critter critter, UUID entityId, BlockPos position) { }
 
 	/** A pity count with nothing currently pinning it, waiting to see if it gets claimed. */
 	private record OrphanedPity(Critter critter, AABB lastBox, int count, long orphanedAt) {
@@ -85,6 +87,7 @@ public final class RecatchSpots {
 	private static long lastScan;
 	/** Detects a live Eagle setting change so obsolete pity state is removed immediately. */
 	private static int lastEagleRarity = Integer.MIN_VALUE;
+	private static CatchTarget latestAttemptTarget;
 
 	private RecatchSpots() {
 	}
@@ -302,6 +305,7 @@ public final class RecatchSpots {
 		// result arrives. Tell the Sparkling tracker even when recatch markers are
 		// disabled so that replacement cannot become a second detection.
 		if (event.type() == CritterEvent.Type.ATTEMPT) {
+			latestAttemptTarget = null;
 			SparklingWatch.onCaptureInteraction(event.critter());
 			captureTransitions.computeIfAbsent(event.critter(), ignored -> new ArrayDeque<>())
 				.addLast(System.currentTimeMillis() + CAPTURE_TRANSITION_MILLIS);
@@ -312,16 +316,8 @@ public final class RecatchSpots {
 		}
 		DebugLog.line("CHAT", event.type() + " " + event.critter().name() + " raw=\"" + line + "\"");
 
-		// A Masterful Critter Capsule always catches, so a pin for it would never once
-		// be used: "You threw a Masterful Critter Capsule at the X!", confirmed
-		// directly rather than guessed at.
-		if (event.type() == CritterEvent.Type.ATTEMPT && line.contains("Masterful Critter Capsule")) {
-			DebugLog.line("RECATCH", "SKIP " + event.critter().name() + " (master capsule, guaranteed catch)");
-			return;
-		}
-
 		switch (event.type()) {
-			case ATTEMPT -> pin(event.critter());
+			case ATTEMPT -> pin(event.critter(), line.contains("Masterful Critter Capsule"));
 			// Resolved, one way or the other — the pin's job was only ever to mark
 			// this one throw while it was unresolved. Applied to the most recently
 			// pinned individual of this species, the best guess at which one the
@@ -431,6 +427,12 @@ public final class RecatchSpots {
 		return BlockPos.containing(center.x, center.y, center.z);
 	}
 
+	/** Target selected for the ATTEMPT line being synchronously dispatched to other trackers. */
+	public static CatchTarget latestAttemptTarget(Critter critter) {
+		return latestAttemptTarget != null && latestAttemptTarget.critter().equals(critter)
+			? latestAttemptTarget : null;
+	}
+
 	/**
 	 * How far a box is off the line the player is looking along — lower is more likely
 	 * to be what a capsule was aimed at.
@@ -453,12 +455,7 @@ public final class RecatchSpots {
 			&& !"Hideyho".equals(critter.name());
 	}
 
-	private static void pin(Critter critter) {
-		if (!worthPinning(critter)) {
-			DebugLog.line("RECATCH", "SKIP " + critter.name() + " (not worth pinning)");
-			return;
-		}
-
+	private static void pin(Critter critter, boolean masterful) {
 		// The nearest-to-aim sighting of the species — several can be in view at
 		// once, and only one was actually thrown at. This is a one-time choice made
 		// at the moment of the throw, not an ongoing search: nothing tracks this
@@ -506,6 +503,13 @@ public final class RecatchSpots {
 			escapedBest = escaped;
 		}
 		if (escapedBest != null) {
+			Vec3 center = escapedBest.box().getCenter();
+			latestAttemptTarget = new CatchTarget(critter, escapedBestId,
+				BlockPos.containing(center.x, center.y, center.z));
+			if (masterful) {
+				DebugLog.line("RECATCH", "SKIP " + critter.name() + " (master capsule, guaranteed catch)");
+				return;
+			}
 			escapedPins.remove(escapedBestId);
 			pins.put(escapedBestId, new Pin(critter, escapedBest.box(), escapedBest.sparkling(), now));
 			int nowPity = pity.merge(escapedBestId, 1, Integer::sum);
@@ -519,6 +523,17 @@ public final class RecatchSpots {
 
 		if (best == null) {
 			DebugLog.line("RECATCH", "SKIP " + critter.name() + " (no recent sighting to pin)");
+			return;
+		}
+		Vec3 targetCenter = best.box().getCenter();
+		latestAttemptTarget = new CatchTarget(critter, bestId,
+			BlockPos.containing(targetCenter.x, targetCenter.y, targetCenter.z));
+		if (masterful) {
+			DebugLog.line("RECATCH", "SKIP " + critter.name() + " (master capsule, guaranteed catch)");
+			return;
+		}
+		if (!worthPinning(critter)) {
+			DebugLog.line("RECATCH", "SKIP " + critter.name() + " (not worth pinning)");
 			return;
 		}
 
@@ -547,6 +562,7 @@ public final class RecatchSpots {
 		pity.clear();
 		orphanedPity.clear();
 		captureTransitions.clear();
+		latestAttemptTarget = null;
 		lastEagleRarity = ConfigManager.get().display.eagleRarity;
 		clear();
 	}

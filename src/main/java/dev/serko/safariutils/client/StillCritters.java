@@ -37,6 +37,8 @@ public final class StillCritters {
 		.toList();
 	/** How long a mobile, unconfirmed entry can go unseen before it is dropped. */
 	private static final long STALE_MILLIS = 20_000;
+	/** Safety expiry for an ATTEMPT that never receives a catch or breakout response. */
+	private static final long RESOLUTION_MILLIS = 40_000;
 	/** Several loaded entity sweeps must agree before a remembered static location is retired. */
 	private static final long STATIC_ABSENCE_MILLIS = 1_500;
 	/** Stay well inside entity-tracking range before treating a static location as empty. */
@@ -53,6 +55,8 @@ public final class StillCritters {
 			long millis, boolean visiblyConfirmed, boolean persistentThroughWalls) {
 	}
 	private record LiveStatic(UUID id, BlockPos pos) { }
+	/** Exact target evidence retained in throw order for concurrent same-species attempts. */
+	private record Resolution(UUID id, BlockPos pos, long millis) { }
 
 	private static final Map<UUID, Entry> remembered = new HashMap<>();
 	/** First continuous loaded-and-empty observation for each remembered static critter. */
@@ -67,8 +71,7 @@ public final class StillCritters {
 	private static final Map<UUID, Integer> duplicoStableScans = new HashMap<>();
 	private static final Set<Critter> catalogClosed = new java.util.HashSet<>();
 	private static final Map<Critter, Set<BlockPos>> unchecked = new HashMap<>();
-	private static final Map<Critter, UUID> resolving = new HashMap<>();
-	private static final Map<Critter, BlockPos> resolvingPositions = new HashMap<>();
+	private static final Map<Critter, java.util.ArrayDeque<Resolution>> resolving = new HashMap<>();
 	/** Canonical Hideonwall perches caught during this run; those spawns cannot return. */
 	private static final Set<BlockPos> caughtHideonwallPositions = new java.util.HashSet<>();
 	/** Other one-use static spawns confirmed caught during this run. */
@@ -91,6 +94,7 @@ public final class StillCritters {
 		prepareLobby();
 		if (!SafariLocation.inSafari()) return;
 		long now = System.currentTimeMillis();
+		pruneResolutions(now);
 		resolveHideonwallCapsules(now);
 		Iterator<Map.Entry<UUID, Entry>> staleIterator = remembered.entrySet().iterator();
 		while (staleIterator.hasNext()) {
@@ -306,7 +310,7 @@ public final class StillCritters {
 		if (caughtHideonwallPositions.stream().anyMatch(pos -> sameSpawn(pos, candidate))) return;
 		// A throw already assigned to this species is resolving a catch, so it should
 		// clear the candidate without reviving the body that the attempt just suppressed.
-		if (resolving.containsKey(hideonwall)) {
+		if (hasResolving(hideonwall)) {
 			remembered.entrySet().removeIf(entry -> hideonwall.equals(entry.getValue().critter())
 				&& sameSpawn(candidate, entry.getValue().pos()));
 			DebugLog.line("STILL", "CAPSULE cleared Hideonwall perch pos=" + pos(candidate));
@@ -418,8 +422,28 @@ public final class StillCritters {
 
 			DebugLog.line("STILL", "SUPERSEDE " + critter.name() + " id " + shortId(entry.getKey())
 				+ " -> " + shortId(newId) + " (new sighting within " + SUPERSEDE_DISTANCE + " blocks)");
+			transferResolvingIdentity(critter, entry.getKey(), newId);
 			it.remove();
 		}
+	}
+
+	/** Keeps outstanding throws attached when a breakout replaces the body's entity id. */
+	private static void transferResolvingIdentity(Critter critter, UUID oldId, UUID newId) {
+		java.util.ArrayDeque<Resolution> attempts = resolving.get(critter);
+		if (attempts == null || attempts.isEmpty()) return;
+		boolean transferred = false;
+		java.util.ArrayDeque<Resolution> updated = new java.util.ArrayDeque<>(attempts.size());
+		for (Resolution attempt : attempts) {
+			if (oldId.equals(attempt.id())) {
+				updated.addLast(new Resolution(newId, attempt.pos(), attempt.millis()));
+				transferred = true;
+			} else {
+				updated.addLast(attempt);
+			}
+		}
+		if (!transferred) return;
+		resolving.put(critter, updated);
+		if (suppressedBodies.remove(oldId)) suppressedBodies.add(newId);
 	}
 
 	/** Every remembered individual of {@code critter}. */
@@ -476,34 +500,38 @@ public final class StillCritters {
 			return;
 		}
 		if (event.type() == CritterEvent.Type.ATTEMPT) {
-			UUID id = RecatchSpots.pendingCatchEntity(event.critter());
+			RecatchSpots.CatchTarget exactTarget = RecatchSpots.latestAttemptTarget(event.critter());
+			UUID id = exactTarget == null ? RecatchSpots.pendingCatchEntity(event.critter())
+				: exactTarget.entityId();
 			// A Hideonfloor throw has an exact aimed-at body when available. Without
 			// one, leave its marker for nearby world-state inspection instead of guessing.
 			if (id == null && !"Hideonfloor".equals(event.critter().name())) {
 				id = nearestRemembered(event.critter());
 			}
 			Entry target = id == null ? null : remembered.get(id);
-			BlockPos targetPos = target != null ? target.pos()
+			BlockPos targetPos = exactTarget != null ? exactTarget.position()
+				: target != null ? target.pos()
 				: id == null ? null : sightingPosition(event.critter(), id);
 			if (targetPos == null) targetPos = RecatchSpots.pendingCatchPosition(event.critter());
 			if ("Hideonwall".equals(event.critter().name()) && targetPos != null) {
 				targetPos = canonicalHideonwallPerch(targetPos);
 			}
-			if (targetPos != null) {
-				resolvingPositions.put(event.critter(), targetPos);
-			}
-			if (id != null) {
-				resolving.put(event.critter(), id);
-				suppressedBodies.add(id);
-				DebugLog.line("STILL", "RESOLVE " + event.critter().name() + " id=" + shortId(id));
+			if (id != null || targetPos != null) {
+				resolving.computeIfAbsent(event.critter(), ignored -> new java.util.ArrayDeque<>())
+					.addLast(new Resolution(id, targetPos, System.currentTimeMillis()));
+				if (id != null) suppressedBodies.add(id);
+				DebugLog.line("STILL", "RESOLVE " + event.critter().name() + " id=" + shortId(id)
+					+ " pending=" + resolving.get(event.critter()).size());
 			}
 		} else if (event.type() == CritterEvent.Type.FAILED) {
-			UUID id = resolving.remove(event.critter());
-			resolvingPositions.remove(event.critter());
-			if (id != null) suppressedBodies.remove(id);
+			Resolution attempt = pollResolution(event.critter());
+			if (attempt != null && attempt.id() != null && !isStillResolving(attempt.id())) {
+				suppressedBodies.remove(attempt.id());
+			}
 		} else {
-			UUID id = resolving.remove(event.critter());
-			BlockPos resolvedPos = resolvingPositions.remove(event.critter());
+			Resolution attempt = pollResolution(event.critter());
+			UUID id = attempt == null ? null : attempt.id();
+			BlockPos resolvedPos = attempt == null ? null : attempt.pos();
 			if (id == null) {
 				// A distant catch can unload the body before chat confirms it. The most
 				// recently observed marker is the strongest remaining identity evidence.
@@ -523,6 +551,45 @@ public final class StillCritters {
 					suppressCaughtStatic(event.critter(), resolvedPos);
 				}
 			}
+		}
+	}
+
+	private static boolean hasResolving(Critter critter) {
+		java.util.ArrayDeque<Resolution> attempts = resolving.get(critter);
+		return attempts != null && !attempts.isEmpty();
+	}
+
+	private static Resolution pollResolution(Critter critter) {
+		java.util.ArrayDeque<Resolution> attempts = resolving.get(critter);
+		if (attempts == null) return null;
+		Resolution result = attempts.pollFirst();
+		if (attempts.isEmpty()) resolving.remove(critter);
+		return result;
+	}
+
+	private static boolean isStillResolving(UUID id) {
+		for (java.util.ArrayDeque<Resolution> attempts : resolving.values()) {
+			for (Resolution attempt : attempts) {
+				if (id.equals(attempt.id())) return true;
+			}
+		}
+		return false;
+	}
+
+	private static void pruneResolutions(long now) {
+		Set<UUID> expiredIds = new HashSet<>();
+		Iterator<Map.Entry<Critter, java.util.ArrayDeque<Resolution>>> iterator =
+			resolving.entrySet().iterator();
+		while (iterator.hasNext()) {
+			java.util.ArrayDeque<Resolution> attempts = iterator.next().getValue();
+			while (!attempts.isEmpty() && now - attempts.peekFirst().millis() > RESOLUTION_MILLIS) {
+				Resolution expired = attempts.removeFirst();
+				if (expired.id() != null) expiredIds.add(expired.id());
+			}
+			if (attempts.isEmpty()) iterator.remove();
+		}
+		for (UUID id : expiredIds) {
+			if (!isStillResolving(id)) suppressedBodies.remove(id);
 		}
 	}
 
@@ -630,7 +697,6 @@ public final class StillCritters {
 		duplicoPairLabels.clear();
 		duplicoStableScans.clear();
 		resolving.clear();
-		resolvingPositions.clear();
 		caughtHideonwallPositions.clear();
 		caughtStaticPositions.clear();
 		suppressedBodies.clear();
@@ -721,7 +787,7 @@ public final class StillCritters {
 	}
 
 	private static String shortId(UUID id) {
-		return id.toString().substring(0, 8);
+		return id == null ? "none" : id.toString().substring(0, 8);
 	}
 
 	private static String pos(BlockPos pos) {

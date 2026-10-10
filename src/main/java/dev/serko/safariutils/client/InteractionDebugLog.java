@@ -31,18 +31,18 @@ public final class InteractionDebugLog {
 	/** Registers click and close listeners on each screen while this diagnostic is active. */
 	public static void onScreenInit(Minecraft client, Screen screen, int width, int height) {
 		if (!active()) return;
-		DebugLog.line("INTERACT", "screen open " + describeScreen(screen, width, height));
-		DebugLog.line("INTERACT", "screen contents " + containerState(screen));
+		DebugLog.line("INTERACT", "screen open " + describeScreen(screen, width, height)
+			+ " state=" + containerState(screen));
 		ScreenMouseEvents.beforeMouseClick(screen).register(InteractionDebugLog::beforeClick);
 		ScreenMouseEvents.afterMouseClick(screen).register((opened, event, consumed) -> {
 			if (!active()) return consumed;
 			DebugLog.line("INTERACT", "mouse after consumed=" + consumed + " "
-				+ describeClick(opened, event) + " contents=" + containerState(opened));
+				+ describeClick(opened, event));
 			return consumed;
 		});
 		ScreenEvents.remove(screen).register(closed -> {
 			if (active()) DebugLog.line("INTERACT", "screen close " + describeScreen(closed,
-				closed.width, closed.height) + " contents=" + containerState(closed));
+				closed.width, closed.height));
 		});
 	}
 
@@ -103,8 +103,7 @@ public final class InteractionDebugLog {
 
 	private static void beforeClick(Screen screen, MouseButtonEvent event) {
 		if (!active()) return;
-		DebugLog.line("INTERACT", "mouse before " + describeClick(screen, event)
-			+ " contents=" + containerState(screen));
+		DebugLog.line("INTERACT", "mouse before " + describeClick(screen, event));
 	}
 
 	private static String describeClick(Screen screen, MouseButtonEvent event) {
@@ -142,12 +141,15 @@ public final class InteractionDebugLog {
 	private static String containerState(Screen screen) {
 		if (!(screen instanceof AbstractContainerScreen<?> container)) return "not-container";
 		AbstractContainerMenu menu = container.getMenu();
-		List<String> state = new ArrayList<>(menu.slots.size() + 2);
-		for (int i = 0; i < menu.slots.size(); i++) state.add(describeSlot(i, menu.slots.get(i)));
-		state.add("carried=" + describeItem(menu.getCarried()));
+		List<String> state = new ArrayList<>();
+		for (int i = 0; i < menu.slots.size(); i++) {
+			ItemStack item = menu.slots.get(i).getItem();
+			if (!item.isEmpty()) state.add(i + "=" + describeItem(item));
+		}
+		if (!menu.getCarried().isEmpty()) state.add("carried=" + describeItem(menu.getCarried()));
 		String data = dataSlots(menu);
 		if (!data.isEmpty()) state.add("data=" + data);
-		return "[" + String.join(" | ", state) + "]";
+		return state.isEmpty() ? "empty" : "[" + String.join(" | ", state) + "]";
 	}
 
 	private static String describeSlot(int menuIndex, Slot slot) {
@@ -207,7 +209,7 @@ public final class InteractionDebugLog {
 	}
 
 	private static boolean active() {
-		return BuildVersion.DEVELOPER && SafariLocation.inSafari();
+		return BuildVersion.DEVELOPER && SafariLocation.inSafari() && DebugLog.isEnabled();
 	}
 
 	private static String decimal(double value) {

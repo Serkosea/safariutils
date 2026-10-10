@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.8.0] - 2026-10-09
+
+### Changes & Additions
+
+- Rebuilt critter identity tracking around logical critters and independent capture attempts
+- Added smooth hitbox shrinking during capture animations
+- Remembered unloaded Snoozle, Troodon, and Fluffling positions and refined Driftling marker geometry
+- Reduced automatic diagnostic noise while adding focused identity and pairing checks
+
+### Fixes
+
+- Fixed pity and waypoint ownership during simultaneous same-species catches
+- Fixed stale or missing waypoints after distant catches, rapid retries, breakouts, and replacement bodies
+- Fixed special Hideon, Hideyho, Duplico, Troodon, Wumpa, and grouped-critter transitions
+- Prevented briefly restored critters from rendering a title without their hitbox
+
 ## [2.7.1] - 2026-10-09
 
 ### Changes & Additions

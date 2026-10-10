@@ -1,11 +1,13 @@
 package dev.serko.safariutils.session;
 
+import dev.serko.safariutils.BuildVersion;
 import dev.serko.safariutils.client.ConfigManager;
 import dev.serko.safariutils.client.AlertText;
 import dev.serko.safariutils.client.EncounterAlerts;
 import dev.serko.safariutils.client.FloorDrops;
 import dev.serko.safariutils.client.MoundSpotter;
 import dev.serko.safariutils.client.CritterCountLog;
+import dev.serko.safariutils.client.CritterState;
 import dev.serko.safariutils.client.DebugLog;
 import dev.serko.safariutils.client.HideyhoSolver;
 import dev.serko.safariutils.client.StillCritters;
@@ -19,6 +21,7 @@ import dev.serko.safariutils.client.SparklingMode;
 import dev.serko.safariutils.client.SafariObjectives;
 import dev.serko.safariutils.client.NestTracker;
 import dev.serko.safariutils.client.RecatchSpots;
+import dev.serko.safariutils.state.SafariRuntimeState;
 import dev.serko.safariutils.client.DetectedCritters;
 import dev.serko.safariutils.client.StartingItemsWatch;
 import dev.serko.safariutils.client.PartyRosterWatch;
@@ -107,6 +110,7 @@ public final class SessionManager {
 		updateUnavailable();
 
 		String lobbyId = SafariLocation.lobbyId();
+		if (lobbyId != null) SafariRuntimeState.lobbyIdentified(lobbyId);
 		if (current != null && runLobbyId == null && lobbyId != null) runLobbyId = lobbyId;
 		if (current != null && lobbyId != null && runLobbyId != null
 			&& !lobbyId.equals(runLobbyId)) {
@@ -120,6 +124,10 @@ public final class SessionManager {
 				DebugLog.line("ACTIVATE", "Safari visit ended after "
 					+ formatElapsed(System.currentTimeMillis() - visitEnteredAt)
 					+ " ticketActivated=" + (current != null));
+				// During a server transfer the scoreboard can disappear before the next
+				// lobby identity is known. Keep an activated run's epoch alive until the
+				// existing lobby/run logic actually closes it.
+				if (current == null) SafariRuntimeState.visitEnded();
 			}
 			visitPrepared = false;
 			visitLobbyId = null;
@@ -200,6 +208,11 @@ public final class SessionManager {
 	/** Feeds one raw chat line into the active run. */
 	public static void onChatMessage(String rawText) {
 		String line = ChatParser.clean(rawText);
+		onChatMessage(line, ChatParser.parse(line, selfName()));
+	}
+
+	/** Feeds one cleaned chat line with the shared, already-parsed critter event. */
+	public static void onChatMessage(String line, CritterEvent parsedEvent) {
 		if (line.isEmpty()) return;
 		long now = System.currentTimeMillis();
 		observeJoinSignal(line, now);
@@ -273,7 +286,7 @@ public final class SessionManager {
 			return;
 		}
 
-		CritterEvent event = ChatParser.parse(line, selfName());
+		CritterEvent event = parsedEvent;
 		if (event == null) return;
 
 		if (event.type() == CritterEvent.Type.ENTERED_SAFARI) {
@@ -323,10 +336,6 @@ public final class SessionManager {
 	}
 
 	private static void recordEvent(CritterEvent event, long now) {
-		if (event.type() == CritterEvent.Type.ATTEMPT
-			|| event.type() == CritterEvent.Type.FAILED) {
-			SparklingWatch.onCaptureInteraction(event.critter());
-		}
 		current.record(event, now);
 		if (event.type() == CritterEvent.Type.SHARED_CATCH) {
 			TicketTrading.onSharedCatch(event.catcher());
@@ -334,6 +343,8 @@ public final class SessionManager {
 		if (event.isCatch()) {
 			int caught = current.partyCatches(event.critter());
 			StillCritters.onConfirmedCatchTotal(event.critter(), caught);
+			RecatchSpots.onConfirmedCatchTotal(event.critter(), caught);
+			CritterState.onConfirmedCatchTotal(event.critter(), caught);
 			int expectedMaximum = CritterSpawnRanges.maximum(event.critter());
 			if (caught > expectedMaximum) {
 				OperationalLog.debug("RANGE/CATCH", event.critter().name() + " caught=" + caught
@@ -398,6 +409,7 @@ public final class SessionManager {
 		SafariSession finished = current;
 		boolean finishedSuppressed = persistenceSuppressed();
 		current = new SafariSession(selfName(), System.currentTimeMillis());
+		SafariRuntimeState.runStarted(SafariLocation.lobbyId());
 		suppressCurrentRunPersistence = dev.serko.safariutils.BuildVersion.DEVELOPER
 			&& ConfigManager.get().advanced.testingDoNotSaveRun;
 		runExpectedPlayers = Math.max(visitExpectedPlayers, visitPeakPlayers);
@@ -439,6 +451,7 @@ public final class SessionManager {
 		visitRosterLocked = false;
 		visitPeakPlayers = Math.max(1, SafariPartyWatch.joinedPlayers());
 		visitExpectedPlayers = visitPeakPlayers;
+		SafariRuntimeState.visitStarted(lobbyId);
 		runExpectedPlayers = 1;
 		CritterCountLog.reset();
 		SafariObjectives.reset();
@@ -528,6 +541,7 @@ public final class SessionManager {
 		SafariSession finished = current;
 		boolean suppressed = persistenceSuppressed();
 		current = null;
+		SafariRuntimeState.runClosed();
 		suppressCurrentRunPersistence = false;
 		runLobbyId = null;
 		SparklingWatch.reset();

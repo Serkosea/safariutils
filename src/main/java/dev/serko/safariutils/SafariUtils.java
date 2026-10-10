@@ -11,6 +11,7 @@ import dev.serko.safariutils.client.ContestTracker;
 import dev.serko.safariutils.client.DetectedCritters;
 import dev.serko.safariutils.client.StartingItemsWatch;
 import dev.serko.safariutils.client.CritterEntities;
+import dev.serko.safariutils.client.CritterState;
 import dev.serko.safariutils.client.CritterSpotter;
 import dev.serko.safariutils.client.DarknessFilter;
 import dev.serko.safariutils.client.FloorDrops;
@@ -53,6 +54,9 @@ import dev.serko.safariutils.api.PartyItemSyncProviders;
 import dev.serko.safariutils.parse.ChatParser;
 import dev.serko.safariutils.session.RunHistory;
 import dev.serko.safariutils.session.SessionManager;
+import dev.serko.safariutils.state.SafariEvent;
+import dev.serko.safariutils.state.SafariEventStream;
+import dev.serko.safariutils.state.SafariRuntimeState;
 import dev.serko.safariutils.session.SparklingStats;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
@@ -67,6 +71,7 @@ import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
+import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionResult;
@@ -88,6 +93,7 @@ public class SafariUtils implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
+		CritterState.verifyAlgorithms();
 		SafariPaths.migrateLegacyFiles();
 		// Load the persisted logging preference before deciding whether to create a
 		// diagnostic file or start its background writer.
@@ -157,6 +163,7 @@ public class SafariUtils implements ClientModInitializer {
 			tickSafely("contest", ContestTracker::tick);
 			// One sweep of the world's critters, for everything below that wants them.
 			tickSafely("critter-entities", CritterEntities::tick);
+			tickSafely("critter-state", CritterState::tick);
 			tickSafely("particle-diagnostics", ParticleDiagnostics::tick);
 			if (BuildVersion.DEVELOPER) tickSafely("critter-count-log", CritterCountLog::tick);
 			tickSafely("hideyho", HideyhoSolver::tick);
@@ -191,6 +198,7 @@ public class SafariUtils implements ClientModInitializer {
 		// Hypixel never says you have left the Safari, but moving island reconnects, so
 		// this is the one moment the chat-driven flag is known to be stale.
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> OperationalLog.run("CONNECTION/JOIN", () -> {
+			SafariRuntimeState.connectionJoined();
 			if (!HypixelConnection.refresh()) {
 				leaveHypixel();
 				return;
@@ -224,6 +232,7 @@ public class SafariUtils implements ClientModInitializer {
 		AttackEntityCallback.EVENT.register((player, level, hand, entity, hitResult) -> {
 			if (!HypixelConnection.active()) return InteractionResult.PASS;
 			return OperationalLog.get("INTERACTION/ATTACK_ENTITY", () -> {
+				CritterState.onEntityInteraction(entity);
 				MoundSpotter.onAttack(entity);
 				InteractionDebugLog.onEntityInteraction("attack", entity, hand.toString());
 				return TicketProtection.blockManagerInteraction(entity)
@@ -241,6 +250,7 @@ public class SafariUtils implements ClientModInitializer {
 		UseEntityCallback.EVENT.register((player, level, hand, entity, hitResult) -> {
 			if (!HypixelConnection.active()) return InteractionResult.PASS;
 			return OperationalLog.get("INTERACTION/USE_ENTITY", () -> {
+				CritterState.onEntityInteraction(entity);
 				SafariPartyWatch.onEntityUse(entity);
 				BirdfeederWatch.onEntityUse(entity);
 				InteractionDebugLog.onEntityInteraction("use", entity, hand.toString());
@@ -295,22 +305,25 @@ public class SafariUtils implements ClientModInitializer {
 			for (String part : message.getString().split("\\r?\\n|\\\\n")) {
 				String line = ChatParser.clean(part);
 				if (line.isEmpty() || ChatParser.playerSaid(line)) continue;
+				SafariEvent event = SafariEventStream.serverChat(line,
+					Minecraft.getInstance().getUser().getName());
 				DebugLog.line("RAW", "\"" + line + "\"");
+				CritterState.onCritterEvent(event.critterEvent(), line);
 				PartyItemSyncProviders.onServerMessage(line);
 				SafariLocation.onChatMessage(line);
 				SparklingMode.onChatMessage(line);
-				SessionManager.onChatMessage(line);
+				SessionManager.onChatMessage(line, event.critterEvent());
 				TicketTrading.onChatMessage(line);
 				if (BuildVersion.DEVELOPER) JoinWindowDiagnostics.onChatMessage(line);
 				EncounterAlerts.onChatMessage(line);
-				RecatchSpots.onChatMessage(line);
+				RecatchSpots.onChatMessage(line, event.critterEvent());
 				NestTracker.onChatMessage(line);
 				BirdfeederWatch.onChatMessage(line);
 				ShiningCoinWatch.onChatMessage(line);
 				SafariObjectives.onChatMessage(line);
 				HotspotWatch.onChatMessage(line);
 				HideyhoSolver.onChatMessage(line);
-				StillCritters.onChatMessage(line);
+				StillCritters.onChatMessage(line, event.critterEvent());
 				FloorDrops.onChatMessage(line);
 				MoundSpotter.onChatMessage(line);
 			}
@@ -323,6 +336,7 @@ public class SafariUtils implements ClientModInitializer {
 
 	/** Clears server-derived state and every pending automatic command off Hypixel. */
 	private static void leaveHypixel() {
+		SafariRuntimeState.disconnected();
 		SafariLocation.onWorldChange();
 		SessionManager.onWorldChange();
 		TicketTrading.onDisconnect();

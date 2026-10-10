@@ -57,6 +57,9 @@ public final class WaypointRenderer {
 	private static Set<java.util.UUID> nextReplacedVanillaNames = new java.util.HashSet<>();
 	private static final int LABEL_CACHE_LIMIT = 512;
 	private static final int PROVISIONAL_SHAPE_CACHE_LIMIT = 256;
+	private static final int BOUNDS_CACHE_LIMIT = 512;
+	/** One server tick, smoothing discrete entity-size updates without adding lag. */
+	private static final long BOUNDS_TRANSITION_NANOS = 50_000_000L;
 	private static final Map<LabelKey, CachedLabel> LABEL_CACHE =
 		new LinkedHashMap<>(LABEL_CACHE_LIMIT, 0.75f, true) {
 			@Override
@@ -72,10 +75,38 @@ public final class WaypointRenderer {
 				return size() > PROVISIONAL_SHAPE_CACHE_LIMIT;
 			}
 		};
+	private static final Map<java.util.UUID, BoundsTransition> BOUNDS_TRANSITIONS =
+		new LinkedHashMap<>(BOUNDS_CACHE_LIMIT, 0.75f, true) {
+			@Override
+			protected boolean removeEldestEntry(Map.Entry<java.util.UUID, BoundsTransition> eldest) {
+				return size() > BOUNDS_CACHE_LIMIT;
+			}
+		};
 	private record LabelKey(String label, long distance, long rainbowFrame) { }
 	private record CachedLabel(FormattedCharSequence sequence, int width) { }
 	private record VisibleMarker(Markers.Marker marker, double distance, boolean seeThrough) { }
 	private record ProvisionalShape(Vec3 bodyOffset, double width, double height) { }
+	private static final class BoundsTransition {
+		double fromWidth;
+		double fromHeight;
+		double targetWidth;
+		double targetHeight;
+		double displayedWidth;
+		double displayedHeight;
+		double baseWidth;
+		double baseHeight;
+		long startedAt;
+
+		BoundsTransition(double width, double height, long now) {
+			fromWidth = targetWidth = width;
+			fromHeight = targetHeight = height;
+			displayedWidth = width;
+			displayedHeight = height;
+			baseWidth = width;
+			baseHeight = height;
+			startedAt = now;
+		}
+	}
 
 	/**
 	 * The lines pipeline with the depth test disabled, so the box shows through terrain.
@@ -305,8 +336,12 @@ public final class WaypointRenderer {
 	private static final int SPARKLING_BEAM_GRADIENT_SEGMENTS = 24;
 
 	/** Species with their own dedicated waypoint further down. */
-	private static final Set<String> EXCLUDED_FROM_HITBOXES =
+	private static final Set<String> CUSTOM_WAYPOINT_CRITTERS =
 		Set.of("Hideonwall", "Duplico", "Hideonfloor", "Bloodbat");
+	private static final Set<String> GENERIC_REMEMBERED_CRITTERS =
+		Set.of("Snoozle", "Troodon", "Fluffling");
+	private static final Set<String> EXCLUDED_FROM_HITBOXES = Set.of(
+		"Hideyho", "Hideonwall", "Duplico", "Hideonfloor", "Bloodbat", "Snoozle", "Troodon", "Fluffling");
 
 	/**
 	 * Each tracked critter's toggle, colour, and the biome it is looked for in.
@@ -328,7 +363,13 @@ public final class WaypointRenderer {
 		new TrackedWaypoint("Bloodbat", "Bloodbat",
 			d -> d.highlightBloodbat, d -> d.bloodbatColour, SafariBiome.HAUNTED, true),
 		new TrackedWaypoint("Hideonfloor", "Hideonfloor",
-			d -> d.highlightHideonfloor, d -> d.hideonfloorColour, SafariBiome.FOREST, false));
+			d -> d.highlightHideonfloor, d -> d.hideonfloorColour, SafariBiome.FOREST, false),
+		new TrackedWaypoint("Snoozle", "Snoozle",
+			d -> true, d -> d.hitboxColour, SafariBiome.CAVERN, true),
+		new TrackedWaypoint("Troodon", "Troodon",
+			d -> true, d -> d.hitboxColour, SafariBiome.ICY, true),
+		new TrackedWaypoint("Fluffling", "Fluffling",
+			d -> true, d -> d.hitboxColour, SafariBiome.FOREST, true));
 
 	private static final String FISH_NAME = "Flavor Packed Fish";
 	private static final double FISH_PAIR_RADIUS = 2.5;
@@ -490,7 +531,7 @@ public final class WaypointRenderer {
 				: uniqueColour != 0 ? uniqueColour
 				: display.hitboxRarityColour ? 0xFF000000 | sighting.critter().rarity().colour() : fixedColour;
 
-			AABB box = hitboxFor(entity);
+			AABB box = presentedHitbox(sighting.critter(), entity);
 			// Diagnostics override Safe Mode depth testing; ordinary hitboxes do not.
 			boolean seeThrough = !SafeMode.critterHitboxes(sparkling) || diagnostic;
 			if (seeThrough) {
@@ -582,25 +623,27 @@ public final class WaypointRenderer {
 
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
 			if (!SparklingWatch.isOutstanding(sighting)) continue;
+			// Hideyho's solver owns its box and START/END title. This path retains only
+			// its Sparkling beacon so a generic pity marker can never appear beside it.
+			boolean hideyho = "Hideyho".equals(sighting.critter().name());
 			Entity body = sighting.mob();
 			if (body != null && RecatchSpots.isCaptureArtifact(sighting.critter(), body)) continue;
-			boolean labelIsBody = "Hideyho".equals(sighting.critter().name());
-			if (body == null && !labelIsBody
+			if (body == null && !hideyho
 				&& (!SparklingWatch.provisionalMarkerAllowed(sighting.critter())
 					|| RecatchSpots.captureInProgress(sighting.critter()))) continue;
 			// Safe Mode retains a confirmed marker but depth-tests its beacon; Extra Mode
 			// may continue using the beacon as a through-terrain guide.
 			if (body != null) rememberProvisionalShape(sighting.label(), body);
-			AABB box = labelIsBody
+			AABB box = hideyho
 				? hideyhoHitbox(renderPosition(sighting.label()), sighting.label().blockPosition())
-				: "Duplico".equals(sighting.critter().name())
-					? duplicoHitbox(sighting.label())
+				: "Duplico".equals(sighting.critter().name()) ? duplicoHitbox(sighting.label())
 				: body != null ? presentedHitbox(sighting.critter(), body)
 				: provisionalCritterHitbox(sighting.critter(), sighting.label());
 			double distanceSq = distanceSquared(box, camera);
 			int colour = sparklingColour();
 
-			if (display.enableHitboxes && (body == null || !isRecatchPinned(body.getUUID()))) {
+			if (!hideyho && display.enableHitboxes
+				&& (body == null || !isRecatchPinned(body.getUUID()))) {
 				boolean seeThrough = !SafeMode.critterHitboxes(true);
 				if (drawRainbowBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
 						box, camera)) {
@@ -662,7 +705,7 @@ public final class WaypointRenderer {
 		}
 		Vec3 pos = renderPosition(label).add(shape.bodyOffset());
 		if (CritterMarkerGeometry.usesBlockSize(critter)) {
-			return CritterMarkerGeometry.blockSized(pos);
+			return CritterMarkerGeometry.presented(critter, pos);
 		}
 		double halfWidth = shape.width() * 0.5;
 		return new AABB(pos.x - halfWidth, pos.y, pos.z - halfWidth,
@@ -725,17 +768,72 @@ public final class WaypointRenderer {
 		DebugLog.line("DRAW", critter.name() + " id=" + id.toString().substring(0, 8) + " -> " + state);
 	}
 
-	/** The vanilla bounding box translated to this render frame's interpolated position. */
+	/**
+	 * The vanilla bounding box translated to this frame's interpolated position. Size
+	 * changes arrive on game ticks, so interpolate those too; this keeps the capture
+	 * shrink as smooth as the entity's rendered movement.
+	 */
 	private static AABB hitboxFor(Entity entity) {
-		Vec3 offset = renderPosition(entity).subtract(entity.position());
-		return entity.getBoundingBox().move(offset);
+		AABB raw = entity.getBoundingBox();
+		BoundsTransition dimensions = smoothDimensions(entity, raw.getXsize(), raw.getYsize());
+		double captureScale = RecatchSpots.captureScale(entity.getUUID());
+		double renderedWidth = captureScale < 1.0
+			? dimensions.baseWidth * captureScale : dimensions.displayedWidth;
+		double renderedHeight = captureScale < 1.0
+			? dimensions.baseHeight * captureScale : dimensions.displayedHeight;
+		Vec3 rendered = renderPosition(entity);
+		double centerX = rendered.x + raw.getCenter().x - entity.getX();
+		double centerZ = rendered.z + raw.getCenter().z - entity.getZ();
+		double minY = rendered.y + raw.minY - entity.getY();
+		double halfWidth = renderedWidth * 0.5;
+		return new AABB(centerX - halfWidth, minY, centerZ - halfWidth,
+			centerX + halfWidth, minY + renderedHeight, centerZ + halfWidth);
+	}
+
+	/** Returns frame-smooth dimensions while retaining the latest server value as truth. */
+	private static BoundsTransition smoothDimensions(Entity entity, double width, double height) {
+		long now = System.nanoTime();
+		BoundsTransition transition = BOUNDS_TRANSITIONS.computeIfAbsent(entity.getUUID(),
+			ignored -> new BoundsTransition(width, height, now));
+		transition.baseWidth = Math.max(transition.baseWidth, width);
+		transition.baseHeight = Math.max(transition.baseHeight, height);
+		double progress = Math.min(1.0,
+			(double) (now - transition.startedAt) / BOUNDS_TRANSITION_NANOS);
+		transition.displayedWidth = transition.fromWidth
+			+ (transition.targetWidth - transition.fromWidth) * progress;
+		transition.displayedHeight = transition.fromHeight
+			+ (transition.targetHeight - transition.fromHeight) * progress;
+		if (Math.abs(width - transition.targetWidth) > 1.0e-4
+			|| Math.abs(height - transition.targetHeight) > 1.0e-4) {
+			transition.fromWidth = transition.displayedWidth;
+			transition.fromHeight = transition.displayedHeight;
+			transition.targetWidth = width;
+			transition.targetHeight = height;
+			transition.startedAt = now;
+		}
+		return transition;
 	}
 
 	/** Applies presentation geometry consistently in ordinary and Sparkling paths. */
 	private static AABB presentedHitbox(Critter critter, Entity entity) {
 		return CritterMarkerGeometry.usesBlockSize(critter)
-			? CritterMarkerGeometry.blockSized(renderPosition(entity))
+			? scaledBlockHitbox(critter, entity, renderPosition(entity))
 			: hitboxFor(entity);
+	}
+
+	/** Keeps custom geometry fixed except during a uniform entity-scale animation. */
+	private static AABB scaledBlockHitbox(Critter critter, Entity entity, Vec3 base) {
+		AABB raw = entity.getBoundingBox();
+		BoundsTransition dimensions = smoothDimensions(entity, raw.getXsize(), raw.getYsize());
+		double captureScale = RecatchSpots.captureScale(entity.getUUID());
+		double widthScale = dimensions.baseWidth <= 0.0
+			? 1.0 : dimensions.displayedWidth / dimensions.baseWidth;
+		double heightScale = dimensions.baseHeight <= 0.0
+			? 1.0 : dimensions.displayedHeight / dimensions.baseHeight;
+		double scale = captureScale < 1.0 ? captureScale
+			: Math.abs(widthScale - heightScale) <= 0.08
+				? Math.max(0.0, Math.min(1.0, (widthScale + heightScale) * 0.5)) : 1.0;
+		return CritterMarkerGeometry.presented(critter, base, scale);
 	}
 
 	/**
@@ -746,8 +844,14 @@ public final class WaypointRenderer {
 			CritterEntities.Sighting sighting) {
 		Entity body = sighting.mob();
 		if (tracked.useRealHitbox()) return hitboxFor(body);
-		if ("Duplico".equals(tracked.critterName())) return duplicoHitbox(sighting.label());
-		return CritterMarkerGeometry.blockSized(renderPosition(body));
+		if ("Duplico".equals(tracked.critterName())) {
+			// Duplico's label is centred above its disguised body. Preserve the same
+			// vertical anchor used by its normal live marker while applying capture
+			// shrink, otherwise the box jumps upward whenever the body is in range.
+			return scaledBlockHitbox(sighting.critter(), body,
+				renderPosition(sighting.label()).add(0.0, -1.25, 0.0));
+		}
+		return scaledBlockHitbox(sighting.critter(), body, renderPosition(body));
 	}
 
 	/** Matches vanilla entity rendering instead of stepping between 20 tick positions. */
@@ -808,12 +912,8 @@ public final class WaypointRenderer {
 				// Use the shared entity color rules; diagnostic color has highest priority.
 				boolean diagnostic = BuildVersion.DEVELOPER
 					&& ConfigManager.get().advanced.showAllCritterHitboxes;
-				int baseColour = diagnostic ? 0xFFFF00FF
-					: display.hitboxEntityColorOverride
-					? (display.hitboxRarityColour
-						? 0xFF000000 | critter.rarity().colour()
-						: Colours.argb(display.hitboxColour, 0xFFFFFFFF))
-					: Colours.argb(tracked.colour().apply(display), 0xFFAA55FF);
+				int baseColour = critterHitboxColour(critter, false);
+				boolean genericRemembered = GENERIC_REMEMBERED_CRITTERS.contains(critter.name());
 				if (waypointEnabled && !hideOrdinary && !display.hidePossibleWaypoints) {
 					for (BlockPos candidate : StillCritters.candidatesFor(critter)) {
 						AABB box = "Bloodbat".equals(critter.name())
@@ -821,8 +921,9 @@ public final class WaypointRenderer {
 						if (!drawBox(poses, backend, LINES, box, camera, baseColour)) continue;
 						anyDrawn = true;
 						anyThroughWalls = true;
-						drawn.add(new Found(new Markers.Marker(box, tracked.label() + " (Possible)",
-							baseColour, Markers.Style.WAYPOINT, true),
+					drawn.add(new Found(new Markers.Marker(box, tracked.label() + " (Possible)",
+							baseColour, genericRemembered ? Markers.Style.HIGHLIGHT : Markers.Style.WAYPOINT,
+							true),
 							Math.sqrt(distanceSquared(box, camera)), true));
 					}
 				}
@@ -834,8 +935,7 @@ public final class WaypointRenderer {
 				// Every currently loaded individual, not just the first found — there
 				// is usually more than one, and stopping at one meant only ever
 				// drawing whichever the scan happened to reach first that frame.
-				for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-					if (!tracked.critterName().equals(sighting.critter().name())) continue;
+				for (CritterEntities.Sighting sighting : CritterEntities.all(critter)) {
 					boolean sparkling = SparklingWatch.presentsAsSparkling(sighting);
 					Entity entity = sighting.mob();
 					if (entity == null) continue;
@@ -868,8 +968,10 @@ public final class WaypointRenderer {
 						: uniqueColour != 0 ? uniqueColour : baseColour;
 
 					AABB box = trackedHitboxFor(tracked, sighting);
-					boolean seeThrough = StillCritters.persistentThroughWalls(entity.getUUID())
-						|| !SafeMode.hiddenCritter(critter, sparkling);
+					boolean seeThrough = genericRemembered
+						? !SafeMode.critterHitboxes(sparkling) || diagnostic
+						: StillCritters.persistentThroughWalls(entity.getUUID())
+							|| !SafeMode.hiddenCritter(critter, sparkling);
 					if (!(sparkling
 						? drawRainbowBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
 							box, camera)
@@ -879,9 +981,11 @@ public final class WaypointRenderer {
 					if (seeThrough) anyThroughWalls = true;
 					else anyDepthTested = true;
 
-					String label = (sparkling ? "SPARKLING " : "") + tracked.label()
-						+ Markers.pityLabel(critter, entity.getUUID());
-					drawn.add(new Found(new Markers.Marker(box, label, colour, Markers.Style.WAYPOINT),
+					String pity = !genericRemembered || display.hitboxPityTitle
+						? Markers.pityLabel(critter, entity.getUUID()) : "";
+					String label = (sparkling ? "SPARKLING " : "") + tracked.label() + pity;
+					drawn.add(new Found(new Markers.Marker(box, label, colour,
+						genericRemembered ? Markers.Style.HIGHLIGHT : Markers.Style.WAYPOINT),
 						Math.sqrt(distanceSquared(box, camera)), seeThrough));
 					markVanillaNameReplaced(sighting);
 				}
@@ -901,14 +1005,16 @@ public final class WaypointRenderer {
 					logWaypointState(critter, remembered.id(), "REMEMBERED");
 
 					AABB box = tracked.useRealHitbox()
-						? approximateHitbox(remembered.pos()) : new AABB(remembered.pos());
+						? remembered.box() : new AABB(remembered.pos());
 					int uniqueColour = display.hitboxEntityColorOverride
 						? SparklingMode.uniqueHitboxColour(critter, SessionManager.current()) : 0;
 					int colour = diagnostic ? 0xFFFF00FF
 						: remembered.sparkling() ? sparklingColour()
 						: uniqueColour != 0 ? uniqueColour : baseColour;
-					boolean seeThrough = remembered.persistentThroughWalls()
-						|| !SafeMode.hiddenCritter(critter, remembered.sparkling());
+					boolean seeThrough = genericRemembered
+						? !SafeMode.critterHitboxes(remembered.sparkling()) || diagnostic
+						: remembered.persistentThroughWalls()
+							|| !SafeMode.hiddenCritter(critter, remembered.sparkling());
 					if (!(remembered.sparkling()
 						? drawRainbowBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
 							box, camera)
@@ -917,9 +1023,12 @@ public final class WaypointRenderer {
 					anyDrawn = true;
 					if (seeThrough) anyThroughWalls = true;
 					else anyDepthTested = true;
-					String label = (remembered.sparkling() ? "SPARKLING " : "") + tracked.label()
-						+ Markers.pityLabel(critter, remembered.id());
-					drawn.add(new Found(new Markers.Marker(box, label, colour, Markers.Style.WAYPOINT),
+					String pity = !genericRemembered || display.hitboxPityTitle
+						? Markers.pityLabel(critter, remembered.id()) : "";
+					String label = (remembered.sparkling() ? "SPARKLING " : "")
+						+ tracked.label() + pity;
+					drawn.add(new Found(new Markers.Marker(box, label, colour,
+						genericRemembered ? Markers.Style.HIGHLIGHT : Markers.Style.WAYPOINT),
 						Math.sqrt(distanceSquared(box, camera)), seeThrough));
 				}
 			}
@@ -946,7 +1055,7 @@ public final class WaypointRenderer {
 					Markers.Style.WAYPOINT, true), Math.sqrt(distanceSquared(box, camera)), true));
 			}
 			BlockPos hideyho = HideyhoSolver.position();
-			if (display.enableHitboxes && hideyho != null && !HideyhoSolver.sparkling()
+			if (display.enableHitboxes && hideyho != null
 				&& !SparklingMode.hideOrdinaryHitbox(hideyhoCritter, HideyhoSolver.sparkling())) {
 				// Confirmed Hideyhos can stand on a block edge. Preserve the entity's
 				// exact horizontal centre instead of snapping its box to blockPosition().
@@ -958,13 +1067,18 @@ public final class WaypointRenderer {
 				AABB box = hideyhoHitbox(new Vec3(centreX, hideyho.getY(), centreZ), hideyho);
 				// This phase's position was directly confirmed already and Hideyho cannot
 				// move again until its explicit chat transition changes the phase.
-				boolean seeThrough = true;
+				boolean seeThrough = !HideyhoSolver.sparkling()
+					|| !SafeMode.critterHitboxes(true);
 				int uniqueColour = display.hitboxEntityColorOverride
 					? SparklingMode.uniqueHitboxColour(hideyhoCritter, SessionManager.current()) : 0;
 				int liveColour = HideyhoSolver.sparkling() ? sparklingColour()
 					: uniqueColour != 0 ? uniqueColour : colour;
-				if (drawBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
-						box, camera, liveColour)) {
+				boolean boxDrawn = HideyhoSolver.sparkling()
+					? drawRainbowBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
+						box, camera)
+					: drawBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
+						box, camera, liveColour);
+				if (boxDrawn) {
 					anyDrawn = true;
 					if (seeThrough) anyThroughWalls = true;
 					else anyDepthTested = true;
@@ -1280,7 +1394,7 @@ public final class WaypointRenderer {
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
 		boolean diagnostic = BuildVersion.DEVELOPER
 			&& ConfigManager.get().advanced.showAllCritterHitboxes;
-		boolean dedicatedWaypointCritter = EXCLUDED_FROM_HITBOXES.contains(critter.name())
+		boolean dedicatedWaypointCritter = CUSTOM_WAYPOINT_CRITTERS.contains(critter.name())
 			|| "Hideyho".equals(critter.name());
 		boolean allowSharedColourRules = !dedicatedWaypointCritter
 			|| display.hitboxEntityColorOverride;

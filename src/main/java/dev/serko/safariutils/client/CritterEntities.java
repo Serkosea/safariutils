@@ -46,7 +46,16 @@ public final class CritterEntities {
 		Map.entry("Rockmite", Set.of("silverfish")),
 		Map.entry("Scrappy", Set.of("armadillo")),
 		Map.entry("Mantis Shrimp", Set.of("tropical_fish")),
+		Map.entry("Gimmiegold", Set.of("tropical_fish")),
 		Map.entry("Nozzlenose", Set.of("dolphin")),
+		Map.entry("Wumpa", Set.of("ravager")),
+		Map.entry("Billygoat", Set.of("goat")),
+		Map.entry("Gemzie", Set.of("vex")),
+		Map.entry("Polaris", Set.of("polar_bear")),
+		Map.entry("Shuddersquid", Set.of("glow_squid")),
+		Map.entry("Snoozle", Set.of("sniffer")),
+		Map.entry("Tepid", Set.of("tropical_fish")),
+		Map.entry("Troodon", Set.of("silverfish")),
 		Map.entry("Strongarm", Set.of("snow_golem")),
 		Map.entry("Areita", Set.of("cave_spider")),
 		Map.entry("Bloodbat", Set.of("bat")),
@@ -58,6 +67,8 @@ public final class CritterEntities {
 	);
 
 	private static List<Sighting> sightings = List.of();
+	/** Immutable per-species index rebuilt with the shared scan, avoiding render-time filtering. */
+	private static Map<Critter, List<Sighting>> sightingsByCritter = Map.of();
 	private static Map<UUID, Critter> bodylessLabels = Map.of();
 	/** Constant-time reverse lookup shared by render hooks for this scan snapshot. */
 	private static Map<UUID, Sighting> sightingsByEntity = Map.of();
@@ -94,6 +105,7 @@ public final class CritterEntities {
 		if (client.level == null || !SafariLocation.inSafari()) {
 			logDiff(List.of());
 			sightings = List.of();
+			sightingsByCritter = Map.of();
 			bodylessLabels = Map.of();
 			sightingsByEntity = Map.of();
 			ballCandidates.clear();
@@ -104,6 +116,12 @@ public final class CritterEntities {
 		logDiff(result);
 		checkBallCandidates(client, result);
 		sightings = result;
+		Map<Critter, List<Sighting>> grouped = new HashMap<>();
+		for (Sighting sighting : result) {
+			grouped.computeIfAbsent(sighting.critter(), ignored -> new ArrayList<>()).add(sighting);
+		}
+		grouped.replaceAll((critter, entries) -> List.copyOf(entries));
+		sightingsByCritter = Map.copyOf(grouped);
 		Map<UUID, Critter> nextBodylessLabels = new HashMap<>();
 		Map<UUID, Sighting> nextSightingsByEntity = new HashMap<>(Math.max(16, result.size() * 2));
 		for (Sighting sighting : result) {
@@ -278,6 +296,11 @@ public final class CritterEntities {
 		return sightings;
 	}
 
+	/** Current sightings of one species from the same immutable shared-scan snapshot. */
+	public static List<Sighting> all(Critter critter) {
+		return critter == null ? List.of() : sightingsByCritter.getOrDefault(critter, List.of());
+	}
+
 	/**
 	 * When the list was last rebuilt.
 	 *
@@ -345,9 +368,13 @@ public final class CritterEntities {
 		pairingOrder.sort(Comparator.comparing(
 			label -> pairingRanks.get(label.entity().getUUID())));
 		for (Label label : pairingOrder) {
-			Entity body = nearest(candidates, candidateGrid, interactionGrid,
-				label.entity(), label.critter(), armorStandGrid, claimedBodies,
-				previousBodies.get(label.entity().getUUID()));
+			// Hideyho's named player is the critter itself. Generic nearest-body
+			// pairing used to attach a nearby silverfish (or another critter) to its
+			// label and render a second, incorrectly sized Hideyho hitbox.
+			Entity body = "Hideyho".equals(label.critter().name()) ? label.entity()
+				: nearest(candidates, candidateGrid, interactionGrid,
+					label.entity(), label.critter(), armorStandGrid, claimedBodies,
+					previousBodies.get(label.entity().getUUID()));
 			if (body != null) claimedBodies.add(body.getUUID());
 			pairedByLabel.put(label.entity().getUUID(),
 				new Sighting(label.critter(), label.entity(), body, label.sparkling()));

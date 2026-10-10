@@ -203,7 +203,7 @@ public final class Markers {
 		// Guaranteed catches cannot escape or build useful pity. This includes
 		// Uncommons when the configured Eagle bonus raises their chance above 100%.
 		if (CritterCatchRules.guaranteedWithoutPity(critter)) return "";
-		return " (" + RecatchSpots.pityFor(entityId) + "/" + pityThreshold(critter.rarity()) + ")";
+		return " (" + CritterState.pityFor(entityId) + "/" + pityThreshold(critter.rarity()) + ")";
 	}
 
 	private static Marker block(BlockPos pos, String label, int colour) {

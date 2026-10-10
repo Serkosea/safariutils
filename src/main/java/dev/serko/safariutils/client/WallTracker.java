@@ -6,7 +6,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Tracks the fixed Snoozle and Troodon walls. A chunk must be loaded before air can
@@ -48,6 +50,8 @@ public final class WallTracker {
 	private final int[][] positions;
 	/** Safe Mode retains the last wall state the player directly confirmed. */
 	private final java.util.Map<BlockPos, State> safeStates = new java.util.HashMap<>();
+	/** Walls whose resident critter was caught or positively observed missing. */
+	private final Set<BlockPos> completed = new HashSet<>();
 	/** So a state change is logged once, not every one of the many calls a frame makes. */
 	private final java.util.Map<BlockPos, State> lastLoggedState = new java.util.HashMap<>();
 	private Object cachedLevel;
@@ -86,7 +90,9 @@ public final class WallTracker {
 		for (int[] coords : positions) {
 			BlockPos pos = new BlockPos(coords[0], coords[1], coords[2]);
 			State state;
-			if (!client.level.isLoaded(pos)) {
+			if (completed.contains(pos)) {
+				state = State.BROKEN;
+			} else if (!client.level.isLoaded(pos)) {
 				state = State.UNKNOWN;
 			} else if (safeMode) {
 				State live = client.level.getBlockState(pos).isAir() ? State.BROKEN : State.INTACT;
@@ -134,8 +140,43 @@ public final class WallTracker {
 		return !walls.isEmpty() && walls.stream().allMatch(w -> w.state() == State.BROKEN);
 	}
 
+	/** Wall state corresponding to a critter anchored at or immediately beside it. */
+	public State stateNear(BlockPos observed, double maximumDistance) {
+		if (observed == null || maximumDistance < 0.0) return null;
+		double maximumDistanceSq = maximumDistance * maximumDistance;
+		Wall nearest = null;
+		double nearestDistanceSq = maximumDistanceSq;
+		for (Wall wall : walls()) {
+			double distanceSq = wall.pos().distSqr(observed);
+			if (distanceSq > nearestDistanceSq) continue;
+			nearest = wall;
+			nearestDistanceSq = distanceSq;
+		}
+		return nearest == null ? null : nearest.state();
+	}
+
+	/** Treats the nearest corresponding wall as complete even when its blocks remain intact. */
+	public void completeNear(BlockPos observed, double maximumDistance) {
+		if (observed == null || maximumDistance < 0.0) return;
+		double limit = maximumDistance * maximumDistance;
+		BlockPos nearest = null;
+		double nearestDistance = limit;
+		for (int[] coords : positions) {
+			BlockPos pos = new BlockPos(coords[0], coords[1], coords[2]);
+			double distance = pos.distSqr(observed);
+			if (distance > nearestDistance) continue;
+			nearest = pos;
+			nearestDistance = distance;
+		}
+		if (nearest == null || !completed.add(nearest)) return;
+		cachedTick = Long.MIN_VALUE;
+		DebugLog.line("WALL", name + " " + nearest.getX() + "," + nearest.getY() + ","
+			+ nearest.getZ() + " -> COMPLETED (critter resolved)");
+	}
+
 	public void reset() {
 		safeStates.clear();
+		completed.clear();
 		lastLoggedState.clear();
 		cachedLevel = null;
 		cachedTick = Long.MIN_VALUE;

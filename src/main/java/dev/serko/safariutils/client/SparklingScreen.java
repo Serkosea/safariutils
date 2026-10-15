@@ -20,11 +20,9 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -93,10 +91,10 @@ public final class SparklingScreen extends Screen {
 	private EditBox lookupName;
 	private int lookupHintPhase = -1;
 	private boolean lookupLoading;
+	private long lookupRevision;
 	private static SparklingPlayerLookup lastLookup;
 	private static String lastLookupName = "";
-	private static final List<SparklingPlayerLookup> recentLookups = new ArrayList<>();
-	private static final Map<String, Long> recentLookupCachedAt = new HashMap<>();
+	private static final LookupHistory recentLookups = new LookupHistory(10);
 	private static long dismissedImportFetchedAt;
 	private boolean recentLookupsOpen;
 	private SparklingPlayerLookup pendingImport;
@@ -151,12 +149,22 @@ public final class SparklingScreen extends Screen {
 	private void addLookupField() {
 		int x = panelLeft + 18;
 		int y = panelTop + 54;
+		if (lookupName != null) {
+			lookupName.setX(x);
+			lookupName.setY(y);
+			lookupName.setWidth(Math.min(190, panelWidth - 130));
+			addRenderableWidget(lookupName);
+			return;
+		}
 		lookupName = new EditBox(font, x, y, Math.min(190, panelWidth - 130), 18,
 			Component.literal("Minecraft username"));
 		lookupName.setMaxLength(16);
 		lookupName.setValue(lastLookupName);
 		SettingsUiKit.showStart(lookupName);
-		lookupName.setResponder(value -> lastLookupName = value);
+		lookupName.setResponder(value -> {
+			if (!lastLookupName.equals(value)) lookupRevision++;
+			lastLookupName = value;
+		});
 		lookupName.setHint(LOOKUP_HINT_COMPONENT);
 		lookupName.setTextColor(WHITE);
 		lookupName.setTextColorUneditable(DIM);
@@ -246,6 +254,7 @@ public final class SparklingScreen extends Screen {
 	}
 
 	private void switchTab(Tab target) {
+		if (tab != target) lookupRevision++;
 		commitEditor();
 		tab = target;
 		status = defaultStatus(target);
@@ -489,15 +498,14 @@ public final class SparklingScreen extends Screen {
 	private void refreshPartyUiCache() {
 		long now = System.currentTimeMillis();
 		if (cachedPartySnapshot != null && cachedPartyRefresh != null && now < partyCacheUntil) return;
-		var provider = SharedSparklingProviders.provider().orElseThrow();
-		cachedPartySnapshot = provider.partySnapshot();
-		cachedPartyRefresh = provider.partyRefreshStatus();
+		cachedPartySnapshot = SharedSparklingProviders.partySnapshot();
+		cachedPartyRefresh = SharedSparklingProviders.partyRefreshStatus();
 		partyCacheUntil = now + 250L;
 	}
 
 	private void checkCachedLocalCollection() {
 		if (!SharedSparklingProviders.available() || pendingImport != null) return;
-		SharedSparklingProviders.provider().orElseThrow().cachedLocalCollection()
+		SharedSparklingProviders.cachedLocalCollection()
 			.filter(result -> result.fetchedAt() != dismissedImportFetchedAt)
 			.filter(result -> SparklingStats.apiComparisonAllowed(result.fetchedAt()))
 			.filter(result -> !collectionMatches(result))
@@ -635,11 +643,8 @@ public final class SparklingScreen extends Screen {
 		boolean blank = entered.isEmpty();
 		boolean displayed = lastLookup != null;
 		long now = System.currentTimeMillis();
-		long cachedAt = displayed ? recentLookupCachedAt.getOrDefault(
-			lastLookup.username().toLowerCase(Locale.ROOT), 0L) : 0L;
-		boolean freshCached = displayed && now - cachedAt < LOOKUP_CACHE_MILLIS;
-		long cooldown = SharedSparklingProviders.provider()
-			.map(provider -> Math.max(0L, provider.lookupAvailableAt() - now)).orElse(0L);
+		boolean freshCached = LookupHistory.fresh(lastLookup, now, LOOKUP_CACHE_MILLIS);
+		long cooldown = Math.max(0L, SharedSparklingProviders.lookupAvailableAt() - now);
 		boolean available = SharedSparklingProviders.available();
 		boolean refreshable = blank && displayed && !freshCached && cooldown == 0L && available;
 		boolean enabled = !lookupLoading && (refreshable
@@ -665,14 +670,19 @@ public final class SparklingScreen extends Screen {
 			return false;
 		}
 		lookupLoading = true;
+		long revision = ++lookupRevision;
 		setStatus("Looking up " + username + "…", DIM);
-		SharedSparklingProviders.provider().orElseThrow().lookupPlayer(username)
+		SharedSparklingProviders.lookupPlayer(username)
 			.whenComplete((result, error) -> Minecraft.getInstance().execute(() -> {
 				lookupLoading = false;
-				if (error != null) setStatus(ClientMessages.apiFailure("look up Sparklings", error), RED);
+				SparklingPlayerLookup accepted = error == null ? rememberLookup(result) : null;
+				if (revision != lookupRevision || ClientCompat.screen() != this) {
+					DebugLog.line("PLAYER_LOOKUP", "superseded presentation skipped success=" + (error == null));
+					return;
+				}
+				if (error != null) setStatus(ClientMessages.playerLookupFailure(error), RED);
 				else {
-					lastLookup = result;
-					rememberLookup(result);
+					lastLookup = accepted;
 					lastLookupName = "";
 					if (lookupName != null) {
 						lookupName.setValue("");
@@ -680,7 +690,7 @@ public final class SparklingScreen extends Screen {
 					}
 					setFocused(null);
 					setStatus("Loaded " + result.username() + "'s Profile", GREEN);
-					offerImportIfLocal(result);
+					offerImportIfLocal(accepted);
 				}
 			}));
 		return true;
@@ -696,19 +706,18 @@ public final class SparklingScreen extends Screen {
 		pendingImport = result;
 	}
 
-	private static void rememberLookup(SparklingPlayerLookup result) {
-		CanonicalPlayerNames.remember(result.username());
-		String key = result.username().toLowerCase(Locale.ROOT);
-		if (lastLookup != null && lastLookup.username().equalsIgnoreCase(result.username())) {
-			lastLookup = result;
-		}
-		recentLookups.removeIf(saved -> saved.username().equalsIgnoreCase(result.username()));
-		recentLookups.addFirst(result);
-		recentLookupCachedAt.put(key, System.currentTimeMillis());
-		while (recentLookups.size() > 10) {
-			SparklingPlayerLookup removed = recentLookups.removeLast();
-			recentLookupCachedAt.remove(removed.username().toLowerCase(Locale.ROOT));
-		}
+	private static SparklingPlayerLookup rememberLookup(SparklingPlayerLookup result) {
+		SparklingPlayerLookup accepted = recentLookups.remember(result);
+		CanonicalPlayerNames.remember(accepted.username());
+		if (lastLookup != null && lastLookup.username().equalsIgnoreCase(accepted.username())
+				&& accepted.fetchedAt() >= lastLookup.fetchedAt()) lastLookup = accepted;
+		return accepted;
+	}
+
+	@Override
+	public void removed() {
+		lookupRevision++;
+		super.removed();
 	}
 
 	/** Adds automatic party results to the same five-minute cache as manual lookups. */
@@ -717,7 +726,7 @@ public final class SparklingScreen extends Screen {
 	}
 
 	private void drawRecentLookups(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-		if (recentLookups.isEmpty()) return;
+		if (recentLookups.entries().isEmpty()) return;
 		int width = 142;
 		int height = 18;
 		int x = panelLeft + panelWidth - width - 12;
@@ -744,8 +753,8 @@ public final class SparklingScreen extends Screen {
 		hits.add(new Hit(x, y, width, height, "Recent Lookups",
 			() -> recentLookupsOpen = !recentLookupsOpen));
 		if (!recentLookupsOpen) return;
-		for (int index = 0; index < recentLookups.size(); index++) {
-			SparklingPlayerLookup saved = recentLookups.get(index);
+		for (int index = 0; index < recentLookups.entries().size(); index++) {
+			SparklingPlayerLookup saved = recentLookups.entries().get(index);
 			int itemY = y + height * (index + 1);
 			boolean itemHovered = contains(x, itemY, width, height, mouseX, mouseY);
 			graphics.fill(x, itemY, x + width, itemY + height, itemHovered ? HOVER : 0xFF141B25);
@@ -765,6 +774,7 @@ public final class SparklingScreen extends Screen {
 	}
 
 	private void selectRecent(SparklingPlayerLookup saved) {
+		lookupRevision++;
 		lastLookup = saved;
 		lastLookupName = "";
 		if (lookupName != null) {
@@ -879,7 +889,9 @@ public final class SparklingScreen extends Screen {
 		double mouseY = event.y() / scale;
 		if (lookupName != null && lookupName.isMouseOver(mouseX, mouseY)) {
 			setFocused(lookupName);
-			SettingsUiKit.focusEnd(lookupName);
+			MouseButtonEvent scaledEvent = scale == 1f ? event
+				: new MouseButtonEvent(mouseX, mouseY, event.buttonInfo());
+			SettingsUiKit.focusAt(lookupName, scaledEvent, doubled);
 			return true;
 		}
 		if (lookupName != null && lookupName.isFocused()

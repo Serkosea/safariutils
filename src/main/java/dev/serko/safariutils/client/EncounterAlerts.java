@@ -1,10 +1,13 @@
 package dev.serko.safariutils.client;
 
+import dev.serko.safariutils.state.MonotonicTime;
+
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.CritterSpawnRanges;
 import dev.serko.safariutils.data.Critters;
 import dev.serko.safariutils.data.SafariBiome;
 import dev.serko.safariutils.session.TrackingMode;
+import dev.serko.safariutils.state.PartyState;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.DeltaTracker;
@@ -14,6 +17,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +51,9 @@ public final class EncounterAlerts implements HudElement {
 	private static float displayedHorizontalPosition = 0.5f;
 	private static float displayedVerticalPosition = 0.4f;
 	private static boolean rainbowMessage;
+	private static int activePriority;
+	private static final int MAX_PENDING_BANNERS = 8;
+	private static final ArrayDeque<PendingBanner> pendingBanners = new ArrayDeque<>();
 	private static String ticketReminderTitle;
 	private static boolean ticketReminderUseTicket;
 	private static long ticketReminderStartedAt;
@@ -73,6 +80,8 @@ public final class EncounterAlerts implements HudElement {
 	private static final int BANNER_LINE_SPACING = 3;
 
 	private record BannerTextLayout(List<Component> lines, int width) { }
+	private record PendingBanner(String text, int colour, boolean rainbow, long durationMillis,
+			float scale, float horizontalPosition, float verticalPosition, int priority) { }
 
 	public enum Stage {READY, STARTED, DONE}
 	public enum Preview {FULL_PARTY, HOTSPOT, FLOOR_DROPS, BIOME_UNIQUES, ALL_BUT_MACAW, ALL_DONE,
@@ -182,8 +191,7 @@ public final class EncounterAlerts implements HudElement {
 					: Colours.argb(alerts.biomeUniquesDoneColour, DONE_COLOUR),
 				alerts.biomeUniquesDoneSoundPitch, alerts.biomeUniquesDoneDuration,
 				alerts.biomeUniquesDoneSoundMode, alerts.biomeUniquesDoneSoundChoice,
-				alerts.biomeUniquesDoneSoundVolume, alerts.biomeUniquesDoneScale,
-				alerts.biomeUniquesDoneVerticalPosition);
+				alerts.biomeUniquesDoneSoundVolume);
 		}
 		if (config.party.biomeDone() != SafariConfig.Broadcast.NONE) {
 			String chatText = AlertText.format(config.party.biomeDoneChatText,
@@ -201,8 +209,7 @@ public final class EncounterAlerts implements HudElement {
 				Colours.argb(alerts.allButMacawDoneColour, DONE_COLOUR),
 				alerts.allButMacawDoneSoundPitch, alerts.allButMacawDoneDuration,
 				alerts.allButMacawDoneSoundMode, alerts.allButMacawDoneSoundChoice,
-				alerts.allButMacawDoneSoundVolume, alerts.allButMacawDoneScale,
-				alerts.allButMacawDoneVerticalPosition);
+				alerts.allButMacawDoneSoundVolume);
 		}
 		post(config.party.allButMacaw(), config.party.allButMacawChatText);
 	}
@@ -224,8 +231,7 @@ public final class EncounterAlerts implements HudElement {
 					: Colours.argb(config.alerts.macawAlertColour, rarityColour),
 				config.alerts.macawSoundPitch,
 				config.alerts.macawDuration, config.alerts.macawSoundMode,
-				config.alerts.macawSoundChoice, config.alerts.macawSoundVolume,
-				config.alerts.macawScale, config.alerts.macawVerticalPosition);
+				config.alerts.macawSoundChoice, config.alerts.macawSoundVolume);
 		}
 
 		if (birdChatAllowed()) post(config.party.macaw(), config.party.macawChatText);
@@ -240,8 +246,7 @@ public final class EncounterAlerts implements HudElement {
 				Colours.argb(alerts.allUniquesDoneColour, DONE_COLOUR),
 				alerts.allUniquesDoneSoundPitch, alerts.allUniquesDoneDuration,
 				alerts.allUniquesDoneSoundMode, alerts.allUniquesDoneSoundChoice,
-				alerts.allUniquesDoneSoundVolume, alerts.allUniquesDoneScale,
-				alerts.allUniquesDoneVerticalPosition);
+				alerts.allUniquesDoneSoundVolume);
 		}
 		post(config.party.allDone(), config.party.allDoneChatText);
 	}
@@ -256,8 +261,7 @@ public final class EncounterAlerts implements HudElement {
 		if (alerts.hideyhoSoundMode == 0) return;
 		banner(alerts.hideyhoText, Colours.argb(alerts.hideyhoAlertColour, 0xFFFF55FF),
 			alerts.hideyhoSoundPitch, alerts.hideyhoDuration, alerts.hideyhoSoundMode,
-			alerts.hideyhoSoundChoice, alerts.hideyhoSoundVolume,
-			alerts.hideyhoScale, alerts.hideyhoVerticalPosition);
+			alerts.hideyhoSoundChoice, alerts.hideyhoSoundVolume);
 	}
 
 	/**
@@ -277,8 +281,7 @@ public final class EncounterAlerts implements HudElement {
 				: Colours.argb(alerts.floorDropsDoneAlertColour, 0xFF55FFAA),
 			alerts.floorDropsDoneSoundPitch,
 			alerts.floorDropsDoneDuration, alerts.floorDropsDoneSoundMode,
-			alerts.floorDropsDoneSoundChoice, alerts.floorDropsDoneSoundVolume,
-			alerts.floorDropsDoneScale, alerts.floorDropsDoneVerticalPosition);
+			alerts.floorDropsDoneSoundChoice, alerts.floorDropsDoneSoundVolume);
 	}
 
 	/** Announces the run's personal hotspot using that biome's HUD colour. */
@@ -290,8 +293,7 @@ public final class EncounterAlerts implements HudElement {
 			alerts.hotspotUseBiomeColour ? biomeColour
 				: Colours.argb(alerts.hotspotAlertColour, 0xFFFF55FF),
 			alerts.hotspotSoundPitch, alerts.hotspotDuration, alerts.hotspotSoundMode,
-			alerts.hotspotSoundChoice, alerts.hotspotSoundVolume,
-			alerts.hotspotScale, alerts.hotspotVerticalPosition);
+			alerts.hotspotSoundChoice, alerts.hotspotSoundVolume);
 	}
 
 	/** Announces that every member of the known party reached this Safari instance. */
@@ -303,8 +305,7 @@ public final class EncounterAlerts implements HudElement {
 				"<PLAYERS>", String.valueOf(players), "<MAX>", String.valueOf(players)), Colours.argb(alerts.fullPartyJoinedColour, 0xFF55FF55),
 				alerts.fullPartyJoinedSoundPitch, alerts.fullPartyJoinedDuration,
 				alerts.fullPartyJoinedSoundMode, alerts.fullPartyJoinedSoundChoice,
-				alerts.fullPartyJoinedSoundVolume, alerts.fullPartyJoinedScale,
-				alerts.fullPartyJoinedVerticalPosition);
+				alerts.fullPartyJoinedSoundVolume);
 		}
 		post(config.party.fullPartyJoined(), AlertText.format(config.party.fullPartyJoinedChatText,
 			"<PLAYERS>", String.valueOf(players), "<MAX>", String.valueOf(players)));
@@ -321,39 +322,34 @@ public final class EncounterAlerts implements HudElement {
 				if ((config.contestStartSoundMode != 0)) banner(config.contestStartText,
 					Colours.argb(config.contestStartColour, 0xFF55FF55), config.contestStartSoundPitch,
 					config.contestStartDuration, config.contestStartSoundMode,
-					config.contestStartSoundChoice, config.contestStartSoundVolume,
-					config.contestStartScale, config.contestStartVerticalPosition);
+					config.contestStartSoundChoice, config.contestStartSoundVolume);
 				post(settings.party.contestStart(), settings.party.contestStartChatText);
 			}
 			case FIVE_MINUTES -> {
 				if (!bannerWarnings && config.contestFiveMinuteSoundMode != 0) banner(config.contestFiveMinuteText,
 					Colours.argb(config.contestFiveMinuteColour, 0xFFFFFF55), config.contestFiveMinuteSoundPitch,
 					config.contestFiveMinuteDuration, config.contestFiveMinuteSoundMode,
-					config.contestFiveMinuteSoundChoice, config.contestFiveMinuteSoundVolume,
-					config.contestFiveMinuteScale, config.contestFiveMinuteVerticalPosition);
+					config.contestFiveMinuteSoundChoice, config.contestFiveMinuteSoundVolume);
 				if (!chatWarnings) post(settings.party.contestFiveMinute(), settings.party.contestFiveMinuteChatText);
 			}
 			case ONE_MINUTE -> {
 				if (!bannerWarnings && config.contestOneMinuteSoundMode != 0) banner(config.contestOneMinuteText,
 					Colours.argb(config.contestOneMinuteColour, 0xFFFFAA00), config.contestOneMinuteSoundPitch,
 					config.contestOneMinuteDuration, config.contestOneMinuteSoundMode,
-					config.contestOneMinuteSoundChoice, config.contestOneMinuteSoundVolume,
-					config.contestOneMinuteScale, config.contestOneMinuteVerticalPosition);
+					config.contestOneMinuteSoundChoice, config.contestOneMinuteSoundVolume);
 			}
 			case ENDED -> {
 				if ((config.contestEndedSoundMode != 0)) banner(config.contestEndedText,
 					Colours.argb(config.contestEndedColour, 0xFFFF5555), config.contestEndedSoundPitch,
 					config.contestEndedDuration, config.contestEndedSoundMode,
-					config.contestEndedSoundChoice, config.contestEndedSoundVolume,
-					config.contestEndedScale, config.contestEndedVerticalPosition);
+					config.contestEndedSoundChoice, config.contestEndedSoundVolume);
 				post(settings.party.contestEnded(), settings.party.contestEndedChatText);
 			}
 			case TICKET_EARNED -> {
 				if ((config.contestTicketEarnedSoundMode != 0)) banner(config.contestTicketEarnedText,
 					Colours.argb(config.contestTicketEarnedColour, 0xFF55FF55), config.contestTicketEarnedSoundPitch,
 					config.contestTicketEarnedDuration, config.contestTicketEarnedSoundMode,
-					config.contestTicketEarnedSoundChoice, config.contestTicketEarnedSoundVolume,
-					config.contestTicketEarnedScale, config.contestTicketEarnedVerticalPosition);
+					config.contestTicketEarnedSoundChoice, config.contestTicketEarnedSoundVolume);
 				post(settings.party.contestTicketEarned(), settings.party.contestTicketEarnedChatText);
 			}
 		}
@@ -377,8 +373,7 @@ public final class EncounterAlerts implements HudElement {
 					? rarityColour : Colours.argb(chosen, rarityColour),
 				alerts.birdfeederSoundPitch,
 				alerts.birdfeederDuration, alerts.birdfeederSoundMode,
-				alerts.birdfeederSoundChoice, alerts.birdfeederSoundVolume,
-				alerts.birdfeederScale, alerts.birdfeederVerticalPosition);
+				alerts.birdfeederSoundChoice, alerts.birdfeederSoundVolume);
 		}
 		if (birdChatAllowed()) post(config.party.allBirds(), AlertText.format(config.party.allBirdsChatText,
 			"<CRITTER>", bird.name()));
@@ -413,8 +408,7 @@ public final class EncounterAlerts implements HudElement {
 		if (birdBannerAllowed() && alerts.feedGoneSoundMode != 0) {
 			banner(alerts.feedGoneText, Colours.argb(alerts.feedGoneColour, 0xFFFF5555),
 				alerts.feedGoneSoundPitch, alerts.feedGoneDuration, alerts.feedGoneSoundMode,
-				alerts.feedGoneSoundChoice, alerts.feedGoneSoundVolume,
-				alerts.feedGoneScale, alerts.feedGoneVerticalPosition);
+				alerts.feedGoneSoundChoice, alerts.feedGoneSoundVolume);
 		}
 		if (birdChatAllowed()) post(config.party.feedGone(), config.party.feedGoneChatText);
 	}
@@ -426,8 +420,7 @@ public final class EncounterAlerts implements HudElement {
 		if (!BirdfeederWatch.claimEmptyAlert()) return;
 		banner(a.birdfeederEmptyText, Colours.argb(a.birdfeederEmptyColour, 0xFFFF5555),
 			a.birdfeederEmptySoundPitch, a.birdfeederEmptyDuration, a.birdfeederEmptySoundMode,
-			a.birdfeederEmptySoundChoice, a.birdfeederEmptySoundVolume,
-			a.birdfeederEmptyScale, a.birdfeederEmptyVerticalPosition);
+			a.birdfeederEmptySoundChoice, a.birdfeederEmptySoundVolume);
 	}
 
 	/** Every discovered feed has produced a bird event. */
@@ -439,8 +432,7 @@ public final class EncounterAlerts implements HudElement {
 				Colours.argb(alerts.allFeedDoneColour, 0xFF55FF55),
 				alerts.allFeedDoneSoundPitch, alerts.allFeedDoneDuration,
 				alerts.allFeedDoneSoundMode, alerts.allFeedDoneSoundChoice,
-				alerts.allFeedDoneSoundVolume, alerts.allFeedDoneScale,
-				alerts.allFeedDoneVerticalPosition);
+				alerts.allFeedDoneSoundVolume);
 		}
 		if (sendChat && birdChatAllowed()) {
 			post(config.party.allFeedDone(), config.party.allFeedDoneChatText);
@@ -456,8 +448,7 @@ public final class EncounterAlerts implements HudElement {
 		if (alertsOn(boss, stage) && inItsBiome(boss)) {
 			banner(text, encounterColour(boss, stage), encounterPitch(boss, stage),
 				encounterDuration(boss, stage), encounterPlayback(boss, stage),
-				encounterSoundChoice(boss, stage), encounterVolume(boss, stage),
-				encounterScale(boss, stage), encounterVerticalPosition(boss, stage));
+				encounterSoundChoice(boss, stage), encounterVolume(boss, stage));
 		}
 
 		if (chatInItsBiome(boss)) post(broadcastFor(boss), encounterChatText(boss, stage));
@@ -581,26 +572,6 @@ public final class EncounterAlerts implements HudElement {
 		};
 	}
 
-	private static float encounterScale(String boss, Stage stage) {
-		SafariConfig.AlertConfig a = ConfigManager.get().alerts;
-		return switch (boss) {
-			case "Gemzie" -> gemzieStageValue(stage, a.gemzieReadyScale, a.gemzieDoneScale);
-			case "Wumpa" -> stageValue(stage, a.wumpaReadyScale, a.wumpaStartedScale, a.wumpaDoneScale);
-			case "Doomspiral" -> stageValue(stage, a.doomspiralReadyScale, a.doomspiralStartedScale, a.doomspiralDoneScale);
-			default -> 4f;
-		};
-	}
-
-	private static float encounterVerticalPosition(String boss, Stage stage) {
-		SafariConfig.AlertConfig a = ConfigManager.get().alerts;
-		return switch (boss) {
-			case "Gemzie" -> gemzieStageValue(stage, a.gemzieReadyVerticalPosition, a.gemzieDoneVerticalPosition);
-			case "Wumpa" -> stageValue(stage, a.wumpaReadyVerticalPosition, a.wumpaStartedVerticalPosition, a.wumpaDoneVerticalPosition);
-			case "Doomspiral" -> stageValue(stage, a.doomspiralReadyVerticalPosition, a.doomspiralStartedVerticalPosition, a.doomspiralDoneVerticalPosition);
-			default -> 0.4f;
-		};
-	}
-
 	private static float stageValue(Stage stage, float ready, float started, float done) {
 		return switch (stage) {
 			case READY -> ready;
@@ -701,21 +672,21 @@ public final class EncounterAlerts implements HudElement {
 		if (message == null || message.isBlank()) return;
 		String command = to.command();
 		if (command == null) return;
-		if (command.equals("pc") && !PartyRosterWatch.canSendPartyChat()) return;
-		ChatQueue.enqueue(command + " " + message, true);
+		if (command.equals("pc") && !PartyState.snapshot().inParty()) return;
+		ChatQueue.enqueueSafariScoped(command + " " + message, true);
 	}
 
 	static void postDelayed(SafariConfig.Broadcast to, String message, long delayMillis) {
 		if (message == null || message.isBlank()) return;
 		String command = to.command();
 		if (command == null) return;
-		if (command.equals("pc") && !PartyRosterWatch.canSendPartyChat()) return;
-		ChatQueue.enqueueDelayed(command + " " + message, true, delayMillis);
+		if (command.equals("pc") && !PartyState.snapshot().inParty()) return;
+		ChatQueue.enqueueSafariScopedDelayed(command + " " + message, true, delayMillis);
 	}
 
 	/** True if this stage already fired recently, so it should be suppressed. */
 	private static boolean onCooldown(String key) {
-		long now = System.currentTimeMillis();
+		long now = MonotonicTime.nowMillis();
 		Long previous = lastFired.get(key);
 		if (previous != null && now - previous < STAGE_COOLDOWN_MILLIS) return true;
 		lastFired.put(key, now);
@@ -723,46 +694,103 @@ public final class EncounterAlerts implements HudElement {
 	}
 
 	private static void banner(String text, int bannerColour, float pitch) {
-		SafariConfig.AlertConfig alerts = ConfigManager.get().alerts;
-		banner(text, bannerColour, pitch, 3f, 3, 0, 1f,
-			alerts.alertScale, alerts.alertVerticalPosition);
+		banner(text, bannerColour, pitch, 3f, 3, 0, 1f);
 	}
 
 	private static void banner(String text, int bannerColour, float pitch,
 							   float durationSeconds, int playbackMode, int soundChoice,
-							   float volume, float scale, float verticalPosition) {
+							   float volume) {
 		// Sound-only alerts leave the currently displayed banner untouched.
 		if ((playbackMode & 2) != 0) sound(pitch, volume, soundChoice);
 		if ((playbackMode & 1) == 0) return;
-		message = text;
-		rainbowMessage = false;
-		sparklingBannerGeometryValid = false;
-		colour = bannerColour;
-		shownAtMillis = System.currentTimeMillis();
-		displayMillis = (long) (durationSeconds * 1000);
 		SafariConfig.AlertConfig placement = ConfigManager.get().alerts;
-		displayedScale = placement.alertScale;
-		displayedHorizontalPosition = placement.alertHorizontalPosition;
-		displayedVerticalPosition = placement.alertVerticalPosition;
-
+		submitBanner(new PendingBanner(text, bannerColour, false,
+			Math.max(1L, Math.round(durationSeconds * 1000.0)),
+			BannerPlacement.scale(),
+			Math.clamp(placement.alertHorizontalPosition, 0f, 1f),
+			BannerPlacement.top(), 10));
 	}
 
 	private static void rainbowBanner(String text, float pitch, float durationSeconds,
-								 int playbackMode, int soundChoice, float volume,
-								 float scale, float verticalPosition) {
+								 int playbackMode, int soundChoice, float volume) {
 		// Sound-only alerts leave the currently displayed banner untouched.
 		if ((playbackMode & 2) != 0) sound(pitch, volume, soundChoice);
 		if ((playbackMode & 1) == 0) return;
-		message = text;
-		rainbowMessage = true;
-		sparklingBannerGeometryValid = false;
-		shownAtMillis = System.currentTimeMillis();
-		displayMillis = (long) (durationSeconds * 1000);
 		SafariConfig.AlertConfig placement = ConfigManager.get().alerts;
-		displayedScale = placement.alertScale;
-		displayedHorizontalPosition = placement.alertHorizontalPosition;
-		displayedVerticalPosition = placement.alertVerticalPosition;
+		submitBanner(new PendingBanner(text, 0xFFFFFFFF, true,
+			Math.max(1L, Math.round(durationSeconds * 1000.0)),
+			BannerPlacement.scale(),
+			Math.clamp(placement.alertHorizontalPosition, 0f, 1f),
+			BannerPlacement.top(), 30));
+	}
 
+	private static void submitBanner(PendingBanner banner) {
+		if (banner.text() == null || banner.text().isBlank()) return;
+		long now = MonotonicTime.nowMillis();
+		if (message == null || now - shownAtMillis > displayMillis) {
+			activateBanner(banner, now);
+			return;
+		}
+		if (message.equals(banner.text()) && rainbowMessage == banner.rainbow()) {
+			activateBanner(banner, now);
+			StructuredDiagnostics.decision("alert", "refreshed", compactAlertKey(banner.text()));
+			return;
+		}
+		if (banner.priority() > activePriority) {
+			long remaining = Math.max(1L, displayMillis - (now - shownAtMillis));
+			enqueueBanner(new PendingBanner(message, colour, rainbowMessage, remaining,
+				displayedScale, displayedHorizontalPosition, displayedVerticalPosition,
+				activePriority));
+			activateBanner(banner, now);
+			return;
+		}
+		enqueueBanner(banner);
+	}
+
+	private static void enqueueBanner(PendingBanner banner) {
+		pendingBanners.removeIf(pending -> pending.text().equals(banner.text())
+			&& pending.rainbow() == banner.rainbow());
+		if (pendingBanners.size() >= MAX_PENDING_BANNERS) {
+			PendingBanner lowest = pendingBanners.stream().min(java.util.Comparator
+				.comparingInt(PendingBanner::priority)).orElse(null);
+			if (lowest != null && lowest.priority() <= banner.priority()) pendingBanners.remove(lowest);
+			else {
+				StructuredDiagnostics.decision("alert", "dropped", compactAlertKey(banner.text()));
+				return;
+			}
+		}
+		pendingBanners.addLast(banner);
+		StructuredDiagnostics.decision("alert", "queued", compactAlertKey(banner.text()));
+	}
+
+	private static void activateBanner(PendingBanner banner, long now) {
+		message = banner.text();
+		colour = banner.colour();
+		rainbowMessage = banner.rainbow();
+		activePriority = banner.priority();
+		sparklingBannerGeometryValid = false;
+		shownAtMillis = now;
+		displayMillis = banner.durationMillis();
+		displayedScale = banner.scale();
+		displayedHorizontalPosition = banner.horizontalPosition();
+		displayedVerticalPosition = banner.verticalPosition();
+		cachedBannerLayout = null;
+		StructuredDiagnostics.decision("alert", "shown", compactAlertKey(banner.text()));
+	}
+
+	private static void activateNextBanner(long now) {
+		PendingBanner next = null;
+		for (PendingBanner pending : pendingBanners) {
+			if (next == null || pending.priority() > next.priority()) next = pending;
+		}
+		if (next == null) return;
+		pendingBanners.remove(next);
+		activateBanner(next, now);
+	}
+
+	private static String compactAlertKey(String text) {
+		String clean = text == null ? "" : text.replaceAll("§.", "").trim();
+		return clean.length() <= 48 ? clean : clean.substring(0, 48);
 	}
 
 	static void fireSparklingDetected(String critterName) {
@@ -771,21 +799,20 @@ public final class EncounterAlerts implements HudElement {
 		rainbowBanner(AlertText.format(config.sparklingBannerText, "<CRITTER>", critterName),
 			config.sparklingBannerSoundPitch, config.sparklingBannerDuration,
 			config.sparklingBannerSoundMode, config.sparklingBannerSoundChoice,
-			config.sparklingBannerSoundVolume, config.sparklingBannerScale,
-			config.sparklingBannerVerticalPosition);
+			config.sparklingBannerSoundVolume);
 	}
 
 	/** Persistent ticket-trading reminder; ordinary alerts temporarily draw over it. */
-	public static void showTicketTradingSparklingReminder(String critters, long untilMillis,
+	public static void showTicketTradingSparklingReminder(String critters, long durationMillis,
 			boolean useTicket, boolean playSound) {
-		long now = System.currentTimeMillis();
+		long now = MonotonicTime.nowMillis();
 		ticketReminderTitle = "SPARKLING " + critters + " Found!";
 		ticketReminderUseTicket = useTicket;
 		ticketReminderFadeUntil = 0L;
 		if (ticketReminderStartedAt == 0L || now >= ticketReminderUntil) {
 			ticketReminderStartedAt = now;
 		}
-		ticketReminderUntil = Math.max(now + 1_000L, untilMillis);
+		ticketReminderUntil = now + Math.clamp(durationMillis, 1_000L, Long.MAX_VALUE - now);
 		if (playSound) playTicketTradingSparklingSound();
 	}
 
@@ -797,7 +824,7 @@ public final class EncounterAlerts implements HudElement {
 
 	public static void clearTicketTradingSparklingReminder() {
 		if (ticketReminderTitle != null && ticketReminderFadeUntil == 0L) {
-			ticketReminderFadeUntil = System.currentTimeMillis() + 500L;
+			ticketReminderFadeUntil = MonotonicTime.nowMillis() + 500L;
 		}
 		AlertSounds.stopTicketTradingReminder();
 	}
@@ -816,8 +843,7 @@ public final class EncounterAlerts implements HudElement {
 		rainbowBanner(AlertText.format(config.sparklingBannerText, "<CRITTER>", "Rockmite"),
 			config.sparklingBannerSoundPitch, config.sparklingBannerDuration,
 			config.sparklingBannerSoundMode, config.sparklingBannerSoundChoice,
-			config.sparklingBannerSoundVolume, config.sparklingBannerScale,
-			config.sparklingBannerVerticalPosition);
+			config.sparklingBannerSoundVolume);
 	}
 
 	/** Previews the selected playback mode without requiring the event to happen. */
@@ -836,8 +862,7 @@ public final class EncounterAlerts implements HudElement {
 				Colours.argb(a.fullPartyJoinedColour, 0xFF55FF55),
 				a.fullPartyJoinedSoundPitch, a.fullPartyJoinedDuration,
 				a.fullPartyJoinedSoundMode, a.fullPartyJoinedSoundChoice,
-				a.fullPartyJoinedSoundVolume, a.fullPartyJoinedScale,
-				a.fullPartyJoinedVerticalPosition);
+				a.fullPartyJoinedSoundVolume);
 			case GEMZIE_READY -> testEncounter("Gemzie", Stage.READY);
 			case GEMZIE_DONE -> testEncounter("Gemzie", Stage.DONE);
 			case WUMPA_READY -> testEncounter("Wumpa", Stage.READY);
@@ -848,79 +873,70 @@ public final class EncounterAlerts implements HudElement {
 			case DOOM_DONE -> testEncounter("Doomspiral", Stage.DONE);
 			case HOTSPOT -> banner(AlertText.format(a.hotspotText, "<BIOME>", "Icy"), a.hotspotUseBiomeColour
 					? 0xFF55FFFF : Colours.argb(a.hotspotAlertColour, 0xFFFF55FF), a.hotspotSoundPitch,
-				a.hotspotDuration, a.hotspotSoundMode, a.hotspotSoundChoice, a.hotspotSoundVolume,
-				a.hotspotScale, a.hotspotVerticalPosition);
+				a.hotspotDuration, a.hotspotSoundMode, a.hotspotSoundChoice, a.hotspotSoundVolume);
 			case FLOOR_DROPS -> banner(AlertText.format(a.floorDropsDoneText, "<BIOME>", "Icy"), a.floorDropsDoneUseBiomeColour
 					? 0xFF55FFFF : Colours.argb(a.floorDropsDoneAlertColour, 0xFF55FFAA), a.floorDropsDoneSoundPitch,
 				a.floorDropsDoneDuration, a.floorDropsDoneSoundMode, a.floorDropsDoneSoundChoice,
-				a.floorDropsDoneSoundVolume, a.floorDropsDoneScale, a.floorDropsDoneVerticalPosition);
+				a.floorDropsDoneSoundVolume);
 			case BIOME_UNIQUES -> banner(AlertText.format(a.biomeUniquesDoneText, "<BIOME>", "Icy"), a.biomeUniquesDoneUseBiomeColour
 					? 0xFF55FFFF : Colours.argb(a.biomeUniquesDoneColour, DONE_COLOUR),
 				a.biomeUniquesDoneSoundPitch, a.biomeUniquesDoneDuration,
 				a.biomeUniquesDoneSoundMode, a.biomeUniquesDoneSoundChoice,
-				a.biomeUniquesDoneSoundVolume, a.biomeUniquesDoneScale,
-				a.biomeUniquesDoneVerticalPosition);
+				a.biomeUniquesDoneSoundVolume);
 			case ALL_BUT_MACAW -> banner(a.allButMacawDoneText,
 				Colours.argb(a.allButMacawDoneColour, DONE_COLOUR),
 				a.allButMacawDoneSoundPitch, a.allButMacawDoneDuration,
 				a.allButMacawDoneSoundMode, a.allButMacawDoneSoundChoice,
-				a.allButMacawDoneSoundVolume, a.allButMacawDoneScale,
-				a.allButMacawDoneVerticalPosition);
+				a.allButMacawDoneSoundVolume);
 			case ALL_DONE -> banner(a.allUniquesDoneText,
 				Colours.argb(a.allUniquesDoneColour, DONE_COLOUR),
 				a.allUniquesDoneSoundPitch, a.allUniquesDoneDuration,
 				a.allUniquesDoneSoundMode, a.allUniquesDoneSoundChoice,
-				a.allUniquesDoneSoundVolume, a.allUniquesDoneScale,
-				a.allUniquesDoneVerticalPosition);
+				a.allUniquesDoneSoundVolume);
 			case HIDEYHO -> banner(a.hideyhoText, Colours.argb(a.hideyhoAlertColour, 0xFFFF55FF),
 				a.hideyhoSoundPitch, a.hideyhoDuration, a.hideyhoSoundMode, a.hideyhoSoundChoice,
-				a.hideyhoSoundVolume, a.hideyhoScale, a.hideyhoVerticalPosition);
+				a.hideyhoSoundVolume);
 			case MACAW -> banner(a.macawText, a.macawUseRarityColour
 					? 0xFFFFAA00 : Colours.argb(a.macawAlertColour, 0xFFFFAA00), a.macawSoundPitch,
-				a.macawDuration, a.macawSoundMode, a.macawSoundChoice, a.macawSoundVolume,
-				a.macawScale, a.macawVerticalPosition);
+				a.macawDuration, a.macawSoundMode, a.macawSoundChoice, a.macawSoundVolume);
 			case BIRDS -> banner(AlertText.format(a.birdfeederText, "<CRITTER>", "Bluebird"), a.birdfeederUseRarityColour
 					? 0xFF55FF55 : Colours.argb(a.bluebirdAlertColour, 0xFF55FF55), a.birdfeederSoundPitch,
 				a.birdfeederDuration, a.birdfeederSoundMode, a.birdfeederSoundChoice,
-				a.birdfeederSoundVolume, a.birdfeederScale, a.birdfeederVerticalPosition);
+				a.birdfeederSoundVolume);
 			case FEED_GONE -> banner(a.feedGoneText, Colours.argb(a.feedGoneColour, 0xFFFF5555),
 				a.feedGoneSoundPitch, a.feedGoneDuration, a.feedGoneSoundMode,
-				a.feedGoneSoundChoice, a.feedGoneSoundVolume,
-				a.feedGoneScale, a.feedGoneVerticalPosition);
+				a.feedGoneSoundChoice, a.feedGoneSoundVolume);
 			case BIRDFEEDER_EMPTY -> banner(a.birdfeederEmptyText, Colours.argb(a.birdfeederEmptyColour, 0xFFFF5555),
 				a.birdfeederEmptySoundPitch, a.birdfeederEmptyDuration, a.birdfeederEmptySoundMode,
-				a.birdfeederEmptySoundChoice, a.birdfeederEmptySoundVolume,
-				a.birdfeederEmptyScale, a.birdfeederEmptyVerticalPosition);
+				a.birdfeederEmptySoundChoice, a.birdfeederEmptySoundVolume);
 			case START -> testContest(a.contestStartText, a.contestStartColour, 0xFF55FF55,
 				a.contestStartDuration, a.contestStartSoundMode, a.contestStartSoundChoice,
-				a.contestStartSoundVolume, a.contestStartSoundPitch, a.contestStartScale, a.contestStartVerticalPosition);
+				a.contestStartSoundVolume, a.contestStartSoundPitch);
 			case FIVE_MINUTES -> testContest(a.contestFiveMinuteText, a.contestFiveMinuteColour, 0xFFFFFF55,
 				a.contestFiveMinuteDuration, a.contestFiveMinuteSoundMode, a.contestFiveMinuteSoundChoice,
-				a.contestFiveMinuteSoundVolume, a.contestFiveMinuteSoundPitch, a.contestFiveMinuteScale, a.contestFiveMinuteVerticalPosition);
+				a.contestFiveMinuteSoundVolume, a.contestFiveMinuteSoundPitch);
 			case ONE_MINUTE -> testContest(a.contestOneMinuteText, a.contestOneMinuteColour, 0xFFFFAA00,
 				a.contestOneMinuteDuration, a.contestOneMinuteSoundMode, a.contestOneMinuteSoundChoice,
-				a.contestOneMinuteSoundVolume, a.contestOneMinuteSoundPitch, a.contestOneMinuteScale, a.contestOneMinuteVerticalPosition);
+				a.contestOneMinuteSoundVolume, a.contestOneMinuteSoundPitch);
 			case ENDED -> testContest(a.contestEndedText, a.contestEndedColour, 0xFFFF5555,
 				a.contestEndedDuration, a.contestEndedSoundMode, a.contestEndedSoundChoice,
-				a.contestEndedSoundVolume, a.contestEndedSoundPitch, a.contestEndedScale, a.contestEndedVerticalPosition);
+				a.contestEndedSoundVolume, a.contestEndedSoundPitch);
 			case TICKET -> testContest(a.contestTicketEarnedText, a.contestTicketEarnedColour, 0xFF55FF55,
 				a.contestTicketEarnedDuration, a.contestTicketEarnedSoundMode, a.contestTicketEarnedSoundChoice,
-				a.contestTicketEarnedSoundVolume, a.contestTicketEarnedSoundPitch, a.contestTicketEarnedScale, a.contestTicketEarnedVerticalPosition);
+				a.contestTicketEarnedSoundVolume, a.contestTicketEarnedSoundPitch);
 		}
 	}
 
 	private static void testEncounter(String boss, Stage stage) {
 		banner(encounterBannerText(boss, stage), encounterColour(boss, stage),
 			encounterPitch(boss, stage), encounterDuration(boss, stage), encounterPlayback(boss, stage),
-			encounterSoundChoice(boss, stage), encounterVolume(boss, stage),
-			encounterScale(boss, stage), encounterVerticalPosition(boss, stage));
+			encounterSoundChoice(boss, stage), encounterVolume(boss, stage));
 	}
 
 	private static void testContest(String text, String colourSetting, int fallback, float duration,
-								int playbackMode, int soundChoice, float volume, float pitch,
-								float scale, float verticalPosition) {
+								int playbackMode, int soundChoice, float volume, float pitch) {
 		banner(text, Colours.argb(colourSetting, fallback), pitch, duration, playbackMode,
-			soundChoice, volume, scale, verticalPosition);
+			soundChoice, volume);
 	}
 
 	/** Silent unless asked for: a run fires plenty of these. */
@@ -933,15 +949,23 @@ public final class EncounterAlerts implements HudElement {
 	public static void reset() {
 		lastFired.clear();
 		gemzieRemaining = 0;
-		clearTicketTradingSparklingReminder();
+		message = null;
+		pendingBanners.clear();
+		activePriority = 0;
+		rainbowMessage = false;
+		cachedBannerLayout = null;
+		finishTicketTradingSparklingReminder();
+		AlertSounds.clearTransientAlerts();
 	}
 
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker deltaTracker) {
-		long now = System.currentTimeMillis();
+		long now = MonotonicTime.nowMillis();
 		long age = now - shownAtMillis;
 		if (message != null && age > displayMillis) {
 			message = null;
+			activePriority = 0;
+			activateNextBanner(now);
 		}
 		if (ticketReminderTitle != null && ticketReminderFadeUntil == 0L
 				&& now > ticketReminderUntil) {
@@ -981,8 +1005,7 @@ public final class EncounterAlerts implements HudElement {
 		int edgeMargin = 5;
 		int availableWidth = Math.max(1, graphics.guiWidth() - edgeMargin * 2);
 		int availableHeight = Math.max(1, graphics.guiHeight() - edgeMargin * 2);
-		float chosenScale = reminder
-			? ConfigManager.get().sparkling.sparklingBannerScale * .82f : displayedScale;
+		float chosenScale = reminder ? BannerPlacement.scale() : displayedScale;
 		float baseScale = chosenScale
 			* ResponsiveUI.scale(graphics.guiWidth(), graphics.guiHeight());
 		int effectMarginX = renderRainbow ? SPARKLING_BANNER_MARGIN_X : 0;
@@ -1009,10 +1032,10 @@ public final class EncounterAlerts implements HudElement {
 		float maximumCentre = graphics.guiWidth() - edgeMargin - scaledWidth / 2f;
 		float physicalCentre = Math.clamp(desiredCentre, minimumCentre, maximumCentre);
 		int centreX = Math.round(physicalCentre / scale);
-		float chosenVertical = reminder
-			? ConfigManager.get().sparkling.sparklingBannerVerticalPosition : displayedVerticalPosition;
 		float scaledHeight = visualHeight * scale;
-		float desiredVerticalCentre = graphics.guiHeight() * chosenVertical;
+		float chosenTop = reminder ? BannerPlacement.top() : displayedVerticalPosition;
+		float desiredVerticalCentre = BannerPlacement.physicalCentre(
+			graphics.guiHeight(), baseScale, chosenTop);
 		float minimumVerticalCentre = edgeMargin + scaledHeight / 2f;
 		float maximumVerticalCentre = graphics.guiHeight() - edgeMargin - scaledHeight / 2f;
 		float physicalVerticalCentre = Math.clamp(desiredVerticalCentre,

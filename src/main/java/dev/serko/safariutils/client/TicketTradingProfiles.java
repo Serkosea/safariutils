@@ -13,26 +13,53 @@ import java.util.Set;
 
 /** Shared profile validation and slot operations for Ticket Trading UI and automation. */
 final class TicketTradingProfiles {
-	static final int ACTIVE_SLOTS = 3;
-	static final int TOTAL_SLOTS = 6;
+	static final int MAX_PROFILES = 64;
+	static final int ROLE_SCHEMA = 2;
+	enum HostMode {
+		EVERY_RUN("Every Run"), SPARKLING("Selected Sparklings");
+		final String label;
+		HostMode(String label) { this.label = label; }
+		HostMode next() { return values()[(ordinal() + 1) % values().length]; }
+	}
+	enum GuestMode {
+		OFF("Off"), JOIN("Join Party"), SWITCH("Leave & Join");
+		final String label;
+		GuestMode(String label) { this.label = label; }
+		GuestMode next() { return values()[(ordinal() + 1) % values().length]; }
+	}
 
 	private TicketTradingProfiles() { }
 
 	static void sanitize(SparklingConfig config) {
 		if (config.ticketTradingProfiles == null) config.ticketTradingProfiles = new ArrayList<>();
+		if (config.ticketTradingHostQueue == null) config.ticketTradingHostQueue = new ArrayList<>();
+		if (config.ticketTradingGuestPlayers == null) config.ticketTradingGuestPlayers = new ArrayList<>();
 		long validMask = Critters.allSelectionMask();
 		Set<String> seen = new HashSet<>();
 		config.ticketTradingProfiles.removeIf(profile -> {
 			if (profile == null) return true;
 			profile.username = CanonicalPlayerNames.display(profile.username);
 			profile.sparklingCritters &= validMask;
+			profile.hostInviteMode = hostMode(profile).name();
+			profile.guestInviteMode = guestMode(profile).name();
 			return profile.username.isEmpty() || !seen.add(normalize(profile.username));
 		});
-		for (int index = 0; index < TOTAL_SLOTS; index++) {
-			String slot = slotName(config, index);
-			TicketTraderProfile profile = find(config, slot);
-			setSlotName(config, index, profile == null ? "" : profile.username);
+		if (config.ticketTradingProfiles.size() > MAX_PROFILES) {
+			config.ticketTradingProfiles.subList(MAX_PROFILES,
+				config.ticketTradingProfiles.size()).clear();
 		}
+		Set<String> queued = new HashSet<>();
+		config.ticketTradingHostQueue.removeIf(name -> {
+			TicketTraderProfile profile = find(config, name);
+			return profile == null || !queued.add(normalize(profile.username));
+		});
+		config.ticketTradingHostQueue.replaceAll(name -> find(config, name).username);
+		Set<String> guests = new HashSet<>();
+		config.ticketTradingGuestPlayers.removeIf(name -> {
+			TicketTraderProfile profile = find(config, name);
+			return profile == null || !guests.add(normalize(profile.username));
+		});
+		config.ticketTradingGuestPlayers.replaceAll(name -> find(config, name).username);
 	}
 
 	static List<TicketTraderProfile> sorted(SparklingConfig config) {
@@ -51,38 +78,60 @@ final class TicketTradingProfiles {
 		return null;
 	}
 
-	static TicketTraderProfile slot(SparklingConfig config, int index) {
-		return find(config, slotName(config, index));
+	static List<TicketTraderProfile> hostQueue(SparklingConfig config) {
+		sanitize(config);
+		return config.ticketTradingHostQueue.stream().map(name -> find(config, name))
+			.filter(java.util.Objects::nonNull).toList();
 	}
 
-	static void assign(SparklingConfig config, int index, TicketTraderProfile profile) {
-		if (index < 0 || index >= TOTAL_SLOTS) return;
-		String name = profile == null ? "" : profile.username;
-		String normalized = normalize(name);
-		for (int other = 0; other < TOTAL_SLOTS; other++) {
-			if (other != index && normalize(slotName(config, other)).equals(normalized)) {
-				setSlotName(config, other, "");
-			}
-		}
-		setSlotName(config, index, name);
+	static List<TicketTraderProfile> guestPlayers(SparklingConfig config) {
+		sanitize(config);
+		return config.ticketTradingGuestPlayers.stream().map(name -> find(config, name))
+			.filter(java.util.Objects::nonNull)
+			.sorted(Comparator.comparing(profile -> profile.username.toLowerCase(Locale.ROOT)))
+			.toList();
+	}
+
+	static void queue(SparklingConfig config, TicketTraderProfile profile, int index) {
+		sanitize(config);
+		if (profile == null) return;
+		String normalized = normalize(profile.username);
+		config.ticketTradingHostQueue.removeIf(name -> normalize(name).equals(normalized));
+		int target = Math.clamp(index, 0, config.ticketTradingHostQueue.size());
+		config.ticketTradingHostQueue.add(target, profile.username);
+	}
+
+	static void removeFromQueue(SparklingConfig config, TicketTraderProfile profile) {
+		if (profile == null || config.ticketTradingHostQueue == null) return;
+		String normalized = normalize(profile.username);
+		config.ticketTradingHostQueue.removeIf(name -> normalize(name).equals(normalized));
+	}
+
+	static void move(SparklingConfig config, int from, int to) {
+		sanitize(config);
+		if (from < 0 || from >= config.ticketTradingHostQueue.size()) return;
+		String name = config.ticketTradingHostQueue.remove(from);
+		config.ticketTradingHostQueue.add(Math.clamp(to, 0,
+			config.ticketTradingHostQueue.size()), name);
 	}
 
 	static boolean save(SparklingConfig config, TicketTraderProfile profile,
-			String previousName, String username, boolean sparklingOnly, long critterMask) {
+			String previousName, String username, HostMode hostMode,
+			GuestMode guestMode, long critterMask) {
 		String display = displayName(username);
 		if (display.isEmpty()) return false;
 		TicketTraderProfile conflict = find(config, display);
 		if (conflict != null && conflict != profile) return false;
 		String old = normalize(previousName);
 		profile.username = display;
-		profile.sparklingOnly = sparklingOnly;
+		profile.hostInviteMode = hostMode.name();
+		profile.guestInviteMode = guestMode.name();
 		profile.sparklingCritters = critterMask & Critters.allSelectionMask();
 		if (!config.ticketTradingProfiles.contains(profile)) config.ticketTradingProfiles.add(profile);
-		for (int index = 0; index < TOTAL_SLOTS; index++) {
-			if (!old.isEmpty() && normalize(slotName(config, index)).equals(old)) {
-				setSlotName(config, index, display);
-			}
-		}
+		config.ticketTradingHostQueue.replaceAll(name ->
+			!old.isEmpty() && normalize(name).equals(old) ? display : name);
+		config.ticketTradingGuestPlayers.replaceAll(name ->
+			!old.isEmpty() && normalize(name).equals(old) ? display : name);
 		return true;
 	}
 
@@ -96,11 +145,10 @@ final class TicketTradingProfiles {
 		if (conflict != null && conflict != profile) return false;
 		String previous = normalize(profile.username);
 		profile.username = valid;
-		for (int index = 0; index < TOTAL_SLOTS; index++) {
-			if (normalize(slotName(config, index)).equals(previous)) {
-				setSlotName(config, index, valid);
-			}
-		}
+		config.ticketTradingHostQueue.replaceAll(name ->
+			normalize(name).equals(previous) ? valid : name);
+		config.ticketTradingGuestPlayers.replaceAll(name ->
+			normalize(name).equals(previous) ? valid : name);
 		sanitize(config);
 		return true;
 	}
@@ -109,34 +157,57 @@ final class TicketTradingProfiles {
 		if (profile == null || config.ticketTradingProfiles == null) return;
 		String removed = normalize(profile.username);
 		config.ticketTradingProfiles.remove(profile);
-		for (int index = 0; index < TOTAL_SLOTS; index++) {
-			if (normalize(slotName(config, index)).equals(removed)) setSlotName(config, index, "");
-		}
+		config.ticketTradingHostQueue.removeIf(name -> normalize(name).equals(removed));
+		config.ticketTradingGuestPlayers.removeIf(name -> normalize(name).equals(removed));
 	}
 
-	static String slotName(SparklingConfig config, int index) {
-		return switch (index) {
-			case 0 -> config.ticketTradingSlot1;
-			case 1 -> config.ticketTradingSlot2;
-			case 2 -> config.ticketTradingSlot3;
-			case 3 -> config.ticketTradingBackupSlot1;
-			case 4 -> config.ticketTradingBackupSlot2;
-			case 5 -> config.ticketTradingBackupSlot3;
-			default -> "";
-		};
+	static HostMode hostMode(TicketTraderProfile profile) {
+		try { return HostMode.valueOf(profile.hostInviteMode); }
+		catch (RuntimeException ignored) { return HostMode.EVERY_RUN; }
 	}
 
-	private static void setSlotName(SparklingConfig config, int index, String name) {
-		String value = name == null ? "" : name;
-		switch (index) {
-			case 0 -> config.ticketTradingSlot1 = value;
-			case 1 -> config.ticketTradingSlot2 = value;
-			case 2 -> config.ticketTradingSlot3 = value;
-			case 3 -> config.ticketTradingBackupSlot1 = value;
-			case 4 -> config.ticketTradingBackupSlot2 = value;
-			case 5 -> config.ticketTradingBackupSlot3 = value;
-			default -> { }
-		}
+	static GuestMode guestMode(TicketTraderProfile profile) {
+		try { return GuestMode.valueOf(profile.guestInviteMode); }
+		catch (RuntimeException ignored) { return GuestMode.OFF; }
+	}
+
+	static void setGuestMode(TicketTraderProfile profile, GuestMode mode) {
+		if (profile != null) profile.guestInviteMode = mode.name();
+	}
+
+	static void enableGuest(SparklingConfig config, TicketTraderProfile profile) {
+		sanitize(config);
+		if (profile == null || guestListed(config, profile)) return;
+		config.ticketTradingGuestPlayers.add(profile.username);
+	}
+
+	static void disableGuest(SparklingConfig config, TicketTraderProfile profile) {
+		if (profile == null || config.ticketTradingGuestPlayers == null) return;
+		String normalized = normalize(profile.username);
+		config.ticketTradingGuestPlayers.removeIf(name -> normalize(name).equals(normalized));
+	}
+
+	static boolean guestEnabled(SparklingConfig config, TicketTraderProfile profile) {
+		return guestListed(config, profile) && guestMode(profile) != GuestMode.OFF;
+	}
+
+	private static boolean guestListed(SparklingConfig config, TicketTraderProfile profile) {
+		if (profile == null || config.ticketTradingGuestPlayers == null) return false;
+		String normalized = normalize(profile.username);
+		return config.ticketTradingGuestPlayers.stream()
+			.anyMatch(name -> normalize(name).equals(normalized));
+	}
+
+	static void setHostMode(TicketTraderProfile profile, HostMode mode) {
+		if (profile == null) return;
+		profile.hostInviteMode = mode.name();
+	}
+
+	static boolean queued(SparklingConfig config, TicketTraderProfile profile) {
+		if (profile == null || config.ticketTradingHostQueue == null) return false;
+		String normalized = normalize(profile.username);
+		return config.ticketTradingHostQueue.stream()
+			.anyMatch(name -> normalize(name).equals(normalized));
 	}
 
 	static String normalize(String value) {

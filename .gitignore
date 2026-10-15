@@ -48,6 +48,8 @@ replay_pid*.log
 /private-api/
 api-key.txt
 **/api-key.txt
+**/*api-key*.txt
+/local/
 .env
 .env.*
 !.env.example

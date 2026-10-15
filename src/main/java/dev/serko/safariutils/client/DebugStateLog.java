@@ -9,12 +9,15 @@ import java.util.Objects;
 
 /** Change-only snapshots for server state that does not arrive through chat. */
 public final class DebugStateLog {
+	private static final java.util.regex.Pattern COUNTDOWN =
+		java.util.regex.Pattern.compile("\\b\\d{1,3}m\\d{1,2}s\\b");
 
 	private static String lastLocation;
 	private static List<String> lastRoster = List.of();
 	private static List<String> lastTabList = List.of();
 	private static List<String> lastScoreboard = List.of();
 	private static String lastObjectives;
+	private static String lastPartySync;
 	private static int ticks;
 
 	private DebugStateLog() {
@@ -24,8 +27,8 @@ public final class DebugStateLog {
 		if (++ticks % 10 != 0) return;
 		boolean safari = SafariLocation.inSafari();
 		if (ticks % 20 == 0) {
-			String location = "area=" + SafariLocation.tabListArea()
-				+ " subArea=" + SafariLocation.area()
+			String location = "area=" + stableLocationText(SafariLocation.tabListArea())
+				+ " subArea=" + stableLocationText(SafariLocation.area())
 				+ " where=" + SafariLocation.where()
 				+ " biome=" + SafariLocation.biome()
 				+ " source=" + SafariLocation.source()
@@ -71,9 +74,20 @@ public final class DebugStateLog {
 				lastObjectives = objective;
 				DebugLog.line("OBJECTIVE", objective);
 			}
+			String sync = dev.serko.safariutils.api.PartyItemSyncProviders.diagnosticSnapshot();
+			if (!Objects.equals(sync, lastPartySync)) {
+				lastPartySync = sync;
+				DebugLog.line("SYNC_STATE", sync);
+			}
 		} else {
 			lastObjectives = null;
+			lastPartySync = null;
 		}
+	}
+
+	/** Keeps volatile scoreboard timers from masquerading as location changes. */
+	private static String stableLocationText(String text) {
+		return text == null ? null : COUNTDOWN.matcher(text).replaceAll("<countdown>");
 	}
 
 	private static boolean usefulTabEntry(String entry) {

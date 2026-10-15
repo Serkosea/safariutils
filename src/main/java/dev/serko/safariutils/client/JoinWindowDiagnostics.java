@@ -4,6 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.scores.DisplaySlot;
 import dev.serko.safariutils.parse.ChatParser;
+import dev.serko.safariutils.state.PartyState;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -51,7 +52,7 @@ public final class JoinWindowDiagnostics {
 	public static void onChatMessage(String line) {
 		String entrant = ChatParser.safariEntrant(line);
 		if (entrant != null && !entrant.equals(Minecraft.getInstance().getUser().getName())
-			&& PartyRosterWatch.isListedMember(entrant)) {
+			&& PartyState.snapshot().containsName(entrant)) {
 			if (active) mark("party entry announcement", line);
 			else begin("party entry announcement", line);
 		}

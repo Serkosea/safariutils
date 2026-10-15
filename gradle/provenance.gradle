@@ -1,0 +1,111 @@
+// One fingerprint algorithm for standalone SafariUtils and its SerkoAddons component.
+def safariRoot = project.ext.safariProvenanceRoot as File
+def profileName = project.ext.safariProvenanceProfile.toString()
+def edition = project.ext.safariProvenanceEdition.toString()
+def componentVersion = project.ext.safariProvenanceVersion.toString()
+def roots = ['src/main', "src/${profileName}"]
+if (edition == 'developer') roots.add('src/developer')
+def sourceInputs = files(roots.collect { fileTree(new File(safariRoot, it)) })
+def generated = layout.buildDirectory.dir('generated/safari-provenance')
+
+tasks.register('generateSafariProvenance') {
+	inputs.files(sourceInputs).withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.properties(profile: profileName, edition: edition, componentVersion: componentVersion)
+	outputs.dir(generated)
+	doLast {
+		def digest = java.security.MessageDigest.getInstance('SHA-256')
+		def entries = sourceInputs.files.collect { source ->
+			[safariRoot.toPath().relativize(source.toPath()).toString().replace('\\', '/'), source]
+		}.sort { a, b -> a[0] <=> b[0] }
+		entries.each { entry ->
+			digest.update(entry[0].getBytes('UTF-8'))
+			digest.update((byte) 0)
+			digest.update(java.security.MessageDigest.getInstance('SHA-256').digest(entry[1].bytes))
+		}
+		def output = new File(generated.get().asFile, 'safariutils-provenance.properties')
+		output.parentFile.mkdirs()
+		output.setText("schema=1\nversion=${componentVersion}\nprofile=${profileName}\nedition=${edition}\n"
+			+ "source_sha256=${java.util.HexFormat.of().formatHex(digest.digest())}\n", 'UTF-8')
+	}
+}
+tasks.named('processResources') {
+	from(tasks.named('generateSafariProvenance'))
+}
+
+tasks.register('verifySafariArtifact') {
+	group = 'verification'
+	description = 'Verify API availability, edition isolation and component provenance in the built jar.'
+	dependsOn tasks.named('jar')
+	doLast {
+		def archive = tasks.named('jar').get().archiveFile.get().asFile
+		new java.util.zip.ZipFile(archive).withCloseable { zip ->
+			def names = zip.entries().collect { it.name } as Set
+			def required = ['safariutils-build.properties', 'safariutils-provenance.properties',
+				'META-INF/services/dev.serko.safariutils.api.SharedSparklingProvider',
+				'dev/serko/safariutils/backend/BackendSparklingProvider.class']
+			required.each { if (!names.contains(it)) throw new GradleException("Missing SafariUtils artifact entry: ${it}") }
+			def services = [
+				'dev.serko.safariutils.api.SharedSparklingProvider': 'dev.serko.safariutils.backend.BackendSparklingProvider',
+				'dev.serko.safariutils.api.PartyItemSyncProvider': 'dev.serko.safariutils.client.PartyItemSync']
+			if (edition == 'developer') {
+				services['dev.serko.safariutils.api.PartySyncNetworkProvider'] = 'dev.serko.safariutils.backend.RemotePartySyncProvider'
+			}
+			services.each { service, provider ->
+				def entry = zip.getEntry("META-INF/services/${service}")
+				if (entry == null) throw new GradleException("Missing SafariUtils service: ${service}")
+				def registrations
+				zip.getInputStream(entry).withCloseable { stream ->
+					registrations = stream.getText('UTF-8').readLines()
+						.collect { it.split('#', 2)[0].trim() }.findAll { !it.isEmpty() }
+				}
+				if (registrations != [provider] || !names.contains(provider.replace('.', '/') + '.class')) {
+					throw new GradleException("Incorrect SafariUtils service registration: ${service}")
+				}
+			}
+			def forbidden = names.findAll {
+				it.contains('/privateapi/') || it.toLowerCase().contains('api-key')
+					|| it.endsWith('CoreRegressionSuite.class')
+			}
+			def regressionRoot = new File(safariRoot, 'src/regression/java').toPath()
+			def regressionClasses = fileTree(regressionRoot.toFile()).matching { include '**/*.java' }.files.collect {
+				regressionRoot.relativize(it.toPath()).toString().replace('\\', '/').replaceAll(/\.java$/, '')
+			} as Set
+			forbidden.addAll(names.findAll { name ->
+				name.endsWith('.class') && regressionClasses.contains(name.substring(0, name.length() - 6).split('\\$', 2)[0])
+			})
+			if (!forbidden.isEmpty()) throw new GradleException("Forbidden artifact entries: ${forbidden}")
+			def developerEntries = ['dev/serko/safariutils/client/TicketTradingTestScreen.class',
+				'dev/serko/safariutils/backend/RemotePartySyncProvider.class',
+				'META-INF/services/dev.serko.safariutils.api.PartySyncNetworkProvider']
+			developerEntries.each { entry ->
+				if (names.contains(entry) != (edition == 'developer')) {
+					throw new GradleException("Incorrect ${edition} artifact boundary: ${entry}")
+				}
+			}
+			def metadata = new Properties()
+			zip.getInputStream(zip.getEntry('safariutils-build.properties')).withCloseable { metadata.load(it) }
+			if (metadata.getProperty('safe') != (edition == 'safe').toString()
+					|| metadata.getProperty('developer') != (edition == 'developer').toString()
+					|| metadata.getProperty('api') != 'true'
+					|| metadata.getProperty('version') != componentVersion) {
+				throw new GradleException('SafariUtils build metadata does not match selected edition/version')
+			}
+			// Presence alone cannot establish that a jar contains the current component.
+			// Compare every generated provenance field, including the source digest, with
+			// the task output for this build rather than trusting embedded labels.
+			def expectedProvenance = new Properties()
+			new File(generated.get().asFile, 'safariutils-provenance.properties').withInputStream {
+				expectedProvenance.load(it)
+			}
+			def actualProvenance = new Properties()
+			zip.getInputStream(zip.getEntry('safariutils-provenance.properties')).withCloseable {
+				actualProvenance.load(it)
+			}
+			if (actualProvenance != expectedProvenance) {
+				throw new GradleException('SafariUtils jar provenance does not match current source/profile/edition')
+			}
+		}
+		logger.lifecycle("Verified SafariUtils ${profileName}/${edition} artifact boundaries")
+	}
+}
+tasks.named('check') { dependsOn tasks.named('verifySafariArtifact') }

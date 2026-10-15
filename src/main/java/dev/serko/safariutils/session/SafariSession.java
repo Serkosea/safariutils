@@ -1,5 +1,6 @@
 package dev.serko.safariutils.session;
 
+import dev.serko.safariutils.client.SafeMode;
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.Critters;
 import dev.serko.safariutils.data.SafariBiome;
@@ -38,6 +39,8 @@ public final class SafariSession {
 	private final Map<SafariBiome, Integer> ownTotalsByBiome = new EnumMap<>(SafariBiome.class);
 	private final Map<SafariBiome, Integer> ownUniquesByBiome = new EnumMap<>(SafariBiome.class);
 	private final Map<SafariBiome, Integer> sharedTotalsByBiome = new EnumMap<>(SafariBiome.class);
+	/** Single authoritative unique state; counters are derived so they cannot drift. */
+	private final Set<Critter> partyCaughtSpecies = new LinkedHashSet<>();
 	private final Map<SafariBiome, Integer> partyUniquesByBiome = new EnumMap<>(SafariBiome.class);
 	private final List<SparklingOccurrence> sparklingOccurrences = new ArrayList<>();
 	private final Set<Critter> sparklingSpecies = new LinkedHashSet<>();
@@ -55,7 +58,6 @@ public final class SafariSession {
 	private int sharedShards;
 	private int ownTotal;
 	private int sharedTotal;
-	private int partyUnique;
 	private int totalAttempts;
 	private int totalFailures;
 	/** The same shards as ownShards/sharedShards, but broken down by species — for pricing. */
@@ -68,12 +70,33 @@ public final class SafariSession {
 	private int rainbowFeathers;
 	private Integer lastEssenceBalance;
 	private long lastEventMillis;
+	private boolean interrupted;
 
 	public SafariSession(String selfName, long startedAtMillis) {
 		this.selfName = selfName == null ? "You" : selfName;
 		this.startedAtMillis = startedAtMillis;
 		this.lastEventMillis = startedAtMillis;
 		participants.add(this.selfName);
+	}
+
+	/** Startup regression check for duplicate catches and the Macaw milestone. */
+	public static void verifyCompletionLogic() {
+		SafariSession test = new SafariSession("test", 0L);
+		long at = 1L;
+		for (Critter critter : Critters.all()) {
+			if (critter.equals(Critters.MACAW)) continue;
+			test.record(new CritterEvent(CritterEvent.Type.OWN_CATCH, critter, null, 1, false), at++);
+		}
+		if (!test.allButMacawComplete() || test.dexComplete()
+			|| test.partyUnique() != Critters.total() - 1) {
+			throw new IllegalStateException("Safari completion self-test failed before Macaw");
+		}
+		test.record(new CritterEvent(CritterEvent.Type.OWN_CATCH, Critters.MACAW, null, 1, false), at++);
+		test.record(new CritterEvent(CritterEvent.Type.OWN_CATCH, Critters.MACAW, null, 1, false), at);
+		if (test.allButMacawComplete() || !test.dexComplete()
+			|| test.partyUnique() != Critters.total()) {
+			throw new IllegalStateException("Safari completion self-test failed after Macaw");
+		}
 	}
 
 	public void record(CritterEvent event, long atMillis) {
@@ -83,26 +106,24 @@ public final class SafariSession {
 
 		switch (event.type()) {
 			case OWN_CATCH -> {
-				boolean newlyPartyCaught = !caughtByParty(critter);
+				recordPartySpecies(critter);
 				boolean newlyOwnCaught = !caughtByYou(critter);
 				ownCatches.merge(critter, 1, Integer::sum);
 				ownTotal++;
 				ownTotalsByBiome.merge(critter.biome(), 1, Integer::sum);
 				if (newlyOwnCaught) ownUniquesByBiome.merge(critter.biome(), 1, Integer::sum);
-				if (newlyPartyCaught) recordPartyUnique(critter);
 				ownShards += event.shards();
 				shardCounts.merge(critter, event.shards(), Integer::sum);
 				catchRevision++;
 			}
 			case SHARED_CATCH -> {
 				addParticipant(event.catcher());
-				boolean newlyPartyCaught = !caughtByParty(critter);
+				recordPartySpecies(critter);
 				sharedCatches.computeIfAbsent(critter, c -> new TreeMap<>())
 					.merge(event.catcher(), 1, Integer::sum);
 				sharedCatchTotals.merge(critter, 1, Integer::sum);
 				sharedTotal++;
 				sharedTotalsByBiome.merge(critter.biome(), 1, Integer::sum);
-				if (newlyPartyCaught) recordPartyUnique(critter);
 				sharedShards += event.shards();
 				shardCounts.merge(critter, event.shards(), Integer::sum);
 				catchRevision++;
@@ -123,9 +144,10 @@ public final class SafariSession {
 		if (event.sparkling()) rainbowFeathers++;
 	}
 
-	private void recordPartyUnique(Critter critter) {
-		partyUnique++;
-		partyUniquesByBiome.merge(critter.biome(), 1, Integer::sum);
+	private void recordPartySpecies(Critter critter) {
+		if (partyCaughtSpecies.add(critter)) {
+			partyUniquesByBiome.merge(critter.biome(), 1, Integer::sum);
+		}
 	}
 
 	/** Adds a globally announced Sparkling without conflating it with the reward line. */
@@ -194,7 +216,7 @@ public final class SafariSession {
 
 	/** True once anyone in the party has caught {@code critter} at least once. */
 	public boolean caughtByParty(Critter critter) {
-		return caughtByYou(critter) || sharedCatchTotals.getOrDefault(critter, 0) > 0;
+		return partyCaughtSpecies.contains(critter);
 	}
 
 	/** Replaces the live nearby counts with a fresh scan of what is loaded. */
@@ -228,13 +250,15 @@ public final class SafariSession {
 	 * is never coming.
 	 */
 	public boolean isComplete(Critter critter) {
-		if (TrackingMode.isUnavailable(critter) && partyCatches(critter) == 0) return true;
+		if (!SafeMode.conservativeCompletion()
+			&& TrackingMode.isUnavailable(critter) && partyCatches(critter) == 0) return true;
 		return partyCatches(critter) >= required(critter);
 	}
 
 	/** True when the run cannot produce {@code critter} and none was caught. */
 	public boolean isUnavailable(Critter critter) {
-		return TrackingMode.isUnavailable(critter) && partyCatches(critter) == 0;
+		return !SafeMode.conservativeCompletion()
+			&& TrackingMode.isUnavailable(critter) && partyCatches(critter) == 0;
 	}
 
 	/** How many more of {@code critter} are known to be left, never negative. */
@@ -247,7 +271,7 @@ public final class SafariSession {
 	 * excluded so progress bars can only advance from catches and loot shares.
 	 */
 	public int partyUnique() {
-		return partyUnique;
+		return partyCaughtSpecies.size();
 	}
 
 	public int partyUnique(SafariBiome biome) {
@@ -305,9 +329,14 @@ public final class SafariSession {
 			|| caughtByParty(c) || isUnavailable(c));
 	}
 
+	/** True only when Macaw itself is the single allowed missing species. */
+	public boolean allButMacawComplete() {
+		return !caughtByParty(Critters.MACAW) && allCaughtExcept(Critters.MACAW);
+	}
+
 	/** True once all 37 species have been caught by someone this run. */
 	public boolean dexComplete() {
-		return partyUnique() == Critters.total();
+		return partyCaughtSpecies.containsAll(Critters.all());
 	}
 
 	/** Species in {@code biome} the run is not finished with yet. */
@@ -340,6 +369,7 @@ public final class SafariSession {
 			}
 		}
 		result.putAll(others);
+		result.replaceAll((player, counts) -> Collections.unmodifiableMap(counts));
 		uniquePerPlayerCache = Collections.unmodifiableMap(result);
 		uniquePerPlayerRevision = catchRevision;
 		return uniquePerPlayerCache;
@@ -446,6 +476,16 @@ public final class SafariSession {
 	/** Freezes the duration at the confirmed instance transition. */
 	public void finish(long atMillis) {
 		lastEventMillis = Math.max(lastEventMillis, atMillis);
+	}
+
+	/** Marks a ticket-activated run that ended without the normal reward-summary boundary. */
+	public void finishInterrupted(long atMillis) {
+		interrupted = true;
+		finish(atMillis);
+	}
+
+	public boolean interrupted() {
+		return interrupted;
 	}
 
 	/** True when nothing has been recorded yet — used to suppress an empty HUD. */

@@ -6,17 +6,20 @@ import net.minecraft.network.chat.Component;
 public final class PartyErrorSuppressor {
 	private static final String NOT_IN_PARTY = "You are not in a party right now.";
 	private static final long RESPONSE_WINDOW_MILLIS = 3_000L;
-	private static long expectedUntil;
+	private static final dev.serko.safariutils.state.MonotonicCooldowns<Boolean> responses =
+		new dev.serko.safariutils.state.MonotonicCooldowns<>(System::nanoTime);
 
 	private PartyErrorSuppressor() {
 	}
 
 	public static void expectResponse() {
-		expectedUntil = System.currentTimeMillis() + RESPONSE_WINDOW_MILLIS;
+		responses.mark(Boolean.TRUE);
 	}
 
+	public static void clear() { responses.clear(); }
+
 	public static boolean allow(Component message, boolean overlay) {
-		if (overlay || System.currentTimeMillis() > expectedUntil) return true;
+		if (overlay || responses.remainingMillis(Boolean.TRUE, RESPONSE_WINDOW_MILLIS) == 0) return true;
 		String line = message.getString().trim();
 		if (NOT_IN_PARTY.equals(line)) return false;
 		return !isDivider(line);

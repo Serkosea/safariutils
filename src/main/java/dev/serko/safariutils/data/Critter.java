@@ -12,6 +12,12 @@ import java.util.Locale;
  *                   and no total exists
  */
 public record Critter(String name, SafariBiome biome, Rarity rarity, int spawnQuota) {
+	public Critter {
+		if (name == null || name.isBlank()) throw new IllegalArgumentException("Critter name is required");
+		if (biome == null || rarity == null) throw new IllegalArgumentException(
+			"Critter biome and rarity are required for " + name);
+		if (spawnQuota < 0) throw new IllegalArgumentException("Negative spawn quota for " + name);
+	}
 
 	/** Respawning species: catching one is all there is to do. */
 	Critter(String name, SafariBiome biome, Rarity rarity) {

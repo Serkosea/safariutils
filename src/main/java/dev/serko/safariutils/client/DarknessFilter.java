@@ -2,22 +2,49 @@ package dev.serko.safariutils.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.Holder;
+import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Entity;
 
-/** Removes the client-side Warden darkness effect and fog while inside the Safari. */
+/** Suppresses only Haunted fog rendering while preserving the real status effect. */
 public final class DarknessFilter {
+	private static boolean loggedDarkness;
+	private static boolean loggedBlindness;
 
 	private DarknessFilter() {
 	}
 
 	public static void tick() {
-		if (!ConfigManager.get().display.removeDarkness) return;
-		// Kept to the Safari like everything else here: this is a Safari tracker, not a
-		// general-purpose visual mod, and elsewhere the effect may be worth seeing.
-		if (!SafariLocation.inSafari()) return;
-
 		LocalPlayer player = Minecraft.getInstance().player;
-		if (player == null || !player.hasEffect(MobEffects.DARKNESS)) return;
-		player.removeEffect(MobEffects.DARKNESS);
+		if (!enabled() || player == null) {
+			loggedDarkness = false;
+			loggedBlindness = false;
+			return;
+		}
+		if (!player.hasEffect(MobEffects.DARKNESS)) loggedDarkness = false;
+		if (!player.hasEffect(MobEffects.BLINDNESS)) loggedBlindness = false;
+	}
+
+	/** Leaves effect state untouched and hides only its local fog environment. */
+	public static boolean suppressesFog(Entity entity, Holder<MobEffect> effect) {
+		LocalPlayer player = Minecraft.getInstance().player;
+		boolean suppress = enabled() && player != null && entity == player
+			&& (effect.is(MobEffects.DARKNESS) || effect.is(MobEffects.BLINDNESS));
+		if (!suppress) return false;
+		if (effect.is(MobEffects.DARKNESS) && !loggedDarkness) {
+			loggedDarkness = true;
+			DebugLog.line("DARKNESS", "suppressed darkness fog; effect preserved");
+		} else if (effect.is(MobEffects.BLINDNESS) && !loggedBlindness) {
+			loggedBlindness = true;
+			DebugLog.line("DARKNESS", "suppressed blindness fog; effect preserved");
+		}
+		return true;
+	}
+
+	private static boolean enabled() {
+		// Scope the setting to Critter Safari so ordinary blindness remains meaningful
+		// everywhere else in Minecraft.
+		return ConfigManager.get().display.removeDarkness && SafariLocation.inSafari();
 	}
 }

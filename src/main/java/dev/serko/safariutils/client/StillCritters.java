@@ -2,9 +2,9 @@ package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.CritterSpawnRanges;
-import dev.serko.safariutils.parse.ChatParser;
 import dev.serko.safariutils.parse.CritterEvent;
 import dev.serko.safariutils.session.SessionManager;
+import dev.serko.safariutils.state.MonotonicTime;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Display;
@@ -45,13 +45,13 @@ public final class StillCritters {
 	private static final long RESOLUTION_MILLIS = 40_000;
 	/** Several loaded entity sweeps must agree before a remembered static location is retired. */
 	private static final long STATIC_ABSENCE_MILLIS = 1_500;
+	/** Normal scans are 250ms apart; longer interruptions are not continuous evidence. */
+	private static final long STATIC_ABSENCE_MAX_GAP_MILLIS = 1_000;
 	/** Stay well inside entity-tracking range before treating a static location as empty. */
 	private static final double STATIC_INSPECTION_DISTANCE_SQ = 12.0 * 12.0;
 	/**
-	 * How close a fresh sighting has to land to an existing entry of the same species
-	 * to be treated as that same individual under a new id, not a genuinely different
-	 * one standing nearby. Deliberately tight — this is only meant to catch an id
-	 * change happening essentially in place, not to guess across any real distance.
+	 * Spatial fallback radius for an otherwise unambiguous absent marker. Proximity
+	 * alone never replaces multiple candidates or a live/capture-owned body.
 	 */
 	private static final double SUPERSEDE_DISTANCE = 2.0;
 
@@ -60,11 +60,12 @@ public final class StillCritters {
 	}
 	private record LiveStatic(UUID id, BlockPos pos) { }
 	/** Exact static-marker ownership keyed by the authoritative attempt ID. */
-	private record Resolution(long attemptId, UUID id, BlockPos pos, long millis) { }
 
 	private static final Map<UUID, Entry> remembered = new HashMap<>();
 	/** First continuous loaded-and-empty observation for each remembered static critter. */
-	private static final Map<UUID, Long> staticAbsenceSince = new HashMap<>();
+	private static final ObservedAbsence<UUID> staticAbsenceSince = new ObservedAbsence<>(
+		java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(STATIC_ABSENCE_MILLIS),
+		java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(STATIC_ABSENCE_MAX_GAP_MILLIS));
 	private static final Set<UUID> cataloguedIds = new java.util.HashSet<>();
 	private static final Map<UUID, Vec3> learningOrigins = new HashMap<>();
 	private static final Map<UUID, Integer> learningStableScans = new HashMap<>();
@@ -75,7 +76,7 @@ public final class StillCritters {
 	private static final Map<UUID, Integer> duplicoStableScans = new HashMap<>();
 	private static final Set<Critter> catalogClosed = new java.util.HashSet<>();
 	private static final Map<Critter, Set<BlockPos>> unchecked = new HashMap<>();
-	private static final Map<Critter, java.util.ArrayDeque<Resolution>> resolving = new HashMap<>();
+	private static final CaptureResolutions<Critter, BlockPos> resolving = new CaptureResolutions<>();
 	/** Canonical Hideonwall perches caught during this run; those spawns cannot return. */
 	private static final Set<BlockPos> caughtHideonwallPositions = new java.util.HashSet<>();
 	/** Other one-use static spawns confirmed caught during this run. */
@@ -91,16 +92,72 @@ public final class StillCritters {
 	public record Sighted(UUID id, BlockPos pos, AABB box, boolean sparkling,
 			boolean persistentThroughWalls) {
 	}
+	/** Immutable tracked-waypoint state consumed alongside the shared entity snapshot. */
+	public record PresentationSnapshot(Map<Critter, Set<BlockPos>> candidates,
+			Map<Critter, List<Sighted>> remembered, Set<UUID> resolvedBodies,
+			Set<UUID> visiblyConfirmedBodies, Set<UUID> persistentBodies) {
+		public PresentationSnapshot {
+			candidates = Map.copyOf(candidates);
+			remembered = Map.copyOf(remembered);
+			resolvedBodies = Set.copyOf(resolvedBodies);
+			visiblyConfirmedBodies = Set.copyOf(visiblyConfirmedBodies);
+			persistentBodies = Set.copyOf(persistentBodies);
+		}
+
+		public Set<BlockPos> candidates(Critter critter) {
+			return candidates.getOrDefault(critter, Set.of());
+		}
+
+		public List<Sighted> remembered(Critter critter) {
+			return remembered.getOrDefault(critter, List.of());
+		}
+
+		public boolean isResolved(UUID id) {
+			return resolvedBodies.contains(id);
+		}
+
+		public boolean isVisiblyConfirmed(UUID id) {
+			return visiblyConfirmedBodies.contains(id);
+		}
+
+		public boolean persistentThroughWalls(UUID id) {
+			return persistentBodies.contains(id);
+		}
+	}
 	/** Remembered world evidence that can own an attempt even while its chunk is unloaded. */
 	public record AttemptTarget(UUID id, AABB box, boolean sparkling) { }
 
 	private StillCritters() {
 	}
 
+	/** Builds the complete renderer projection once per MarkerRegistry snapshot. */
+	public static PresentationSnapshot snapshot() {
+		Map<Critter, Set<BlockPos>> candidates = new HashMap<>();
+		Map<Critter, List<Sighted>> entries = new HashMap<>();
+		for (Critter critter : TRACKED_CRITTERS) {
+			Set<BlockPos> critterCandidates = candidatesFor(critter);
+			if (!critterCandidates.isEmpty()) candidates.put(critter, critterCandidates);
+			List<Sighted> critterEntries = List.copyOf(entriesFor(critter));
+			if (!critterEntries.isEmpty()) entries.put(critter, critterEntries);
+		}
+		Set<UUID> visible = new HashSet<>(confirmedMovingBodies);
+		Set<UUID> persistent = new HashSet<>();
+		for (Map.Entry<UUID, Entry> entry : remembered.entrySet()) {
+			if (entry.getValue().visiblyConfirmed()) visible.add(entry.getKey());
+			if (entry.getValue().persistentThroughWalls()) persistent.add(entry.getKey());
+		}
+		return new PresentationSnapshot(candidates, entries, suppressedBodies,
+			visible, persistent);
+	}
+
 	public static void tick() {
 		prepareLobby();
 		if (!SafariLocation.inSafari()) return;
-		long now = System.currentTimeMillis();
+		// This tracker may update after another render-facing consumer has requested the
+		// current tick snapshot. Invalidate once at its tick boundary so every later
+		// renderer sees one coherent post-update view rather than a stale half-frame.
+		MarkerRegistry.invalidate();
+		long now = MonotonicTime.nowMillis();
 		pruneResolutions(now);
 		resolveHideonwallCapsules(now);
 		Iterator<Map.Entry<UUID, Entry>> staleIterator = remembered.entrySet().iterator();
@@ -124,7 +181,7 @@ public final class StillCritters {
 			staticAbsenceSince.remove(rememberedEntry.getKey());
 			staleIterator.remove();
 		}
-		long scan = CritterEntities.scannedAt();
+		long scan = CritterEntities.scanRevision();
 		if (scan == lastScan) return;
 		lastScan = scan;
 
@@ -164,8 +221,6 @@ public final class StillCritters {
 				staticAbsenceSince.remove(id);
 				continue;
 			}
-			if (staticTracked
-				&& RecatchSpots.captureInProgress(sighting.critter())) continue;
 			// Capsule animations briefly reuse the critter label without a body. Never
 			// turn that moving label into a new static Hideon marker.
 			if (entity == null && RecatchSpots.captureInProgress(sighting.critter())) continue;
@@ -211,6 +266,13 @@ public final class StillCritters {
 				ignored -> new java.util.LinkedHashSet<>())
 				.removeIf(candidate -> sameSpawn(candidate, pos));
 
+			if (!remembered.containsKey(id) && hasResolving(sighting.critter())
+				&& (resolving.hasBody(id) || !CritterEntities.isVerifiedBody(sighting.critter(), entity)
+					|| !stableDuplicoPair)) {
+				// Keep provisional scaffolding transactional, but do not block a verified
+				// independent peer just because its species has another pending attempt.
+				continue;
+			}
 			if (!remembered.containsKey(id)) {
 				DebugLog.line("STILL", "REMEMBER " + sighting.critter().name() + " id=" + shortId(id)
 					+ " pos=" + pos(pos));
@@ -223,9 +285,9 @@ public final class StillCritters {
 			remembered.put(id, new Entry(sighting.critter(), pos, entity.getBoundingBox(), sparkling, now,
 				directlyVisible || previous != null && previous.visiblyConfirmed(), persistent));
 		}
-		pruneMissingStaticCritters(now);
+		pruneMissingStaticCritters(System.nanoTime());
 		pruneVisibleEmptyCandidates();
-		staticAbsenceSince.keySet().removeIf(id -> !remembered.containsKey(id));
+		staticAbsenceSince.retain(remembered.keySet());
 	}
 
 	private static boolean mobileHideon(CritterEntities.Sighting sighting, Entity entity) {
@@ -257,7 +319,8 @@ public final class StillCritters {
 				? sighting.label().blockPosition() : sighting.mob().blockPosition();
 			if (!staticTracked(sighting.critter(), position)) continue;
 			Entity body = sighting.mob();
-			if (body == null && RecatchSpots.captureInProgress(sighting.critter())) continue;
+			// Unlocated labels may be capture scaffolding. Retaining their location as
+			// uncertain occupancy is conservative; they cannot prove a spot is empty.
 			if (body != null && RecatchSpots.isCaptureArtifact(sighting.critter(), body)) continue;
 			if (body != null && suppressedBodies.contains(body.getUUID())) continue;
 			liveByCritter.computeIfAbsent(sighting.critter(), ignored -> new ArrayList<>())
@@ -270,7 +333,8 @@ public final class StillCritters {
 			UUID id = rememberedEntry.getKey();
 			Entry entry = rememberedEntry.getValue();
 			if (!staticTracked(entry.critter(), entry.pos())) continue;
-			if (RecatchSpots.captureInProgress(entry.critter())) {
+			if (isStillResolving(id)
+				|| resolving.hasPosition(entry.critter(), entry.pos(), StillCritters::sameSpawn)) {
 				staticAbsenceSince.remove(id);
 				continue;
 			}
@@ -298,8 +362,7 @@ public final class StillCritters {
 				continue;
 			}
 
-			long absentSince = staticAbsenceSince.computeIfAbsent(id, ignored -> now);
-			if (now - absentSince < STATIC_ABSENCE_MILLIS) continue;
+			if (!staticAbsenceSince.observe(id, now)) continue;
 			DebugLog.line("STILL", "REMOVE absent " + entry.critter().name()
 				+ " id=" + shortId(id) + " pos=" + pos(entry.pos()));
 			if ("Troodon".equals(entry.critter().name())) {
@@ -340,16 +403,15 @@ public final class StillCritters {
 	private static void resolveHideonwallPerch(Critter hideonwall, BlockPos candidate, long now) {
 		unchecked.getOrDefault(hideonwall, Set.of()).remove(candidate);
 		if (caughtHideonwallPositions.stream().anyMatch(pos -> sameSpawn(pos, candidate))) return;
-		// A throw already assigned to this species is resolving a catch, so it should
-		// clear the candidate without reviving the body that the attempt just suppressed.
-		if (hasResolving(hideonwall)) {
+		// Only a throw assigned near this perch can explain its suppressed body.
+		// An unrelated same-species attempt must not clear this location's memory.
+		if (resolving.hasPosition(hideonwall, candidate, StillCritters::sameSpawn)) {
 			remembered.entrySet().removeIf(entry -> hideonwall.equals(entry.getValue().critter())
 				&& sameSpawn(candidate, entry.getValue().pos()));
 			DebugLog.line("STILL", "CAPSULE cleared Hideonwall perch pos=" + pos(candidate));
 			return;
 		}
-		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-			if (!hideonwall.equals(sighting.critter())) continue;
+		for (CritterEntities.Sighting sighting : CritterEntities.all(hideonwall)) {
 			Entity body = sighting.mob();
 			BlockPos actual = body != null ? body.blockPosition() : sighting.label().blockPosition();
 			if (!sameSpawn(candidate, actual) || body != null && suppressedBodies.contains(body.getUUID())) continue;
@@ -393,8 +455,7 @@ public final class StillCritters {
 			if (!SafeMode.hiddenCritterCandidates(critter)) continue;
 			Set<BlockPos> candidates = unchecked.get(critter);
 			if (candidates == null || candidates.isEmpty()) continue;
-			List<BlockPos> live = CritterEntities.all().stream()
-				.filter(sighting -> critter.equals(sighting.critter()))
+			List<BlockPos> live = CritterEntities.all(critter).stream()
 				.map(sighting -> sighting.mob() != null ? sighting.mob().blockPosition()
 					: sighting.label().blockPosition())
 				.filter(java.util.Objects::nonNull)
@@ -428,9 +489,10 @@ public final class StillCritters {
 		return Set.copyOf(result);
 	}
 
-	/** Clears only unresolved catalog candidates after every possible spawn was caught. */
+	/** Clears catalog candidates and remembered projections after every possible spawn was caught. */
 	public static void onConfirmedCatchTotal(Critter critter, int catches) {
 		if (critter == null || catches < CritterSpawnRanges.maximum(critter)) return;
+		MarkerRegistry.invalidate();
 		Set<BlockPos> candidates = unchecked.get(critter);
 		int clearedCandidates = candidates == null ? 0 : candidates.size();
 		if (candidates != null) candidates.clear();
@@ -441,11 +503,8 @@ public final class StillCritters {
 			return true;
 		});
 		retiredIds.forEach(staticAbsenceSince::remove);
-		java.util.ArrayDeque<Resolution> abandoned = resolving.remove(critter);
-		if (abandoned != null) {
-			for (Resolution resolution : abandoned) {
-				if (resolution.id() != null) suppressedBodies.remove(resolution.id());
-			}
+		for (var resolution : resolving.removeSpecies(critter)) {
+			if (resolution.id() != null && !isStillResolving(resolution.id())) suppressedBodies.remove(resolution.id());
 		}
 		if (clearedCandidates > 0 || !retiredIds.isEmpty()) {
 			DebugLog.line("STILL", "MAX-CATCH " + critter.name() + "=" + catches
@@ -455,43 +514,60 @@ public final class StillCritters {
 	}
 
 	/**
-	 * Replaces a nearby old ID only when its body is absent from the current scan.
-	 * Two distinct critters standing together must retain separate remembered entries.
+	 * Replaces only one unambiguous nearby old ID, absent and without an active owner.
+	 * A cluster or protected neighbor makes the spatial fallback inconclusive.
 	 */
 	private static void supersedeNearby(Critter critter, UUID newId, BlockPos pos, Set<UUID> liveBodies) {
 		double distSq = SUPERSEDE_DISTANCE * SUPERSEDE_DISTANCE;
-		Iterator<Map.Entry<UUID, Entry>> it = remembered.entrySet().iterator();
-		while (it.hasNext()) {
-			Map.Entry<UUID, Entry> entry = it.next();
+		var selection = new StaticMarkerReplacement<UUID>();
+		for (var entry : remembered.entrySet()) {
 			if (entry.getKey().equals(newId)) continue;
-			if (liveBodies.contains(entry.getKey())) continue;
 			if (!critter.equals(entry.getValue().critter())) continue;
 			if (entry.getValue().pos().distSqr(pos) > distSq) continue;
-
-			DebugLog.line("STILL", "SUPERSEDE " + critter.name() + " id " + shortId(entry.getKey())
-				+ " -> " + shortId(newId) + " (new sighting within " + SUPERSEDE_DISTANCE + " blocks)");
-			it.remove();
+			selection.consider(entry.getKey(), liveBodies.contains(entry.getKey())
+				|| isStillResolving(entry.getKey()) || suppressedBodies.contains(entry.getKey()));
 		}
+		UUID replaced = selection.replacement();
+		if (replaced == null) return;
+		remembered.remove(replaced);
+		staticAbsenceSince.remove(replaced);
+		DebugLog.line("STILL", "SUPERSEDE " + critter.name() + " id " + shortId(replaced)
+			+ " -> " + shortId(newId) + " (unique absent nearby marker)");
 	}
 
-	/** Corrects only the oldest matching provisional throw after capsule evidence identifies its body. */
-	static void correctResolvingTarget(Critter critter, UUID oldId, UUID newId, BlockPos position) {
-		java.util.ArrayDeque<Resolution> attempts = resolving.get(critter);
-		if (attempts == null || attempts.isEmpty()) return;
-		boolean corrected = false;
-		java.util.ArrayDeque<Resolution> updated = new java.util.ArrayDeque<>(attempts.size());
-		for (Resolution attempt : attempts) {
-			if (!corrected && oldId.equals(attempt.id())) {
-				updated.addLast(new Resolution(attempt.attemptId(), newId, position, attempt.millis()));
-				corrected = true;
-			} else {
-				updated.addLast(attempt);
-			}
-		}
-		if (!corrected) return;
-		resolving.put(critter, updated);
+	/** Corrects the exact provisional throw after capsule evidence identifies its body. */
+	static void correctResolvingTarget(long attemptId, Critter critter, UUID oldId, UUID newId, BlockPos position) {
+		MarkerRegistry.invalidate();
+		if (!resolving.correct(attemptId, critter, oldId, newId, position)) return;
 		if (!isStillResolving(oldId)) suppressedBodies.remove(oldId);
 		suppressedBodies.add(newId);
+		StructuredDiagnostics.decision("CAPTURE/STATIC", "target-corrected", "attempt=" + attemptId);
+	}
+
+	/** Migrates one static presentation owner when the same logical body receives a new UUID. */
+	static void reassignIdentity(long attemptId, Critter critter, UUID oldId, UUID newId,
+			AABB newBox) {
+		if (critter == null || oldId == null || newId == null || oldId.equals(newId)
+			|| !TRACKED.contains(critter.name())) return;
+		MarkerRegistry.invalidate();
+		var attempt = resolving.get(attemptId, critter);
+		if (attempt == null || !resolving.correct(attemptId, critter, oldId, newId, attempt.pos())) return;
+		if (!isStillResolving(oldId)) suppressedBodies.remove(oldId);
+		suppressedBodies.add(newId);
+		boolean oldOwned = isStillResolving(oldId);
+		Entry oldEntry = oldOwned ? remembered.get(oldId) : remembered.remove(oldId);
+		if (oldEntry != null && newBox != null) {
+			Entry current = remembered.get(newId);
+			remembered.put(newId, new Entry(critter, oldEntry.pos(), newBox,
+				oldEntry.sparkling() || current != null && current.sparkling(),
+				MonotonicTime.nowMillis(), oldEntry.visiblyConfirmed()
+					|| current != null && current.visiblyConfirmed(),
+				oldEntry.persistentThroughWalls()
+					|| current != null && current.persistentThroughWalls()));
+		}
+		if (!oldOwned) staticAbsenceSince.remove(oldId);
+		DebugLog.line("STILL", "IDENTITY-REKEY A" + attemptId + " " + critter.name()
+			+ " " + shortId(oldId) + " -> " + shortId(newId));
 	}
 
 	/** Every remembered individual of {@code critter}. */
@@ -517,8 +593,9 @@ public final class StillCritters {
 	 * the entity-range gap without inventing a different far-catch lifecycle.
 	 */
 	public static AttemptTarget attemptTarget(Critter critter) {
+		if (critter == null || remembered.isEmpty()) return null;
 		var player = net.minecraft.client.Minecraft.getInstance().player;
-		if (critter == null || player == null) return null;
+		if (player == null) return null;
 		Map.Entry<UUID, Entry> selected = remembered.entrySet().stream()
 			.filter(entry -> critter.equals(entry.getValue().critter()))
 			.filter(entry -> staticTracked(critter, entry.getValue().pos()))
@@ -546,11 +623,6 @@ public final class StillCritters {
 		return suppressedBodies.contains(id);
 	}
 
-	/** Feeds one cleaned chat line. */
-	public static void onChatMessage(String line) {
-		onChatMessage(line, ChatParser.parse(line, null));
-	}
-
 	/** Feeds one cleaned chat line with the shared, already-parsed critter event. */
 	public static void onChatMessage(String line, CritterEvent event) {
 		if (event == null || event.critter() == null) return;
@@ -561,17 +633,17 @@ public final class StillCritters {
 		}
 		if (event.type() != CritterEvent.Type.SHARED_CATCH) return;
 		catalogClosed.add(event.critter());
-		// Shared catch chat has no individual identity. Retire only an unverified
-		// remembered spawn; local attempts are resolved exclusively by CritterState.
-		if (remembered.values().stream().anyMatch(entry -> event.critter().equals(entry.critter())
-			&& staticTracked(entry.critter(), entry.pos()))) {
-			retireSharedStaticCatch(event.critter());
-		}
+		// Species-only chat cannot identify a particular spawn, even if just one is
+		// remembered: the party may have caught an unseen peer. Inspection and confirmed
+		// species totals retire these markers; local outcomes belong to CritterState.
+		StructuredDiagnostics.decision("CAPTURE/STATIC", "shared-catch-unlocated",
+			"species=" + event.critter().name());
 	}
 
 	/** Associates an exact logical attempt with its remembered static marker. */
 	static void onIdentityAttempt(long attemptId, Critter critter, UUID entityId, AABB box) {
 		if (critter == null || !TRACKED.contains(critter.name())) return;
+		MarkerRegistry.invalidate();
 		catalogClosed.add(critter);
 		Entry target = entityId == null ? null : remembered.get(entityId);
 		BlockPos targetPos = target != null ? target.pos()
@@ -580,8 +652,7 @@ public final class StillCritters {
 			targetPos = canonicalHideonwallPerch(targetPos);
 		}
 		if (entityId == null && targetPos == null) return;
-		resolving.computeIfAbsent(critter, ignored -> new java.util.ArrayDeque<>())
-			.addLast(new Resolution(attemptId, entityId, targetPos, System.currentTimeMillis()));
+		if (!resolving.start(attemptId, critter, entityId, targetPos, MonotonicTime.nowMillis())) return;
 		if (entityId != null) suppressedBodies.add(entityId);
 		DebugLog.line("STILL", "ATTEMPT A" + attemptId + " " + critter.name()
 			+ " id=" + shortId(entityId));
@@ -591,18 +662,18 @@ public final class StillCritters {
 	static void onIdentityResolved(long attemptId, Critter critter, UUID originalId,
 			UUID currentId, AABB currentBox, CritterState.Outcome outcome) {
 		if (critter == null || !TRACKED.contains(critter.name())) return;
-		java.util.ArrayDeque<Resolution> attempts = resolving.get(critter);
-		if (attempts == null) return;
-		Resolution resolved = null;
-		for (var iterator = attempts.iterator(); iterator.hasNext();) {
-			Resolution candidate = iterator.next();
-			if (candidate.attemptId() != attemptId) continue;
-			resolved = candidate;
-			iterator.remove();
-			break;
-		}
-		if (attempts.isEmpty()) resolving.remove(critter);
+		MarkerRegistry.invalidate();
+		var resolved = resolving.remove(attemptId, critter);
 		if (resolved == null) return;
+		// Another active attempt owns this body now. Neither caught-position cleanup nor
+		// breakout restoration may modify its remembered marker or suppression.
+		if (isStillResolving(resolved.id()) || isStillResolving(originalId) || isStillResolving(currentId)) {
+			if (resolved.id() != null && !isStillResolving(resolved.id())) suppressedBodies.remove(resolved.id());
+			if (originalId != null && !isStillResolving(originalId)) suppressedBodies.remove(originalId);
+			if (currentId != null && !isStillResolving(currentId)) suppressedBodies.remove(currentId);
+			StructuredDiagnostics.decision("CAPTURE/STATIC", "owner-preserved", "attempt=" + attemptId);
+			return;
+		}
 
 		if (outcome == CritterState.Outcome.BREAKOUT) {
 			Entry previous = resolved.id() == null ? null : remembered.remove(resolved.id());
@@ -619,7 +690,7 @@ public final class StillCritters {
 					: currentBox == null ? null : BlockPos.containing(currentBox.getCenter());
 				if (fixedPos != null && currentBox != null) {
 					remembered.put(currentId, new Entry(critter, fixedPos, currentBox,
-						source != null && source.sparkling(), System.currentTimeMillis(),
+						source != null && source.sparkling(), MonotonicTime.nowMillis(),
 						source == null || source.visiblyConfirmed(),
 						source == null || source.persistentThroughWalls()));
 				}
@@ -655,89 +726,31 @@ public final class StillCritters {
 	/** Releases only the static presentation state owned by an expired attempt. */
 	static void onIdentityExpired(long attemptId, Critter critter, UUID originalId) {
 		if (critter == null || !TRACKED.contains(critter.name())) return;
-		java.util.ArrayDeque<Resolution> attempts = resolving.get(critter);
-		if (attempts == null) return;
-		UUID resolvedId = originalId;
-		for (var iterator = attempts.iterator(); iterator.hasNext();) {
-			Resolution candidate = iterator.next();
-			if (candidate.attemptId() != attemptId) continue;
-			resolvedId = candidate.id() != null ? candidate.id() : resolvedId;
-			iterator.remove();
-			break;
-		}
-		if (attempts.isEmpty()) resolving.remove(critter);
+		MarkerRegistry.invalidate();
+		var expired = resolving.remove(attemptId, critter);
+		if (expired == null) return;
+		UUID resolvedId = expired.id() != null ? expired.id() : originalId;
 		if (resolvedId != null && !isStillResolving(resolvedId)) suppressedBodies.remove(resolvedId);
 		DebugLog.line("STILL", "IDENTITY-EXPIRE A" + attemptId + " " + critter.name()
 			+ " id=" + shortId(resolvedId));
 	}
 
 	private static boolean hasResolving(Critter critter) {
-		java.util.ArrayDeque<Resolution> attempts = resolving.get(critter);
-		return attempts != null && !attempts.isEmpty();
+		return resolving.hasSpecies(critter);
 	}
 
 	private static boolean isStillResolving(UUID id) {
-		for (java.util.ArrayDeque<Resolution> attempts : resolving.values()) {
-			for (Resolution attempt : attempts) {
-				if (id.equals(attempt.id())) return true;
-			}
-		}
-		return false;
+		return resolving.hasBody(id);
 	}
 
 	private static void pruneResolutions(long now) {
 		Set<UUID> expiredIds = new HashSet<>();
-		Iterator<Map.Entry<Critter, java.util.ArrayDeque<Resolution>>> iterator =
-			resolving.entrySet().iterator();
-		while (iterator.hasNext()) {
-			java.util.ArrayDeque<Resolution> attempts = iterator.next().getValue();
-			while (!attempts.isEmpty() && now - attempts.peekFirst().millis() > RESOLUTION_MILLIS) {
-				Resolution expired = attempts.removeFirst();
-				if (expired.id() != null) expiredIds.add(expired.id());
-			}
-			if (attempts.isEmpty()) iterator.remove();
+		for (var expired : resolving.expire(now, RESOLUTION_MILLIS)) {
+			if (expired.id() != null) expiredIds.add(expired.id());
 		}
 		for (UUID id : expiredIds) {
 			if (!isStillResolving(id)) suppressedBodies.remove(id);
 		}
-	}
-
-	/** Retires one unverified marker when a partymate catches the same static species. */
-	private static void retireSharedStaticCatch(Critter critter) {
-		Map.Entry<UUID, Entry> candidate = remembered.entrySet().stream()
-			.filter(entry -> critter.equals(entry.getValue().critter()))
-			.filter(entry -> !locallyVerified(entry.getKey(), entry.getValue()))
-			.min(java.util.Comparator
-				.comparingLong((Map.Entry<UUID, Entry> entry) -> entry.getValue().millis())
-				.thenComparing(entry -> entry.getKey().toString()))
-			.orElse(null);
-		if (candidate == null) {
-			DebugLog.line("STILL", "KEEP shared " + critter.name()
-				+ " (all remembered instances locally verified)");
-			return;
-		}
-		remembered.remove(candidate.getKey());
-		staticAbsenceSince.remove(candidate.getKey());
-		DebugLog.line("STILL", "SHARED-CATCH retire " + critter.name()
-			+ " id=" + shortId(candidate.getKey()) + " pos=" + pos(candidate.getValue().pos()));
-	}
-
-	/** Extra Mode protects detected entities; Safe Mode protects only entities currently seen. */
-	private static boolean locallyVerified(UUID rememberedId, Entry entry) {
-		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-			if (!entry.critter().equals(sighting.critter())) continue;
-			Entity body = sighting.mob();
-			if (body != null && suppressedBodies.contains(body.getUUID())) continue;
-			UUID liveId = body == null ? sighting.label().getUUID() : body.getUUID();
-			BlockPos livePos = body == null ? sighting.label().blockPosition() : body.blockPosition();
-			if (!rememberedId.equals(liveId) && !sameSpawn(entry.pos(), livePos)) continue;
-			if (!SafeMode.hiddenCritter(entry.critter(), entry.sparkling())) return true;
-			if (body == null) return VisibilityCheck.canSeeVisibleName(sighting.label());
-			return "Duplico".equals(entry.critter().name())
-				? VisibilityCheck.canSeeDecoratedEntity(body)
-				: VisibilityCheck.canSee(body);
-		}
-		return false;
 	}
 
 	/** Clears every lingering ID at the caught perch and keeps that one-use perch closed for this run. */
@@ -749,8 +762,7 @@ public final class StillCritters {
 			&& sameSpawn(caughtPos, entry.getValue().pos()));
 		Set<BlockPos> candidates = unchecked.get(hideonwall);
 		if (candidates != null) candidates.removeIf(candidate -> sameSpawn(caughtPos, candidate));
-		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-			if (!hideonwall.equals(sighting.critter())) continue;
+		for (CritterEntities.Sighting sighting : CritterEntities.all(hideonwall)) {
 			Entity body = sighting.mob();
 			BlockPos actual = body != null ? body.blockPosition() : sighting.label().blockPosition();
 			if (sameSpawn(caughtPos, actual) && body != null) suppressedBodies.add(body.getUUID());
@@ -767,11 +779,11 @@ public final class StillCritters {
 		caughtStaticPositions.computeIfAbsent(critter, ignored -> new HashSet<>()).add(caughtPos);
 		remembered.entrySet().removeIf(entry -> critter.equals(entry.getValue().critter())
 			&& sameSpawn(caughtPos, entry.getValue().pos()));
-		staticAbsenceSince.entrySet().removeIf(entry -> !remembered.containsKey(entry.getKey()));
+		staticAbsenceSince.retain(remembered.keySet());
 		Set<BlockPos> candidates = unchecked.get(critter);
 		if (candidates != null) candidates.removeIf(candidate -> sameSpawn(caughtPos, candidate));
-		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-			if (!critter.equals(sighting.critter()) || sighting.mob() == null) continue;
+		for (CritterEntities.Sighting sighting : CritterEntities.all(critter)) {
+			if (sighting.mob() == null) continue;
 			if (sameSpawn(caughtPos, sighting.mob().blockPosition())) {
 				suppressedBodies.add(sighting.mob().getUUID());
 			}
@@ -789,6 +801,7 @@ public final class StillCritters {
 
 	/** A spot from the last run says nothing about this one. */
 	public static void reset() {
+		MarkerRegistry.invalidate();
 		remembered.clear();
 		staticAbsenceSince.clear();
 		cataloguedIds.clear();

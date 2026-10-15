@@ -2,16 +2,13 @@ package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.CritterSpawnRanges;
-import dev.serko.safariutils.parse.ChatParser;
-import dev.serko.safariutils.parse.CritterEvent;
-import net.minecraft.client.Minecraft;
+import dev.serko.safariutils.state.LinearTimeline;
+import dev.serko.safariutils.state.MonotonicTime;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -22,391 +19,623 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Renders capture transitions and recatch pins for exact attempts selected and
- * resolved by {@link CritterState}. This class owns no target, pity, or outcome logic.
+ * Projects authoritative {@link CritterState} capture attempts into visuals.
+ * Target, pity, and outcome decisions remain exclusively in CritterState.
  */
 public final class RecatchSpots {
 
-	/** Dropped after this long with nothing resolving it, so a stale box cannot linger. */
 	private static final long HOLD_MILLIS = 40_000;
-	/** Long enough to cover the server replacing a thrown-at body with its capsule animation. */
 	private static final long CAPTURE_TRANSITION_MILLIS = 10_000;
-	/** Duration of the server's visual body-to-capsule shrink. */
 	private static final long CAPTURE_SHRINK_MILLIS = 550;
-	/** Briefly retains a resolved throw while its capsule entities finish disappearing. */
 	private static final long RESOLVED_TRANSITION_MILLIS = 5_000;
 
-	/** One active visual pin. */
-	private record Pin(Critter critter, AABB box, boolean sparkling, long pinnedAt) {
+	private enum PresentationMode { PIN, SHRINK }
+
+	/** Complete visual ownership of one unresolved capture attempt. */
+	private static final class AttemptPresentation {
+		private final long attemptId;
+		private final Critter critter;
+		private PresentationMode mode;
+		private UUID currentId;
+		private AABB box;
+		private boolean sparkling;
+		private final long attemptStartedAt;
+		private final LinearTimeline animation;
+
+		private AttemptPresentation(long attemptId, Critter critter,
+				PresentationMode mode, UUID entityId, AABB box,
+				boolean sparkling, long attemptStartedAt) {
+			this.attemptId = attemptId;
+			this.critter = critter;
+			this.mode = mode;
+			this.currentId = entityId;
+			this.box = box;
+			this.sparkling = sparkling;
+			this.attemptStartedAt = attemptStartedAt;
+			this.animation = new LinearTimeline(System.nanoTime(), CAPTURE_SHRINK_MILLIS * 1_000_000L);
+		}
 	}
 
-	/** One pin, for callers outside this class — which species, where, which individual, sparkling or not. */
-	public record ActivePin(Critter critter, AABB box, UUID entityId, boolean sparkling) {
-	}
-	private record CaptureShrink(Critter critter, long startedAt) { }
+	/** A post-breakout pin that outlives its resolved attempt until the body returns. */
+	private record Pin(Critter critter, AABB box, boolean sparkling, long pinnedAt) { }
 
-	/** Body IDs observed before the current capture transition, used to reject scaffolding. */
-	private static final Map<UUID, Critter> knownBodies = new HashMap<>();
-	/** Active pins by the entity ID supplied by CritterState. */
-	private static final Map<UUID, Pin> pins = new LinkedHashMap<>();
-	/** Exact identity attempt owning each pin; avoids species-order outcome guesses. */
-	private static final Map<Long, UUID> attemptPins = new HashMap<>();
-	/** Failed throws retain their marker until the escaped body is visible again. */
-	private static final Set<UUID> escapedPins = new HashSet<>();
+	public record ActivePin(Critter critter, AABB box, UUID entityId, boolean sparkling) { }
+	public record ActiveShrink(Critter critter, AABB box, UUID entityId, boolean sparkling) { }
+	public record ShrinkState(Critter critter, AABB box, UUID entityId, boolean sparkling,
+			LinearTimeline animation) { }
+
+	/** Frame adapter supplies position only; ownership, timing and size stay in this pipeline. */
+	@FunctionalInterface
+	interface FrameProjection {
+		AABB project(ShrinkState state, float partialTick, double scale);
+	}
+	private static final FrameProjection LIVE_FRAME = (state, partialTick, scale) ->
+		framePosition(state.critter(), state.box(), WorldEntities.find(state.entityId()), partialTick, scale);
+
 	/**
-	 * Bodies already resolved as caught during this run. The server can retain one for
-	 * a few scans while its capture animation finishes; it must never become the target
-	 * of a later overlapping throw during that removal grace period.
+	 * Immutable presentation ownership consumed for an entire render snapshot. Render
+	 * code never mixes a sighting from one tick with recatch state from another.
 	 */
+	public record PresentationSnapshot(List<ActivePin> pins, List<ShrinkState> shrinkStates,
+			Set<UUID> pinnedBodies, Set<UUID> animatedBodies,
+			Set<UUID> nativeShrinkingBodies, Set<Critter> transitioning) {
+		public PresentationSnapshot {
+			pins = List.copyOf(pins);
+			shrinkStates = List.copyOf(shrinkStates);
+			pinnedBodies = Set.copyOf(pinnedBodies);
+			animatedBodies = Set.copyOf(animatedBodies);
+			nativeShrinkingBodies = Set.copyOf(nativeShrinkingBodies);
+			transitioning = Set.copyOf(transitioning);
+		}
+
+		public boolean isPinned(UUID entityId) {
+			return entityId != null && pinnedBodies.contains(entityId);
+		}
+
+		public boolean isAnimated(UUID entityId) {
+			return entityId != null && animatedBodies.contains(entityId);
+		}
+
+		public boolean suppresses(UUID entityId) {
+			return isPinned(entityId) || isAnimated(entityId)
+				|| nativeShrinkingBodies.contains(entityId);
+		}
+
+		public boolean captureInProgress(Critter critter) {
+			return critter != null && transitioning.contains(critter);
+		}
+
+		/** Guaranteed-catch boxes projected from one shared frame timestamp. */
+		public List<ActiveShrink> shrinking(long frameNanos, float partialTick) {
+			return shrinking(frameNanos, partialTick, LIVE_FRAME);
+		}
+
+		/** The production frame loop, with explicit body input for headless pipeline checks. */
+		List<ActiveShrink> shrinking(long frameNanos, float partialTick, FrameProjection projection) {
+			if (shrinkStates.isEmpty()) return List.of();
+			List<ActiveShrink> result = new ArrayList<>(shrinkStates.size());
+			for (ShrinkState state : shrinkStates) {
+				double progress = state.animation.progress(frameNanos);
+				if (progress >= 1.0) continue;
+				AABB rendered = projection.project(state, partialTick, 1.0 - progress);
+				result.add(new ActiveShrink(state.critter, rendered, state.entityId, state.sparkling));
+			}
+			return List.copyOf(result);
+		}
+	}
+
+	private static final Map<UUID, Critter> knownBodies = new HashMap<>();
+	/** One authoritative visual state per unresolved attempt. */
+	private static final Map<Long, AttemptPresentation> presentations = new LinkedHashMap<>();
+	/** Constant-time body-to-attempt ownership for the renderer. */
+	private static final CaptureOwnership presentationByBody = new CaptureOwnership();
+	/** Resolved breakout pins, separate because their attempt no longer exists. */
+	private static final Map<UUID, Pin> pins = new LinkedHashMap<>();
+	private static final Set<UUID> escapedPins = new HashSet<>();
 	private static final Set<UUID> caughtBodies = new HashSet<>();
-	/** Exact attempted bodies whose live hitboxes are shrinking into their capsules. */
-	private static final Map<UUID, CaptureShrink> captureShrinks = new HashMap<>();
-	/** Outstanding throws by species; bodyless labels during these windows are capsules, not critters. */
-	private static final Map<Critter, Deque<Long>> captureTransitions = new HashMap<>();
-	/** The sweep these sightings came from, so a cached list is not re-timestamped. */
+	private static final CaptureTransitions<Critter> captureTransitions =
+		new CaptureTransitions<>(CAPTURE_TRANSITION_MILLIS, RESOLVED_TRANSITION_MILLIS);
+	private static final Set<String> loggedInvariantKeys = new HashSet<>();
 	private static long lastScan;
-	/** Detects a live Eagle setting change so obsolete pity state is removed immediately. */
 	private static int lastEagleRarity = Integer.MIN_VALUE;
 
-	private RecatchSpots() {
+	private RecatchSpots() { }
+
+	/** Captures all render-facing ownership once without mutating tracker state. */
+	public static PresentationSnapshot snapshot() {
+		return snapshot(ConfigManager.get().display.recatchHelper, CritterState.nativeCaptureBodies());
 	}
 
-	/** Every pin currently active. */
-	public static List<ActivePin> active() {
-		if (!ConfigManager.get().display.recatchHelper) return List.of();
-		List<ActivePin> result = new ArrayList<>();
-		for (Map.Entry<UUID, Pin> entry : pins.entrySet()) {
-			Pin pin = entry.getValue();
-			if (isGuaranteed(pin.critter(), entry.getKey())) continue;
-			result.add(new ActivePin(pin.critter(), pin.box(), entry.getKey(), pin.sparkling()));
+	/** Projection inputs are explicit so transition sequences can be replayed without a world. */
+	static PresentationSnapshot snapshot(boolean showPins, Set<UUID> nativeCaptureBodies) {
+		List<ActivePin> activePins = new ArrayList<>();
+		List<ShrinkState> activeShrinks = new ArrayList<>();
+		Set<UUID> pinnedBodies = new HashSet<>();
+		Set<UUID> animatedBodies = new HashSet<>();
+		for (AttemptPresentation presentation : presentations.values()) {
+			if (presentation.mode == PresentationMode.PIN) {
+				if (!showPins) continue;
+				activePins.add(new ActivePin(presentation.critter, presentation.box,
+					presentation.currentId, presentation.sparkling));
+				pinnedBodies.addAll(presentationByBody.bodies(presentation.attemptId));
+			} else {
+				activeShrinks.add(new ShrinkState(presentation.critter, presentation.box,
+					presentation.currentId, presentation.sparkling,
+					presentation.animation));
+				animatedBodies.addAll(presentationByBody.bodies(presentation.attemptId));
+			}
 		}
-		return result;
+		if (showPins) {
+			for (Map.Entry<UUID, Pin> entry : pins.entrySet()) {
+				Pin pin = entry.getValue();
+				if (isGuaranteed(pin.critter(), entry.getKey())) continue;
+				activePins.add(new ActivePin(pin.critter(), pin.box(), entry.getKey(),
+					pin.sparkling()));
+				pinnedBodies.add(entry.getKey());
+			}
+		}
+		Set<Critter> transitioning = captureTransitions.activeSpecies();
+		return new PresentationSnapshot(activePins, activeShrinks, pinnedBodies, animatedBodies,
+			nativeCaptureBodies, transitioning);
 	}
 
-	/** Whether this exact individual is currently pinned. */
+	/** Returns a read-only projection of active recatch visuals. */
+	public static List<ActivePin> active() {
+		return snapshot().pins();
+	}
+
 	public static boolean isPinned(UUID entityId) {
-		if (!ConfigManager.get().display.recatchHelper) return false;
+		if (!ConfigManager.get().display.recatchHelper || entityId == null) return false;
+		AttemptPresentation presentation = presentationFor(entityId);
+		if (presentation != null) return presentation.mode == PresentationMode.PIN;
 		Pin pin = pins.get(entityId);
-		if (pin == null) return false;
-		// Not pinned for display purposes once its pity has reached the threshold
-		// that guarantees this exact throw — a base-guaranteed critter is never pinned for the
-		// same reason, this is just the same fact arrived at individually rather than
-		// known in advance. Bookkeeping (pins itself) still holds the entry, so a
-		// FAILED or catch line still resolves against it correctly; only the visible
-		// pin, and the hitbox suppression that comes with one, is skipped — the normal
-		// hitbox takes over instead, showing the same "(2/2)" the pin would have.
-		return !isGuaranteed(pin.critter(), entityId);
+		return pin != null && !isGuaranteed(pin.critter(), entityId);
 	}
 
-	/** Whether this individual's pity is already at the threshold that guarantees its next throw. */
+	public static boolean isCaptureAnimated(UUID entityId) {
+		AttemptPresentation presentation = presentationFor(entityId);
+		return presentation != null && presentation.mode == PresentationMode.SHRINK;
+	}
+
+	/** Guaranteed-catch boxes at their exact linear scale for this render frame. */
+	public static List<ActiveShrink> shrinking() {
+		return snapshot().shrinking(System.nanoTime(), 1.0f);
+	}
+
 	private static boolean isGuaranteed(Critter critter, UUID entityId) {
 		return CritterCatchRules.guaranteedWithoutPity(critter)
 			|| CritterState.pityFor(entityId) >= Markers.pityThreshold(critter.rarity());
 	}
 
-	/** The nearest active pin to the player, or {@code null} when nothing is pinned. */
-	public static ActivePin nearest() {
-		if (!ConfigManager.get().display.recatchHelper) return null;
-		Minecraft client = Minecraft.getInstance();
-		if (pins.isEmpty() || client.player == null) return null;
-		Vec3 playerPos = client.player.position();
-		UUID bestId = null;
-		Pin best = null;
-		double bestDistSq = Double.MAX_VALUE;
-		for (Map.Entry<UUID, Pin> entry : pins.entrySet()) {
-			if (isGuaranteed(entry.getValue().critter(), entry.getKey())) continue;
-			double distSq = entry.getValue().box().getCenter().distanceToSqr(playerPos);
-			if (distSq >= bestDistSq) continue;
-			bestDistSq = distSq;
-			best = entry.getValue();
-			bestId = entry.getKey();
-		}
-		return best == null ? null : new ActivePin(best.critter(), best.box(), bestId, best.sparkling());
-	}
-
-	/** Distance from the player to the nearest pin, or -1 when nothing is pinned. */
-	public static double distance() {
-		Minecraft client = Minecraft.getInstance();
-		ActivePin pin = nearest();
-		if (pin == null || client.player == null) return -1;
-		return client.player.position().distanceTo(pin.box().getCenter());
-	}
-
 	public static void tick() {
-		long now = System.currentTimeMillis();
+		long now = MonotonicTime.nowMillis();
 		int eagleRarity = ConfigManager.get().display.eagleRarity;
 		if (eagleRarity != lastEagleRarity) {
 			lastEagleRarity = eagleRarity;
 			removeGuaranteedState();
 		}
-		captureTransitions.values().forEach(expiries -> {
-			while (!expiries.isEmpty() && expiries.peekFirst() < now) expiries.removeFirst();
-		});
-		captureTransitions.entrySet().removeIf(entry -> entry.getValue().isEmpty());
+		if (captureTransitions.prune()) MarkerRegistry.invalidate();
+		followActiveBodies();
 
-		if (CritterEntities.scannedAt() != lastScan) {
-			lastScan = CritterEntities.scannedAt();
+		if (CritterEntities.scanRevision() != lastScan) {
+			lastScan = CritterEntities.scanRevision();
 			for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-				// A capsule mid-capture carries the critter's name too, so it turns up as
-				// a sighting of that species — and pinning it puts the mark on the ball
-				// rather than on the spot the critter will come back to. A real critter
-				// has a mob under its name tag; the capsule has nothing.
 				if (sighting.mob() == null) continue;
 				Entity body = sighting.mob();
 				UUID id = body.getUUID();
-				if (caughtBodies.contains(id)) continue;
-				// Some capture animations briefly expose a mob-like helper beneath the
-				// retained critter label. Never teach that fresh ID as a real body while
-				// the throw is unresolved; already-known same-species peers remain valid.
-				if (isCaptureArtifact(sighting.critter(), body)) continue;
+				if (caughtBodies.contains(id) || isCaptureArtifact(sighting.critter(), body)) continue;
 				knownBodies.put(id, sighting.critter());
 				if (escapedPins.remove(id)) {
 					pins.remove(id);
 					DebugLog.line("RECATCH", "REJOIN " + sighting.critter().name()
 						+ " id=" + shortId(id) + " (same body)");
+					MarkerRegistry.invalidate();
 				}
 			}
 			caughtBodies.removeIf(id -> !CritterState.isCaught(id));
 		}
 
-		// Dropped after HOLD_MILLIS with nothing resolving it — the only cleanup a
-		// pin gets now, since FAILED and a catch both clear it directly the moment
-		// they are heard. This is purely a safety net for a resolution line that,
-		// for whatever reason, never arrives.
-		Iterator<Map.Entry<UUID, Pin>> it = pins.entrySet().iterator();
-		while (it.hasNext()) {
-			Map.Entry<UUID, Pin> entry = it.next();
+		List<Long> expiredAttempts = new ArrayList<>();
+		for (AttemptPresentation presentation : presentations.values()) {
+			if (now - presentation.attemptStartedAt > HOLD_MILLIS) {
+				expiredAttempts.add(presentation.attemptId);
+			}
+		}
+		for (long attemptId : expiredAttempts) {
+			AttemptPresentation presentation = removePresentation(attemptId);
+			if (presentation != null) {
+				DebugLog.line("RECATCH", "PRESENTATION-TIMEOUT A" + attemptId + " "
+					+ presentation.critter.name());
+			}
+		}
+
+		Iterator<Map.Entry<UUID, Pin>> iterator = pins.entrySet().iterator();
+		boolean removed = !expiredAttempts.isEmpty();
+		while (iterator.hasNext()) {
+			Map.Entry<UUID, Pin> entry = iterator.next();
 			Pin pin = entry.getValue();
 			if (now - pin.pinnedAt() <= HOLD_MILLIS) continue;
-			DebugLog.line("RECATCH", "TIMEOUT " + pin.critter().name() + " id=" + shortId(entry.getKey())
-				+ " held " + HOLD_MILLIS + "ms unresolved");
+			DebugLog.line("RECATCH", "TIMEOUT " + pin.critter().name() + " id="
+				+ shortId(entry.getKey()) + " held " + HOLD_MILLIS + "ms unresolved");
 			escapedPins.remove(entry.getKey());
-			it.remove();
+			iterator.remove();
+			removed = true;
 		}
-
-		captureShrinks.entrySet().removeIf(entry ->
-			now - entry.getValue().startedAt() > CAPTURE_SHRINK_MILLIS + 1_000L);
+		if (removed) MarkerRegistry.invalidate();
+		if (DebugLog.isEnabled()) auditInvariants();
 	}
 
-	/** Linear live-hitbox scale for an active capture animation; one otherwise. */
-	public static double captureScale(UUID entityId) {
-		CaptureShrink shrink = captureShrinks.get(entityId);
-		if (shrink == null) return 1.0;
-		double progress = (double) (System.currentTimeMillis() - shrink.startedAt())
-			/ CAPTURE_SHRINK_MILLIS;
-		return Math.max(0.0, 1.0 - Math.min(1.0, progress));
-	}
-
-	/** Drops state that became impossible when the configured Eagle rarity changed. */
 	private static void removeGuaranteedState() {
-		Set<UUID> guaranteedIds = new HashSet<>();
-		knownBodies.forEach((id, critter) -> {
-			if (CritterCatchRules.guaranteedWithoutPity(critter)) guaranteedIds.add(id);
-		});
-		pins.forEach((id, pin) -> {
-			if (CritterCatchRules.guaranteedWithoutPity(pin.critter())) guaranteedIds.add(id);
-		});
-		guaranteedIds.forEach(id -> {
-			pins.remove(id);
-			escapedPins.remove(id);
-		});
-	}
-
-	/** Feeds one cleaned chat line. */
-	public static void onChatMessage(String line) {
-		// selfName only matters for the entry banner, which is not one of the events
-		// this cares about.
-		onChatMessage(line, ChatParser.parse(line, null));
-	}
-
-	/** Feeds one cleaned chat line with the shared, already-parsed critter event. */
-	public static void onChatMessage(String line, CritterEvent event) {
-		if (event == null || event.critter() == null) return;
-		DebugLog.line("CHAT", event.type() + " " + event.critter().name() + " raw=\"" + line + "\"");
-	}
-
-	/** Starts the capsule transition immediately, even before its target can be bound. */
-	static void onCaptureStarted(Critter critter) {
-		if (critter == null) return;
-		captureTransitions.computeIfAbsent(critter, ignored -> new ArrayDeque<>())
-			.addLast(System.currentTimeMillis() + CAPTURE_TRANSITION_MILLIS);
-	}
-
-	/** Creates visuals for the exact target selected by the authoritative identity model. */
-	static void onIdentityAttempt(long attemptId, Critter critter, UUID entityId,
-			AABB box, boolean sparkling, int logicalPity, boolean masterful) {
-		if (critter == null || entityId == null || box == null) return;
-		long now = System.currentTimeMillis();
-		captureShrinks.put(entityId, new CaptureShrink(critter, now));
-		attemptPins.put(attemptId, entityId);
-		escapedPins.remove(entityId);
-		if (!masterful && worthPinning(critter)
-			&& logicalPity < Markers.pityThreshold(critter.rarity())) {
-			pins.put(entityId, new Pin(critter, CritterMarkerGeometry.recatch(critter, box),
-				sparkling, now));
+		List<Long> attempts = new ArrayList<>();
+		for (AttemptPresentation presentation : presentations.values()) {
+			if (presentation.mode == PresentationMode.PIN
+				&& CritterCatchRules.guaranteedWithoutPity(presentation.critter)) {
+				attempts.add(presentation.attemptId);
+			}
 		}
+		attempts.forEach(RecatchSpots::removePresentation);
+		Set<UUID> pinIds = new HashSet<>();
+		pins.forEach((id, pin) -> {
+			if (CritterCatchRules.guaranteedWithoutPity(pin.critter())) pinIds.add(id);
+		});
+		pinIds.forEach(pins::remove);
+		escapedPins.removeAll(pinIds);
+		if (!attempts.isEmpty() || !pinIds.isEmpty()) MarkerRegistry.invalidate();
+	}
+
+	static void onCaptureStarted(long attemptId, Critter critter) {
+		if (critter == null) return;
+		captureTransitions.start(attemptId, critter);
+		StructuredDiagnostics.decision("CAPTURE/WINDOW", "started",
+			"attempt=" + attemptId + " retained=" + captureTransitions.size());
+		MarkerRegistry.invalidate();
+	}
+
+	/** Creates exactly one visual mode from the attempt's authoritative guarantee decision. */
+	static void onIdentityAttempt(long attemptId, Critter critter, UUID entityId,
+			AABB box, boolean sparkling, int logicalPity, boolean guaranteed,
+			long attemptStartedAt) {
+		if (critter == null || entityId == null || box == null) return;
+		// Replayed evidence may refine an existing attempt, but must never restart its clock.
+		if (presentations.containsKey(attemptId)) return;
+		PresentationMode mode = guaranteed ? PresentationMode.SHRINK
+			: worthPinning(critter) ? PresentationMode.PIN : null;
+		if (mode != null) {
+			AttemptPresentation presentation = new AttemptPresentation(attemptId, critter, mode,
+				entityId, CritterMarkerGeometry.recatch(critter, box), sparkling,
+				attemptStartedAt);
+			if (!registerBody(presentation, entityId, false)) return;
+			presentations.put(attemptId, presentation);
+		}
+		MarkerRegistry.invalidate();
 		DebugLog.line("RECATCH", "ATTEMPT A" + attemptId + " " + critter.name()
 			+ " id=" + shortId(entityId) + " pity=" + logicalPity
-			+ (masterful ? " masterful" : ""));
+			+ (mode == PresentationMode.SHRINK ? " guaranteed-shrink"
+				: mode == PresentationMode.PIN ? " recatch-pin" : " no-presentation")
+			+ " age=" + Math.max(0L, MonotonicTime.nowMillis() - attemptStartedAt) + "ms");
 	}
 
-	/** Applies one resolved logical attempt to the exact pin that throw created. */
+	/**
+	 * Keeps every unresolved presentation on its owned live body without inheriting
+	 * Minecraft's stepped native hitbox resize. Position follows once per client tick;
+	 * size remains the stable full-size geometry and is scaled only by {@link #shrinking()}.
+	 */
+	private static void followActiveBodies() {
+		if (presentations.isEmpty()) return;
+		boolean moved = false;
+		for (AttemptPresentation presentation : presentations.values()) {
+			Entity entity = WorldEntities.find(presentation.currentId);
+			if (entity == null) continue;
+			AABB followed = CritterMarkerGeometry.follow(presentation.critter,
+				presentation.box, entity.getBoundingBox());
+			if (followed.equals(presentation.box)) continue;
+			presentation.box = followed;
+			moved = true;
+		}
+		if (moved) MarkerRegistry.invalidate();
+	}
+
+	/** Tick and frame paths share species offsets and fixed capture dimensions. */
+	private static AABB framePosition(Critter critter, AABB stable, Entity entity, float partialTick, double scale) {
+		if (entity == null) return CritterMarkerGeometry.captureFrame(critter, stable, null, 0, 0, 0, scale);
+		AABB current = entity.getBoundingBox();
+		Vec3 rendered = entity.getPosition(partialTick);
+		Vec3 position = entity.position();
+		return CritterMarkerGeometry.captureFrame(critter, stable, current,
+			rendered.x - position.x, rendered.y - position.y, rendered.z - position.z, scale);
+	}
+
+	/**
+	 * Accepts the shared identity scan's latest anchor as an additional correction path.
+	 * Per-tick following above provides smooth movement; this remains authoritative when
+	 * a body disappears between scans.
+	 */
+	static void updateIdentityAnchor(long attemptId, UUID entityId, Critter critter,
+			AABB box) {
+		if (entityId == null || critter == null || box == null) return;
+		AttemptPresentation presentation = presentations.get(attemptId);
+		if (presentation == null || !entityId.equals(presentation.currentId)) return;
+		AABB updated = CritterMarkerGeometry.follow(critter, presentation.box, box);
+		if (updated.equals(presentation.box)) return;
+		presentation.box = updated;
+		MarkerRegistry.invalidate();
+	}
+
+	/** Records the final body-owned pin location once, when that body leaves the scan. */
+	static void freezeIdentityAnchor(long attemptId, UUID entityId) {
+		if (entityId == null) return;
+		AttemptPresentation presentation = presentations.get(attemptId);
+		if (presentation == null || presentation.mode != PresentationMode.PIN
+			|| !entityId.equals(presentation.currentId)) return;
+		DebugLog.line("RECATCH", "ANCHOR A" + attemptId + " "
+			+ presentation.critter.name() + " id=" + shortId(entityId)
+			+ " at=" + format(presentation.box.getCenter()));
+	}
+
+	/** Atomically retires an attempt presentation and optionally creates one breakout hold. */
 	static void onIdentityResolved(long attemptId, Critter critter, UUID originalId,
 			UUID currentId, AABB currentBox, boolean sparkling, int logicalPity,
 			CritterState.Outcome outcome, boolean visible) {
-		resolveCaptureTransition(critter);
-		UUID pinnedId = attemptPins.remove(attemptId);
-		if (pinnedId == null) pinnedId = originalId;
-		Pin pin = pinnedId == null ? null : pins.remove(pinnedId);
-		if (pinnedId != null) escapedPins.remove(pinnedId);
+		resolveCaptureTransition(attemptId);
+		AttemptPresentation presentation = presentations.get(attemptId);
+		Set<UUID> ownedBodies = Set.copyOf(presentationByBody.bodies(attemptId));
+		removePresentation(attemptId);
+		Set<UUID> relatedBodies = new HashSet<>(ownedBodies);
+		if (originalId != null) relatedBodies.add(originalId);
+		if (currentId != null) relatedBodies.add(currentId);
+		// After releasing this attempt, any surviving owner belongs to another capture.
+		// Old aliases are evidence, not permission to clear or suppress that newer owner.
+		if (relatedBodies.removeIf(presentationByBody::containsKey)) {
+			DebugLog.line("RECATCH", "OWNER-PRESERVED A" + attemptId
+				+ " (outcome cannot retire another active presentation)");
+		}
+		for (UUID id : relatedBodies) {
+			pins.remove(id);
+			escapedPins.remove(id);
+		}
+
 		if (outcome == CritterState.Outcome.CAUGHT) {
-			if (originalId != null) {
-				caughtBodies.add(originalId);
-				pins.remove(originalId);
-			}
-			if (currentId != null) {
-				caughtBodies.add(currentId);
-				pins.remove(currentId);
-			}
+			caughtBodies.addAll(relatedBodies);
 			DebugLog.line("RECATCH", "IDENTITY-CLEAR A" + attemptId + " " + critter.name()
-				+ " id=" + shortId(pinnedId) + " (caught)");
+				+ " id=" + shortId(currentId != null ? currentId : originalId) + " (caught)");
+			MarkerRegistry.invalidate();
 			return;
 		}
 
-		UUID resolvedId = currentId != null ? currentId : originalId != null ? originalId : pinnedId;
+		UUID resolvedId = currentId != null ? currentId
+			: originalId != null ? originalId
+			: presentation != null ? presentation.currentId : null;
 		AABB resolvedBox = currentBox != null ? CritterMarkerGeometry.recatch(critter, currentBox)
-			: pin != null ? pin.box() : null;
+			: presentation != null ? presentation.box : null;
+		boolean resolvedSparkling = sparkling || presentation != null && presentation.sparkling;
 		if (visible) {
-			pins.remove(resolvedId);
-			escapedPins.remove(resolvedId);
 			DebugLog.line("RECATCH", "IDENTITY-REJOIN A" + attemptId + " " + critter.name()
 				+ " id=" + shortId(resolvedId) + " pity=" + logicalPity);
-		} else if (resolvedBox != null && worthPinning(critter)
+		} else if (resolvedId != null && relatedBodies.contains(resolvedId)
+			&& resolvedBox != null && worthPinning(critter)
 			&& logicalPity < Markers.pityThreshold(critter.rarity())) {
-			pins.put(resolvedId, new Pin(critter, resolvedBox,
-				pin != null ? pin.sparkling() : sparkling, System.currentTimeMillis()));
+			pins.put(resolvedId, new Pin(critter, resolvedBox, resolvedSparkling,
+				MonotonicTime.nowMillis()));
 			escapedPins.add(resolvedId);
 			DebugLog.line("RECATCH", "IDENTITY-HOLD A" + attemptId + " " + critter.name()
 				+ " id=" + shortId(resolvedId) + " pity=" + logicalPity);
 		}
+		MarkerRegistry.invalidate();
 	}
 
-	/** Clears presentation state when an unresolved authoritative attempt ages out. */
 	static void onIdentityExpired(long attemptId, Critter critter, UUID originalId) {
-		resolveCaptureTransition(critter);
-		UUID pinnedId = attemptPins.remove(attemptId);
-		if (pinnedId == null) pinnedId = originalId;
-		if (pinnedId != null) {
-			pins.remove(pinnedId);
-			escapedPins.remove(pinnedId);
-			captureShrinks.remove(pinnedId);
+		resolveCaptureTransition(attemptId);
+		AttemptPresentation presentation = removePresentation(attemptId);
+		if (originalId != null && !presentationByBody.containsKey(originalId)) {
+			pins.remove(originalId);
+			escapedPins.remove(originalId);
 		}
+		MarkerRegistry.invalidate();
 		DebugLog.line("RECATCH", "IDENTITY-EXPIRE A" + attemptId + " " + critter.name()
-			+ " id=" + shortId(pinnedId));
+			+ " id=" + shortId(presentation != null ? presentation.currentId : originalId));
 	}
 
-	/** Moves one provisional attempt after capsule-impact evidence identifies its real body. */
+	/** A correction replaces mistaken ownership; the old peer becomes renderable again. */
 	static void correctIdentityTarget(long attemptId, Critter critter, UUID oldId, UUID newId,
-			AABB newBox, boolean sparkling, int logicalPity) {
+			AABB newBox, boolean sparkling, int logicalPity, boolean guaranteed) {
 		if (oldId == null || newId == null || oldId.equals(newId)) return;
-		UUID pinnedId = attemptPins.get(attemptId);
-		Pin oldPin = pins.remove(oldId);
-		if (oldId.equals(pinnedId)) {
-			attemptPins.put(attemptId, newId);
-			if (oldPin != null && worthPinning(critter)
-				&& logicalPity < Markers.pityThreshold(critter.rarity())) {
-				pins.put(newId, new Pin(critter, CritterMarkerGeometry.recatch(critter, newBox),
-					oldPin.sparkling() || sparkling, oldPin.pinnedAt()));
+		AttemptPresentation presentation = presentations.get(attemptId);
+		if (presentation != null) {
+			if (!registerBody(presentation, newId, true)) return;
+			presentation.currentId = newId;
+			presentation.box = CritterMarkerGeometry.recatch(critter, newBox);
+			presentation.sparkling |= sparkling;
+			PresentationMode correctedMode = guaranteed ? PresentationMode.SHRINK
+				: worthPinning(critter) ? PresentationMode.PIN : null;
+			if (correctedMode == null) {
+				removePresentation(attemptId);
+			} else {
+				presentation.mode = correctedMode;
 			}
 		}
-		CaptureShrink shrink = captureShrinks.remove(oldId);
-		if (shrink != null) captureShrinks.put(newId, shrink);
-		escapedPins.remove(oldId);
+		if (!presentationByBody.containsKey(oldId)) {
+			pins.remove(oldId);
+			escapedPins.remove(oldId);
+		}
 		DebugLog.line("RECATCH", "IDENTITY-RETARGET A" + attemptId + " " + critter.name()
-			+ " " + shortId(oldId) + " -> " + shortId(newId)
-			+ " pity=" + logicalPity);
+			+ " " + shortId(oldId) + " -> " + shortId(newId) + " pity=" + logicalPity
+			+ " presentation=" + (guaranteed ? "guaranteed-shrink" : "recatch-pin"));
+		MarkerRegistry.invalidate();
 	}
 
-	/** Whether a bodyless label of this species currently belongs to a thrown capsule. */
-	public static boolean captureInProgress(Critter critter) {
-		Deque<Long> expiries = captureTransitions.get(critter);
-		if (expiries == null) return false;
-		long now = System.currentTimeMillis();
-		while (!expiries.isEmpty() && expiries.peekFirst() < now) expiries.removeFirst();
-		if (expiries.isEmpty()) {
-			captureTransitions.remove(critter);
-			return false;
+	/** A rekey retains old-body suppression while transferring the visible identity. */
+	static void reassignIdentity(long attemptId, Critter critter, UUID oldId, UUID newId,
+			AABB newBox, boolean sparkling, int logicalPity) {
+		if (oldId == null || newId == null || oldId.equals(newId)) return;
+		AttemptPresentation presentation = presentations.get(attemptId);
+		if (presentation != null) {
+			if (!registerBody(presentation, newId, false)) return;
+			presentation.currentId = newId;
+			presentation.sparkling |= sparkling;
+			if (presentation.mode == PresentationMode.PIN) {
+				presentation.box = CritterMarkerGeometry.recatch(critter, newBox);
+			}
 		}
+		Critter known = knownBodies.remove(oldId);
+		if (known != null) knownBodies.put(newId, known);
+		caughtBodies.remove(oldId);
+		DebugLog.line("RECATCH", "IDENTITY-REKEY A" + attemptId + " " + critter.name()
+			+ " " + shortId(oldId) + " -> " + shortId(newId) + " pity=" + logicalPity);
+		MarkerRegistry.invalidate();
+	}
+
+	public static boolean captureInProgress(Critter critter) {
+		return captureTransitions.active(critter);
+	}
+
+	public static boolean isCaptureArtifact(Critter critter, Entity entity) {
+		return isCaptureArtifact(critter, entity, captureInProgress(critter));
+	}
+
+	/** Pure render overload using the frame's immutable transition decision. */
+	static boolean isCaptureArtifact(Critter critter, Entity entity, boolean captureInProgress) {
+		if (entity == null || !captureInProgress) return false;
+		UUID entityId = entity.getUUID();
+		if (knownBodies.containsKey(entityId) || presentationByBody.containsKey(entityId)
+			|| pins.containsKey(entityId)) return false;
+		// Pairing has stronger species-specific evidence than transition timing. A real
+		// peer can enter the scan for the first time while another same-species critter
+		// is already shrinking (notably adjacent Gazers); suppressing that verified body
+		// would make its waypoint vanish before its own attempt is registered.
+		if (CritterEntities.isVerifiedBody(critter, entity)) return false;
+		// Unverified proximity matches exposed during a capture transition are helper
+		// entities, while verified or already-known peers remain visible.
 		return true;
 	}
 
-	/** Whether a fresh body ID appeared only after this species entered capture animation. */
-	public static boolean isCaptureArtifact(Critter critter, Entity entity) {
-		if (entity == null || !captureInProgress(critter)) return false;
-		UUID entityId = entity.getUUID();
-		if (knownBodies.containsKey(entityId) || pins.containsKey(entityId)) return false;
-		// A newly assigned body of a verified species/type is the real breakout or a
-		// concurrently spawned critter. Only unverified proximity matches stay hidden.
-		return !CritterEntities.isVerifiedBody(critter, entity);
-	}
-
-	/** Ends provisional caught-body suppression in the same scan that restores it live. */
 	static void onCaughtBodyRestored(UUID entityId) {
 		if (entityId != null) caughtBodies.remove(entityId);
 	}
 
-	private static void resolveCaptureTransition(Critter critter) {
-		Deque<Long> expiries = captureTransitions.get(critter);
-		if (expiries == null) return;
-		expiries.pollFirst();
-		expiries.addFirst(System.currentTimeMillis() + RESOLVED_TRANSITION_MILLIS);
+	private static void resolveCaptureTransition(long attemptId) {
+		boolean changed = captureTransitions.resolve(attemptId);
+		if (changed) StructuredDiagnostics.decision("CAPTURE/WINDOW", "settled",
+			"attempt=" + attemptId + " retained=" + captureTransitions.size());
 	}
 
-	/**
-	 * No marker or pity state can remain valid after the run has confirmed every
-	 * possible individual of this species caught.
-	 */
 	public static void onConfirmedCatchTotal(Critter critter, int catches) {
 		if (critter == null || catches < CritterSpawnRanges.maximum(critter)) return;
-		Set<UUID> speciesIds = new HashSet<>();
+		List<Long> attemptIds = new ArrayList<>();
+		for (AttemptPresentation presentation : presentations.values()) {
+			if (critter.equals(presentation.critter)) attemptIds.add(presentation.attemptId);
+		}
+		attemptIds.forEach(RecatchSpots::removePresentation);
+		Set<UUID> pinIds = new HashSet<>();
 		pins.forEach((id, pin) -> {
-			if (critter.equals(pin.critter())) speciesIds.add(id);
+			if (critter.equals(pin.critter())) pinIds.add(id);
 		});
-		int pinCount = speciesIds.size();
-		pins.entrySet().removeIf(entry -> critter.equals(entry.getValue().critter()));
-		attemptPins.entrySet().removeIf(entry -> speciesIds.contains(entry.getValue()));
-		escapedPins.removeAll(speciesIds);
-		if (pinCount > 0) {
+		pinIds.forEach(pins::remove);
+		escapedPins.removeAll(pinIds);
+		int cleared = attemptIds.size() + pinIds.size();
+		if (cleared > 0) {
 			DebugLog.line("RECATCH", "MAX-CATCH " + critter.name() + "=" + catches
-				+ " clearedPins=" + pinCount);
+				+ " clearedPresentations=" + cleared);
+			MarkerRegistry.invalidate();
 		}
 	}
 
-	/** Returns whether this critter can escape an ordinary capsule and need a recatch pin. */
 	private static boolean worthPinning(Critter critter) {
 		return !CritterCatchRules.guaranteedWithoutPity(critter)
 			&& !"Hideyho".equals(critter.name());
 	}
 
-	/** Drops every active pin. */
 	public static void clear() {
+		knownBodies.clear();
+		presentations.clear();
+		presentationByBody.clear();
 		pins.clear();
-		attemptPins.clear();
 		escapedPins.clear();
+		caughtBodies.clear();
+		captureTransitions.clear();
+		loggedInvariantKeys.clear();
+		MarkerRegistry.invalidate();
 	}
 
-	/** Forgotten between runs; a spot from the last one is meaningless in this one. */
+	private static AttemptPresentation presentationFor(UUID entityId) {
+		if (entityId == null) return null;
+		Long attemptId = presentationByBody.owner(entityId);
+		return attemptId == null ? null : presentations.get(attemptId);
+	}
+
+	/** Enforces the invariant that one body has one attempt owner. */
+	private static boolean registerBody(AttemptPresentation presentation, UUID entityId, boolean replaceAliases) {
+		CaptureOwnership.Claim claim = presentationByBody.claim(presentation.attemptId, entityId, replaceAliases);
+		if (!claim.accepted()) {
+			invariant("stale-claim:" + presentation.attemptId + ":" + entityId,
+				"stale presentation claim rejected attempt=A" + presentation.attemptId);
+			return false;
+		}
+		if (claim.displaced() != null) {
+			presentations.remove(claim.displaced());
+			DebugLog.line("INVARIANT", "conflicting presentation retired id=" + shortId(entityId)
+				+ " A" + claim.displaced() + " -> A" + presentation.attemptId);
+		}
+		pins.remove(entityId);
+		escapedPins.remove(entityId);
+		caughtBodies.remove(entityId);
+		return true;
+	}
+
+	private static AttemptPresentation removePresentation(long attemptId) {
+		AttemptPresentation presentation = presentations.remove(attemptId);
+		presentationByBody.release(attemptId);
+		return presentation;
+	}
+
+	/** Development safety net for the one-attempt/one-presentation ownership contract. */
+	private static void auditInvariants() {
+		for (AttemptPresentation presentation : presentations.values()) {
+			Set<UUID> bodyIds = presentationByBody.bodies(presentation.attemptId);
+			if (!bodyIds.contains(presentation.currentId)) {
+				invariant("current:" + presentation.attemptId,
+					"presentation current body is not owned attempt=A" + presentation.attemptId);
+			}
+			for (UUID id : bodyIds) {
+				if (!Long.valueOf(presentation.attemptId).equals(presentationByBody.owner(id))) {
+					invariant("body-index:" + presentation.attemptId + ":" + id,
+						"presentation body index mismatch attempt=A" + presentation.attemptId
+							+ " id=" + shortId(id));
+				}
+				if (pins.containsKey(id)) {
+					invariant("active-resolved:" + id,
+						"body has active presentation and resolved pin id=" + shortId(id));
+				}
+				if (caughtBodies.contains(id)) {
+					invariant("active-caught:" + id,
+						"active presentation body is suppressed as caught id=" + shortId(id));
+				}
+			}
+		}
+		for (Map.Entry<UUID, Long> entry : presentationByBody.entries().entrySet()) {
+			AttemptPresentation presentation = presentations.get(entry.getValue());
+			if (presentation == null || !presentationByBody.bodies(entry.getValue()).contains(entry.getKey())) {
+				invariant("index-owner:" + entry.getKey(),
+					"body index has no matching presentation id=" + shortId(entry.getKey())
+						+ " attempt=A" + entry.getValue());
+			}
+		}
+	}
+
+	private static void invariant(String key, String message) {
+		if (loggedInvariantKeys.add(key)) DebugLog.line("INVARIANT", message);
+	}
+
 	public static void reset() {
-		knownBodies.clear();
-		caughtBodies.clear();
-		captureShrinks.clear();
-		captureTransitions.clear();
-		lastEagleRarity = ConfigManager.get().display.eagleRarity;
 		clear();
+		lastEagleRarity = ConfigManager.get().display.eagleRarity;
+		lastScan = Long.MIN_VALUE;
 	}
 
 	private static String shortId(UUID id) {
 		return id == null ? "none" : id.toString().substring(0, 8);
 	}
 
+	private static String format(net.minecraft.world.phys.Vec3 position) {
+		return "%.2f,%.2f,%.2f".formatted(position.x, position.y, position.z);
+	}
 }

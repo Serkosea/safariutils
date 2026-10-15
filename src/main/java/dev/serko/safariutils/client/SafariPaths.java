@@ -17,6 +17,9 @@ public final class SafariPaths {
 	private static final Path BACKUPS = ROOT.resolve("backups");
 	private static final Path RUN_BACKUPS = BACKUPS.resolve("runs");
 	private static final Path SETTINGS_BACKUPS = BACKUPS.resolve("settings");
+	private static final Path SPARKLING_BACKUPS = BACKUPS.resolve("sparkling");
+	private static final Path CATALOG_BACKUPS = BACKUPS.resolve("catalogs");
+	private static final Path IDENTITY_BACKUPS = BACKUPS.resolve("identities");
 
 	private SafariPaths() {
 	}
@@ -37,6 +40,10 @@ public final class SafariPaths {
 		return ROOT.resolve("safariutils-static-entities.json");
 	}
 
+	public static Path playerIdentities() {
+		return ROOT.resolve("safariutils-player-identities.json");
+	}
+
 	public static Path logs() {
 		return LOGS;
 	}
@@ -49,6 +56,28 @@ public final class SafariPaths {
 		return SETTINGS_BACKUPS;
 	}
 
+	public static Path sparklingBackups() {
+		return SPARKLING_BACKUPS;
+	}
+
+	public static Path catalogBackups() {
+		return CATALOG_BACKUPS;
+	}
+
+	public static Path identityBackups() {
+		return IDENTITY_BACKUPS;
+	}
+
+	/** Moves unreadable JSON aside before defaults can ever replace it. */
+	public static Path quarantineUnreadableJson(Path source, Path directory, String stem)
+			throws IOException {
+		if (source == null || !Files.isRegularFile(source)) return null;
+		Files.createDirectories(directory);
+		Path backup = uniqueJsonBackup(directory, stem + "-unreadable-"
+			+ System.currentTimeMillis());
+		return Files.move(source, backup);
+	}
+
 	/** Returns the first unused JSON backup path, preserving every earlier backup. */
 	public static Path uniqueJsonBackup(Path directory, String stem) {
 		Path candidate = directory.resolve(stem + ".json");
@@ -58,13 +87,9 @@ public final class SafariPaths {
 		return candidate;
 	}
 
-	public static Path operationalLog() {
-		return LOGS.resolve("safariutils.log");
-	}
-
-	public static Path operationalLog(String sessionName, int part) {
+	public static Path structuredLog(String sessionName, int part) {
 		String suffix = part <= 1 ? "" : "_P" + part;
-		return LOGS.resolve(sessionName + suffix + ".log");
+		return LOGS.resolve(sessionName + suffix + "_events.jsonl.gz");
 	}
 
 	/** Moves legacy files into the organized layout without overwriting any destination. */
@@ -74,6 +99,9 @@ public final class SafariPaths {
 			Files.createDirectories(LOGS);
 			Files.createDirectories(RUN_BACKUPS);
 			Files.createDirectories(SETTINGS_BACKUPS);
+			Files.createDirectories(SPARKLING_BACKUPS);
+			Files.createDirectories(CATALOG_BACKUPS);
+			Files.createDirectories(IDENTITY_BACKUPS);
 			moveIfNeeded(CONFIG.resolve("safariutils.json"), settings());
 			moveIfNeeded(CONFIG.resolve("safariutils-runs.json"), runHistory());
 			moveLegacyOutputLogs(CONFIG.resolve("safariutils-debug-logs"));
@@ -91,6 +119,7 @@ public final class SafariPaths {
 		copyIfNeeded(STANDALONE_ROOT.resolve("safariutils-runs.json"), runHistory());
 		copyIfNeeded(STANDALONE_ROOT.resolve("safariutils-sparkling.json"), sparklingStats());
 		copyIfNeeded(STANDALONE_ROOT.resolve("safariutils-static-entities.json"), staticEntities());
+		copyIfNeeded(STANDALONE_ROOT.resolve("safariutils-player-identities.json"), playerIdentities());
 	}
 
 	private static void copyIfNeeded(Path source, Path destination) throws IOException {

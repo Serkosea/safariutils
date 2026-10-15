@@ -316,6 +316,7 @@ public final class ChatMessageFilter {
 	private static boolean wumpaMessage(String line) {
 		return line.startsWith("You hear the sound of massive footsteps")
 			|| line.startsWith("The Wumpa has awoken")
+			|| line.startsWith("The cave is collapsing")
 			|| line.startsWith("The cave opens up again")
 			|| line.contains("fainted by a Wumpa") && line.endsWith("lost some of your items!");
 	}
@@ -324,6 +325,7 @@ public final class ChatMessageFilter {
 		return line.equals("This candle is already lit...")
 			|| line.startsWith("You used the Soothing Incense to light the candle")
 			|| line.startsWith("Your ritual summoned a Doomspiral")
+			|| line.equals("The Doomspiral is enraged and can't be caught right now!")
 			|| line.startsWith("Something stirs in the Haunted Biome")
 			|| line.startsWith("The darkness in the Haunted Biome fades away")
 			|| line.startsWith("The Doomspiral retreats back underground");

@@ -1,5 +1,7 @@
 package dev.serko.safariutils.client;
 
+import dev.serko.safariutils.state.MonotonicTime;
+
 import dev.serko.safariutils.session.RunDataIntegrity;
 import net.minecraft.client.Minecraft;
 
@@ -17,7 +19,7 @@ final class DataActions {
 	private DataActions() { }
 
 	static String status() {
-		return System.currentTimeMillis() < statusUntil ? status : "";
+		return MonotonicTime.nowMillis() < statusUntil ? status : "";
 	}
 
 	static ClientMessages.Tone statusTone() { return statusTone; }
@@ -32,12 +34,12 @@ final class DataActions {
 	private static void status(String message, ClientMessages.Tone tone) {
 		status = message;
 		statusTone = tone;
-		statusUntil = System.currentTimeMillis() + STATUS_MILLIS;
+		statusUntil = MonotonicTime.nowMillis() + STATUS_MILLIS;
 	}
 
 	static boolean importSettings() {
 		String code = Minecraft.getInstance().keyboardHandler.getClipboard().strip();
-		long now = System.currentTimeMillis();
+		long now = MonotonicTime.nowMillis();
 		if (pendingImport == null || !pendingImport.valid() || now >= importArmedUntil
 				|| !code.equals(pendingCode)) {
 			pendingImport = SettingsTransfer.preview(code);
@@ -94,7 +96,7 @@ final class DataActions {
 			status("Run history is already healthy", ClientMessages.Tone.SUCCESS);
 			return;
 		}
-		long now = System.currentTimeMillis();
+		long now = MonotonicTime.nowMillis();
 		if (now >= repairArmedUntil) {
 			status(audit.issues() + " issue" + (audit.issues() == 1 ? "" : "s")
 				+ " found — click Repair Run History again to confirm", ClientMessages.Tone.WARNING);

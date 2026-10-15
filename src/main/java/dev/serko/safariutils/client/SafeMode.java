@@ -13,13 +13,14 @@ public final class SafeMode {
 	}
 
 	private static boolean option(boolean enabled) {
-		return BuildVersion.SAFE || enabled;
+		return !BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS) || enabled;
 	}
 
 	/** Whether any visibility-based protection is active. */
 	public static boolean active() {
 		SafariConfig.AdvancedConfig config = config();
-		return BuildVersion.SAFE || config.safeVisibleCritterDetection
+		return !BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS)
+			|| config.safeVisibleCritterDetection
 			|| config.safeHideNearbyCounts || config.safeConservativeAvailability
 			|| config.safeConservativeCompletion || config.safeCritterHitboxes
 			|| config.safeSparklingCritters || config.safeHideyho || config.safeHideonwall
@@ -35,12 +36,12 @@ public final class SafeMode {
 	public static boolean sparklingCritters() { return option(config().safeSparklingCritters); }
 
 	public static boolean critterHitboxes(boolean sparkling) {
-		if (BuildVersion.SAFE) return true;
+		if (!BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS)) return true;
 		return option(config().safeCritterHitboxes) && (!sparkling || config().safeSparklingCritters);
 	}
 
 	public static boolean hiddenCritter(Critter critter, boolean sparkling) {
-		if (BuildVersion.SAFE) return hiddenSpecies(critter);
+		if (!BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS)) return hiddenSpecies(critter);
 		if (sparkling && !config().safeSparklingCritters) return false;
 		return isHiddenSpeciesEnabled(critter);
 	}

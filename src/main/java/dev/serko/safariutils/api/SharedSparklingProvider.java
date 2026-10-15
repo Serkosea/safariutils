@@ -39,22 +39,17 @@ public interface SharedSparklingProvider {
 		return 0L;
 	}
 
-	/** Cached network-rank colour for a player, or {@code -1} when unavailable. */
-	default int nameColour(String name) {
-		return -1;
-	}
-
-	/** Asynchronously primes the cached network-rank colour when this provider supports it. */
+	/** Asynchronously refreshes the centralized persisted rank when supported. */
 	default CompletableFuture<Integer> refreshNameColour(String name, String uuid) {
-		return CompletableFuture.completedFuture(nameColour(name));
+		return CompletableFuture.completedFuture(-1);
 	}
 
-	/** Whether a private build gives this UUID-backed player its special name style. */
+	/** Whether this UUID-backed player has the special name style. */
 	default boolean specialName(String name) {
 		return false;
 	}
 
-	/** Normalized names currently known to use the private special style. */
+	/** Normalized names currently known to use the special style. */
 	default Set<String> specialNames() {
 		return Set.of();
 	}
@@ -63,7 +58,7 @@ public interface SharedSparklingProvider {
 	default void rememberIdentity(String uuid, String name) {
 	}
 
-	/** Observes roster changes; public builds have no provider and never call an API. */
+	/** Observes confirmed roster changes and reuses cached per-party collections. */
 	default void tick() {
 	}
 

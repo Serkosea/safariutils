@@ -2,15 +2,11 @@ package dev.serko.safariutils.api;
 
 import dev.serko.safariutils.client.HudPanel;
 import dev.serko.safariutils.data.SafariBiome;
+import dev.serko.safariutils.parse.CritterEvent;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.chat.Component;
 
-/** Opt-in party objective synchronization over parsed party chat messages. */
+/** Automatic party objective synchronization with a transport-neutral state model. */
 public interface PartyItemSyncProvider {
-	default boolean allowMessage(Component message, boolean overlay) {
-		return true;
-	}
-
 	default void tick() { }
 
 	default void onRunStarted() { }
@@ -23,7 +19,7 @@ public interface PartyItemSyncProvider {
 
 	default void onNestConfirmed(BlockPos pos) { }
 
-	default void onServerMessage(String line) { }
+	default void onServerMessage(String line, CritterEvent event) { }
 
 	default void onPartyMembershipChanged() { }
 
@@ -64,5 +60,10 @@ public interface PartyItemSyncProvider {
 	 */
 	default boolean objectiveAllowsFloorDropHide(SafariBiome biome) {
 		return biome == SafariBiome.FOREST && forestDropsComplete();
+	}
+
+	/** Identifier-free state used by automatic change-only diagnostics. */
+	default String diagnosticSnapshot() {
+		return "inactive";
 	}
 }

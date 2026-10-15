@@ -1,44 +1,34 @@
 package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.api.PartyItemSyncProvider;
+import dev.serko.safariutils.api.PartySyncNetworkProvider;
+import dev.serko.safariutils.api.PartySyncNetworks;
+import dev.serko.safariutils.api.PartySyncProtocol;
 import dev.serko.safariutils.data.SafariBiome;
-import dev.serko.safariutils.parse.ChatParser;
+import dev.serko.safariutils.parse.CritterEvent;
 import dev.serko.safariutils.session.SessionManager;
 import dev.serko.safariutils.client.PartySyncRoster.Member;
-import net.minecraft.client.Minecraft;
+import dev.serko.safariutils.state.PartySnapshot;
+import dev.serko.safariutils.state.PartyState;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.chat.Component;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 
-/** Opt-in party-chat-backed objective synchronization. */
+/** Automatic authenticated objective synchronization for the current Safari party. */
 public final class PartyItemSync implements PartyItemSyncProvider {
-	private static final String MARKER = "[SU210]";
-	private static final String ENABLE_PREFIX = "[SU2E:";
-	private static final Pattern CONTROL = Pattern.compile("\\[SU2([ED]):([A-Za-z0-9_-]{12})]");
-	private static final Pattern FORMATTING = Pattern.compile("§.");
 	private static final String[] BIRDS = {"Bluebird", "Parakeet", "Macaw"};
 	private static final long STATE_COALESCE_MILLIS = 500;
-	private static final long RECOVERY_RETRY_MILLIS = 3_000;
 	private static final long ROSTER_GRACE_MILLIS = 5_000;
+	private static List<BlockPos> orderedNests;
 	private final Map<String, State> states = new LinkedHashMap<>();
 	private final Set<String> seen = new LinkedHashSet<>();
-	private final Set<String> capableMembers = new LinkedHashSet<>();
-	private final Set<String> announcedRosters = new LinkedHashSet<>();
-	private final Set<String> pendingCapabilityLines = new LinkedHashSet<>();
 	private List<Member> roster = List.of();
 	private int[] localFound = new int[StartingItems.ORDERED.size()];
 	private int localForestDrops;
@@ -59,67 +49,40 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 	private boolean localWumpaSpawned;
 	private boolean localWumpaCaught;
 	private boolean localWumpaRetreated;
+	private int localSnoozleWallMask;
+	private int localTroodonWallMask;
+	private int localMoundLow;
+	private int localMoundHigh;
 	private long gemzieOpenedAt;
 	private int used;
 	private int ticks;
 	private int feederType = -1;
 	private int feederCount;
 	private final int[] birdCounts = new int[BIRDS.length];
-	private final Map<BlockPos, Long> nestRetries = new LinkedHashMap<>();
 	private final Set<BlockPos> confirmedNests = new LinkedHashSet<>();
 	private final Map<String, Long> missingSince = new HashMap<>();
 	private long sequence;
 	private long stateSendAt;
-	private long stateRetryAt;
-	private long partyMembershipChangedAt;
 	private boolean active;
-	private boolean transportAllowed;
+	private boolean networkConnected;
+	private boolean networkEngaged;
 	private boolean snapshotSent;
 	private boolean feedDoneAnnounced;
 	private boolean insideVisit;
 	private String visitLobby;
 	private long visitEnteredAt;
 	private String lastDebugTransport = "";
-	private boolean enabledLastTick;
-
-	/** Solo owns the complete run state locally and never needs chat transport. */
-	private static boolean enabledForCurrentParty() {
-		return ConfigManager.get().advanced.enablePartySync
-			|| PartyRosterWatch.known() && PartyRosterWatch.expectedPlayers() == 1;
-	}
 
 	@Override
 	public void tick() {
 		if (++ticks % 10 != 0) return;
 		long now = System.currentTimeMillis();
-		boolean enabled = enabledForCurrentParty();
-		if (!enabled) {
-			if (enabledLastTick) {
-				boolean announceDisabled = transportAllowed && roster.size() > 1
-					&& SafariLocation.inside();
-				ChatQueue.discardContaining(MARKER);
-				ChatQueue.discardContaining(ENABLE_PREFIX);
-				String disabled = controlMessage('D', localName());
-				if (announceDisabled && disabled != null) {
-					ChatQueue.enqueueVerifiedPartyFirst("pc " + disabled);
-				}
-				capableMembers.clear();
-				announcedRosters.clear();
-				pendingCapabilityLines.clear();
-				transportAllowed = false;
-				active = false;
-			}
-			enabledLastTick = false;
-			return;
-		}
-		enabledLastTick = true;
 		if (!SafariLocation.inside()) {
-			if (insideVisit) clearRun();
+			if (insideVisit || networkEngaged) clearRun();
 			insideVisit = false;
 			visitLobby = null;
 			visitEnteredAt = 0;
 			active = false;
-			transportAllowed = false;
 			roster = List.of();
 			return;
 		}
@@ -129,7 +92,6 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			clearRun();
 			roster = List.of();
 			active = false;
-			transportAllowed = false;
 			insideVisit = true;
 			visitLobby = lobby;
 			visitEnteredAt = SafariLocation.insideSinceMillis();
@@ -141,45 +103,65 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		// activation also avoids copying the prior visit's cache before beginVisit resets it.
 		if (SessionManager.current() != null) refreshLocalObjectives();
 
+		PartySnapshot party = PartyState.snapshot();
 		List<Member> present = currentRoster();
 		boolean validPresence = !present.isEmpty();
 		// A run belongs to the complete party that entered this Safari. Current tab-list
 		// presence is attendance only; ticket timing and disconnects never redefine it.
-		if (roster.isEmpty() && PartyRosterWatch.rosterCapturedAt() >= visitEnteredAt) {
+		if (roster.isEmpty() && party.capturedAtMillis() >= visitEnteredAt) {
 			List<Member> fullParty = fullPartyRoster();
 			if (!fullParty.isEmpty()) {
 				roster = fullParty;
 				snapshotSent = false;
 			}
 		}
-		active = !roster.isEmpty();
-		if (active) capableMembers.add(localUuid());
-		resolvePendingCapabilities();
-		maybeAnnounceCapability();
-		boolean previouslyAllowed = transportAllowed;
-		boolean currentRosterFresh = PartyRosterWatch.rosterCapturedAt() >= partyMembershipChangedAt;
-		List<Member> currentParty = fullPartyRoster();
-		boolean currentPartyConfirmed = !currentParty.isEmpty()
-			&& currentParty.stream().allMatch(member -> capableMembers.contains(member.uuid()));
-		transportAllowed = active && currentRosterFresh && currentPartyConfirmed;
+		// Ticket-trading guests enter after the host's run roster is first frozen. Admit
+		// only members the central party state also confirms are physically in this
+		// Safari, then retain them for the visit even after the temporary party disbands.
+		if (!roster.isEmpty() && !present.isEmpty()) {
+			Set<String> known = roster.stream().map(Member::uuid)
+				.collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+			List<Member> expanded = new ArrayList<>(roster);
+			for (Member member : present) {
+				if (known.add(member.uuid())) expanded.add(member);
+			}
+			if (expanded.size() != roster.size() && expanded.size() <= 4) {
+				roster = expanded.stream().sorted(java.util.Comparator.comparing(Member::name,
+					String.CASE_INSENSITIVE_ORDER)).toList();
+				snapshotSent = false;
+				DebugLog.line("SYNC", "run roster expanded from confirmed attendance size="
+					+ roster.size());
+			}
+		}
+		boolean remoteSupported = PartySyncNetworks.supported();
+		active = SessionManager.current() != null && !roster.isEmpty()
+			&& (roster.size() == 1 || remoteSupported);
+		boolean wasNetworkConnected = networkConnected;
+		if (active && remoteSupported && lobby != null && !lobby.isBlank()) {
+			networkEngaged = true;
+			PartySyncNetworks.tick(new PartySyncNetworkProvider.Context(lobby, localUuid(),
+				roster.stream().map(Member::uuid).toList()),
+				this::applyNetworkMessage);
+			networkConnected = PartySyncNetworks.connected();
+		} else {
+			disconnectNetwork();
+		}
 		if (DebugLog.isEnabled()) {
 			String transportState = "roster=" + roster.size() + " active=" + active
-				+ " rosterFresh=" + currentRosterFresh + " confirmed=" + transportAllowed;
+				+ " remote=" + (remoteSupported
+					? (networkConnected ? "connected" : active ? "connecting" : "idle") : "absent");
 			if (!transportState.equals(lastDebugTransport)) {
 				DebugLog.line("SYNC", "transport " + transportState);
+				StructuredDiagnostics.decision("party-sync", "transport", transportState);
 				lastDebugTransport = transportState;
 			}
 		} else lastDebugTransport = "";
-		if (previouslyAllowed && !transportAllowed) ChatQueue.discardContaining(MARKER);
-		if (!previouslyAllowed && transportAllowed) {
+		if (!wasNetworkConnected && networkConnected) {
 			stateSendAt = 0;
 			snapshotSent = true;
 			sendState();
-			stateRetryAt = now + RECOVERY_RETRY_MILLIS;
-			sendNests(confirmedNests);
-			for (BlockPos nest : confirmedNests) {
-				nestRetries.put(nest, now + RECOVERY_RETRY_MILLIS);
-			}
+			sendNests();
+			DebugLog.line("SYNC", "authenticated transport connected roster=" + roster.size());
 		}
 		if (!active) {
 			updateLocal();
@@ -193,7 +175,6 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			snapshotSent = true;
 			stateSendAt = 0;
 			sendState();
-			stateRetryAt = now + RECOVERY_RETRY_MILLIS;
 		}
 		flushScheduled(now);
 	}
@@ -205,10 +186,9 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 
 	@Override
 	public void onPartyMembershipChanged() {
-		partyMembershipChangedAt = System.currentTimeMillis();
-		ChatQueue.discardContaining(ENABLE_PREFIX);
-		pendingCapabilityLines.clear();
 		DebugLog.line("SYNC", "party membership changed; current run roster retained");
+		StructuredDiagnostics.decision("party-sync", "party-change",
+			"frozenRoster=" + roster.size());
 	}
 	@Override
 	public void onStartingItems(int[] counts) {
@@ -242,17 +222,19 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 
 	@Override
 	public void onNestConfirmed(BlockPos pos) {
-		if (!enabledForCurrentParty()
-			|| SessionManager.current() == null) return;
+		if (SessionManager.current() == null) return;
 		BlockPos nest = pos.immutable();
+		if (!StaticWaypointCatalog.nests().contains(nest)) {
+			StructuredDiagnostics.decision("party-sync", "rejected", "unknownNest");
+			return;
+		}
 		confirmedNests.add(nest);
 		if (!active) return;
-		sendNests(List.of(nest));
-		nestRetries.put(nest, System.currentTimeMillis() + RECOVERY_RETRY_MILLIS);
+		sendNests();
 	}
 
 	@Override
-	public void onServerMessage(String line) {
+	public void onServerMessage(String line, CritterEvent event) {
 		if (line.startsWith("FLOOR DROP!")) {
 			int item = itemIn(line);
 			if (item >= 0) {
@@ -322,7 +304,6 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			scheduleState();
 			return;
 		}
-		var event = ChatParser.parse(line, localName());
 		if (event != null && event.isCatch()) {
 			if ("Gemzie".equals(event.critter().name())) {
 				localGemzieOpen = true;
@@ -350,26 +331,20 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 	}
 
 	@Override
-	public boolean allowMessage(Component message, boolean overlay) {
-		if (overlay || message == null) return true;
-		String line = FORMATTING.matcher(message.getString()).replaceAll("").trim();
-		var control = CONTROL.matcher(line);
-		if (control.find()) {
-			handleControlMessage(line, control.start(), control.group(1).charAt(0), control.group(2), true);
-			return true;
-		}
-		int markerAt = line.indexOf(MARKER);
-		if (markerAt < 0) return true;
-		String sender = senderIn(line.substring(0, markerAt));
-		if (sender != null && transportAllowed) {
-			apply(sender, line.substring(markerAt + MARKER.length()).trim(), false);
-		}
-		return false;
+	public boolean active() {
+		// Once relevant, the local model remains useful during a temporary network outage.
+		return active;
 	}
 
 	@Override
-	public boolean active() {
-		return active && (roster.size() == 1 || transportAllowed);
+	public String diagnosticSnapshot() {
+		String transport = !PartySyncNetworks.supported() ? "unavailable"
+			: networkConnected ? "connected" : active ? "connecting" : "idle";
+		return "inside=" + SafariLocation.inside() + " run=" + (SessionManager.current() != null)
+			+ " active=" + active() + " roster=" + roster.size() + " states=" + states.size()
+			+ " transport=" + transport + " sequence=" + sequence
+			+ " walls=" + localSnoozleWallMask + "/" + localTroodonWallMask
+			+ " mounds=" + localMoundLow + "/" + localMoundHigh;
 	}
 
 	@Override
@@ -579,7 +554,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 
 	private HudPanel objectivePanelBase() {
 		return PartyObjectiveHud.objectivePanel(gemzieCaught(), wumpaComplete(),
-			doomspiralComplete(), feedDone(), active && (roster.size() == 1 || transportAllowed));
+			doomspiralComplete(), feedDone(), active());
 	}
 
 	/** One compact message keeps discovery and held inventory from drifting apart. */
@@ -596,120 +571,30 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			+ "," + (localGemzieOpen ? 1 : 0) + "," + (localDoomspiralSpawned ? 1 : 0)
 			+ "," + (localDoomspiralCaught ? 1 : 0) + "," + (localWumpaSpawned ? 1 : 0)
 			+ "," + (localWumpaCaught ? 1 : 0) + "," + (localDoomspiralRetreated ? 1 : 0)
-			+ "," + (localGemzieCaught ? 1 : 0) + "," + (localWumpaRetreated ? 1 : 0));
+			+ "," + (localGemzieCaught ? 1 : 0) + "," + (localWumpaRetreated ? 1 : 0)
+			+ "," + PartySyncProtocol.VERSION + "," + localSnoozleWallMask + ","
+			+ localTroodonWallMask + "," + localMoundLow + "," + localMoundHigh);
 	}
 
 	private void scheduleState() {
 		stateSendAt = System.currentTimeMillis() + STATE_COALESCE_MILLIS;
-		stateRetryAt = 0;
 	}
 
-	/** Announces capability once for each roster containing an unconfirmed member. */
-	private void maybeAnnounceCapability() {
-		if (SessionManager.current() == null || roster.size() <= 1
-			|| !SafariPartyWatch.readyForLocationLearning()) return;
-		List<Member> present = currentRoster();
-		if (present.size() != roster.size()
-			|| !present.stream().map(Member::uuid).collect(java.util.stream.Collectors.toSet())
-				.equals(roster.stream().map(Member::uuid)
-					.collect(java.util.stream.Collectors.toSet()))) return;
-		if (roster.stream().allMatch(member -> capableMembers.contains(member.uuid()))) return;
-		String signature = roster.stream().map(Member::uuid).sorted().reduce((a, b) -> a + "," + b)
-			.orElse("");
-		if (!announcedRosters.add(signature)) return;
-		capableMembers.add(localUuid());
-		String message = controlMessage('E', localName());
-		if (message == null) {
-			announcedRosters.remove(signature);
-			return;
+	private void sendNests() {
+		if (confirmedNests.isEmpty()) return;
+		int mask = 0;
+		List<BlockPos> order = orderedNests();
+		for (int index = 0; index < order.size(); index++) {
+			if (confirmedNests.contains(order.get(index))) mask |= 1 << index;
 		}
-		ChatQueue.enqueueVerifiedParty("pc " + message);
-		DebugLog.line("SYNC", "capability announced roster=" + roster.size());
-	}
-
-	/** Resolves readiness lines that arrived before this client froze its run roster. */
-	private void resolvePendingCapabilities() {
-		if (roster.isEmpty() || pendingCapabilityLines.isEmpty()) return;
-		pendingCapabilityLines.removeIf(line -> {
-			var control = CONTROL.matcher(line);
-			if (!control.find()) return true;
-			return handleControlMessage(line, control.start(),
-				control.group(1).charAt(0), control.group(2), false);
-		});
-	}
-
-	/** Applies a sender/lobby-bound control token; false means roster resolution is pending. */
-	private boolean handleControlMessage(String line, int tokenAt, char action, String token,
-		boolean retainIfPending) {
-		String sender = senderIn(line.substring(0, tokenAt));
-		Member member = member(sender);
-		if (member == null) {
-			if (retainIfPending && action == 'E' && ConfigManager.get().advanced.enablePartySync
-				&& pendingCapabilityLines.size() < 8) pendingCapabilityLines.add(line);
-			return false;
-		}
-		String expected = controlToken(action, member.name());
-		if (expected == null || !MessageDigest.isEqual(
-			expected.getBytes(StandardCharsets.US_ASCII), token.getBytes(StandardCharsets.US_ASCII))) {
-			DebugLog.line("SYNC", "ignored invalid control token from=" + member.name());
-			return true;
-		}
-		if (action == 'E') {
-			if (ConfigManager.get().advanced.enablePartySync) capableMembers.add(member.uuid());
-		} else {
-			capableMembers.remove(member.uuid());
-			transportAllowed = false;
-			ChatQueue.discardContaining(MARKER);
-			DebugLog.line("SYNC", "disabled by=" + member.name());
-		}
-		return true;
-	}
-
-	private static String controlMessage(char action, String username) {
-		String token = controlToken(action, username);
-		return token == null ? null : "[SU2" + action + ":" + token + "]";
-	}
-
-	private static String controlToken(char action, String username) {
-		String lobby = SafariLocation.lobbyId();
-		if (username == null || username.isBlank() || lobby == null || lobby.isBlank()) return null;
-		String source = "SafariUtils/2/" + action + "/"
-			+ username.toLowerCase(Locale.ROOT) + "/" + lobby.toLowerCase(Locale.ROOT);
-		try {
-			byte[] digest = MessageDigest.getInstance("SHA-256")
-				.digest(source.getBytes(StandardCharsets.UTF_8));
-			return Base64.getUrlEncoder().withoutPadding().encodeToString(digest).substring(0, 12);
-		} catch (NoSuchAlgorithmException impossible) {
-			throw new IllegalStateException("SHA-256 is unavailable", impossible);
-		}
-	}
-
-	private void sendNests(java.util.Collection<BlockPos> positions) {
-		if (positions.isEmpty()) return;
-		String payload = positions.stream()
-			.map(pos -> pos.getX() + "," + pos.getY() + "," + pos.getZ())
-			.reduce((left, right) -> left + "," + right).orElse("");
-		send("N", payload);
+		if (mask != 0) send("N", String.valueOf(mask));
 	}
 
 	private void flushScheduled(long now) {
 		if (stateSendAt > 0 && now >= stateSendAt) {
 			stateSendAt = 0;
 			sendState();
-			stateRetryAt = now + RECOVERY_RETRY_MILLIS;
-		} else if (stateRetryAt > 0 && now >= stateRetryAt) {
-			stateRetryAt = 0;
-			sendState();
 		}
-		List<BlockPos> dueNests = new ArrayList<>();
-		var iterator = nestRetries.entrySet().iterator();
-		while (iterator.hasNext()) {
-			var entry = iterator.next();
-			if (now < entry.getValue()) continue;
-			dueNests.add(entry.getKey());
-			iterator.remove();
-		}
-		sendNests(dueNests);
 	}
 
 	/** Preserve discoveries, but remove only feed still held when a member remains absent. */
@@ -739,14 +624,26 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		if (!active) return;
 		String body = localUuid() + "-" + (++sequence) + ":" + type + ":" + payload;
 		apply(localName(), body, true);
-		if (transportAllowed && roster.size() > 1) {
-			if ("A".equals(type)) ChatQueue.discardContainingAll(
-				MARKER, localUuid() + "-", ":A:");
-			ChatQueue.enqueueVerifiedParty("pc " + MARKER + " " + body);
+		if (networkConnected) PartySyncNetworks.send(sequence, type, payload);
+		DebugLog.line("SYNC", "sent type=" + type + " transport="
+			+ (networkConnected ? "network" : "local")
+			+ " recipients=" + Math.max(0, roster.size() - 1));
+		StructuredDiagnostics.decision("party-sync", "sent",
+			"type=" + type + " transport=" + (networkConnected ? "network" : "local"));
+	}
+
+	private void applyNetworkMessage(PartySyncNetworkProvider.Message message) {
+		if (message == null || message.senderUuid() == null || message.sequence() <= 0) return;
+		Member member = roster.stream()
+			.filter(value -> value.uuid().equals(message.senderUuid()))
+			.findFirst().orElse(null);
+		if (member == null) {
+			DebugLog.line("SYNC", "ignored network state from outside frozen roster");
+			return;
 		}
-		DebugLog.line("SYNC", "sent type=" + type + " recipients="
-			+ (transportAllowed ? Math.max(0, roster.size() - 1) : 0)
-			+ " pendingChat=" + ChatQueue.pendingCount());
+		String body = member.uuid() + "-" + message.sequence() + ":"
+			+ message.type() + ":" + message.payload();
+		apply(member.name(), body, false);
 	}
 
 	private void apply(String sender, String body, boolean localReporter) {
@@ -763,32 +660,45 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			int[] values = Arrays.stream(parts[2].split(","))
 				.mapToInt(Integer::parseInt)
 				.toArray();
-				switch (parts[1]) {
+			boolean accepted = switch (parts[1]) {
 				case "A" -> applyAggregate(state, values);
-				case "S" -> applyLegacyStartingItems(state, values);
-				case "I" -> applyLegacyInventory(state, values);
 				case "U" -> applyUsageMessage(values, localReporter);
 				case "N" -> applyNest(values);
-				default -> { }
+				default -> {
+					StructuredDiagnostics.decision("party-sync", "rejected", "unknownType");
+					yield false;
+				}
+			};
+			if (!accepted) {
+				StructuredDiagnostics.decision("party-sync", "rejected",
+					"shape=" + parts[1] + "/" + values.length);
+				return;
 			}
 			if (!localReporter) DebugLog.line("SYNC", "received type=" + parts[1]
 				+ " from=" + member.name());
+			if (!localReporter) StructuredDiagnostics.decision("party-sync", "received",
+				"type=" + parts[1]);
 		} catch (NumberFormatException ignored) {
-			// Malformed hidden messages are discarded rather than affecting run state.
+			// Malformed network state is discarded rather than affecting run state.
 			DebugLog.line("SYNC", "discarded malformed message from=" + member.name());
+			StructuredDiagnostics.decision("party-sync", "rejected", "nonNumericPayload");
 		}
 	}
 
-	private void applyAggregate(State state, int[] values) {
+	private boolean applyAggregate(State state, int[] values) {
 		int itemCount = StartingItems.ORDERED.size();
-		if (values.length != itemCount + 24
-			&& values.length != itemCount + 23
-			&& values.length != itemCount + 22
-			&& values.length != itemCount + 21
-			&& values.length != itemCount + 18
-			&& values.length != itemCount + 10
-			&& values.length != itemCount + 8
-			&& values.length != itemCount + 4) return;
+		if (values.length != PartySyncProtocol.AGGREGATE_VALUES
+			|| !validAggregateValues(values, itemCount)
+			|| values[PartySyncProtocol.AGGREGATE_VERSION_INDEX] != PartySyncProtocol.VERSION) return false;
+		int snoozleMask = values[itemCount + 25];
+		int troodonMask = values[itemCount + 26];
+		int moundLow = values[itemCount + 27];
+		int moundHigh = values[itemCount + 28];
+		if (!validMask(snoozleMask, WallTracker.SNOOPER.slotCount())
+			|| !validMask(troodonMask, WallTracker.TROODON.slotCount())
+			|| moundLow < 0 || moundLow > 0xFFFF || moundHigh < 0 || moundHigh > 0xFFFF) {
+			return false;
+		}
 		state.found = Arrays.copyOf(values, itemCount);
 		state.reported = true;
 		state.forestDrops = Math.max(0, values[itemCount]);
@@ -796,81 +706,108 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		state.worms = Math.max(0, values[itemCount + 2]);
 		state.berries = Math.max(0, values[itemCount + 3]);
 		state.unavailableFeed = 0;
-		if (values.length >= itemCount + 8) {
-			int nextFeederType = feederType;
-			int nextFeederCount = feederCount;
-			if (values.length >= itemCount + 10) {
-				int reportedCount = Math.max(0, values[itemCount + 9]);
-				if (reportedCount > 0) {
-					nextFeederType = values[itemCount + 8];
-					nextFeederCount = reportedCount;
-				}
-			}
-			applyUsage(values[itemCount + 4], values[itemCount + 5], values[itemCount + 6],
-				values[itemCount + 7], nextFeederType, nextFeederCount, false);
+		int nextFeederType = feederType;
+		int nextFeederCount = feederCount;
+		int reportedCount = Math.max(0, values[itemCount + 9]);
+		if (reportedCount > 0) {
+			nextFeederType = values[itemCount + 8];
+			nextFeederCount = reportedCount;
 		}
-		if (values.length == itemCount + 18 || values.length == itemCount + 21
-			|| values.length == itemCount + 22 || values.length == itemCount + 23
-			|| values.length == itemCount + 24) {
-			state.limeGems = Math.max(0, values[itemCount + 10]);
-			state.orangeGems = Math.max(0, values[itemCount + 11]);
-			state.purpleGems = Math.max(0, values[itemCount + 12]);
-			state.incense = Math.max(0, values[itemCount + 13]);
-			state.placedGems |= values[itemCount + 14] & 7;
-			state.candlesLit = Math.max(state.candlesLit, Math.max(0, values[itemCount + 15]));
-			boolean openedNow = values[itemCount + 16] != 0;
-			if (openedNow && !gemzieOpen() && gemzieOpenedAt == 0L) {
-				gemzieOpenedAt = System.currentTimeMillis();
-			}
-			state.gemzieOpen |= openedNow;
-			state.doomspiralSpawned |= values[itemCount + 17] != 0;
-			if (values.length >= itemCount + 21) {
-				state.doomspiralCaught |= values[itemCount + 18] != 0;
-				state.wumpaSpawned |= values[itemCount + 19] != 0;
-				state.wumpaCaught |= values[itemCount + 20] != 0;
-			}
-			if (values.length >= itemCount + 22) {
-				state.doomspiralRetreated |= values[itemCount + 21] != 0;
-			}
-			if (values.length >= itemCount + 23) state.gemzieCaught |= values[itemCount + 22] != 0;
-			if (values.length == itemCount + 24) state.wumpaRetreated |= values[itemCount + 23] != 0;
+		applyUsage(values[itemCount + 4], values[itemCount + 5], values[itemCount + 6],
+			values[itemCount + 7], nextFeederType, nextFeederCount, false);
+		state.limeGems = Math.max(0, values[itemCount + 10]);
+		state.orangeGems = Math.max(0, values[itemCount + 11]);
+		state.purpleGems = Math.max(0, values[itemCount + 12]);
+		state.incense = Math.max(0, values[itemCount + 13]);
+		state.placedGems |= values[itemCount + 14] & 7;
+		state.candlesLit = Math.max(state.candlesLit, Math.max(0, values[itemCount + 15]));
+		boolean openedNow = values[itemCount + 16] != 0;
+		if (openedNow && !gemzieOpen() && gemzieOpenedAt == 0L) {
+			gemzieOpenedAt = System.currentTimeMillis();
 		}
+		state.gemzieOpen |= openedNow;
+		state.doomspiralSpawned |= values[itemCount + 17] != 0;
+		state.doomspiralCaught |= values[itemCount + 18] != 0;
+		state.wumpaSpawned |= values[itemCount + 19] != 0;
+		state.wumpaCaught |= values[itemCount + 20] != 0;
+		state.doomspiralRetreated |= values[itemCount + 21] != 0;
+		state.gemzieCaught |= values[itemCount + 22] != 0;
+		state.wumpaRetreated |= values[itemCount + 23] != 0;
+		state.snoozleWallMask |= snoozleMask;
+		state.troodonWallMask |= troodonMask;
+		state.moundLow |= moundLow;
+		state.moundHigh |= moundHigh;
+		WallTracker.SNOOPER.mergePartyCompletionMask(snoozleMask);
+		WallTracker.TROODON.mergePartyCompletionMask(troodonMask);
+		MoundSpotter.mergePartyCompletionWords(moundLow, moundHigh);
 		checkFeedDone(false);
+		return true;
 	}
 
-	private void applyLegacyStartingItems(State state, int[] values) {
-		if (values.length != StartingItems.ORDERED.size() + 1) return;
-		state.found = Arrays.copyOf(values, StartingItems.ORDERED.size());
-		state.reported = true;
-		state.forestDrops = Math.max(0, values[values.length - 1]);
-		checkFeedDone(false);
+	private static boolean validMask(int mask, int bits) {
+		return mask >= 0 && bits > 0 && bits < Integer.SIZE && (mask & ~((1 << bits) - 1)) == 0;
 	}
 
-	private static void applyLegacyInventory(State state, int[] values) {
-		if (values.length != 3) return;
-		state.seeds = Math.max(0, values[0]);
-		state.worms = Math.max(0, values[1]);
-		state.berries = Math.max(0, values[2]);
-		state.reported = true;
-		state.unavailableFeed = 0;
+	private boolean applyUsageMessage(int[] values, boolean localReporter) {
+		if (values.length != PartySyncProtocol.USAGE_VALUES || !validUsageValues(values)) return false;
+		applyUsage(values[0], values[1], values[2], values[3], values[4], values[5],
+			localReporter);
+		return true;
 	}
 
-	private void applyUsageMessage(int[] values, boolean localReporter) {
-		if (values.length == 6) {
-			applyUsage(values[0], values[1], values[2], values[3], values[4], values[5],
-				localReporter);
-		} else if (values.length == 4) {
-			applyUsage(values[0], values[1], values[2], values[3], feederType, feederCount,
-				localReporter);
+	private static boolean applyNest(int[] values) {
+		List<BlockPos> order = orderedNests();
+		if (values.length != PartySyncProtocol.NEST_VALUES
+			|| !validMask(values[0], order.size())) return false;
+		for (int index = 0; index < order.size(); index++) {
+			if ((values[0] & (1 << index)) != 0) NestTracker.onPartyConfirmed(order.get(index));
 		}
+		return true;
 	}
 
-	private static void applyNest(int[] values) {
-		if (values.length == 0 || values.length % 3 != 0) return;
-		for (int index = 0; index < values.length; index += 3) {
-			NestTracker.onPartyConfirmed(new BlockPos(
-				values[index], values[index + 1], values[index + 2]));
+	private static List<BlockPos> orderedNests() {
+		if (orderedNests == null) {
+			orderedNests = StaticWaypointCatalog.nests().stream().sorted(java.util.Comparator
+				.comparingLong((BlockPos pos) -> pos.getX()).thenComparingLong(pos -> pos.getY())
+				.thenComparingLong(pos -> pos.getZ())).toList();
 		}
+		return orderedNests;
+	}
+
+	private static boolean validAggregateValues(int[] values, int itemCount) {
+		for (int index = 0; index < itemCount; index++) {
+			if (!between(values[index], 0, 256)) return false;
+		}
+		for (int index = itemCount; index <= itemCount + 3; index++) {
+			if (!between(values[index], 0, 64)) return false;
+		}
+		if (!between(values[itemCount + 4], 0, 256)) return false;
+		for (int index = itemCount + 5; index <= itemCount + 7; index++) {
+			if (!between(values[index], 0, 256)) return false;
+		}
+		if (!between(values[itemCount + 8], -1, 2)
+			|| !between(values[itemCount + 9], 0, 64)) return false;
+		for (int index = itemCount + 10; index <= itemCount + 13; index++) {
+			if (!between(values[index], 0, 64)) return false;
+		}
+		if (!between(values[itemCount + 14], 0, 7)
+			|| !between(values[itemCount + 15], 0, 4)) return false;
+		for (int index = itemCount + 16; index <= itemCount + 23; index++) {
+			if (!between(values[index], 0, 1)) return false;
+		}
+		return true;
+	}
+
+	private static boolean validUsageValues(int[] values) {
+		if (!between(values[0], 0, 256)) return false;
+		for (int index = 1; index <= 3; index++) {
+			if (!between(values[index], 0, 256)) return false;
+		}
+		return between(values[4], -1, 2) && between(values[5], 0, 64);
+	}
+
+	private static boolean between(int value, int minimum, int maximum) {
+		return value >= minimum && value <= maximum;
 	}
 
 	private void applyUsage(int nextUsed, int bluebirds, int parakeets, int macaws,
@@ -932,6 +869,10 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		state.wumpaSpawned = localWumpaSpawned;
 		state.wumpaCaught = localWumpaCaught;
 		state.wumpaRetreated = localWumpaRetreated;
+		state.snoozleWallMask = localSnoozleWallMask;
+		state.troodonWallMask = localTroodonWallMask;
+		state.moundLow = localMoundLow;
+		state.moundHigh = localMoundHigh;
 		state.unavailableFeed = 0;
 	}
 
@@ -950,6 +891,9 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		boolean wumpaAwake = localWumpaSpawned || SafariObjectives.wumpaSpawned();
 		boolean wumpaDone = localWumpaCaught || SafariObjectives.wumpaCaught();
 		boolean wumpaRetreated = localWumpaRetreated || SafariObjectives.wumpaRetreated();
+		int snoozleWalls = WallTracker.SNOOPER.localCompletionMask();
+		int troodonWalls = WallTracker.TROODON.localCompletionMask();
+		int[] mounds = MoundSpotter.localCompletionWords();
 		int candles = Math.max(localCandlesLit, SafariObjectives.incenseUsed());
 		if (lime == localLimeGems && orange == localOrangeGems && purple == localPurpleGems
 			&& incense == localIncense && placed == localPlacedGems && candles == localCandlesLit
@@ -958,7 +902,10 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			&& doomCaught == localDoomspiralCaught && doomRetreated == localDoomspiralRetreated
 			&& wumpaAwake == localWumpaSpawned
 			&& wumpaDone == localWumpaCaught
-			&& wumpaRetreated == localWumpaRetreated) return;
+			&& wumpaRetreated == localWumpaRetreated
+			&& snoozleWalls == localSnoozleWallMask
+			&& troodonWalls == localTroodonWallMask
+			&& mounds[0] == localMoundLow && mounds[1] == localMoundHigh) return;
 		localLimeGems = lime;
 		localOrangeGems = orange;
 		localPurpleGems = purple;
@@ -973,6 +920,10 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		localWumpaSpawned = wumpaAwake;
 		localWumpaCaught = wumpaDone;
 		localWumpaRetreated = wumpaRetreated;
+		localSnoozleWallMask = snoozleWalls;
+		localTroodonWallMask = troodonWalls;
+		localMoundLow = mounds[0];
+		localMoundHigh = mounds[1];
 		updateLocal();
 		if (SafariLocation.inside()) scheduleState();
 	}
@@ -1150,12 +1101,9 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 	private void clearRun() {
 		if (insideVisit) DebugLog.line("SYNC", "visit cleared roster=" + roster.size()
 			+ " knownNests=" + confirmedNests.size());
-		ChatQueue.discardContaining(MARKER);
-		ChatQueue.discardContaining(ENABLE_PREFIX);
-		pendingCapabilityLines.clear();
+		disconnectNetwork();
 		states.clear();
 		seen.clear();
-		nestRetries.clear();
 		confirmedNests.clear();
 		missingSince.clear();
 		localFound = new int[StartingItems.ORDERED.size()];
@@ -1177,6 +1125,10 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		localWumpaSpawned = false;
 		localWumpaCaught = false;
 		localWumpaRetreated = false;
+		localSnoozleWallMask = 0;
+		localTroodonWallMask = 0;
+		localMoundLow = 0;
+		localMoundHigh = 0;
 		gemzieOpenedAt = 0L;
 		used = 0;
 		feederCount = 0;
@@ -1184,10 +1136,15 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		Arrays.fill(birdCounts, 0);
 		sequence = 0;
 		stateSendAt = 0;
-		stateRetryAt = 0;
 		snapshotSent = false;
 		feedDoneAnnounced = false;
 		lastDebugTransport = "";
+	}
+
+	private void disconnectNetwork() {
+		if (networkEngaged) PartySyncNetworks.disconnect();
+		networkEngaged = false;
+		networkConnected = false;
 	}
 
 	private static int itemIn(String line) {
@@ -1207,22 +1164,6 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 
 	private static int birdAmount(String line) {
 		return line.startsWith("Two ") ? 2 : 1;
-	}
-
-	private String senderIn(String prefix) {
-		String lower = prefix.toLowerCase(Locale.ROOT);
-		for (Member member : roster) {
-			if (lower.contains(member.name().toLowerCase(Locale.ROOT))) {
-				return member.name();
-			}
-		}
-		return null;
-	}
-
-	private Member member(String name) {
-		if (name == null) return null;
-		return roster.stream().filter(member -> member.name().equalsIgnoreCase(name))
-			.findFirst().orElse(null);
 	}
 
 	private static List<Member> currentRoster(){
@@ -1263,6 +1204,10 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		private boolean wumpaSpawned;
 		private boolean wumpaCaught;
 		private boolean wumpaRetreated;
+		private int snoozleWallMask;
+		private int troodonWallMask;
+		private int moundLow;
+		private int moundHigh;
 
 		private State() {
 		}

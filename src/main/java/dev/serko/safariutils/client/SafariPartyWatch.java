@@ -1,12 +1,13 @@
 package dev.serko.safariutils.client;
 
+import dev.serko.safariutils.state.PartySnapshot;
+import dev.serko.safariutils.state.PartyState;
+import dev.serko.safariutils.state.MonotonicTime;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.PlayerInfo;
 
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 import java.util.regex.Pattern;
 
 /** Reads and stabilizes Hypixel's four-player Safari count for the current instance. */
@@ -18,8 +19,6 @@ public final class SafariPartyWatch {
 		"^(?:\\[\\d+\\]\\s*)?([A-Za-z0-9_]{1,16})(?:\\s.*)?$");
 	private static final long INSTANCE_GRACE_MILLIS = 500L;
 	private static final long ROSTER_STABLE_MILLIS = 350L;
-	/** A roster first appearing after this is biome re-entry noise, not an entry alert. */
-	private static final long FULL_PARTY_ALERT_WINDOW_MILLIS = 30_000L;
 	/** Let stale tab data settle before persistent location learning in any party size. */
 	private static final long LEARNING_STABLE_MILLIS = 3_000L;
 	private static String lobbyId;
@@ -28,7 +27,10 @@ public final class SafariPartyWatch {
 	private static long instanceObservedAt;
 	private static long candidateSince;
 	private static boolean fullPartyAnnounced;
+	/** Expected attendance may grow during entry, but never shrinks for this visit. */
+	private static int expectedPlayersFloor = 1;
 	private static boolean graceLogged;
+	private static long nextAttendanceRefreshAt;
 
 	private SafariPartyWatch() {
 	}
@@ -39,7 +41,7 @@ public final class SafariPartyWatch {
 			return;
 		}
 
-		long now = System.currentTimeMillis();
+		long now = MonotonicTime.nowMillis();
 		String currentLobby = SafariLocation.lobbyId();
 		if (instanceObservedAt == 0) {
 			lobbyId = currentLobby;
@@ -75,12 +77,21 @@ public final class SafariPartyWatch {
 			DebugLog.line("PARTYTIME", "accepted " + observed + "/4 after "
 				+ (now - candidateSince) + "ms stable at +" + (now - instanceObservedAt) + "ms");
 			joinedPlayers = observed;
+			publishAttendance();
+		}
+		if (now >= nextAttendanceRefreshAt) {
+			nextAttendanceRefreshAt = now + 500L;
+			publishAttendance();
 		}
 		// Manager activation must not suppress this: a player can turn in their ticket
 		// before the tab-list roster has remained stable long enough to announce it.
-		int expected = PartyRosterWatch.expectedPlayers();
-		if (PartyRosterWatch.known() && expected > 1 && joinedPlayers >= expected && !fullPartyAnnounced
-			&& now - instanceObservedAt <= FULL_PARTY_ALERT_WINDOW_MILLIS) {
+		PartySnapshot party = PartyState.snapshot();
+		if (party.known()) {
+			expectedPlayersFloor = Math.max(expectedPlayersFloor, party.expectedPlayers());
+		}
+		int expected = expectedPlayersFloor;
+		if (party.known() && expected > 1 && joinedPlayers >= expected && !fullPartyAnnounced
+			) {
 			fullPartyAnnounced = true;
 			DebugLog.line("PARTYTIME", "announced " + expected + "/" + expected + " at +"
 				+ (now - instanceObservedAt) + "ms");
@@ -94,26 +105,10 @@ public final class SafariPartyWatch {
 
 	/** Names presently listed in the Safari's player section, alphabetically for display. */
 	public static List<String> presentPlayerNames() {
-		Minecraft client = Minecraft.getInstance();
-		if (!SafariLocation.inside() || client.player == null || client.player.connection == null) {
-			return List.of();
-		}
-		Set<String> onlineNames = new LinkedHashSet<>();
-		for (PlayerInfo info : client.player.connection.getOnlinePlayers()) {
-			onlineNames.add(info.getProfile().name().toLowerCase(Locale.ROOT));
-		}
-		List<String> names = new java.util.ArrayList<>();
-		for (PlayerInfo info : client.player.connection.getOnlinePlayers()) {
-			if (info.getTabListDisplayName() == null) continue;
-			String shown = LEGACY_COLOURS.matcher(info.getTabListDisplayName().getString())
-				.replaceAll("").trim();
-			var row = PLAYER_ROW.matcher(shown);
-			if (!row.matches() || !onlineNames.contains(row.group(1).toLowerCase(Locale.ROOT))) continue;
-			if (!names.contains(row.group(1))) names.add(row.group(1));
-		}
-		if (names.size() != joinedPlayers) return List.of();
-		names.sort(String.CASE_INSENSITIVE_ORDER);
-		return List.copyOf(names);
+		if (!SafariLocation.inside()) return List.of();
+		List<PartySnapshot.Member> present = PartyState.snapshot().presentInSafari();
+		if (present.size() != joinedPlayers) return List.of();
+		return present.stream().map(PartySnapshot.Member::name).toList();
 	}
 
 	/** Records the attendance state used by the Manager click guard. */
@@ -123,7 +118,7 @@ public final class SafariPartyWatch {
 			+ " name=\"" + entity.getName().getString() + "\" at="
 			+ entity.blockPosition().toShortString() + " accepted=" + joinedPlayers
 			+ " candidate=" + candidatePlayers + " stableFor="
-			+ (candidateSince == 0 ? -1 : System.currentTimeMillis() - candidateSince) + "ms");
+			+ (candidateSince == 0 ? -1 : MonotonicTime.nowMillis() - candidateSince) + "ms");
 	}
 
 	/**
@@ -133,7 +128,7 @@ public final class SafariPartyWatch {
 	public static boolean readyForLocationLearning() {
 		return SafariLocation.inside() && joinedPlayers >= 1 && joinedPlayers <= 4
 			&& candidatePlayers == joinedPlayers && candidateSince > 0
-			&& System.currentTimeMillis() - candidateSince >= LEARNING_STABLE_MILLIS;
+			&& MonotonicTime.nowMillis() - candidateSince >= LEARNING_STABLE_MILLIS;
 	}
 
 	private static int tabListPlayerCount() {
@@ -164,7 +159,9 @@ public final class SafariPartyWatch {
 		candidateSince = 0;
 		instanceObservedAt = now;
 		fullPartyAnnounced = false;
+		expectedPlayersFloor = 1;
 		graceLogged = false;
+		nextAttendanceRefreshAt = 0L;
 		DebugLog.line("PARTYTIME", "instance begin lobby=" + lobbyId);
 	}
 
@@ -175,6 +172,41 @@ public final class SafariPartyWatch {
 		candidateSince = 0;
 		instanceObservedAt = 0;
 		fullPartyAnnounced = false;
+		expectedPlayersFloor = 1;
 		graceLogged = false;
+		nextAttendanceRefreshAt = 0L;
+		PartyState.publishAttendance(System.currentTimeMillis(), List.of());
+	}
+
+	private static void publishAttendance() {
+		// Published timestamps remain wall time for compatibility with visit-entry stamps.
+		// Only stabilization and refresh durations above use the monotonic clock.
+		long now = System.currentTimeMillis();
+		Minecraft client = Minecraft.getInstance();
+		if (client.getConnection() == null) {
+			PartyState.publishAttendance(now, List.of());
+			return;
+		}
+		List<PlayerInfo> online = List.copyOf(client.getConnection().getOnlinePlayers());
+		java.util.Map<String, PlayerInfo> byName = new java.util.HashMap<>();
+		for (PlayerInfo info : online) {
+			byName.put(info.getProfile().name().toLowerCase(Locale.ROOT), info);
+		}
+		java.util.Map<String, PartySnapshot.Member> unique = new java.util.TreeMap<>(
+			String.CASE_INSENSITIVE_ORDER);
+		for (PlayerInfo info : online) {
+			if (info.getTabListDisplayName() == null) continue;
+			String shown = LEGACY_COLOURS.matcher(info.getTabListDisplayName().getString())
+				.replaceAll("").trim();
+			var row = PLAYER_ROW.matcher(shown);
+			if (!row.matches()) continue;
+			PlayerInfo matched = byName.get(row.group(1).toLowerCase(Locale.ROOT));
+			if (matched == null) continue;
+			unique.putIfAbsent(matched.getProfile().name(), new PartySnapshot.Member(
+				matched.getProfile().name(), matched.getProfile().id().toString()));
+		}
+		List<PartySnapshot.Member> present = unique.size() == joinedPlayers
+			? List.copyOf(unique.values()) : List.of();
+		PartyState.publishAttendance(now, present);
 	}
 }

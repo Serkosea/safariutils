@@ -3,7 +3,9 @@ package dev.serko.safariutils;
 import dev.serko.safariutils.client.BazaarPrices;
 import dev.serko.safariutils.client.AlertSounds;
 import dev.serko.safariutils.client.ChatQueue;
+import dev.serko.safariutils.client.CommandCoordinator;
 import dev.serko.safariutils.client.ChatMessageFilter;
+import dev.serko.safariutils.client.CanonicalPlayerNames;
 import dev.serko.safariutils.client.SafariCommands;
 import dev.serko.safariutils.client.ProgressHud;
 import dev.serko.safariutils.client.ConfigManager;
@@ -41,20 +43,25 @@ import dev.serko.safariutils.client.SafariPartyWatch;
 import dev.serko.safariutils.client.SafariPaths;
 import dev.serko.safariutils.client.OperationalLog;
 import dev.serko.safariutils.client.StaticEntityCatalog;
+import dev.serko.safariutils.client.StructuredDiagnostics;
 import dev.serko.safariutils.client.FullScreenAlert;
 import dev.serko.safariutils.client.SparklingWatch;
 import dev.serko.safariutils.client.SparklingMode;
 import dev.serko.safariutils.client.ParticleDiagnostics;
+import dev.serko.safariutils.client.PlayerIdentityStore;
+import dev.serko.safariutils.client.NetworkRuntime;
 import dev.serko.safariutils.client.SafariObjectives;
 import dev.serko.safariutils.client.WaypointRenderer;
 import dev.serko.safariutils.client.EncounterAlerts;
 import dev.serko.safariutils.client.UpdateChecker;
 import dev.serko.safariutils.api.SharedSparklingProviders;
 import dev.serko.safariutils.api.PartyItemSyncProviders;
+import dev.serko.safariutils.api.PartySyncNetworks;
 import dev.serko.safariutils.parse.ChatParser;
 import dev.serko.safariutils.session.RunHistory;
 import dev.serko.safariutils.session.SessionManager;
 import dev.serko.safariutils.state.SafariEvent;
+import dev.serko.safariutils.state.SafariEventDispatcher;
 import dev.serko.safariutils.state.SafariEventStream;
 import dev.serko.safariutils.state.SafariRuntimeState;
 import dev.serko.safariutils.session.SparklingStats;
@@ -94,11 +101,18 @@ public class SafariUtils implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		CritterState.verifyAlgorithms();
+		dev.serko.safariutils.session.SafariSession.verifyCompletionLogic();
+		ConfigManager.verifyPersistenceModel();
+		RunHistory.verifyPersistenceModel();
+		SparklingStats.verifyPersistenceModel();
+		PlayerIdentityStore.verifyPersistenceModel();
 		SafariPaths.migrateLegacyFiles();
+		PlayerIdentityStore.load();
 		// Load the persisted logging preference before deciding whether to create a
 		// diagnostic file or start its background writer.
 		ConfigManager.get();
 		OperationalLog.start();
+		StructuredDiagnostics.install();
 		UpdateChecker.start();
 		ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> OperationalLog.run("SCREEN/INIT", () -> {
 			if (!HypixelConnection.active()) return;
@@ -113,8 +127,7 @@ public class SafariUtils implements ClientModInitializer {
 				boolean allowed = TicketTrading.allowMessage(message, overlay)
 					&& PartyRosterWatch.allow(message, overlay)
 					&& PartyErrorSuppressor.allow(message, overlay)
-					&& HideyhoAutoAccept.allow(message, overlay)
-					&& PartyItemSyncProviders.allowMessage(message, overlay);
+					&& HideyhoAutoAccept.allow(message, overlay);
 				if (!allowed) return false;
 				if (!ChatMessageFilter.shouldHide(message, overlay)) return true;
 				// Fabric does not emit GAME after ALLOW_GAME rejects a line. Process the
@@ -134,21 +147,25 @@ public class SafariUtils implements ClientModInitializer {
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			if (UpdateChecker.noticePending()) tickSafely("update-notice", UpdateChecker::tick);
 			boolean hypixel = HypixelConnection.refresh();
+			// Local playback also serves settings previews and the optional everywhere
+			// contest HUD. Server-derived queues are cleared by the connection lifecycle.
+			tickSafely("alerts", AlertSounds::tick);
 			if (!hypixel) {
 				PartyRosterWatch.resetConnectionState();
 				ChatQueue.clear();
 				tickSafely("config", ConfigManager::tick);
+				tickSafely("player-identities", PlayerIdentityStore::tick);
 				tickSafely("contest", ContestTracker::tickOutsideHypixel);
 				return;
 			}
-			tickSafely("alerts", AlertSounds::tick);
 			// Next, and only here: everything below asks it where the player is.
 			tickSafely("location", SafariLocation::tick);
-			if (BuildVersion.DEVELOPER) {
+			if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)) {
 				tickSafely("join-window", () -> JoinWindowDiagnostics.tick(client));
 			}
 			tickSafely("birdfeeder-menu", BirdfeederWatch::tickMenu);
 			tickSafely("party-roster", PartyRosterWatch::tick);
+			tickSafely("player-ranks", PartyObjectiveHud::tickPlayerColours);
 			tickSafely("safari-party", SafariPartyWatch::tick);
 			tickSafely("sparkling-mode", SparklingMode::tick);
 			tickSafely("shared-sparklings", SharedSparklingProviders::tick);
@@ -156,7 +173,7 @@ public class SafariUtils implements ClientModInitializer {
 			tickSafely("objectives", SafariObjectives::tick);
 			// Sync snapshots consume the inventory caches refreshed immediately above.
 			tickSafely("party-objectives", PartyItemSyncProviders::tick);
-			if (BuildVersion.DEVELOPER) {
+			if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)) {
 				tickSafely("debug-state", DebugStateLog::tick);
 				tickSafely("interaction-debug", InteractionDebugLog::tick);
 			}
@@ -165,7 +182,9 @@ public class SafariUtils implements ClientModInitializer {
 			tickSafely("critter-entities", CritterEntities::tick);
 			tickSafely("critter-state", CritterState::tick);
 			tickSafely("particle-diagnostics", ParticleDiagnostics::tick);
-			if (BuildVersion.DEVELOPER) tickSafely("critter-count-log", CritterCountLog::tick);
+			if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)) {
+				tickSafely("critter-count-log", CritterCountLog::tick);
+			}
 			tickSafely("hideyho", HideyhoSolver::tick);
 			tickSafely("still-critters", StillCritters::tick);
 			tickSafely("detected-critters", DetectedCritters::tick);
@@ -183,23 +202,34 @@ public class SafariUtils implements ClientModInitializer {
 			tickSafely("bazaar", BazaarPrices::tick);
 			tickSafely("chat-queue", ChatQueue::tick);
 			tickSafely("config", ConfigManager::tick);
+			tickSafely("player-identities", PlayerIdentityStore::tick);
 		});
 
 		// Nothing else writes the settings file on the way out, and the game can be quit
 		// straight from the settings screen.
 		ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
-			ConfigManager.save();
-			BazaarPrices.shutdown();
-			SharedSparklingProviders.shutdown();
-			StaticEntityCatalog.shutdown();
+			// Every store/runtime receives its own shutdown attempt. A failure in one
+			// subsystem must never skip settings, run history, or another owned worker.
+			shutdownSafely("session", SessionManager::onClientStopping);
+			shutdownSafely("settings", ConfigManager::save);
+			shutdownSafely("player-identities", PlayerIdentityStore::shutdown);
+			shutdownSafely("bazaar", BazaarPrices::shutdown);
+			shutdownSafely("shared-sparklings", SharedSparklingProviders::shutdown);
+			shutdownSafely("party-sync", PartySyncNetworks::shutdown);
+			shutdownSafely("static-entities", StaticEntityCatalog::shutdown);
+			shutdownSafely("diagnostic-replay", dev.serko.safariutils.client.DiagnosticReplay::shutdown);
+			shutdownSafely("network", NetworkRuntime::shutdown);
 			OperationalLog.shutdown();
 		});
 
 		// Hypixel never says you have left the Safari, but moving island reconnects, so
 		// this is the one moment the chat-driven flag is known to be stale.
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> OperationalLog.run("CONNECTION/JOIN", () -> {
+			CommandCoordinator.resetConnection();
 			SafariRuntimeState.connectionJoined();
 			if (!HypixelConnection.refresh()) {
+				SessionManager.onNonHypixelConnection();
+				TicketTrading.onConfirmedNonHypixel();
 				leaveHypixel();
 				return;
 			}
@@ -207,15 +237,20 @@ public class SafariUtils implements ClientModInitializer {
 			ChatQueue.clear();
 			PartyRosterWatch.onConnectionJoin();
 			PartyObjectiveHud.invalidatePlayerColours();
-			if (BuildVersion.DEVELOPER) JoinWindowDiagnostics.onConnectionJoin();
+			if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)) {
+				JoinWindowDiagnostics.onConnectionJoin();
+			}
 			SessionManager.onConnectionJoin();
 			TicketTrading.onConnectionJoin();
+			CritterEntities.onWorldChange();
+			WaypointRenderer.onWorldChange();
 			SafariLocation.onWorldChange();
 			SessionManager.onWorldChange();
 		}));
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> OperationalLog.run("CONNECTION/DISCONNECT", () -> {
 			OperationalLog.info("LIFECYCLE", "Disconnected from Hypixel/server world");
 			HypixelConnection.onDisconnect();
+			CommandCoordinator.resetConnection();
 			leaveHypixel();
 		}));
 
@@ -308,24 +343,7 @@ public class SafariUtils implements ClientModInitializer {
 				SafariEvent event = SafariEventStream.serverChat(line,
 					Minecraft.getInstance().getUser().getName());
 				DebugLog.line("RAW", "\"" + line + "\"");
-				CritterState.onCritterEvent(event.critterEvent(), line);
-				PartyItemSyncProviders.onServerMessage(line);
-				SafariLocation.onChatMessage(line);
-				SparklingMode.onChatMessage(line);
-				SessionManager.onChatMessage(line, event.critterEvent());
-				TicketTrading.onChatMessage(line);
-				if (BuildVersion.DEVELOPER) JoinWindowDiagnostics.onChatMessage(line);
-				EncounterAlerts.onChatMessage(line);
-				RecatchSpots.onChatMessage(line, event.critterEvent());
-				NestTracker.onChatMessage(line);
-				BirdfeederWatch.onChatMessage(line);
-				ShiningCoinWatch.onChatMessage(line);
-				SafariObjectives.onChatMessage(line);
-				HotspotWatch.onChatMessage(line);
-				HideyhoSolver.onChatMessage(line);
-				StillCritters.onChatMessage(line, event.critterEvent());
-				FloorDrops.onChatMessage(line);
-				MoundSpotter.onChatMessage(line);
+				SafariEventDispatcher.dispatch(event);
 			}
 		});
 	}
@@ -334,15 +352,24 @@ public class SafariUtils implements ClientModInitializer {
 		OperationalLog.run(tracker, action);
 	}
 
+	private static void shutdownSafely(String subsystem, Runnable action) {
+		OperationalLog.run("SHUTDOWN/" + subsystem.toUpperCase(java.util.Locale.ROOT), action);
+	}
+
 	/** Clears server-derived state and every pending automatic command off Hypixel. */
 	private static void leaveHypixel() {
-		SafariRuntimeState.disconnected();
-		SafariLocation.onWorldChange();
-		SessionManager.onWorldChange();
-		TicketTrading.onDisconnect();
-		PartyRosterWatch.resetConnectionState();
-		ChatQueue.clear();
-		AlertSounds.onConnectionExit();
-		FullScreenAlert.clear();
+		OperationalLog.run("DISCONNECT/sync", PartySyncNetworks::disconnect);
+		OperationalLog.run("DISCONNECT/epoch", SafariRuntimeState::disconnected);
+		OperationalLog.run("DISCONNECT/location", SafariLocation::onWorldChange);
+		OperationalLog.run("DISCONNECT/session", SessionManager::onWorldChange);
+		OperationalLog.run("DISCONNECT/trading", TicketTrading::onDisconnect);
+		OperationalLog.run("DISCONNECT/entities", CritterEntities::onWorldChange);
+		OperationalLog.run("DISCONNECT/detection", DetectedCritters::reset);
+		OperationalLog.run("DISCONNECT/spotter", CritterSpotter::reset);
+		OperationalLog.run("DISCONNECT/waypoints", WaypointRenderer::onWorldChange);
+		OperationalLog.run("DISCONNECT/roster", PartyRosterWatch::resetConnectionState);
+		OperationalLog.run("DISCONNECT/chat", ChatQueue::clear);
+		OperationalLog.run("DISCONNECT/sounds", AlertSounds::onConnectionExit);
+		OperationalLog.run("DISCONNECT/banner", FullScreenAlert::clear);
 	}
 }

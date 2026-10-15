@@ -2,6 +2,27 @@
 
 This document records the invariants needed to maintain the current codebase. User-facing features, installation, and commands belong in [README.md](README.md); release history belongs in [CHANGELOG.md](CHANGELOG.md).
 
+Workspace layout and verified build commands: [development workflow](docs/development/WORKSPACE.md).
+
+Current overhaul progress and outstanding validation gates: [v3 implementation ledger](IMPLEMENTATION_V3.md).
+Settings imports preserve both `original.json` (unaltered disk bytes, when present) and
+`settings.json` (current working settings) under a unique `backups/settings/settings-import-*`
+directory before replacement. Protected-source working snapshots are recovery data, not an
+automatic replacement for newer-schema originals. Transient deadlines use `MonotonicTime`;
+never serialize those process-relative values as saved dates.
+
+Capture reconciliation samples immutable body/capsule/label observations before applying
+identity decisions. Label fallback must consider the complete observed-body batch: a label
+moving to a newcomer cannot replace its prior owner's identity while that body remains present.
+Deferred attempts retain the original attempt's camera ray; later camera movement is not
+targeting evidence for an earlier throw. Diagnostic replay runs separately from HTTP workers
+and must report skipped/omitted/corrupt records as incomplete rather than silently passing.
+Developer `ci` journals replay the production capture tracker through the offline `replayCaptures`
+task. `CaptureEffects` owns the projection boundary; only the headless harness substitutes inert
+effects. The harness never ships in jars. This is model replay, not complete entity-scan/render replay.
+Confirmed species completion belongs to CritterState; callers must not independently clear each
+projection before settling the authoritative attempts. Preserve partial-total behavior and idempotence.
+
 ## Project and builds
 
 SafariUtils is a client-side Fabric mod for Hypixel SkyBlock's Critter Safari. It targets Java 25, Fabric Loader 0.19+, and the Minecraft profiles under `gradle/versions/`.
@@ -9,27 +30,40 @@ SafariUtils is a client-side Fabric mod for Hypixel SkyBlock's Critter Safari. I
 - Shared code: `src/main/java`
 - Profile compatibility code: `src/<profile>/java`
 - Shared Ticket Trading: `src/main/java/dev/serko/safariutils/client/TicketTrading*.java`
-- Optional ignored API extension: `private-api/src/main/`
-- Developer-only simulator: `private-api/src/developer/`
+- Shared key-free API client: `src/main/java/dev/serko/safariutils/backend/`
+- Developer-only simulator and experimental network sync: `src/developer/`
 - Safe build: `./gradlew build`
 - Extra build: `./gradlew build -PextraBuild=true`
 - Other profile: add `-PminecraftProfile=<profile>`
-- Private build: add `-PincludePrivateApi=true` (API plus Extra behavior, no developer tools)
-- Developer build: add `-PdeveloperBuild=true` (private API, Testing UI, commands, and automatic diagnostics)
+- Private edition is retired for v3; `-PincludePrivateApi=true` is rejected
+- Developer build: add `-PdeveloperBuild=true` (Testing UI, commands, experimental sync, and automatic diagnostics)
 
 Build type alone controls the Safe Mode and Developer settings categories. Ordinary
 settings remain visible regardless of the configuration class that owns their persisted
-field. Safe builds force Safe Mode; Extra adds configurable Safe Mode options; Private
-adds the ignored API provider; Developer adds diagnostics and the command-free Ticket Trading simulator.
+field. Safe builds force Safe Mode; Extra adds configurable Safe Mode options; all editions
+include the key-free API provider. Developer adds diagnostics and the command-free Ticket Trading simulator.
 
 SafariUtils diagnostic files and their controls are Developer-only. Release variants
 still report failures to Minecraft's standard log without starting the custom writer.
 
-Build variants use separate output directories so stale private classes cannot enter public jars. `DeployBuilds` builds and deploys the 26.1.2 and 26.2 Developer jars, then mirrors SafariUtils configuration from the 26.2 main instance to the 26.2 Ticket Collecting instance. `BuildArtifacts` builds all eight profile/variant combinations sequentially and synchronizes only those current jars directly into the flat `release-artifacts/` folder.
+Build variants use separate output directories. `DeployBuilds` verifies and deploys the 26.1.2 and 26.2 Developer jars, then mirrors SafariUtils configuration from the 26.2 main instance to the 26.2 Ticket Collecting instance. `BuildArtifacts` verifies all six profile/variant combinations sequentially and synchronizes only those current jars directly into the flat `release-artifacts/` folder.
 
 Artifact names place the variant after the version: no suffix for normal Safe Mode,
-`-extra`, `-private`, or `-developer`. Clean-build all eight profile/variant
+`-extra` or `-developer`. Clean-build all six profile/variant
 combinations before copying release artifacts so deleted classes cannot survive an incremental build.
+
+`check` includes headless regression checks and jar edition-boundary verification. Shared
+scripts under `gradle/` are also applied by SerkoAddons against its live SafariUtils source root.
+Standalone packaging/deployment orchestration lives in `gradle/distribution.gradle`.
+Routine verification is incremental; use `-PcleanArtifacts=true` for an explicit clean matrix.
+Both jars include `safariutils-provenance.properties`; the source digest identifies selected
+SafariUtils source/resources and is logged at startup. It contains no machine paths or secrets.
+Ordinary builds do not rewrite the checked-in component snapshot; `SyncSafariComponents` is explicit.
+
+At the v3 release checkpoint, current-client settings, saved data, lookups,
+solo transitions, and grouped/distant captures have received in-game testing. The October 14
+22H-18M journal strictly replayed all 4,855 capture inputs. Developer two-client sync and broader
+Bridge runtime testing remain separate limitations; see `docs/development/V3_VALIDATION.md`.
 
 ## Runtime and lifecycle
 
@@ -92,23 +126,23 @@ Static catalogs use centered coordinate keys but decode to the same block-aligne
 
 The expected roster remains fixed for the visit. A party catch becomes newly shared only when everyone who needed that unique received it; cached ownership may prove that an absent original member already owned it. A newly recorded Sparkling delays API-import comparison until a response at least ten minutes later so stale profile data cannot trigger a false import prompt.
 
-Public builds provide manual Shared/Missing controls. The ignored private provider may add automatic party collection and player lookup through the API; the public UI and fallback behavior must remain complete without it.
+All editions include the shared key-free backend provider for automatic party collection and player lookup, alongside manual Shared/Missing controls. Provider failure must preserve local functionality and cached data. The approved Hypixel key stays exclusively in the Worker secret, never in a client artifact.
 
 Manual profile lookups have a ten-second request cooldown and a five-minute result cache. Automatic party caching does not consume the manual cooldown. Screen-facing provider state must be lock-free; opening a UI may never wait on an HTTP worker or rate-limit sleep.
 
-Party Sync is public, opt-in, and party-chat-backed. Its transient setting resets off each launch. A client sends one compact visible verification token only after the complete Safari roster is present and stable; the token is derived from its displayed username, the current lobby ID, and its action. Parsed objective traffic remains disabled until every current member has confirmed the same protocol. Local state is tracked before confirmation, then sent as a coalesced authoritative snapshot with batched confirmed hives. Disabling sync during an active synchronized run sends the matching sender/lobby-bound shutdown token, immediately stopping transport for every client while preserving local state. Departures retain confirmed remaining members, while a newly added member requires a fresh readiness check on the next stable Safari visit. Solo has complete local state without sending messages. Any future remote transport remains deferred and must preserve the documented privacy design: short-lived end-to-end-encrypted rooms, no credentials or private account data, and no developer/user access to connection metadata beyond what a trusted provider must process.
+Local party objective tracking is shared. Experimental authenticated remote Party Sync is Developer-only and engages automatically for applicable run/lobby context; it does not require party-chat verification messages or an enable toggle. PartySyncNetworks isolates the optional provider. Connection loss preserves local evidence; lifecycle exit disconnects transport. Incoming data must pass sender, context, sequence and payload validation before changing shared state. Do not describe transport privacy as an absolute guarantee or expose authentication credentials in diagnostics.
 
 Ticket Trading is public, opt-in, and resets off each launch. The shared implementation owns
-trusted profiles, active and backup slots, timed party commands, Sparkling filters, and compact
+trusted profiles, ordered invite and receive-invite lists, timed party commands, Sparkling filters, and compact
 lobby-bound Sparkling notices. Host automation requires a fresh authoritative roster proving
 local leadership; confirmed solo guests accept directly, confirmed party guests leave before
 accepting Sparkling invites, and unknown party state retries only after Hypixel proves a party
 conflict. Failed server joins suspend guest acceptance for 45 seconds. The command-free simulator
-and randomized invariant audit compile only into Developer jars from `private-api/src/developer/`.
+and randomized invariant audit compile only into Developer jars from `src/developer/`.
 
 Player names shown by the mod use authoritative capitalization from the live player list,
-private lookup results, or the cached unauthenticated Minecraft profile lookup. Rank colors
-come from cached tab-list styles or the optional private provider; unknown colors fall back
+backend lookup results, or the cached unauthenticated Minecraft profile lookup. Rank colors
+come from the centralized identity cache, live observations or the shared backend provider; unknown colors fall back
 to white while a confirmed no-rank player remains gray. The UUID-backed owner style remains
 rainbow. Profile requests run off-thread, deduplicate in-flight names, and back off after
 failures; rendering never waits on network I/O.
@@ -117,7 +151,7 @@ Chat-message hiding is display-only. Its stable bit mask is serialized as `hidde
 
 ## UI and performance
 
-`SafariConfig` fields annotated with `@Expose` are persistent keys. Rename them only with `@SerializedName` aliases or explicit `ConfigManager` migration. Deliberately transient session settings such as Party Sync must remain unexposed and be reset explicitly on load. Existing run history and settings must remain forward-compatible.
+`SafariConfig` fields annotated with `@Expose` are persistent keys. Rename them only with `@SerializedName` aliases or explicit `ConfigManager` migration. Deliberately transient session state must remain unexposed and be reset explicitly on load. Existing run history and settings must remain forward-compatible.
 
 `SafariSettingsScreen` presents one compact category sidebar plus a fixed wrapping tab header and collapsed, nested section accordions over the unchanged `SafariConfig` schema. Each logical section shares a card; collections of distinct waypoint features split into one toggle-and-color card per feature. Search follows the same area/tab/page/card order, preserves relevant shared cards, and appends feature names to broad section breadcrumbs. Changing tabs collapses the previous tab's sections, and collapsing a parent also collapses all descendants. Areas, tabs, and sections may reorganize controls across their source config classes, but they must retain the original owner and reflected `Field`; never move persisted fields merely to change navigation. Global search, tab reset, build visibility, warnings, and custom editors all reuse those same controls. Safe Mode controls follow the build variant, and Developer exists only in developer builds. Clicking the SafariUtils title opens the repeatable constellation Easter egg; completing it temporarily themes all SafariUtils UI and permanently unlocks the Astral special-theme choice.
 
@@ -127,7 +161,7 @@ Responsive screens reflow before they scale. Settings narrows its single navigat
 
 UI centering always means optical/geometric centering of the visible pixels. Do not include glyph advance padding, transparent space, or text shadows when calculating centered positions; draw shadows only after the primary shape is centered.
 
-The settings footer shows the result of one asynchronous GitHub release check per launch. Release notes are wrapped and cached only when their source or width changes. Every public build opens the SafariUtils website, whose download modal links directly to the latest GitHub release assets so GitHub retains download statistics; do not copy public jars into the site deployment. Private builds retain their separate private page and hosted jars. Data Tools performs compact versioned settings transfer and on-demand run-history checks. Imports and repairs validate first, preserve the current file in `config/safariutils/backups/<type>/`, and never run from a render or tick path.
+The settings footer shows the result of one asynchronous GitHub release check per launch. Release notes are wrapped and cached only when their source or width changes. Update links open the SafariUtils website; public download links should continue pointing to GitHub release assets. Private builds are retired for v3; removing old hosted private artifacts is separate release work. Data Tools performs compact versioned settings transfer and on-demand run-history checks. Imports and repairs validate first and preserve original settings in typed backup directories before replacement.
 
 Use `ResponsiveUI` for fixed logical canvases and convert mouse coordinates for scaled widgets. `HudBox` is the source of truth for live/editor positioning. The HUD editor keeps outlines one pixel inside each screen edge and supports unsnapped one-pixel arrow adjustments.
 
@@ -161,18 +195,18 @@ config/safariutils/
 │   ├── runs/
 │   └── settings/
 └── logs/
-    ├── SafariUtils_<Month>-<day><suffix>-<year>_<hour>H-<minute>M.log
-    └── SafariUtils_<Month>-<day><suffix>-<year>_<hour>H-<minute>M_P2.log
+    ├── SafariUtils_<timestamp>_events.jsonl.gz
+    └── SafariUtils_<timestamp>_P2_events.jsonl.gz
 ```
 
-The optional static-entities JSON appears only when Hideonfloor research saves a new candidate. Settings, history, and research data use atomic replacement. Party Sync resets each launch.
+The optional static-entities JSON appears only when Hideonfloor research saves a new candidate. Settings, history, and research data use protected atomic replacement. Remote Party Sync has no persisted connection state; it reconnects only in eligible context. Diagnostic segments are compressed JSONL, not separate human-readable log files.
 
-Public jars may contain the shared Party Sync and Ticket Trading implementations. They must contain no private API classes or services, saved owner identities or UUIDs, API keys, generated key payloads, or Developer simulator classes. Public documentation and release notes must not advertise private-only API behavior. Never commit `private-api/`, key files, generated private sources, user configuration/history/logs, or built jars.
+Public jars include Ticket Trading and the key-free API provider, but not Developer tools, offline regression harnesses or experimental remote-sync providers. No build may contain API secrets, user configuration/history/logs or generated key payloads. Never commit `private-api/`, key files, generated private sources, user data, or built jars. Artifact verification enforces edition and regression-class boundaries.
 
 ## Release checklist
 
 1. Run `git diff --check` and validate JSON/resources
-2. Build Safe, Extra, private, and developer jars for every supported profile
+2. Clean-build Safe, Extra, and Developer jars for every supported profile, then verify integrated SerkoAddons parity
 3. Inspect jar names, metadata, class lists, services, and public-key absence
 4. Test lifecycle, Starting Items, objectives, mode/settings toggles, HUD editing, Sparkling UI, and Contest visibility
 5. Keep release notes concise, use only non-empty New, Changes & Additions, Fixes, and Downloads sections, and preserve the established Downloads wording unless the user changes it

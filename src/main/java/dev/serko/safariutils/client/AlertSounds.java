@@ -259,6 +259,16 @@ public final class AlertSounds {
 		return ALPHABETICAL;
 	}
 
+	/** Sound settings use stable registry IDs rather than their legacy annotation length. */
+	public static int choiceCount() {
+		return LABELS.length;
+	}
+
+	public static boolean isChoiceSetting(String fieldName) {
+		return fieldName != null
+			&& (fieldName.endsWith("SoundChoice") || fieldName.equals("testAlertSoundChoice"));
+	}
+
 	public static String label(int id) {
 		return id >= 0 && id < LABELS.length && LABELS[id] != null
 			? LABELS[id] : CHOICES.getFirst().label;
@@ -499,11 +509,23 @@ public final class AlertSounds {
 		stopSparklingSongs(client);
 	}
 
+	/** Stops a live Sparkling alert when its owning Safari state is cleared early. */
+	public static void stopSparklingAlert(Minecraft client) {
+		stopSparklingSongs(client);
+	}
+
 	/** Stops queued Safari audio when the client leaves Hypixel. */
 	public static void onConnectionExit() {
-		PENDING.clear();
+		clearTransientAlerts();
 		SPARKLING_PENDING.clear();
 		stopSparklingSongs(Minecraft.getInstance());
+	}
+
+	/** Clears short banner sounds and the persistent ticket reminder at a lifecycle boundary. */
+	public static void clearTransientAlerts() {
+		PENDING.clear();
+		TICKET_REMINDER_PENDING.clear();
+		ticketReminderActive = false;
 	}
 
 	private static void stopSparklingInstances(Minecraft client) {

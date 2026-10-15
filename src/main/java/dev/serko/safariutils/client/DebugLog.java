@@ -8,12 +8,14 @@ public final class DebugLog {
 
 	/** Detailed gameplay diagnostics are useful only while a Safari world is active. */
 	public static boolean isEnabled() {
-		return BuildVersion.DEVELOPER && !ConfigManager.automaticLoggingDisabled()
+		return BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
+			&& !ConfigManager.automaticLoggingDisabled()
 			&& SafariLocation.inSafari();
 	}
 
 	public static void line(String category, String message) {
-		if (BuildVersion.DEVELOPER && !ConfigManager.automaticLoggingDisabled()
+		if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
+				&& !ConfigManager.automaticLoggingDisabled()
 			&& (isEnabled() || alwaysUseful(category))) {
 			OperationalLog.debug(category, message);
 		}
@@ -22,7 +24,7 @@ public final class DebugLog {
 	private static boolean alwaysUseful(String category) {
 		return switch (category) {
 			case "LOG", "RUN", "ACTIVATE", "JOINTIME", "LOCATION",
-				"PARTY", "PARTYTIME", "SYNC", "PARTYAPI" -> true;
+				"PARTY", "PARTYTIME", "SYNC", "PARTYAPI", "BAZAAR", "UPDATES", "PLAYER_LOOKUP" -> true;
 			default -> false;
 		};
 	}

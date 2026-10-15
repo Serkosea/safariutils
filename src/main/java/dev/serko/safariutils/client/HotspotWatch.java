@@ -31,6 +31,7 @@ public final class HotspotWatch {
 		// An unrecognised biome name means Hypixel has changed something; better to
 		// leave the panel blank than to report a guess.
 		if (found == null) return;
+		if (hotspot == found) return;
 		hotspot = found;
 		announce(found);
 	}

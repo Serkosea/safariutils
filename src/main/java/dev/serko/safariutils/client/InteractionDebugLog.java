@@ -209,7 +209,8 @@ public final class InteractionDebugLog {
 	}
 
 	private static boolean active() {
-		return BuildVersion.DEVELOPER && SafariLocation.inSafari() && DebugLog.isEnabled();
+		return BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
+			&& SafariLocation.inSafari() && DebugLog.isEnabled();
 	}
 
 	private static String decimal(double value) {

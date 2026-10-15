@@ -39,7 +39,10 @@ public final class HideyhoAutoAccept {
 					custom.id(), custom.payload()));
 			} else if (accept instanceof ClickEvent.RunCommand command) {
 				String value = command.command();
-				client.getConnection().sendCommand(value.startsWith("/") ? value.substring(1) : value);
+				var request = CommandCoordinator.request(value,
+					CommandCoordinator.Category.OTHER, CommandCoordinator.Cooldown.NONE,
+					CommandCoordinator.Scope.VISIT, false, false);
+				if (!CommandCoordinator.trySend(request)) return false;
 			} else return false;
 			return true;
 		} catch (RuntimeException error) {

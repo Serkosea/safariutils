@@ -186,7 +186,6 @@ public final class SafariSettingsScreen extends Screen {
 	private long customResetArmedUntil;
 	private long customDeleteArmedUntil;
 	private int customDeleteArmedIndex = -1;
-	private boolean partySyncConfirmation;
 	private int pendingSparklingIntensity = -1;
 	private int pendingSparklingSourcePreset = -1;
 	private long constellationCompletedAt;
@@ -361,9 +360,10 @@ public final class SafariSettingsScreen extends Screen {
 		SettingsArea gameplay = area("gameplay", "Gameplay", "Safari behavior, party tools, and profit tracking");
 		SettingsArea alerts = area("alerts", "Alerts", "On-screen and outgoing chat alerts");
 		SettingsArea sparkling = area("sparkling", "Sparkling", "Sparkling hunting, detection, and celebrations");
-		SettingsArea advanced = BuildVersion.SAFE ? null : area("advanced", "Safe Mode",
+		SettingsArea advanced = !BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS)
+			? null : area("advanced", "Safe Mode",
 			"Visibility-based detection and waypoint behavior");
-		SettingsArea developer = BuildVersion.DEVELOPER
+		SettingsArea developer = BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
 			? area("developer", "Developer", "Diagnostics, research, and test-run controls") : null;
 
 		SettingCategoryView displaySource = source("display");
@@ -390,8 +390,6 @@ public final class SafariSettingsScreen extends Screen {
 		addRootPage(gameplay, gameplaySource, "gameplay.tickets", "Tickets",
 			"Protect tickets and configure trusted players for timed ticket trading",
 			"protectSafariTicket", "configureTicketTrading");
-		if (advancedSource != null) addRootPage(gameplay, advancedSource, "gameplay.party", "Party Sync",
-			"Share objective progress with a fully participating modded party", "enablePartySync");
 		addRootPage(gameplay, profitSource, "gameplay.profit", "Profit Tracking",
 			"Control run profit tracking and Bazaar pricing");
 
@@ -851,7 +849,6 @@ public final class SafariSettingsScreen extends Screen {
 				editingSliderRight, editingSliderBottom);
 		boolean modalOpen = constellationPanel || customThemePanel || customSparklingPanel
 			|| specialSparklingConfirmation
-			|| partySyncConfirmation
 			|| editor != null && !editingInlineText || choiceField != null || editingSameSlider;
 		int backgroundMouseX = modalOpen ? Integer.MIN_VALUE : mouseX;
 		int backgroundMouseY = modalOpen ? Integer.MIN_VALUE : mouseY;
@@ -897,10 +894,6 @@ public final class SafariSettingsScreen extends Screen {
 		if (customSparklingPanel) {
 			modalHitStart = hits.size();
 			drawCustomSparklingPanel(graphics, mouseX, mouseY);
-		}
-		if (partySyncConfirmation) {
-			modalHitStart = hits.size();
-			drawPartySyncConfirmation(graphics, mouseX, mouseY);
 		}
 		if (editor != null && !editingInlineText) {
 			modalHitStart = hits.size();
@@ -1648,12 +1641,13 @@ public final class SafariSettingsScreen extends Screen {
 
 	/** Applies build-level availability for Safe Mode, private, and Developer settings. */
 	private static boolean visibleInThisBuild(Class<?> owner, Field field) {
-		if (field.getName().startsWith("private") && !BuildVersion.PRIVATE) return false;
-		if (owner == SafariConfig.AdvancedConfig.class && field.getName().equals("safeMode")) return false;
-		if (owner != SafariConfig.AdvancedConfig.class || BuildVersion.DEVELOPER) return true;
-		if (field.getName().equals("specialTheme")
-			|| field.getName().equals("enablePartySync")) return true;
-		return !BuildVersion.SAFE && (field.getName().startsWith("safe")
+		if (field.getName().startsWith("private")
+				&& !BuildVersion.has(BuildVersion.Capability.AUTHENTICATED_API)) return false;
+		if (owner != SafariConfig.AdvancedConfig.class
+				|| BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)) return true;
+		if (field.getName().equals("specialTheme")) return true;
+		return BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS)
+			&& (field.getName().startsWith("safe")
 			|| field.getName().startsWith("SAFE_"));
 	}
 
@@ -3432,46 +3426,6 @@ public final class SafariSettingsScreen extends Screen {
 		}
 	}
 
-	private void drawPartySyncConfirmation(GuiGraphicsExtractor graphics,
-			int mouseX, int mouseY) {
-		int w = Math.min(540, width - 40);
-		int h = 158;
-		int x = (width - w) / 2;
-		int y = (height - h) / 2;
-		graphics.fill(0, 0, width, height, 0xBB000000);
-		graphics.fill(x, y, x + w, y + h, SURFACE);
-		outline(graphics, x, y, w, h, GOLD);
-		graphics.centeredText(font, "ENABLE PARTY SYNC?", x + w / 2, y + 15, GOLD);
-		graphics.centeredText(font, "This sends one compact verification token in party chat.",
-			x + w / 2, y + 38, TEXT);
-		graphics.centeredText(font,
-			"Objective updates are then shared through parsed party messages.",
-			x + w / 2, y + 52, TEXT);
-		graphics.centeredText(font,
-			"It only activates when every party member has SafariUtils",
-			x + w / 2, y + 70, MUTED);
-		graphics.centeredText(font,
-			"and has Enable Party Sync turned on.", x + w / 2, y + 84, MUTED);
-		int cancelX = x + w / 2 - 112;
-		int enableX = x + w / 2 + 8;
-		drawButton(graphics, cancelX, y + 116, 104, "Cancel", mouseX, mouseY);
-		drawButton(graphics, enableX, y + 116, 104, "Enable", mouseX, mouseY);
-		hits.add(new Hit(cancelX, y + 116, cancelX + 104, y + 138,
-			this::cancelPartySync));
-		hits.add(new Hit(enableX, y + 116, enableX + 104, y + 138, () -> {
-			ConfigManager.get().advanced.enablePartySync = true;
-			partySyncConfirmation = false;
-			if (search != null) search.visible = true;
-			ConfigManager.save();
-		}));
-	}
-
-	private void cancelPartySync() {
-		ConfigManager.get().advanced.enablePartySync = false;
-		partySyncConfirmation = false;
-		if (search != null) search.visible = true;
-	}
-
 	private void drawFooter(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
 		if (selectedArea == null || selectedTab == null) return;
 		int footerTop = height - FOOTER_HEIGHT;
@@ -4280,7 +4234,7 @@ public final class SafariSettingsScreen extends Screen {
 
 	private boolean focusEditorFrame(MouseButtonEvent event, boolean doubled, EditBox field) {
 		setFocused(field);
-		SettingsUiKit.focusEnd(field);
+		SettingsUiKit.focusAt(field, event, doubled);
 		return true;
 	}
 
@@ -4439,10 +4393,6 @@ public final class SafariSettingsScreen extends Screen {
 			cancelSparklingIntensity();
 			return true;
 		}
-		if (partySyncConfirmation && event.key() == 256) {
-			cancelPartySync();
-			return true;
-		}
 		if (choiceField != null && event.key() == 256) {
 			closeChoicePicker();
 			return true;
@@ -4471,12 +4421,6 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private void setBoolean(Object owner, Field field, boolean value) {
-		if (field.getName().equals("enablePartySync") && value) {
-			partySyncConfirmation = true;
-			setFocused(null);
-			if (search != null) search.visible = false;
-			return;
-		}
 		try {
 			field.setBoolean(owner, value);
 			SettingToggle toggle = field.getAnnotation(SettingToggle.class);
@@ -4528,7 +4472,7 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private static boolean isSoundChoice(Field field) {
-		return field.getName().endsWith("SoundChoice") || field.getName().equals("testAlertSoundChoice");
+		return field != null && AlertSounds.isChoiceSetting(field.getName());
 	}
 
 	private static boolean isThemeChoice(Field field) {

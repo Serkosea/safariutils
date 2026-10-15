@@ -1,6 +1,8 @@
 package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.session.SessionManager;
+import dev.serko.safariutils.state.PartySnapshot;
+import dev.serko.safariutils.state.PartyState;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenMouseEvents;
 import net.minecraft.client.gui.screens.Screen;
@@ -53,7 +55,7 @@ public final class TicketProtection {
 		// Only the leader can submit the party's Manager interaction, but members also
 		// interact with this NPC before choosing their own ticket. Arming both paths is
 		// harmless because capsule allocation remains the required activation signal.
-		if (PartyRosterWatch.localPlayerIsLeader() && shouldBlock()) {
+		if (PartyState.snapshot().localLeader() && shouldBlock()) {
 			blockedMessage();
 			return true;
 		}
@@ -84,9 +86,10 @@ public final class TicketProtection {
 	}
 
 	private static boolean shouldBlock() {
+		PartySnapshot party = PartyState.snapshot();
 		return ConfigManager.get().gameplay.protectSafariTicket && SafariLocation.inside()
-			&& SessionManager.current() == null && PartyRosterWatch.known()
-			&& SafariPartyWatch.joinedPlayers() < PartyRosterWatch.expectedPlayers();
+			&& SessionManager.current() == null && party.known()
+			&& SafariPartyWatch.joinedPlayers() < party.expectedPlayers();
 	}
 
 	private static boolean isEntryScreen(Screen screen) {

@@ -5,6 +5,8 @@ import dev.serko.safariutils.data.Critters;
 import dev.serko.safariutils.data.SafariBiome;
 import dev.serko.safariutils.session.SafariSession;
 import dev.serko.safariutils.session.SessionManager;
+import dev.serko.safariutils.state.PartySnapshot;
+import dev.serko.safariutils.state.PartyState;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -66,7 +68,8 @@ public final class ProgressHud implements HudElement {
 		HudPanel panel = new HudPanel();
 		if (waiting) {
 			int joined = SafariPartyWatch.joinedPlayers();
-			int expected = PartyRosterWatch.known() ? PartyRosterWatch.expectedPlayers() : 4;
+			PartySnapshot party = PartyState.snapshot();
+			int expected = party.known() ? party.expectedPlayers() : 4;
 			panel.titleSuffix("Critter Safari ", "(%d/%d)".formatted(joined, expected),
 				HudBorderStyle.progressTitle(), joined >= expected ? 0xFF55FF55 : 0xFFFF5555);
 			long remaining = SessionManager.ticketWindowRemainingMillis();

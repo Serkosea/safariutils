@@ -23,17 +23,13 @@ def minecraftProfile = project.findProperty('minecraftProfile')
 	?: project.default_minecraft_profile
 def developerBuild = project.findProperty('developerBuild')?.toString()?.toBoolean()
 	|| (deployRequested && project.findProperty('deployDeveloperBuild')?.toString()?.toBoolean())
-def privateApiBuild = developerBuild
-	|| project.findProperty('includePrivateApi')?.toString()?.toBoolean()
-	|| (deployRequested && project.findProperty('deployPrivateApi')?.toString()?.toBoolean())
-def privateBuild = privateApiBuild && !developerBuild
-def extraBuild = privateApiBuild
+if (project.findProperty('includePrivateApi')?.toString()?.toBoolean()) {
+	throw new GradleException('Private edition retired in v3. API is included in every edition; use extraBuild or developerBuild if required.')
+}
+def extraBuild = developerBuild
 	|| project.findProperty('extraBuild')?.toString()?.toBoolean()
 	|| (deployRequested && project.findProperty('deployExtraBuild')?.toString()?.toBoolean())
 def safeBuild = !extraBuild
-def privateSourceRoot = project.findProperty('privateSourceRoot')
-	? file(project.property('privateSourceRoot'))
-	: file('private-api')
 def profileFile = file("gradle/versions/${minecraftProfile}.properties")
 if (!profileFile.isFile()) {
 	throw new GradleException("Unknown Minecraft profile '${minecraftProfile}' (${profileFile} not found)")
@@ -48,15 +44,13 @@ sourceSets.main.java.srcDir("src/${minecraftProfile}/java")
 // this prevents stale private classes or service registrations from surviving into
 // a later incremental public build.
 def buildVariant = developerBuild ? 'developer'
-	: (privateBuild ? 'private' : (extraBuild ? 'extra' : 'safe'))
+	: (extraBuild ? 'extra' : 'safe')
 layout.buildDirectory.set(layout.projectDirectory.dir(
 	"build/${minecraftProfile}/${buildVariant}"))
 
-def selectedReleaseVersion = privateApiBuild
-	? project.private_release_version
-	: project.release_version
+def selectedReleaseVersion = project.release_version
 def variantSuffix = developerBuild ? '-developer'
-	: (privateBuild ? '-private' : (extraBuild ? '-extra' : ''))
+	: (extraBuild ? '-extra' : '')
 version = "${selectedReleaseVersion}${variantSuffix}+mc${project.minecraft_version}"
 group = project.maven_group
 
@@ -68,22 +62,10 @@ loom {
 	accessWidenerPath = file("src/main/resources/safariutils.accesswidener")
 }
 
-// Private API sources are opt-in and ignored by Git. Public builds never include
-// them, even when they exist in the developer's working copy.
-if (privateApiBuild) {
-	def privateSource = new File(privateSourceRoot, 'src/main/java')
-	if (!privateSource.isDirectory()) {
-		throw new GradleException("Private API sources requested but ${privateSource} does not exist")
-	}
-	sourceSets.main.java.srcDir(privateSource)
-	sourceSets.main.resources.srcDir(new File(privateSourceRoot, 'src/main/resources'))
-}
+// The key-free backend client is shared. Testing and experimental sync stay isolated.
 if (developerBuild) {
-	def developerSource = new File(privateSourceRoot, 'src/developer/java')
-	if (!developerSource.isDirectory()) {
-		throw new GradleException("Developer sources requested but ${developerSource} does not exist")
-	}
-	sourceSets.main.java.srcDir(developerSource)
+	sourceSets.main.java.srcDir('src/developer/java')
+	sourceSets.main.resources.srcDir('src/developer/resources')
 }
 
 repositories {
@@ -105,7 +87,7 @@ processResources {
 		component_version: selectedReleaseVersion,
 		minecraft_depends: project.minecraft_depends,
 		safe_build: safeBuild,
-		private_build: privateApiBuild,
+		api_build: true,
 		developer_build: developerBuild
 	]
 	inputs.properties expandProps
@@ -125,156 +107,11 @@ java {
 	targetCompatibility = JavaVersion.VERSION_25
 }
 
-// --- Explicit deployment to the configured Prism test instances ------------
-// Keep both supported Developer tasks available and deploy both compatibility profiles.
-def supportedDeveloperProfiles = ['26.1.2', '26.2']
-def deployProfiles = supportedDeveloperProfiles
-def developerBuildTasks = [:]
-def externalPrivateSourceArgument = project.findProperty('privateSourceRoot')
-	? "-PprivateSourceRoot=${privateSourceRoot.absolutePath}" : null
-def nestedGradleCommand = { List<String> arguments ->
-	externalPrivateSourceArgument ? arguments + externalPrivateSourceArgument : arguments
-}
-supportedDeveloperProfiles.each { profileName ->
-	def taskSuffix = profileName.replace('.', '_')
-	def buildTask = tasks.register("buildDeveloper${taskSuffix}", Exec) {
-		description = "Build the ${profileName} Developer jar for local deployment."
-		group = 'fabric'
-		workingDir projectDir
-		commandLine nestedGradleCommand(['cmd', '/c', 'gradlew.bat', 'clean', 'jar',
-			"-PminecraftProfile=${profileName}", '-PdeveloperBuild=true'])
-	}
-	developerBuildTasks[profileName] = buildTask
-}
+apply from: 'gradle/regressions.gradle'
+ext.safariProvenanceRoot = projectDir
+ext.safariProvenanceProfile = minecraftProfile
+ext.safariProvenanceEdition = buildVariant
+ext.safariProvenanceVersion = selectedReleaseVersion
+apply from: 'gradle/provenance.gradle'
 
-def deployConfigSourceValue = project.findProperty('deployConfigSource.26.2')
-def deployConfigTargetValue = project.findProperty('deployConfigTarget.26.2')
-def fileSystemOperations = project.services.get(org.gradle.api.file.FileSystemOperations)
-def deployDestinations = [:]
-def developerJars = [:]
-supportedDeveloperProfiles.each { profileName ->
-	def deployedProfile = new Properties()
-	file("gradle/versions/${profileName}.properties").withInputStream {
-		deployedProfile.load(it)
-	}
-	developerJars[profileName] = file("build/${profileName}/developer/libs/"
-		+ "${project.archives_base_name}-${project.private_release_version}"
-		+ "-developer+mc${deployedProfile.minecraft_version}.jar")
-	def primary = project.findProperty("deployDir.${profileName}")
-	def additional = project.findProperty("deployAdditionalDir.${profileName}")
-	deployDestinations[profileName] = primary
-		? [file(primary)] + (additional ? [file(additional)] : [])
-		: []
-}
-
-tasks.register('DeployBuilds') {
-	description = 'Build and deploy both Developer jars, then mirror the 26.2 SafariUtils config one-way.'
-	group = 'fabric'
-	dependsOn deployProfiles.collect { developerBuildTasks[it] }
-	onlyIf {
-		def missing = deployProfiles.findAll { deployDestinations[it].isEmpty() }
-		if (missing.isEmpty()) return true
-		logger.lifecycle("DeployBuilds skipped: missing deployDir properties for ${missing.join(', ')}")
-		false
-	}
-	doLast {
-		deployProfiles.each { profileName ->
-			def jarFile = developerJars[profileName]
-			if (!jarFile.isFile()) {
-				throw new GradleException("Developer jar was not built: ${jarFile}")
-			}
-			deployDestinations[profileName].each { destination ->
-				if (!destination.isDirectory()) {
-					throw new GradleException("Deploy mods folder does not exist: ${destination}")
-				}
-				def oldJars = destination.listFiles({ dir, name ->
-					name.startsWith('safariutils-') && name.endsWith('.jar')
-				} as FilenameFilter)
-				fileSystemOperations.delete { delete oldJars }
-				fileSystemOperations.copy {
-					from jarFile
-					into destination
-				}
-				logger.lifecycle("DeployBuilds ${profileName} -> ${destination}")
-			}
-		}
-		if (deployConfigSourceValue && deployConfigTargetValue) {
-			def source = file(deployConfigSourceValue)
-			def target = file(deployConfigTargetValue)
-			if (!source.isDirectory()) {
-				throw new GradleException("Main SafariUtils config folder does not exist: ${source}")
-			}
-			fileSystemOperations.sync {
-				from source
-				into target
-			}
-			logger.lifecycle("SafariUtils config mirrored one-way: ${source} -> ${target}")
-		}
-	}
-}
-
-// --- Complete release artifact set -----------------------------------------
-// Nested builds keep every profile/variant in its isolated output directory.
-// Run them sequentially to avoid competing Loom/Gradle workers, then sync only
-// the eight finished jars into one flat release-artifacts folder.
-def releaseVariants = [
-	[key: 'safe', label: 'Safe', arguments: [], suffix: '', privateVersion: false],
-	[key: 'extra', label: 'Extra', arguments: ['-PextraBuild=true'], suffix: '-extra', privateVersion: false],
-	[key: 'private', label: 'Private', arguments: ['-PincludePrivateApi=true'], suffix: '-private', privateVersion: true],
-	[key: 'developer', label: 'Developer', arguments: ['-PdeveloperBuild=true'], suffix: '-developer', privateVersion: true]
-]
-def releaseBuildTasks = []
-def releaseArtifactJars = []
-
-supportedDeveloperProfiles.each { profileName ->
-	def taskSuffix = profileName.replace('.', '_')
-	def artifactProfile = new Properties()
-	file("gradle/versions/${profileName}.properties").withInputStream {
-		artifactProfile.load(it)
-	}
-	releaseVariants.each { variant ->
-		def buildTask
-		if (variant.key == 'developer') {
-			buildTask = developerBuildTasks[profileName]
-		} else {
-			buildTask = tasks.register("build${variant.label}${taskSuffix}", Exec) {
-				description = "Build the ${profileName} ${variant.label} release jar."
-				group = 'fabric'
-				workingDir projectDir
-				commandLine nestedGradleCommand(['cmd', '/c', 'gradlew.bat', 'clean', 'jar',
-					"-PminecraftProfile=${profileName}"] + variant.arguments)
-			}
-		}
-		releaseBuildTasks.add(buildTask)
-		def artifactVersion = variant.privateVersion
-			? project.private_release_version : project.release_version
-		releaseArtifactJars.add(file("build/${profileName}/${variant.key}/libs/"
-			+ "${project.archives_base_name}-${artifactVersion}${variant.suffix}"
-			+ "+mc${artifactProfile.minecraft_version}.jar"))
-	}
-}
-
-for (int index = 1; index < releaseBuildTasks.size(); index++) {
-	def currentBuildTask = releaseBuildTasks[index]
-	def previousBuildTask = releaseBuildTasks[index - 1]
-	currentBuildTask.configure {
-		mustRunAfter previousBuildTask
-	}
-}
-
-tasks.register('BuildArtifacts') {
-	description = 'Build all eight release jars and replace release-artifacts with the current flat set.'
-	group = 'fabric'
-	dependsOn releaseBuildTasks
-	doLast {
-		def missing = releaseArtifactJars.findAll { !it.isFile() }
-		if (!missing.isEmpty()) {
-			throw new GradleException("Release artifacts were not built: ${missing.join(', ')}")
-		}
-		fileSystemOperations.sync {
-			from releaseArtifactJars
-			into file('release-artifacts')
-		}
-		logger.lifecycle("BuildArtifacts wrote ${releaseArtifactJars.size()} current jars to release-artifacts")
-	}
-}
+apply from: 'gradle/distribution.gradle'

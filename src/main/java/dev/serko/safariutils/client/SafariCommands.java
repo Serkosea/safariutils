@@ -37,6 +37,7 @@ public final class SafariCommands {
 	private static final double ENTITY_SCAN_RADIUS = 50.0;
 	/** Close enough that whatever you are stood on is at the top of the list. */
 	private static final double NEARBY_SCAN_RADIUS = 8.0;
+	private static boolean replayPending;
 	private SafariCommands() {
 	}
 
@@ -55,7 +56,7 @@ public final class SafariCommands {
 			.then(statsRoot());
 
 			// Developer builds alone register the diagnostic command tree.
-			if (BuildVersion.DEVELOPER) {
+			if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)) {
 				var debugRoot = ClientCommands.literal("debug")
 				.executes(ctx -> {
 					debug(ctx.getSource());
@@ -75,6 +76,10 @@ public final class SafariCommands {
 				}))
 				.then(ClientCommands.literal("log").executes(ctx -> {
 					logStatus(ctx.getSource());
+					return 1;
+				}))
+				.then(ClientCommands.literal("replay").executes(ctx -> {
+					replay(ctx.getSource());
 					return 1;
 				}))
 				.then(ClientCommands.literal("jointimer").executes(ctx -> {
@@ -185,7 +190,7 @@ public final class SafariCommands {
 		// Hideyho, Hideonwall, Duplico and Hideonfloor draw outside this list, straight
 		// off their own live sightings — see WaypointRenderer — so this count is
 		// everything else: floor drops, walls, mounds, recatch, hard-to-find.
-		report(source, record, "  highlighted " + Markers.collect().size()
+		report(source, record, "  highlighted " + MarkerRegistry.snapshot().markers().size()
 			+ "  (plus hideyho/hideonwall/duplico/hideonfloor, tracked separately)",
 			ChatFormatting.WHITE);
 
@@ -366,6 +371,31 @@ public final class SafariCommands {
 			source.sendFeedback(Component.literal(line).withStyle(ChatFormatting.GRAY));
 		}
 		copyResult(source, status);
+	}
+
+	private static void replay(FabricClientCommandSource source) {
+		if (replayPending) {
+			source.sendFeedback(Component.literal("Diagnostic replay is already running").withStyle(ChatFormatting.GRAY));
+			return;
+		}
+		replayPending = true;
+		var client = Minecraft.getInstance();
+		var connection = client.getConnection();
+		DiagnosticReplay.submitCurrent().thenApply(DiagnosticReplay.Report::display)
+			.whenComplete((report, failure) -> client.execute(() -> {
+				replayPending = false;
+				if (failure != null) OperationalLog.error("REPLAY", failure);
+				if (client.getConnection() != connection || NetworkRuntime.stopping()) return;
+				if (failure != null) {
+					source.sendFeedback(Component.literal("Diagnostic replay could not be completed")
+						.withStyle(ChatFormatting.RED));
+					return;
+				}
+				for (String line : report.stripTrailing().split("\\R")) {
+					source.sendFeedback(Component.literal(line).withStyle(ChatFormatting.GRAY));
+				}
+				copyResult(source, report + '\n');
+			}));
 	}
 
 	/** Reports only hashes needed to verify that every client derives one room identity. */

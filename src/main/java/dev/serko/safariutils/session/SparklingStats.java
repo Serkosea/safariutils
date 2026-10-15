@@ -2,12 +2,17 @@ package dev.serko.safariutils.session;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.Critters;
 import dev.serko.safariutils.io.AtomicFiles;
+import dev.serko.safariutils.io.RecoverySnapshot;
+import dev.serko.safariutils.io.PersistentJson;
 import dev.serko.safariutils.client.OperationalLog;
+import dev.serko.safariutils.client.SafariPaths;
+import dev.serko.safariutils.BuildVersion;
 
-import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,32 +22,87 @@ import java.util.Map;
 /** Persistent lifetime totals, including catches predating saved run history. */
 public final class SparklingStats {
 
-	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+	private static final int CURRENT_SCHEMA = 1;
+	private static final String SCHEMA_KEY = "schemaVersion";
+	private static final Gson GSON = new GsonBuilder().create();
 	private static final long API_PROPAGATION_MILLIS = 10 * 60_000L;
 	private static Data data = new Data();
 	private static int unique;
 	private static int total;
 	private static Path file;
+	private static JsonObject preservedRoot;
+	private static boolean pendingUpgradeBackup;
+	private static boolean pendingVersionBackup;
+	private static boolean writesBlocked;
+	private static final RecoverySnapshot recoverySnapshot = new RecoverySnapshot("safariutils-sparkling-recovery");
 
 	private SparklingStats() {
 	}
 
 	public static void load(Path path) {
 		file = path;
+		preservedRoot = null;
+		pendingUpgradeBackup = false;
+		pendingVersionBackup = false;
+		writesBlocked = false;
+		recoverySnapshot.reset();
 		if (path != null && Files.isRegularFile(path)) {
-			try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-				Data loaded = GSON.fromJson(reader, Data.class);
-				if (loaded != null) data = loaded;
-				if (data.species == null) data.species = new LinkedHashMap<>();
+			try {
+				try {
+					PersistentJson.backupBeforeVersion(path, SafariPaths.sparklingBackups(),
+						"safariutils-sparkling", BuildVersion.releaseVersion());
+				} catch (Exception backupFailed) {
+					pendingVersionBackup = true;
+					OperationalLog.error("SPARKLING_STATS/VERSION_BACKUP", backupFailed);
+				}
+				JsonObject root = JsonParser.parseString(
+					Files.readString(path, StandardCharsets.UTF_8)).getAsJsonObject();
+				int schema = PersistentJson.schema(root, SCHEMA_KEY);
+				if (schema > CURRENT_SCHEMA) {
+					writesBlocked = true;
+					OperationalLog.info("SPARKLING_STATS/FUTURE_SCHEMA",
+						"Sparkling data schema is newer or unrecognized; using it read-only");
+				}
+				if (schema < CURRENT_SCHEMA) {
+					try {
+						PersistentJson.backupBeforeUpgrade(path, SafariPaths.sparklingBackups(),
+							"safariutils-sparkling", CURRENT_SCHEMA);
+					} catch (Exception backupFailed) {
+						pendingUpgradeBackup = true;
+						OperationalLog.error("SPARKLING_STATS/BACKUP", backupFailed);
+					}
+					migrateRoot(root, schema);
+				}
+				Decoded loaded = decodeStore(root);
+				data = loaded.data();
+				writesBlocked |= loaded.rejected() > 0;
+				if (loaded.rejected() > 0) OperationalLog.info("SPARKLING_STATS/PARTIAL",
+					"Recovered readable counters; protected source; rejected=" + loaded.rejected());
+				preservedRoot = root.deepCopy();
+				normalize();
 				rebuildTotals();
+				if (schema < CURRENT_SCHEMA) save();
 				return;
 			} catch (Exception unreadable) {
 				OperationalLog.error("SPARKLING_STATS/LOAD", unreadable);
+				boolean preserved = false;
+				try {
+					Path backup = dev.serko.safariutils.client.SafariPaths.quarantineUnreadableJson(
+						path, dev.serko.safariutils.client.SafariPaths.sparklingBackups(),
+						"safariutils-sparkling");
+					preserved = backup != null;
+					if (backup != null) OperationalLog.info("SPARKLING_STATS/RECOVERY",
+						"Preserved unreadable stats at " + backup.toAbsolutePath());
+				} catch (Exception backupFailed) {
+					OperationalLog.error("SPARKLING_STATS/RECOVERY", backupFailed);
+				}
+				writesBlocked |= !preserved && Files.exists(path);
 			}
 		}
 
 		// Seed the ledger once from every run that was already saved before it existed.
 		data = new Data();
+		preservedRoot = null;
 		unique = 0;
 		total = 0;
 		for (RunRecord run : RunHistory.runs()) {
@@ -82,7 +142,9 @@ public final class SparklingStats {
 	}
 
 	public static int count(Critter critter) {
-		return critter == null ? 0 : Math.max(0, data.species.getOrDefault(critter.name(), 0));
+		if (critter == null) return 0;
+		Integer count = data.species.get(critter.name());
+		return count == null ? 0 : Math.max(0, count);
 	}
 
 	public static int unique() {
@@ -147,10 +209,34 @@ public final class SparklingStats {
 	}
 
 	private static void increment(String species) {
-		int previous = Math.max(0, data.species.getOrDefault(species, 0));
+		Integer stored = data.species.get(species);
+		int previous = stored == null ? 0 : Math.max(0, stored);
 		data.species.put(species, previous + 1);
 		if (previous == 0) unique++;
 		total++;
+	}
+
+	private static void normalize() {
+		if (data.schemaVersion <= CURRENT_SCHEMA) data.schemaVersion = CURRENT_SCHEMA;
+		if (data.species == null) data.species = new LinkedHashMap<>();
+		else data.species.entrySet().removeIf(entry -> entry.getKey() == null
+			|| entry.getKey().isBlank() || entry.getValue() == null || entry.getValue() <= 0);
+		data.rainbowFeathers = Math.max(0, data.rainbowFeathers);
+		data.importedDuplicates = Math.max(-1, data.importedDuplicates);
+		data.importedSetDuplicates = Math.max(-1, data.importedSetDuplicates);
+		data.apiComparisonNotBefore = Math.max(0L, data.apiComparisonNotBefore);
+	}
+
+	/** Ordered schema steps; append a case whenever the persisted model changes. */
+	private static void migrateRoot(JsonObject root, int version) {
+		while (version < CURRENT_SCHEMA) {
+			switch (version) {
+				case 0 -> { /* Schema one adds explicit versioning without changing totals. */ }
+				default -> throw new IllegalStateException(
+					"Missing Sparkling-data migration from schema " + version);
+			}
+			root.addProperty(SCHEMA_KEY, ++version);
+		}
 	}
 
 	private static void rebuildTotals() {
@@ -165,14 +251,95 @@ public final class SparklingStats {
 
 	private static void save() {
 		if (file == null) return;
+		if (writesBlocked) {
+			try {
+				recoverySnapshot.write(SafariPaths.sparklingBackups(), GSON.toJson(data));
+				OperationalLog.info("SPARKLING_STATS/RECOVERY_SAVED",
+					"Saved working counters separately; protected source unchanged");
+			} catch (Exception failed) {
+				OperationalLog.error("SPARKLING_STATS/RECOVERY_SAVE", failed);
+			}
+			return;
+		}
 		try {
-			AtomicFiles.writeString(file, GSON.toJson(data));
+			if (pendingVersionBackup && Files.isRegularFile(file)) {
+				PersistentJson.backupBeforeVersion(file, SafariPaths.sparklingBackups(),
+					"safariutils-sparkling", BuildVersion.releaseVersion());
+				pendingVersionBackup = false;
+			}
+			if (pendingUpgradeBackup) {
+				PersistentJson.backupBeforeUpgrade(file, SafariPaths.sparklingBackups(),
+					"safariutils-sparkling", CURRENT_SCHEMA);
+				pendingUpgradeBackup = false;
+			}
+			JsonObject written = PersistentJson.mergeRecord(preservedRoot,
+				GSON.toJsonTree(data).getAsJsonObject());
+			AtomicFiles.writeString(file, GSON.toJson(written));
+			preservedRoot = written;
 		} catch (Exception failed) {
 			OperationalLog.error("SPARKLING_STATS/SAVE", failed);
 		}
 	}
 
-	private static final class Data {
+	/** Startup invariant for schema and future-field preservation. */
+	public static void verifyPersistenceModel() {
+		Data probe = new Data();
+		probe.species.put("Cavernfish", 2);
+		probe.rainbowFeathers = 7;
+		JsonObject future = new JsonObject();
+		future.addProperty(SCHEMA_KEY, CURRENT_SCHEMA + 2);
+		future.addProperty("futureSparklingValue", "keep-me");
+		JsonObject encoded = PersistentJson.mergeRecord(future,
+			GSON.toJsonTree(probe).getAsJsonObject());
+		// Preserve a future schema just as a newer file would carry it in Data.
+		encoded.addProperty(SCHEMA_KEY, CURRENT_SCHEMA + 2);
+		Data decoded = GSON.fromJson(encoded, Data.class);
+		if (decoded == null || decoded.species.getOrDefault("Cavernfish", 0) != 2
+				|| decoded.rainbowFeathers != 7
+				|| !"keep-me".equals(encoded.get("futureSparklingValue").getAsString())) {
+			throw new IllegalStateException("Sparkling data did not round-trip losslessly");
+		}
+	}
+
+	/** Decode counters independently; callers must protect any partially readable source. */
+	static Decoded decodeStore(JsonObject root) {
+		JsonObject safe = new JsonObject();
+		safe.addProperty(SCHEMA_KEY, CURRENT_SCHEMA);
+		int rejected = 0;
+		for (String field : java.util.List.of("rainbowFeathers", "importedDuplicates",
+				"importedSetDuplicates", "apiComparisonNotBefore")) {
+			if (!root.has(field)) continue;
+			try {
+				long minimum = field.startsWith("imported") ? -1 : 0;
+				long maximum = field.equals("apiComparisonNotBefore") ? Long.MAX_VALUE : Integer.MAX_VALUE;
+				safe.addProperty(field, counter(root.get(field), minimum, maximum));
+			} catch (RuntimeException invalid) { rejected++; }
+		}
+		JsonObject species = new JsonObject();
+		if (root.has("species")) {
+			if (!root.get("species").isJsonObject()) rejected++;
+			else for (var entry : root.getAsJsonObject("species").entrySet()) {
+				try {
+					if (entry.getKey().isBlank()) throw new IllegalArgumentException();
+					species.addProperty(entry.getKey(), counter(entry.getValue(), 0, Integer.MAX_VALUE));
+				} catch (RuntimeException invalid) { rejected++; }
+			}
+		}
+		safe.add("species", species);
+		return new Decoded(GSON.fromJson(safe, Data.class), rejected);
+	}
+
+	private static long counter(com.google.gson.JsonElement value, long minimum, long maximum) {
+		if (value == null || !value.isJsonPrimitive()) throw new IllegalArgumentException();
+		long count = value.getAsBigDecimal().longValueExact();
+		if (count < minimum || count > maximum) throw new IllegalArgumentException();
+		return count;
+	}
+
+	record Decoded(Data data, int rejected) { }
+
+	static final class Data {
+		int schemaVersion = CURRENT_SCHEMA;
 		Map<String, Integer> species = new LinkedHashMap<>();
 		int rainbowFeathers;
 		int importedDuplicates = -1;

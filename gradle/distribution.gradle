@@ -1,0 +1,159 @@
+// --- Explicit deployment to the configured Prism test instances ------------
+// Keep both supported Developer tasks available and deploy both compatibility profiles.
+def supportedDeveloperProfiles = ['26.1.2', '26.2']
+def deployProfiles = supportedDeveloperProfiles
+def developerBuildTasks = [:]
+// Incremental verification is the normal path. An explicit clean build remains available.
+def verificationTasks = project.findProperty('cleanArtifacts')?.toString()?.toBoolean()
+	? ['clean', 'check'] : ['check']
+def nestedGradleCommand = { List<String> arguments ->
+	def windows = System.getProperty('os.name').toLowerCase().contains('windows')
+	(windows ? ['cmd', '/c', 'gradlew.bat'] : ['./gradlew']) + arguments
+}
+supportedDeveloperProfiles.each { profileName ->
+	def taskSuffix = profileName.replace('.', '_')
+	def buildTask = tasks.register("buildDeveloper${taskSuffix}", Exec) {
+		description = "Build the ${profileName} Developer jar for local deployment."
+		group = 'fabric'
+		workingDir projectDir
+		commandLine nestedGradleCommand(verificationTasks + [
+			"-PminecraftProfile=${profileName}", '-PdeveloperBuild=true'])
+	}
+	developerBuildTasks[profileName] = buildTask
+}
+
+def deployConfigSourceValue = project.findProperty('deployConfigSource.26.2')
+def deployConfigTargetValue = project.findProperty('deployConfigTarget.26.2')
+def fileSystemOperations = project.services.get(org.gradle.api.file.FileSystemOperations)
+def deployDestinations = [:]
+def developerJars = [:]
+supportedDeveloperProfiles.each { profileName ->
+	def deployedProfile = new Properties()
+	file("gradle/versions/${profileName}.properties").withInputStream {
+		deployedProfile.load(it)
+	}
+	developerJars[profileName] = file("build/${profileName}/developer/libs/"
+		+ "${project.archives_base_name}-${project.release_version}"
+		+ "-developer+mc${deployedProfile.minecraft_version}.jar")
+	def primary = project.findProperty("deployDir.${profileName}")
+	def additional = project.findProperty("deployAdditionalDir.${profileName}")
+	deployDestinations[profileName] = primary
+		? [file(primary)] + (additional ? [file(additional)] : [])
+		: []
+}
+
+tasks.register('DeployBuilds') {
+	description = 'Build and deploy both Developer jars, then mirror the 26.2 SafariUtils config one-way.'
+	group = 'fabric'
+	dependsOn deployProfiles.collect { developerBuildTasks[it] }
+	onlyIf {
+		def missing = deployProfiles.findAll { deployDestinations[it].isEmpty() }
+		if (missing.isEmpty()) return true
+		logger.lifecycle("DeployBuilds skipped: missing deployDir properties for ${missing.join(', ')}")
+		false
+	}
+	doLast {
+		deployProfiles.each { profileName ->
+			def jarFile = developerJars[profileName]
+			if (!jarFile.isFile()) {
+				throw new GradleException("Developer jar was not built: ${jarFile}")
+			}
+			deployDestinations[profileName].each { destination ->
+				if (!destination.isDirectory()) {
+					throw new GradleException("Deploy mods folder does not exist: ${destination}")
+				}
+				def oldJars = destination.listFiles({ dir, name ->
+					name.startsWith('safariutils-') && name.endsWith('.jar')
+				} as FilenameFilter)
+				fileSystemOperations.delete { delete oldJars }
+				fileSystemOperations.copy {
+					from jarFile
+					into destination
+				}
+				logger.lifecycle("DeployBuilds ${profileName} -> ${destination}")
+			}
+		}
+		if (deployConfigSourceValue && deployConfigTargetValue) {
+			def source = file(deployConfigSourceValue)
+			def target = file(deployConfigTargetValue)
+			if (!source.isDirectory()) {
+				throw new GradleException("Main SafariUtils config folder does not exist: ${source}")
+			}
+			fileSystemOperations.sync {
+				from source
+				into target
+			}
+			logger.lifecycle("SafariUtils config mirrored one-way: ${source} -> ${target}")
+		}
+	}
+}
+
+// --- Complete release artifact set -----------------------------------------
+// Nested builds keep every profile/variant in its isolated output directory.
+// Run them sequentially to avoid competing Loom/Gradle workers, then sync only
+// the six verified jars into one flat release-artifacts folder.
+def releaseVariants = [
+	[key: 'safe', label: 'Safe', arguments: [], suffix: ''],
+	[key: 'extra', label: 'Extra', arguments: ['-PextraBuild=true'], suffix: '-extra'],
+	[key: 'developer', label: 'Developer', arguments: ['-PdeveloperBuild=true'], suffix: '-developer']
+]
+def releaseBuildTasks = []
+def releaseArtifactJars = []
+
+supportedDeveloperProfiles.each { profileName ->
+	def taskSuffix = profileName.replace('.', '_')
+	def artifactProfile = new Properties()
+	file("gradle/versions/${profileName}.properties").withInputStream {
+		artifactProfile.load(it)
+	}
+	releaseVariants.each { variant ->
+		def buildTask
+		if (variant.key == 'developer') {
+			buildTask = developerBuildTasks[profileName]
+		} else {
+			buildTask = tasks.register("build${variant.label}${taskSuffix}", Exec) {
+				description = "Build the ${profileName} ${variant.label} release jar."
+				group = 'fabric'
+				workingDir projectDir
+				commandLine nestedGradleCommand(verificationTasks + [
+					"-PminecraftProfile=${profileName}"] + variant.arguments)
+			}
+		}
+		releaseBuildTasks.add(buildTask)
+		def artifactVersion = project.release_version
+		releaseArtifactJars.add(file("build/${profileName}/${variant.key}/libs/"
+			+ "${project.archives_base_name}-${artifactVersion}${variant.suffix}"
+			+ "+mc${artifactProfile.minecraft_version}.jar"))
+	}
+}
+
+for (int index = 1; index < releaseBuildTasks.size(); index++) {
+	def currentBuildTask = releaseBuildTasks[index]
+	def previousBuildTask = releaseBuildTasks[index - 1]
+	currentBuildTask.configure {
+		mustRunAfter previousBuildTask
+	}
+}
+
+def verifyBuilds = tasks.register('VerifyBuilds') {
+	description = 'Verify all six profile/edition jars without collecting or deploying artifacts.'
+	group = 'verification'
+	dependsOn releaseBuildTasks
+}
+
+tasks.register('BuildArtifacts') {
+	description = 'Build six jars: Normal, Extra and Developer for both Minecraft profiles.'
+	group = 'fabric'
+	dependsOn verifyBuilds
+	doLast {
+		def missing = releaseArtifactJars.findAll { !it.isFile() }
+		if (!missing.isEmpty()) {
+			throw new GradleException("Release artifacts were not built: ${missing.join(', ')}")
+		}
+		fileSystemOperations.sync {
+			from releaseArtifactJars
+			into file('release-artifacts')
+		}
+		logger.lifecycle("BuildArtifacts wrote ${releaseArtifactJars.size()} current jars to release-artifacts")
+	}
+}

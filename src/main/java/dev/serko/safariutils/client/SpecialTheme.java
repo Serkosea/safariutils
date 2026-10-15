@@ -1,5 +1,7 @@
 package dev.serko.safariutils.client;
 
+import dev.serko.safariutils.state.MonotonicTime;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -94,7 +96,7 @@ public final class SpecialTheme {
 	}
 
 	private static int resolveMode() {
-		if (System.currentTimeMillis() < temporaryConstellationUntil) return CONSTELLATION;
+		if (MonotonicTime.nowMillis() < temporaryConstellationUntil) return CONSTELLATION;
 		SafariConfig.AdvancedConfig advanced = ConfigManager.get().advanced;
 		if (advanced.specialTheme == CONSTELLATION && advanced.constellationThemeUnlocked) {
 			return CONSTELLATION;
@@ -104,7 +106,7 @@ public final class SpecialTheme {
 
 	/** Replays the temporary effect and permanently exposes its picker option. */
 	public static void completeConstellation() {
-		temporaryConstellationUntil = System.currentTimeMillis() + CONSTELLATION_DURATION_MS;
+		temporaryConstellationUntil = MonotonicTime.nowMillis() + CONSTELLATION_DURATION_MS;
 		resolvedModeFrame = Long.MIN_VALUE;
 		SafariConfig.AdvancedConfig advanced = ConfigManager.get().advanced;
 		if (!advanced.constellationThemeUnlocked) {

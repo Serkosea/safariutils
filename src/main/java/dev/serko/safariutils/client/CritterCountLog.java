@@ -17,7 +17,7 @@ public final class CritterCountLog {
 	/** Records new peaks once per shared entity scan. */
 	public static void tick() {
 		if (!SafariLocation.inSafari()) return;
-		long scan = CritterEntities.scannedAt();
+		long scan = CritterEntities.scanRevision();
 		if (scan == lastScan) return;
 		lastScan = scan;
 

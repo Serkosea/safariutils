@@ -7,21 +7,35 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.serko.safariutils.BuildVersion;
 import dev.serko.safariutils.io.AtomicFiles;
+import dev.serko.safariutils.io.PersistentJson;
+import dev.serko.safariutils.io.ImportBackup;
+import dev.serko.safariutils.io.RecoverySnapshot;
 import net.minecraft.client.gui.screens.Screen;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
 /** Owns the dependency-free settings model, migration, persistence, and screen. */
 public final class ConfigManager {
+	/** Append one migration step whenever persisted setting structure changes. */
+	public static final int CURRENT_SETTINGS_SCHEMA = 4;
 	private static final Gson GSON = new GsonBuilder()
 		.excludeFieldsWithoutExposeAnnotation().setPrettyPrinting().create();
 	private static SafariConfig config;
+	/** Migrated source tree retained so unknown and edition-specific keys survive saves. */
+	private static JsonObject preservedSettings;
 	private static Screen ourScreen;
 	private static boolean wasOpen;
 	/** Invalidates render-derived caches when a live setting changes between game ticks. */
 	private static long revision;
+	/** Never replace an unreadable source unless it was first preserved successfully. */
+	private static boolean writesBlocked;
+	/** A failed release-boundary snapshot is retried before any later write. */
+	private static boolean pendingVersionBackup;
+	private static final RecoverySnapshot RECOVERY = new RecoverySnapshot("safariutils-settings-working");
 
 	private ConfigManager() {
 	}
@@ -38,23 +52,33 @@ public final class ConfigManager {
 	}
 
 	static JsonObject settingsJson() {
-		return GSON.toJsonTree(get()).getAsJsonObject();
+		return mergedSettingsJson(get());
 	}
 
 	/** Parses and migrates an imported copy without changing live settings. */
 	static SafariConfig validateImported(JsonObject root) {
+		PersistentJson.requireSupportedSchema(root, "settingsSchemaVersion", CURRENT_SETTINGS_SCHEMA);
 		SafariConfig imported = parseSettings(root);
 		if (imported == null) throw new IllegalArgumentException("Settings were empty");
 		return imported;
 	}
 
 	/** Replaces settings only after the transfer layer has validated and backed them up. */
-	static synchronized void importSettings(JsonObject root) throws IOException {
+	static synchronized Path importSettings(JsonObject root) throws IOException {
+		PersistentJson.requireSupportedSchema(root, "settingsSchemaVersion", CURRENT_SETTINGS_SCHEMA);
 		SafariConfig imported = parseSettings(root);
 		if (imported == null) throw new IllegalArgumentException("Settings were empty");
-		AtomicFiles.writeString(SafariPaths.settings(), GSON.toJson(imported));
+		JsonObject merged = mergedSettingsJson(imported, root);
+		Path backup = ImportBackup.preserve(SafariPaths.settings(), SafariPaths.settingsBackups(),
+			GSON.toJson(settingsJson()));
+		AtomicFiles.writeString(SafariPaths.settings(), GSON.toJson(merged));
+		preservedSettings = merged;
 		config = imported;
+		writesBlocked = false;
+		pendingVersionBackup = false;
+		RECOVERY.reset();
 		revision++;
+		return backup;
 	}
 
 	public static long revision() {
@@ -68,31 +92,350 @@ public final class ConfigManager {
 
 	private static SafariConfig load() {
 		Path path = SafariPaths.settings();
+		preservedSettings = null;
+		writesBlocked = false;
+		pendingVersionBackup = false;
+		RECOVERY.reset();
 		if (!Files.isRegularFile(path)) return new SafariConfig();
 		try {
-			JsonObject root = JsonParser.parseString(Files.readString(path)).getAsJsonObject();
+			String saved = Files.readString(path);
+			try {
+				backupBeforeVersionLoad(path);
+			} catch (IOException backupFailed) {
+				// A backup problem must never prevent a valid settings file from loading.
+				// It does, however, prevent this version from rewriting it until a later
+				// save can successfully preserve the untouched source.
+				pendingVersionBackup = true;
+				OperationalLog.error("CONFIG/BACKUP", backupFailed);
+			}
+			JsonObject root = JsonParser.parseString(saved).getAsJsonObject();
+			if (PersistentJson.schema(root, "settingsSchemaVersion") > CURRENT_SETTINGS_SCHEMA) {
+				writesBlocked = true;
+				OperationalLog.info("CONFIG/FUTURE_SCHEMA",
+					"Settings schema is newer or unrecognized; using them read-only");
+			}
 			SafariConfig loaded = parseSettings(root);
+			if (loaded != null) preservedSettings = root.deepCopy();
 			return loaded == null ? new SafariConfig() : loaded;
 		} catch (RuntimeException | IOException malformed) {
 			OperationalLog.error("CONFIG/LOAD", malformed);
+			boolean preserved = false;
+			try {
+				Path backup = SafariPaths.quarantineUnreadableJson(path,
+					SafariPaths.settingsBackups(), "safariutils-settings");
+				preserved = backup != null;
+				if (backup != null) OperationalLog.info("CONFIG/RECOVERY",
+					"Preserved unreadable settings at " + backup.toAbsolutePath());
+			} catch (IOException backupFailed) {
+				OperationalLog.error("CONFIG/RECOVERY", backupFailed);
+			}
+			writesBlocked |= !preserved && Files.exists(path);
 			return new SafariConfig();
 		}
 	}
 
+	/**
+	 * Keeps one untouched settings snapshot per SafariUtils version before that
+	 * version can migrate, normalize, or save the file. Existing snapshots are
+	 * never replaced, so a bad update remains recoverable even after relaunching.
+	 */
+	private static void backupBeforeVersionLoad(Path source) throws IOException {
+		PersistentJson.backupBeforeVersion(source, SafariPaths.settingsBackups(),
+			"safariutils-settings", BuildVersion.releaseVersion());
+	}
+
 	private static SafariConfig parseSettings(JsonObject root) {
-		migrateBannerPlayback(root);
-		migrateSparklingCatchIntensity(root);
-		migrateSafeModeOptions(root);
-		migrateTicketTradingProfiles(root);
+		migrateSettings(root);
 		SafariConfig loaded = GSON.fromJson(root, SafariConfig.class);
 		if (loaded == null) return null;
+		normalizeCategories(loaded);
 		TicketTrading.sanitizeSettings(loaded.sparkling);
+		normalizeSavedAlertPresets(loaded.sparkling);
 		if (loaded.sparkling.sparklingUniqueHitboxColours) {
 			loaded.display.uniqueHitboxColours = true;
 			loaded.sparkling.sparklingUniqueHitboxColours = false;
 		}
 		resetSessionOptions(loaded);
 		return loaded;
+	}
+
+	/**
+	 * Runs ordered, one-time migrations. Existing unversioned files are schema
+	 * zero; future migrations append another case and increment the current
+	 * version without changing or re-running earlier steps.
+	 */
+	private static void migrateSettings(JsonObject root) {
+		int version = PersistentJson.schema(root, "settingsSchemaVersion");
+		if (version > CURRENT_SETTINGS_SCHEMA) return;
+		while (version < CURRENT_SETTINGS_SCHEMA) {
+			switch (version) {
+				case 0 -> migrateLegacySettings(root);
+				case 1 -> migrateAutomaticPartySync(root);
+				case 2 -> migrateTicketTradingRoles(root);
+				case 3 -> migrateTicketTradingGuestMembership(root);
+				default -> throw new IllegalStateException("Missing settings migration from schema " + version);
+			}
+			version++;
+			root.addProperty("settingsSchemaVersion", version);
+		}
+	}
+
+	/** Consolidates every pre-schema migration into the schema-zero upgrade. */
+	private static void migrateLegacySettings(JsonObject root) {
+		migrateBannerPlayback(root);
+		migrateSparklingCatchIntensity(root);
+		migrateSafeModeOptions(root);
+		migrateTicketTradingProfiles(root);
+	}
+
+	/** Removes the retired opt-in flag now that synchronization is automatic and network-only. */
+	private static void migrateAutomaticPartySync(JsonObject root) {
+		if (root.has("advanced") && root.get("advanced").isJsonObject()) {
+			root.getAsJsonObject("advanced").remove("enablePartySync");
+		}
+	}
+
+	/**
+	 * Overlays every known value onto the migrated source tree while retaining
+	 * unknown keys. This prevents settings from newer versions or other editions
+	 * from disappearing merely because this build does not currently expose them.
+	 */
+	private static JsonObject mergedSettingsJson(SafariConfig value) {
+		return mergedSettingsJson(value, preservedSettings);
+	}
+
+	private static JsonObject mergedSettingsJson(SafariConfig value, JsonObject source) {
+		return PersistentJson.merge(source, GSON.toJsonTree(value).getAsJsonObject());
+	}
+
+	/** Explicit JSON nulls must behave like absent categories, not poison later reads. */
+	private static void normalizeCategories(SafariConfig loaded) {
+		fillNullFields(loaded, new SafariConfig());
+		normalizeAnnotatedValues(loaded);
+	}
+
+	/** Keeps hand-edited/imported picker, mask, and slider values inside declared bounds. */
+	private static void normalizeAnnotatedValues(Object target) {
+		for (var field : target.getClass().getFields()) {
+			if (java.lang.reflect.Modifier.isStatic(field.getModifiers())
+				|| field.getAnnotation(com.google.gson.annotations.Expose.class) == null) continue;
+			try {
+				Object value = field.get(target);
+				if (value != null && field.getType().getEnclosingClass() == SafariConfig.class) {
+					normalizeAnnotatedValues(value);
+				}
+				SettingChoice choice = field.getAnnotation(SettingChoice.class);
+				if (choice != null && field.getType() == int.class && choiceCount(field, choice) > 0) {
+					int choices = choiceCount(field, choice);
+					field.setInt(target, Math.clamp(field.getInt(target), 0, choices - 1));
+				}
+				SettingRange range = field.getAnnotation(SettingRange.class);
+				if (range != null) clampRange(target, field, range);
+				SettingMultiChoice multi = field.getAnnotation(SettingMultiChoice.class);
+				if (multi != null) clampMask(target, field, multi);
+			} catch (IllegalAccessException impossible) {
+				throw new IllegalStateException("Could not validate settings field " + field.getName(),
+					impossible);
+			}
+		}
+	}
+
+	private static int choiceCount(Field field, SettingChoice choice) {
+		return AlertSounds.isChoiceSetting(field.getName())
+			? AlertSounds.choiceCount() : choice.values().length;
+	}
+
+	/**
+	 * Startup invariant covering every settings control. It catches a missing
+	 * {@code @Expose}, an incorrect picker bound, or a migration/sanitizer that
+	 * changes current-schema values before a release can silently rewrite users'
+	 * files.
+	 */
+	public static void verifyPersistenceModel() {
+		SafariConfig probe = new SafariConfig();
+		exercisePersistedSettings(probe, "settings");
+		JsonObject expected = GSON.toJsonTree(probe).getAsJsonObject();
+		SafariConfig decoded = parseSettings(expected.deepCopy());
+		JsonObject actual = GSON.toJsonTree(decoded).getAsJsonObject();
+		if (!expected.equals(actual)) {
+			throw new IllegalStateException("Settings persistence changed current values at "
+				+ firstDifference(expected, actual, "settings"));
+		}
+
+		// Exercise the real update path: unversioned settings gain a schema marker,
+		// while unknown top-level and nested data must survive untouched.
+		JsonObject legacy = expected.deepCopy();
+		legacy.remove("settingsSchemaVersion");
+		legacy.addProperty("futureTopLevelSetting", "preserve-me");
+		legacy.getAsJsonObject("display").addProperty("futureDisplaySetting", 73);
+		SafariConfig migrated = parseSettings(legacy);
+		JsonObject migratedKnown = GSON.toJsonTree(migrated).getAsJsonObject();
+		if (!expected.equals(migratedKnown)) {
+			throw new IllegalStateException("Legacy settings migration changed a value at "
+				+ firstDifference(expected, migratedKnown, "settings"));
+		}
+		JsonObject merged = mergedSettingsJson(migrated, legacy);
+		if (!"preserve-me".equals(merged.get("futureTopLevelSetting").getAsString())
+				|| merged.getAsJsonObject("display").get("futureDisplaySetting").getAsInt() != 73) {
+			throw new IllegalStateException("Unknown settings were not preserved across save");
+		}
+	}
+
+	private static void exercisePersistedSettings(Object target, String path) {
+		for (Field field : target.getClass().getFields()) {
+			if (Modifier.isStatic(field.getModifiers())) continue;
+			boolean setting = field.isAnnotationPresent(SettingToggle.class)
+				|| field.isAnnotationPresent(SettingChoice.class)
+				|| field.isAnnotationPresent(SettingRange.class)
+				|| field.isAnnotationPresent(SettingMultiChoice.class)
+				|| field.isAnnotationPresent(SettingText.class)
+				|| field.isAnnotationPresent(SettingColor.class);
+			boolean exposed = field.isAnnotationPresent(com.google.gson.annotations.Expose.class);
+			boolean sessionOnly = Modifier.isTransient(field.getModifiers());
+			if (setting && !exposed && !sessionOnly) {
+				throw new IllegalStateException("Settings control is not persisted: "
+					+ path + "." + field.getName());
+			}
+			if (!exposed) continue;
+			try {
+				Object value = field.get(target);
+				if (value != null && field.getType().getEnclosingClass() == SafariConfig.class) {
+					exercisePersistedSettings(value, path + "." + field.getName());
+					continue;
+				}
+				if (field.isAnnotationPresent(SettingToggle.class) && field.getType() == boolean.class) {
+					field.setBoolean(target, !field.getBoolean(target));
+				}
+				SettingChoice choice = field.getAnnotation(SettingChoice.class);
+				if (choice != null && field.getType() == int.class && choiceCount(field, choice) > 0) {
+					field.setInt(target, choiceCount(field, choice) - 1);
+				}
+				SettingRange range = field.getAnnotation(SettingRange.class);
+				if (range != null) setRangeProbe(target, field, range);
+				SettingMultiChoice multi = field.getAnnotation(SettingMultiChoice.class);
+				if (multi != null) setMaskProbe(target, field, multi);
+				if (field.isAnnotationPresent(SettingText.class) && field.getType() == String.class) {
+					field.set(target, "Persistence <CRITTER> <BIOME> Test");
+				}
+				if (field.isAnnotationPresent(SettingColor.class) && field.getType() == String.class) {
+					field.set(target, "255:17:34:51:68");
+				}
+			} catch (IllegalAccessException impossible) {
+				throw new IllegalStateException("Could not exercise settings field "
+					+ path + "." + field.getName(), impossible);
+			}
+		}
+	}
+
+	private static void setRangeProbe(Object target, Field field, SettingRange range)
+			throws IllegalAccessException {
+		if (field.getType() == int.class) field.setInt(target, Math.round(range.maxValue()));
+		else if (field.getType() == float.class) field.setFloat(target, range.maxValue());
+		else if (field.getType() == double.class) field.setDouble(target, range.maxValue());
+	}
+
+	private static void setMaskProbe(Object target, Field field, SettingMultiChoice multi)
+			throws IllegalAccessException {
+		int[] bits = multi.bits();
+		int count = multi.critters() ? dev.serko.safariutils.data.Critters.total()
+			: bits.length > 0 ? bits.length : multi.values().length;
+		long mask = 0L;
+		for (int index = 0; index < count; index++) {
+			int bit = bits.length > index ? bits[index] : index;
+			if (bit >= 0 && bit < Long.SIZE) mask |= 1L << bit;
+		}
+		if (field.getType() == long.class) field.setLong(target, mask);
+		else if (field.getType() == int.class) field.setInt(target, (int) mask);
+	}
+
+	private static String firstDifference(com.google.gson.JsonElement expected,
+			com.google.gson.JsonElement actual, String path) {
+		if (java.util.Objects.equals(expected, actual)) return path;
+		if (expected == null || actual == null || expected.getClass() != actual.getClass()) return path;
+		if (expected.isJsonObject()) {
+			java.util.Set<String> keys = new java.util.TreeSet<>();
+			keys.addAll(expected.getAsJsonObject().keySet());
+			keys.addAll(actual.getAsJsonObject().keySet());
+			for (String key : keys) {
+				var left = expected.getAsJsonObject().get(key);
+				var right = actual.getAsJsonObject().get(key);
+				if (!java.util.Objects.equals(left, right)) {
+					return firstDifference(left, right, path + "." + key);
+				}
+			}
+		}
+		if (expected.isJsonArray()) {
+			int size = Math.max(expected.getAsJsonArray().size(), actual.getAsJsonArray().size());
+			for (int index = 0; index < size; index++) {
+				var left = index < expected.getAsJsonArray().size()
+					? expected.getAsJsonArray().get(index) : null;
+				var right = index < actual.getAsJsonArray().size()
+					? actual.getAsJsonArray().get(index) : null;
+				if (!java.util.Objects.equals(left, right)) {
+					return firstDifference(left, right, path + "[" + index + "]");
+				}
+			}
+		}
+		return path;
+	}
+
+	private static void clampRange(Object target, java.lang.reflect.Field field, SettingRange range)
+			throws IllegalAccessException {
+		if (field.getType() == int.class) {
+			field.setInt(target, Math.clamp(field.getInt(target),
+				Math.round(range.minValue()), Math.round(range.maxValue())));
+		} else if (field.getType() == float.class) {
+			field.setFloat(target, Math.clamp(field.getFloat(target), range.minValue(), range.maxValue()));
+		} else if (field.getType() == double.class) {
+			field.setDouble(target, Math.clamp(field.getDouble(target),
+				(double) range.minValue(), (double) range.maxValue()));
+		}
+	}
+
+	private static void clampMask(Object target, java.lang.reflect.Field field, SettingMultiChoice multi)
+			throws IllegalAccessException {
+		int[] declaredBits = multi.bits();
+		int count = multi.critters() ? dev.serko.safariutils.data.Critters.total()
+			: declaredBits.length > 0 ? declaredBits.length : multi.values().length;
+		if (count <= 0) return;
+		long allowed = 0L;
+		for (int index = 0; index < count; index++) {
+			int bit = declaredBits.length > index ? declaredBits[index] : index;
+			if (bit >= 0 && bit < Long.SIZE) allowed |= 1L << bit;
+		}
+		if (field.getType() == long.class) field.setLong(target, field.getLong(target) & allowed);
+		else if (field.getType() == int.class) field.setInt(target,
+			(int) (Integer.toUnsignedLong(field.getInt(target)) & allowed));
+	}
+
+	/** Restores defaults for explicit JSON nulls at every persisted config level. */
+	private static void fillNullFields(Object target, Object defaults) {
+		for (var field : target.getClass().getFields()) {
+			if (java.lang.reflect.Modifier.isStatic(field.getModifiers())
+				|| field.getAnnotation(com.google.gson.annotations.Expose.class) == null) continue;
+			try {
+				Object value = field.get(target);
+				Object fallback = field.get(defaults);
+				if (value == null) {
+					field.set(target, fallback);
+					continue;
+				}
+				if (field.getType().getEnclosingClass() == SafariConfig.class) {
+					fillNullFields(value, fallback);
+				}
+			} catch (IllegalAccessException impossible) {
+				throw new IllegalStateException("Could not normalize settings field " + field.getName(),
+					impossible);
+			}
+		}
+	}
+
+	private static void normalizeSavedAlertPresets(SafariConfig.SparklingConfig sparkling) {
+		sparkling.customAlertSavedPresets.removeIf(java.util.Objects::isNull);
+		for (SafariConfig.SavedAlertPreset preset : sparkling.customAlertSavedPresets) {
+			if (preset.name == null || preset.name.isBlank()) preset.name = "Custom Alert";
+			if (preset.recipe == null) preset.recipe = "";
+		}
 	}
 
 	/** Converts the former three inline names into reusable profiles without changing behavior. */
@@ -121,6 +464,118 @@ public final class ConfigManager {
 			sparkling.addProperty("ticketTradingSlot" + index, username);
 		}
 		sparkling.add("ticketTradingProfiles", profiles);
+	}
+
+	/**
+	 * Converts the former active/backup slots and combined Sparkling flag into
+	 * independent host and guest roles. This must operate on JSON before model
+	 * validation so loading current-schema settings is free of side effects.
+	 */
+	private static void migrateTicketTradingRoles(JsonObject root) {
+		if (!root.has("sparkling") || !root.get("sparkling").isJsonObject()) return;
+		JsonObject sparkling = root.getAsJsonObject("sparkling");
+		int roleVersion = 0;
+		if (sparkling.has("ticketTradingRolesVersion")) {
+			try {
+				roleVersion = Math.max(0, sparkling.get("ticketTradingRolesVersion").getAsInt());
+			} catch (RuntimeException ignored) {
+				roleVersion = 0;
+			}
+		}
+		if (roleVersion >= 1) return;
+
+		JsonArray queue = sparkling.has("ticketTradingHostQueue")
+			&& sparkling.get("ticketTradingHostQueue").isJsonArray()
+			? sparkling.getAsJsonArray("ticketTradingHostQueue") : new JsonArray();
+		java.util.Set<String> assigned = new java.util.LinkedHashSet<>();
+		JsonArray normalizedQueue = new JsonArray();
+		for (var entry : queue) {
+			if (!entry.isJsonPrimitive()) continue;
+			String username = entry.getAsString().trim();
+			if (username.matches("[A-Za-z0-9_]{1,16}")
+					&& assigned.add(username.toLowerCase(java.util.Locale.ROOT))) {
+				normalizedQueue.add(username);
+			}
+		}
+		for (String key : new String[] {
+			"ticketTradingSlot1", "ticketTradingSlot2", "ticketTradingSlot3",
+			"ticketTradingBackupSlot1", "ticketTradingBackupSlot2", "ticketTradingBackupSlot3"
+		}) {
+			if (!sparkling.has(key) || !sparkling.get(key).isJsonPrimitive()) continue;
+			String username = sparkling.get(key).getAsString().trim();
+			if (username.matches("[A-Za-z0-9_]{1,16}")
+					&& assigned.add(username.toLowerCase(java.util.Locale.ROOT))) {
+				normalizedQueue.add(username);
+			}
+			sparkling.addProperty(key, "");
+		}
+		sparkling.add("ticketTradingHostQueue", normalizedQueue);
+
+		if (sparkling.has("ticketTradingProfiles")
+				&& sparkling.get("ticketTradingProfiles").isJsonArray()) {
+			for (var entry : sparkling.getAsJsonArray("ticketTradingProfiles")) {
+				if (!entry.isJsonObject()) continue;
+				JsonObject profile = entry.getAsJsonObject();
+				String username = profile.has("username") && profile.get("username").isJsonPrimitive()
+					? profile.get("username").getAsString().trim() : "";
+				boolean sparklingOnly = false;
+				try {
+					sparklingOnly = profile.has("sparklingOnly")
+						&& profile.get("sparklingOnly").getAsBoolean();
+				} catch (RuntimeException ignored) {
+					// Invalid hand-edited values retain the safe ordinary-player behavior.
+				}
+				profile.addProperty("hostInviteMode", sparklingOnly ? "SPARKLING" : "EVERY_RUN");
+				boolean active = assigned.contains(username.toLowerCase(java.util.Locale.ROOT));
+				profile.addProperty("guestInviteMode", active
+					? (sparklingOnly ? "SWITCH" : "JOIN") : "OFF");
+			}
+		}
+		sparkling.addProperty("ticketTradingRolesVersion", 1);
+	}
+
+	/** Separates Guest activation from its remembered Join/Leave & Join behavior. */
+	private static void migrateTicketTradingGuestMembership(JsonObject root) {
+		if (!root.has("sparkling") || !root.get("sparkling").isJsonObject()) return;
+		JsonObject sparkling = root.getAsJsonObject("sparkling");
+		int roleVersion = 0;
+		try {
+			if (sparkling.has("ticketTradingRolesVersion")) {
+				roleVersion = sparkling.get("ticketTradingRolesVersion").getAsInt();
+			}
+		} catch (RuntimeException ignored) {
+			roleVersion = 0;
+		}
+		if (roleVersion >= TicketTradingProfiles.ROLE_SCHEMA
+				&& sparkling.has("ticketTradingGuestPlayers")
+				&& sparkling.get("ticketTradingGuestPlayers").isJsonArray()) return;
+		JsonArray guests = new JsonArray();
+		java.util.Set<String> added = new java.util.HashSet<>();
+		if (sparkling.has("ticketTradingGuestPlayers")
+				&& sparkling.get("ticketTradingGuestPlayers").isJsonArray()) {
+			for (var entry : sparkling.getAsJsonArray("ticketTradingGuestPlayers")) {
+				if (!entry.isJsonPrimitive()) continue;
+				String username = entry.getAsString().trim();
+				if (username.matches("[A-Za-z0-9_]{1,16}")
+						&& added.add(username.toLowerCase(java.util.Locale.ROOT))) guests.add(username);
+			}
+		}
+		if (sparkling.has("ticketTradingProfiles")
+				&& sparkling.get("ticketTradingProfiles").isJsonArray()) {
+			for (var entry : sparkling.getAsJsonArray("ticketTradingProfiles")) {
+				if (!entry.isJsonObject()) continue;
+				JsonObject profile = entry.getAsJsonObject();
+				String username = profile.has("username") && profile.get("username").isJsonPrimitive()
+					? profile.get("username").getAsString().trim() : "";
+				String mode = profile.has("guestInviteMode") && profile.get("guestInviteMode").isJsonPrimitive()
+					? profile.get("guestInviteMode").getAsString() : "OFF";
+				if (!mode.equals("OFF") && username.matches("[A-Za-z0-9_]{1,16}")
+						&& added.add(username.toLowerCase(java.util.Locale.ROOT))) guests.add(username);
+				if (!mode.equals("SWITCH")) profile.addProperty("guestInviteMode", "JOIN");
+			}
+		}
+		sparkling.add("ticketTradingGuestPlayers", guests);
+		sparkling.addProperty("ticketTradingRolesVersion", TicketTradingProfiles.ROLE_SCHEMA);
 	}
 
 	/** Replaces the old master switch while preserving its disabled behavior once. */
@@ -244,9 +699,8 @@ public final class ConfigManager {
 		}
 	}
 
-	/** Party sync must be explicitly acknowledged again after every launch. */
+	/** Security-sensitive automation remains opt-in for every Minecraft launch. */
 	private static void resetSessionOptions(SafariConfig loaded) {
-		loaded.advanced.enablePartySync = false;
 		loaded.sparkling.ticketTradingEnabled = false;
 	}
 
@@ -256,7 +710,19 @@ public final class ConfigManager {
 		revision++;
 		Path path = SafariPaths.settings();
 		try {
-			AtomicFiles.writeString(path, GSON.toJson(config));
+			if (writesBlocked) {
+				RECOVERY.write(SafariPaths.settingsBackups(), GSON.toJson(mergedSettingsJson(config)));
+				OperationalLog.info("CONFIG/SAVE_PROTECTED",
+					"Source retained; working settings saved to recovery snapshot");
+				return;
+			}
+			if (pendingVersionBackup && Files.isRegularFile(path)) {
+				backupBeforeVersionLoad(path);
+				pendingVersionBackup = false;
+			}
+			JsonObject merged = mergedSettingsJson(config);
+			AtomicFiles.writeString(path, GSON.toJson(merged));
+			preservedSettings = merged;
 		} catch (IOException failed) {
 			// Settings remain live in memory; the next close/shutdown retries the save.
 			OperationalLog.error("CONFIG/SAVE", failed);
@@ -273,6 +739,7 @@ public final class ConfigManager {
 		try {
 			var field = SafariConfig.class.getField(categoryField);
 			field.set(get(), field.getType().getDeclaredConstructor().newInstance());
+			if (preservedSettings != null) preservedSettings.remove(categoryField);
 			save();
 		} catch (ReflectiveOperationException failed) {
 			OperationalLog.error("CONFIG/RESET", failed);

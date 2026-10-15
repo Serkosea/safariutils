@@ -1,20 +1,20 @@
 package dev.serko.safariutils.client;
 
 import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonToken;
 import dev.serko.safariutils.SafariUtils;
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.Critters;
 import dev.serko.safariutils.session.RunHistory;
 import dev.serko.safariutils.session.RunRecord;
 import dev.serko.safariutils.session.SafariSession;
+import dev.serko.safariutils.state.MonotonicCooldowns;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
@@ -23,9 +23,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.CompletionException;
 
 /**
  * Fetches shard prices from Hypixel's public Bazaar API when profit is visible.
@@ -40,8 +38,9 @@ public final class BazaarPrices {
 
 	/** Successful and failed automatic requests both wait five minutes before retrying. */
 	private static final long REFRESH_MILLIS = 300_000;
-	private static final long RETRY_MILLIS = REFRESH_MILLIS;
 	private static final int QUIET_FAILURES = 3;
+	private static final Duration REQUEST_BUDGET = Duration.ofSeconds(20);
+	private static final int MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 
 	/** Bazaar tax on the sell side, which both price modes are. */
 	private static final double TAX = 0.0125;
@@ -49,24 +48,20 @@ public final class BazaarPrices {
 	/** The Safari products, so the parser can skip the rest without building them. */
 	private static final Set<String> WANTED = wantedIds();
 
-	private static final ExecutorService WORKER = Executors.newSingleThreadExecutor(task -> {
-		Thread thread = new Thread(task, "safariutils-bazaar");
-		thread.setDaemon(true);
-		return thread;
-	});
-
-	private static final AtomicBoolean fetching = new AtomicBoolean();
+	private static boolean fetching;
+	private static boolean stopped;
+	private static final MonotonicCooldowns<Boolean> REFRESH = new MonotonicCooldowns<>(System::nanoTime);
 
 	private static volatile Map<String, Price> prices = Map.of();
 	private static volatile long fetchedAt;
-	private static volatile long nextFetchAt;
+	private static long priceRevision;
 	private static volatile String lastError;
-	private static volatile HttpClient http;
-	/** Written by the worker and reset after a successful response. */
+	/** Published on the client thread, together with the price snapshot. */
 	private static volatile int failures;
 
 	/** Saved runs are immutable, so each only needs pricing once per market snapshot/mode. */
 	private static final Map<RunRecord, Long> RUN_VALUE_CACHE = new IdentityHashMap<>();
+	private static long runValueHistoryRevision = Long.MIN_VALUE;
 	private static long runValuePriceRevision = Long.MIN_VALUE;
 	private static SafariConfig.PriceSource runValuePriceSource;
 	private static long totalHistoryRevision = Long.MIN_VALUE;
@@ -98,87 +93,92 @@ public final class BazaarPrices {
 	 * client thread only ever hands the job over.
 	 */
 	public static void tick() {
-		if (!ConfigManager.get().profit.enabled) return;
+		if (stopped || fetching || NetworkRuntime.stopping() || !ConfigManager.get().profit.enabled) return;
 
-		long now = System.currentTimeMillis();
-		if (now < nextFetchAt) return;
+		if (REFRESH.remainingMillis(true, REFRESH_MILLIS) > 0) return;
 		// Held off before the job starts, so a slow request cannot queue a second one.
-		nextFetchAt = now + REFRESH_MILLIS;
-		if (!fetching.compareAndSet(false, true)) return;
-		WORKER.execute(BazaarPrices::fetch);
+		REFRESH.mark(true);
+		fetching = true;
+		NetworkRuntime.submit(BazaarPrices::fetch).whenComplete((parsed, error) ->
+			net.minecraft.client.Minecraft.getInstance().execute(() -> apply(parsed, error)));
 	}
 
-	private static void fetch() {
+	private static Map<String, Price> fetch() {
 		try {
 			HttpRequest request = HttpRequest.newBuilder(ENDPOINT)
-				.timeout(Duration.ofSeconds(20))
+				.timeout(REQUEST_BUDGET)
 				.header("User-Agent", SafariUtils.MOD_ID)
 				.GET().build();
-			HttpResponse<InputStream> response = client()
-				.send(request, HttpResponse.BodyHandlers.ofInputStream());
-			Map<String, Price> parsed;
-			try (InputStream body = response.body()) {
-				if (response.statusCode() != 200) throw new IOException("HTTP " + response.statusCode());
-				parsed = parse(body);
-			}
+			Map<String, Price> parsed = NetworkRuntime.read(request, MAX_RESPONSE_BYTES, REQUEST_BUDGET,
+				(status, body) -> {
+					if (status != 200) throw new IOException("HTTP " + status);
+					return parse(body);
+				});
 			// An empty result is a shape change, not an update: the old prices are still
 			// the best thing known, so they are kept rather than blanked.
 			if (parsed.isEmpty()) throw new IOException("no shard products in the response");
+			return Map.copyOf(parsed);
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new CompletionException(interrupted);
+		} catch (IOException failure) {
+			throw new CompletionException(failure);
+		}
+	}
 
+	private static void apply(Map<String, Price> parsed, Throwable failed) {
+		fetching = false;
+		if (stopped || NetworkRuntime.stopping()) return;
+		REFRESH.mark(true);
+		if (failed == null) {
 			// Keep the last known value for a product omitted from a partial response.
 			Map<String, Price> merged = new HashMap<>(prices);
 			merged.putAll(parsed);
 			prices = Map.copyOf(merged);
 			fetchedAt = System.currentTimeMillis();
+			priceRevision++;
 			lastError = null;
 			failures = 0;
-			nextFetchAt = fetchedAt + REFRESH_MILLIS;
-		} catch (Exception failed) {
+			DebugLog.line("BAZAAR", "prices loaded products=" + parsed.size());
+		} else {
+			while (failed instanceof CompletionException && failed.getCause() != null) failed = failed.getCause();
 			failures++;
-			lastError = failed.getClass().getSimpleName()
-				+ (failed.getMessage() == null ? "" : ": " + failed.getMessage());
-			nextFetchAt = System.currentTimeMillis() + RETRY_MILLIS;
+			lastError = "Price service unavailable; retrying automatically";
 			String message = ClientMessages.apiFailure("load Bazaar price data", failed);
-			net.minecraft.client.Minecraft.getInstance().execute(() ->
-				ClientMessages.send(message, ClientMessages.Tone.ERROR));
+			ClientMessages.send(message, ClientMessages.Tone.ERROR);
+			DebugLog.line("BAZAAR", "price refresh failed type=" + failed.getClass().getSimpleName()
+				+ " cachedProducts=" + prices.size());
 			// Quiet at first — a dropped request during a server hop is not news. Said once
 			// when it stops looking like a blip, and not repeated every retry after that.
 			if (failures == QUIET_FAILURES + 1) {
 				OperationalLog.error("BAZAAR/FETCH", failed);
 			}
-		} finally {
-			fetching.set(false);
 		}
 	}
 
-	/** Stops the owned worker when the client closes; the reusable HTTP client needs no close call. */
+	/** Rejects late publication; the shared network runtime owns worker/transport shutdown. */
 	public static void shutdown() {
-		WORKER.shutdownNow();
-	}
-
-	private static HttpClient client() {
-		HttpClient existing = http;
-		if (existing != null) return existing;
-		HttpClient built = HttpClient.newBuilder()
-			.connectTimeout(Duration.ofSeconds(10))
-			.followRedirects(HttpClient.Redirect.NORMAL)
-			.build();
-		http = built;
-		return built;
+		stopped = true;
+		fetching = false;
 	}
 
 	/**
 	 * Reads the response as a stream, keeping only the 37 products this mod cares about.
 	 *
-	 * <p>The whole payload is several megabytes of order books for two thousand products.
-	 * Skipping the rest as they go past costs nothing and never builds them.
+	 * <p>The payload includes unrelated order books. Those are scanned but not materialized,
+	 * and transport limits bound the total bytes and time spent consuming the response.
 	 */
-	private static Map<String, Price> parse(InputStream body) throws IOException {
+	static Map<String, Price> parse(InputStream body) throws IOException {
 		Map<String, Price> found = new HashMap<>();
 		try (JsonReader reader = new JsonReader(new InputStreamReader(body, StandardCharsets.UTF_8))) {
 			reader.beginObject();
 			while (reader.hasNext()) {
-				if (!reader.nextName().equals("products")) {
+				String field = reader.nextName();
+				if (field.equals("success")) {
+					if (!reader.nextBoolean()) throw new IOException("Bazaar response unsuccessful");
+					continue;
+				}
+				if (!field.equals("products")) {
 					reader.skipValue();
 					continue;
 				}
@@ -194,6 +194,7 @@ public final class BazaarPrices {
 				reader.endObject();
 			}
 			reader.endObject();
+			if (reader.peek() != JsonToken.END_DOCUMENT) throw new IOException("Trailing Bazaar data");
 		}
 		return found;
 	}
@@ -223,7 +224,10 @@ public final class BazaarPrices {
 			double price = 0;
 			reader.beginObject();
 			while (reader.hasNext()) {
-				if (reader.nextName().equals("pricePerUnit")) price = reader.nextDouble();
+				if (reader.nextName().equals("pricePerUnit")) {
+					price = reader.nextDouble();
+					if (!Double.isFinite(price)) throw new IOException("Invalid Bazaar price");
+				}
 				else reader.skipValue();
 			}
 			reader.endObject();
@@ -243,12 +247,12 @@ public final class BazaarPrices {
 
 	/** Changes when a fresh price snapshot or the selected side of the market changes. */
 	static long revision() {
-		return fetchedAt * 2L + ConfigManager.get().profit.priceSource().ordinal();
+		return priceRevision * 2L + ConfigManager.get().profit.priceSource().ordinal();
 	}
 
 	/** How long ago the prices were fetched, or {@code -1} if they never have been. */
 	public static long ageMillis() {
-		return fetchedAt == 0 ? -1 : System.currentTimeMillis() - fetchedAt;
+		return fetchedAt == 0 ? -1 : Math.max(0, System.currentTimeMillis() - fetchedAt);
 	}
 
 	/** The last fetch failure, or {@code null} while things are working. */
@@ -318,9 +322,12 @@ public final class BazaarPrices {
 	}
 
 	private static void prepareRunValueCache(SafariConfig.PriceSource source) {
-		long priceRevision = fetchedAt;
-		if (runValuePriceRevision == priceRevision && runValuePriceSource == source) return;
+		long historyRevision = RunHistory.revision();
+		long priceRevision = BazaarPrices.priceRevision;
+		if (runValueHistoryRevision == historyRevision
+				&& runValuePriceRevision == priceRevision && runValuePriceSource == source) return;
 		RUN_VALUE_CACHE.clear();
+		runValueHistoryRevision = historyRevision;
 		runValuePriceRevision = priceRevision;
 		runValuePriceSource = source;
 	}
@@ -340,7 +347,7 @@ public final class BazaarPrices {
 	/** Full saved-history value, calculated once per history/price/source combination. */
 	public static long totalHistoryValue() {
 		long historyRevision = RunHistory.revision();
-		long priceRevision = fetchedAt;
+		long priceRevision = BazaarPrices.priceRevision;
 		SafariConfig.PriceSource source = ConfigManager.get().profit.priceSource();
 		if (totalHistoryRevision == historyRevision
 				&& totalHistoryPriceRevision == priceRevision

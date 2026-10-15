@@ -1,6 +1,8 @@
 package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.api.PartyItemSyncProviders;
+import dev.serko.safariutils.data.Critter;
+import dev.serko.safariutils.data.Critters;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Blocks;
@@ -15,6 +17,7 @@ import java.util.UUID;
 
 /** Finds nearby bee nests without scanning the entire Forest volume. */
 public final class NestTracker {
+	private static final Critter HONEYBUG = Critters.byName("Honeybug");
 
 	/** How often the incremental scan samples the loaded area around the player. */
 	private static final int TOPUP_INTERVAL_TICKS = 300;
@@ -83,7 +86,7 @@ public final class NestTracker {
 			.max(Map.Entry.comparingByValue(java.util.Comparator.comparingLong(
 				PendingInteraction::startedAt)))
 			.orElse(null);
-		if (latest != null) resolve(latest.getKey(), true, "empty response");
+		if (latest != null) resolve(latest.getKey(), true, true, "empty response");
 	}
 
 	public static void tick() {
@@ -108,19 +111,19 @@ public final class NestTracker {
 
 	private static Set<UUID> currentHoneybugIds() {
 		Set<UUID> ids = new LinkedHashSet<>();
-		for (CritterEntities.Sighting sighting : CritterEntities.all())
-			if ("Honeybug".equals(sighting.critter().name())) ids.add(sighting.label().getUUID());
+		for (CritterEntities.Sighting sighting : CritterEntities.all(HONEYBUG)) {
+			ids.add(sighting.label().getUUID());
+		}
 		return ids;
 	}
 
 	/** Confirms only a newly appearing Honeybug close to a recently used nest. */
 	private static void confirmHoneybugSpawns() {
-		if (pending.isEmpty() || checkedSightingScan == CritterEntities.scannedAt()) return;
-		checkedSightingScan = CritterEntities.scannedAt();
+		if (pending.isEmpty() || checkedSightingScan == CritterEntities.scanRevision()) return;
+		checkedSightingScan = CritterEntities.scanRevision();
 		long now = System.currentTimeMillis();
 		pending.entrySet().removeIf(entry -> now - entry.getValue().startedAt() > SPAWN_CONFIRM_WINDOW_MILLIS);
-		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-			if (!"Honeybug".equals(sighting.critter().name())) continue;
+		for (CritterEntities.Sighting sighting : CritterEntities.all(HONEYBUG)) {
 			Map.Entry<BlockPos, PendingInteraction> nearest = null;
 			double nearestSq = SPAWN_CONFIRM_RADIUS_SQ;
 			for (Map.Entry<BlockPos, PendingInteraction> entry : pending.entrySet()) {
@@ -129,15 +132,15 @@ public final class NestTracker {
 					entry.getKey().getX() + 0.5, entry.getKey().getY() + 0.5, entry.getKey().getZ() + 0.5);
 				if (distanceSq < nearestSq) { nearestSq = distanceSq; nearest = entry; }
 			}
-			if (nearest != null) resolve(nearest.getKey(), true, "Honeybug spawn");
+			if (nearest != null) resolve(nearest.getKey(), true, true, "Honeybug spawn");
 		}
 	}
 
-	private static void resolve(BlockPos pos, boolean share, String evidence) {
+	private static void resolve(BlockPos pos, boolean share, boolean safeEvidence, String evidence) {
 		BlockPos immutable = pos.immutable();
 		known.add(immutable);
 		punched.add(immutable);
-		safePunched.add(immutable);
+		if (safeEvidence) safePunched.add(immutable);
 		pending.remove(immutable);
 		cachedTick = Long.MIN_VALUE;
 		DebugLog.line("NEST", "resolved " + immutable.toShortString() + " via " + evidence);
@@ -145,7 +148,11 @@ public final class NestTracker {
 	}
 
 	/** Applies a confirmed nest interaction received from an approved private party member. */
-	public static void onPartyConfirmed(BlockPos pos) { resolve(pos, false, "party sync"); }
+	public static void onPartyConfirmed(BlockPos pos) {
+		BlockPos immutable = pos.immutable();
+		if (punched.contains(immutable)) return;
+		resolve(immutable, false, false, "party sync");
+	}
 
 	/** Incrementally scans only the nearby loaded volume. */
 	private static void topUp() {
@@ -211,11 +218,13 @@ public final class NestTracker {
 			// Mode may clear only a nest it previously confirmed; Safe Mode may also
 			// clear a candidate once the player visibly checks its empty location.
 			if (!nestPresent) {
-				boolean safelyResolved = VisibilityCheck.canInspectCandidate(pos)
-					// In synchronized parties an absent, loaded candidate is authoritative.
-					|| PartyItemSyncProviders.active();
-				if (present.contains(pos) || safelyResolved) punched.add(pos);
-				if (safelyResolved) safePunched.add(pos);
+				boolean visiblyResolved = VisibilityCheck.canInspectCandidate(pos);
+				// Synchronized absence is authoritative for normal presentation, while
+				// Safe Mode still requires this player to inspect the location directly.
+				if (present.contains(pos) || visiblyResolved || PartyItemSyncProviders.active()) {
+					punched.add(pos);
+				}
+				if (visiblyResolved) safePunched.add(pos);
 			}
 			// Normal detection reports actual blocks, never unverified catalog candidates.
 			if (!SafeMode.nests() && !present.contains(pos)) continue;

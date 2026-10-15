@@ -35,6 +35,19 @@ public final class CritterSpawnRanges {
 		entry("Nozzlenose", 2, 4), entry("Troodon", 3, 3), entry("Wumpa", 1, 1)
 	);
 
+	static {
+		var defined = Critters.all().stream().map(Critter::name)
+			.collect(java.util.stream.Collectors.toUnmodifiableSet());
+		if (!defined.equals(BY_NAME.keySet())) {
+			var missing = new java.util.LinkedHashSet<>(defined);
+			missing.removeAll(BY_NAME.keySet());
+			var unknown = new java.util.LinkedHashSet<>(BY_NAME.keySet());
+			unknown.removeAll(defined);
+			throw new IllegalStateException("Spawn ranges do not match critter roster; missing="
+				+ missing + ", unknown=" + unknown);
+		}
+	}
+
 	private CritterSpawnRanges() { }
 
 	public static Range forCritter(Critter critter) {

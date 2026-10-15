@@ -24,17 +24,13 @@ public final class CritterSpotter {
 	public static void tick() {
 		SafariSession session = SessionManager.current();
 		if (session == null || !SafariLocation.inSafari()) return;
-		long scan = CritterEntities.scannedAt();
+		var snapshot = DetectedCritters.snapshot();
+		long scan = snapshot.revision();
 		if (scan == lastScan) return;
-		lastScan = scan;
 
-		Map<Critter, Integer> present = new HashMap<>();
-		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-			if (CritterEntities.isCaptureScaffolding(sighting)) continue;
-			if (sighting.mob() != null && StillCritters.isResolved(sighting.mob().getUUID())) continue;
-			if (SparklingWatch.isSparkling(sighting)) continue;
-			present.merge(sighting.critter(), 1, Integer::sum);
-		}
+		// DetectedCritters already applies capture, resolved-body, and Sparkling filters
+		// to this exact scan. Reuse that authoritative tally instead of repeating them.
+		Map<Critter, Integer> present = new HashMap<>(snapshot.value().detected());
 
 		boolean logging = DebugLog.isEnabled();
 		if (logging) {
@@ -65,5 +61,12 @@ public final class CritterSpotter {
 		// Replaced wholesale rather than merged, so anything caught or despawned since
 		// the last scan simply drops out.
 		session.setNearby(present);
+		lastScan = scan;
+	}
+
+	/** Clears scan and diagnostic state at a Safari/world boundary. */
+	public static void reset() {
+		lastScan = Long.MIN_VALUE;
+		lastLogged.clear();
 	}
 }

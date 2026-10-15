@@ -1,14 +1,9 @@
 package dev.serko.safariutils.session;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.reflect.TypeToken;
 import dev.serko.safariutils.client.OperationalLog;
 import dev.serko.safariutils.client.SafariPaths;
-import dev.serko.safariutils.io.AtomicFiles;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -22,7 +17,6 @@ import java.util.Map;
 
 /** On-demand, non-guessing validation and repair for saved run history. */
 public final class RunDataIntegrity {
-	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 	private static final DateTimeFormatter BACKUP_TIME =
 		DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
 
@@ -69,7 +63,7 @@ public final class RunDataIntegrity {
 			Files.createDirectories(backup.getParent());
 			Files.copy(path, backup, StandardCopyOption.COPY_ATTRIBUTES);
 			repairRecords(records);
-			AtomicFiles.writeString(path, GSON.toJson(records));
+			RunHistory.writeForIntegrity(path, records);
 			RunHistory.load(path);
 			Audit after = inspect(records);
 			return new Repair(true, after, backup,
@@ -81,10 +75,7 @@ public final class RunDataIntegrity {
 	}
 
 	private static List<RunRecord> read(Path path) throws IOException {
-		List<RunRecord> records = GSON.fromJson(Files.readString(path, StandardCharsets.UTF_8),
-			new TypeToken<List<RunRecord>>() { }.getType());
-		if (records == null) throw new IllegalArgumentException("History root is not a list");
-		return records;
+		return RunHistory.readForIntegrity(path);
 	}
 
 	private static Audit inspect(List<RunRecord> records) {

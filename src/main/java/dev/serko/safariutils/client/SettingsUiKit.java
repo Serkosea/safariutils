@@ -2,6 +2,7 @@ package dev.serko.safariutils.client;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.input.MouseButtonEvent;
 
 import java.util.List;
 
@@ -68,6 +69,15 @@ public final class SettingsUiKit {
 		int end = editor.getValue().length();
 		editor.setCursorPosition(end);
 		editor.setHighlightPos(end);
+	}
+
+	/** Focuses an inline field and lets the native widget place its caret at the click. */
+	public static void focusAt(EditBox editor, MouseButtonEvent event, boolean doubleClick) {
+		if (editor == null || event == null) return;
+		editor.setFocused(true);
+		double x = Math.clamp(event.x(), editor.getX(), editor.getX() + editor.getWidth() - 1.0);
+		double y = Math.clamp(event.y(), editor.getY(), editor.getY() + editor.getHeight() - 1.0);
+		editor.mouseClicked(new MouseButtonEvent(x, y, event.buttonInfo()), doubleClick);
 	}
 
 	public static void blurToStart(EditBox editor) {

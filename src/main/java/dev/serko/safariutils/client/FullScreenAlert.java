@@ -1,5 +1,7 @@
 package dev.serko.safariutils.client;
 
+import dev.serko.safariutils.state.MonotonicTime;
+
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -42,7 +44,7 @@ public final class FullScreenAlert implements HudElement {
 	private static int previewHeight;
 	private static SparklingAlertStyle previewCachedStyle;
 	private static int previewGeometryLength;
-	private static long previewStartedAt = System.currentTimeMillis();
+	private static long previewStartedAt = MonotonicTime.nowMillis();
 	private static long previewPausedAge;
 	private static boolean previewPaused;
 	private static String cachedCalloutSource;
@@ -67,7 +69,7 @@ public final class FullScreenAlert implements HudElement {
 		FullScreenAlert.subject = subject;
 		where = detail;
 		tint = colour;
-		shownAtMillis = System.currentTimeMillis();
+		shownAtMillis = MonotonicTime.nowMillis();
 		geometryFrame = Long.MIN_VALUE;
 		int choice = Math.clamp(forcedIntensity != null
 			? forcedIntensity : ConfigManager.get().sparkling.specialSparklingIntensity,
@@ -94,7 +96,7 @@ public final class FullScreenAlert implements HudElement {
 	/** Draws the custom recipe in-place without starting sounds or a global alert. */
 	public static void preview(GuiGraphicsExtractor graphics, int x, int y, int width, int height) {
 		SparklingAlertStyle style = SparklingAlertStyle.custom();
-		long rawAge = previewPaused ? previewPausedAge : System.currentTimeMillis() - previewStartedAt;
+		long rawAge = previewAgeMillis();
 		long age = Math.floorMod(rawAge, Math.max(1L, style.displayMillis()));
 		int background = 0xFF080B13;
 		graphics.fill(x, y, x + width, y + height, background);
@@ -140,7 +142,7 @@ public final class FullScreenAlert implements HudElement {
 	}
 
 	public static void restartPreview() {
-		previewStartedAt = System.currentTimeMillis();
+		previewStartedAt = MonotonicTime.nowMillis();
 		previewPausedAge = 0;
 		previewPaused = false;
 		previewFrame = Long.MIN_VALUE;
@@ -153,10 +155,10 @@ public final class FullScreenAlert implements HudElement {
 
 	public static void togglePreview() {
 		if (previewPaused) {
-			previewStartedAt = System.currentTimeMillis() - previewPausedAge;
+			previewStartedAt = MonotonicTime.nowMillis() - previewPausedAge;
 			previewPaused = false;
 		} else {
-			previewPausedAge = System.currentTimeMillis() - previewStartedAt;
+			previewPausedAge = MonotonicTime.nowMillis() - previewStartedAt;
 			previewPaused = true;
 		}
 		previewFrame = Long.MIN_VALUE;
@@ -167,11 +169,11 @@ public final class FullScreenAlert implements HudElement {
 	}
 
 	public static long previewAgeMillis() {
-		return previewPaused ? previewPausedAge : System.currentTimeMillis() - previewStartedAt;
+		return previewPaused ? previewPausedAge : MonotonicTime.nowMillis() - previewStartedAt;
 	}
 
 	public static float previewProgress(long duration) {
-		long rawAge = previewPaused ? previewPausedAge : System.currentTimeMillis() - previewStartedAt;
+		long rawAge = previewAgeMillis();
 		long age = ConfigManager.get().sparkling.customAlertPreviewLoop
 			? Math.floorMod(rawAge, Math.max(1L, duration)) : Math.min(rawAge, duration);
 		return Math.clamp(age / (float) Math.max(1L, duration), 0f, 1f);
@@ -180,19 +182,20 @@ public final class FullScreenAlert implements HudElement {
 	public static void seekPreview(float progress, long duration) {
 		long age = Math.round(Math.clamp(progress, 0f, 1f) * Math.max(1L, duration));
 		previewPausedAge = age;
-		previewStartedAt = System.currentTimeMillis() - age;
+		previewStartedAt = MonotonicTime.nowMillis() - age;
 		previewFrame = Long.MIN_VALUE;
 	}
 
 	public static void clear() {
 		headline = null;
+		AlertSounds.stopSparklingAlert(Minecraft.getInstance());
 	}
 
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker deltaTracker) {
 		if (headline == null) return;
 
-		long age = System.currentTimeMillis() - shownAtMillis;
+		long age = MonotonicTime.nowMillis() - shownAtMillis;
 		long displayMillis = sparklingStyle != null
 			? sparklingStyle.displayMillis() : DISPLAY_MILLIS;
 		if (age > displayMillis) {

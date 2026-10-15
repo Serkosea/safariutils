@@ -56,6 +56,12 @@ public final class StaticWaypointCatalog {
 		if (bundled.floorDrops == null) bundled.floorDrops = new LinkedHashMap<>();
 		if (bundled.nests == null) bundled.nests = new LinkedHashSet<>();
 		if (bundled.mounds == null) bundled.mounds = new LinkedHashSet<>();
+		bundled.floorDrops.entrySet().removeIf(entry -> entry.getKey() == null
+			|| entry.getValue() == null);
+		bundled.floorDrops.values().forEach(values -> values.removeIf(
+			value -> value == null || value.isBlank()));
+		bundled.nests.removeIf(value -> value == null || value.isBlank());
+		bundled.mounds.removeIf(value -> value == null || value.isBlank());
 		return bundled;
 	}
 

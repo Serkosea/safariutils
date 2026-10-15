@@ -4,8 +4,10 @@ package dev.serko.safariutils.state;
 public record SafariEpoch(long connection, long visit, long run, String lobbyId, Phase phase) {
 	public enum Phase {
 		OUTSIDE,
+		ENTRANCE,
 		VISIT,
 		ACTIVE,
+		TRANSFERRING,
 		CLOSED
 	}
 

@@ -74,7 +74,9 @@ public final class Critters {
 
 	static {
 		for (Critter critter : ALL) {
-			BY_NAME.put(critter.name(), critter);
+			if (BY_NAME.put(critter.name(), critter) != null) {
+				throw new IllegalStateException("Duplicate critter definition: " + critter.name());
+			}
 			BY_BIOME.computeIfAbsent(critter.biome(), b -> new ArrayList<>()).add(critter);
 		}
 		for (SafariBiome biome : SafariBiome.values()) {

@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.0.0] - 2026-10-14
+
+### New
+
+- Added player lookups for Safari tickets and Sparkling collections, with no API key setup
+- Added automatic party-shared Sparkling lists and cached player rank colors
+
+### Changes & Additions
+
+- Redesigned Ticket Trading with drag-and-drop invite queues and per-player guest controls
+- Reworked capture tracking, marker rendering, party state, and alerts around shared systems
+- Improved caching, background work, and settings, collection, and run-history recovery
+- Expanded Remove Haunted Darkness to cover Doomspiral, Hideyho, and Gazer effects
+
+### Fixes
+
+- Fixed mixed-up pity, disappearing markers, and stuck recatch pins during grouped and distant catches
+- Fixed jumpy or repeated capture shrinking and kept markers aligned with moving critters
+- Fixed delayed party readiness, stale shared collections, and missing cached rank colors
+- Fixed banner position and scale, inline text editing, and saved alert sound migration
+
 ## [2.8.0] - 2026-10-09
 
 ### Changes & Additions

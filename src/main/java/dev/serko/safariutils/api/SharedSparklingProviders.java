@@ -1,81 +1,83 @@
 package dev.serko.safariutils.api;
 
-import dev.serko.safariutils.client.OperationalLog;
 
 import java.net.URI;
 import java.util.Optional;
-import java.util.ServiceLoader;
 import java.util.Set;
 
 import net.minecraft.client.gui.screens.Screen;
 
-/** Loads the ignored private provider when it was explicitly included in a build. */
+/** Loads the shared key-free API client; backend credentials never ship in a build. */
 public final class SharedSparklingProviders {
-	private static final Optional<SharedSparklingProvider> PROVIDER = load();
+	private static final ServiceAccess<SharedSparklingProvider> PROVIDER =
+		ServiceAccess.load(SharedSparklingProvider.class, "PROVIDER/SHARED_SPARKLINGS");
 
 	private SharedSparklingProviders() {
 	}
 
-	public static Optional<SharedSparklingProvider> provider() {
-		return PROVIDER;
-	}
-
 	public static boolean available() {
-		return PROVIDER.isPresent();
+		return PROVIDER.available();
 	}
 
 	public static URI updatePage(URI fallback) {
-		return PROVIDER.flatMap(SharedSparklingProvider::updatePage).orElse(fallback);
+		return PROVIDER.read("update-page", SharedSparklingProvider::updatePage, Optional.<URI>empty()).orElse(fallback);
 	}
 
 	public static void openTicketTradingTest(Screen parent) {
-		PROVIDER.ifPresent(provider -> provider.openTicketTradingTest(parent));
+		PROVIDER.run("trading-test", provider -> provider.openTicketTradingTest(parent));
 	}
 
 	public static void tick() {
-		PROVIDER.ifPresent(SharedSparklingProvider::tick);
+		PROVIDER.run("tick", SharedSparklingProvider::tick);
 	}
 
 	public static boolean onSharedCatch(String species) {
-		return PROVIDER.map(provider -> provider.onSharedCatch(species)).orElse(true);
+		return PROVIDER.read("shared-catch", provider -> provider.onSharedCatch(species), !available());
 	}
 
 	public static void onPartyMembershipChanged() {
-		PROVIDER.ifPresent(SharedSparklingProvider::onPartyMembershipChanged);
+		PROVIDER.run("membership", SharedSparklingProvider::onPartyMembershipChanged);
 	}
 
 	public static void shutdown() {
-		PROVIDER.ifPresent(SharedSparklingProvider::shutdown);
-	}
-
-	public static int nameColour(String name) {
-		return PROVIDER.map(provider -> provider.nameColour(name)).orElse(-1);
+		PROVIDER.run("shutdown", SharedSparklingProvider::shutdown);
 	}
 
 	public static java.util.concurrent.CompletableFuture<Integer> refreshNameColour(
 			String name, String uuid) {
-		return PROVIDER.map(provider -> provider.refreshNameColour(name, uuid))
-			.orElseGet(() -> java.util.concurrent.CompletableFuture.completedFuture(-1));
+		return available() ? PROVIDER.request("rank", provider -> provider.refreshNameColour(name, uuid))
+			: java.util.concurrent.CompletableFuture.completedFuture(-1);
 	}
 
 	public static boolean specialName(String name) {
-		return PROVIDER.map(provider -> provider.specialName(name)).orElse(false);
+		return PROVIDER.read("special-name", provider -> provider.specialName(name), false);
 	}
 
 	public static Set<String> specialNames() {
-		return PROVIDER.map(SharedSparklingProvider::specialNames).orElse(Set.of());
+		return PROVIDER.read("special-names", SharedSparklingProvider::specialNames, Set.of());
 	}
 
 	public static void rememberIdentity(String uuid, String name) {
-		PROVIDER.ifPresent(provider -> provider.rememberIdentity(uuid, name));
+		PROVIDER.run("identity", provider -> provider.rememberIdentity(uuid, name));
 	}
 
-	private static Optional<SharedSparklingProvider> load() {
-		try {
-			return ServiceLoader.load(SharedSparklingProvider.class).findFirst();
-		} catch (RuntimeException error) {
-			OperationalLog.error("PROVIDER/SHARED_SPARKLINGS_LOAD", error);
-			return Optional.empty();
-		}
+	public static PartyRefreshStatus partyRefreshStatus() {
+		return PROVIDER.read("refresh-status", SharedSparklingProvider::partyRefreshStatus, new PartyRefreshStatus(null, false));
+	}
+
+	public static PartySparklingSnapshot partySnapshot() {
+		return PROVIDER.read("party-snapshot", SharedSparklingProvider::partySnapshot, new PartySparklingSnapshot(java.util.List.of(), false));
+	}
+
+	public static Optional<SparklingPlayerLookup> cachedLocalCollection() {
+		return PROVIDER.read("local-collection", SharedSparklingProvider::cachedLocalCollection, Optional.empty());
+	}
+
+	public static long lookupAvailableAt() {
+		return PROVIDER.read("lookup-cooldown", SharedSparklingProvider::lookupAvailableAt, 0L);
+	}
+
+	public static java.util.concurrent.CompletableFuture<SparklingPlayerLookup> lookupPlayer(String username) {
+		return PROVIDER.request("lookup", provider -> provider.lookupPlayer(username));
 	}
 }

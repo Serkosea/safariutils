@@ -129,6 +129,20 @@ public final class ClientMessages {
 		return "Failed to " + operation + (detail.isEmpty() ? "" : ": " + detail);
 	}
 
+	/** Keeps lookup details in diagnostics while presenting stable, useful UI errors. */
+	public static String playerLookupFailure(Throwable error) {
+		for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+			String message = cause.getMessage();
+			if (message == null) continue;
+			String lower = message.toLowerCase(java.util.Locale.ROOT);
+			if (lower.contains("player not found")
+					|| lower.contains("invalid minecraft username")) {
+				return "Minecraft player not found";
+			}
+		}
+		return "Player lookup failed; Please try again";
+	}
+
 	/** Keep client notices consistent, including messages supplied by the private provider. */
 	private static String withoutTrailingPeriod(String text) {
 		String result = text.stripTrailing();

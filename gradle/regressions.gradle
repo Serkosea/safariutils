@@ -1,0 +1,74 @@
+// Shared by standalone and integrated builds so both execute the same regression sources.
+def regressionRoot = project.findProperty('safariRegressionRoot') ?: project.projectDir
+sourceSets {
+	regression {
+		java.srcDir(new File(regressionRoot as File, 'src/regression/java'))
+		compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+		runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+	}
+}
+tasks.register('coreRegressionTest', JavaExec) {
+	description = 'Run deterministic headless regressions for lifecycle, timing and asynchronous work.'
+	group = 'verification'
+	dependsOn tasks.named('regressionClasses')
+	classpath = sourceSets.regression.runtimeClasspath
+	mainClass = 'dev.serko.safariutils.CoreRegressionSuite'
+}
+tasks.named('check') { dependsOn tasks.named('coreRegressionTest') }
+
+tasks.register('exploreCaptures', JavaExec) {
+	description = 'Counterfactual exploration, NOT verification: explicit journal and species required.'
+	group = 'verification'
+	dependsOn tasks.named('regressionClasses')
+	classpath = sourceSets.regression.runtimeClasspath
+	mainClass = 'dev.serko.safariutils.client.ExploreCaptureReplay'
+	if (providers.gradleProperty('exploreFile').isPresent() && providers.gradleProperty('exploreSpecies').isPresent()) {
+		args providers.gradleProperty('exploreFile').get(), providers.gradleProperty('exploreSpecies').get()
+	}
+}
+
+tasks.register('auditSavedData', JavaExec) {
+	description = 'Read-only production-decoder audit of explicitly supplied -PsavedDataFiles paths.'
+	group = 'verification'
+	dependsOn tasks.named('regressionClasses')
+	classpath = sourceSets.regression.runtimeClasspath
+	mainClass = 'dev.serko.safariutils.client.SavedDataAudit'
+	if (providers.gradleProperty('savedDataFiles').isPresent()) {
+		args providers.gradleProperty('savedDataFiles').get().split(';').findAll { !it.isBlank() }
+	}
+}
+
+tasks.register('replayDiagnostics', JavaExec) {
+	description = 'Audit sealed diagnostic segments offline; supply ordered paths with -PreplayFiles.'
+	group = 'verification'
+	dependsOn tasks.named('regressionClasses')
+	classpath = sourceSets.regression.runtimeClasspath
+	mainClass = 'dev.serko.safariutils.client.ReplayDiagnostics'
+	if (providers.gradleProperty('replayFiles').isPresent()) {
+		args providers.gradleProperty('replayFiles').get().split(';').findAll { !it.isBlank() }
+	}
+}
+
+tasks.register('replayCaptures', JavaExec) {
+	description = 'Replay recorded capture inputs in an isolated JVM; supply ordered -PreplayFiles paths.'
+	group = 'verification'
+	dependsOn tasks.named('regressionClasses')
+	classpath = sourceSets.regression.runtimeClasspath
+	mainClass = 'dev.serko.safariutils.client.ReplayCaptures'
+	if (providers.gradleProperty('replayFiles').isPresent()) {
+		args providers.gradleProperty('replayFiles').get().split(';').findAll { !it.isBlank() }
+	}
+}
+
+// Only editions that compile the developer simulator can run its command-free audit.
+if (sourceSets.main.java.srcDirs.any { new File(it,
+	'dev/serko/safariutils/client/TicketTradingSimulationAudit.java').isFile() }) {
+	tasks.register('ticketTradingRegressionTest', JavaExec) {
+		group = 'verification'
+		dependsOn tasks.named('classes')
+		classpath = sourceSets.main.runtimeClasspath
+		mainClass = 'dev.serko.safariutils.client.TicketTradingSimulationAudit'
+		args '20261014'
+	}
+	tasks.named('check') { dependsOn tasks.named('ticketTradingRegressionTest') }
+}

@@ -30,10 +30,10 @@ public final class PartyObjectiveHud implements HudElement {
 	static final int ICY_LINE_COLOUR = 0xFF99EEFF;
 	static final int HAUNTED_LINE_COLOUR = 0xFFDDAAFF;
 	static final int INTERMEDIATE_COLOUR = 0xFFFFFF55;
-	private static final Pattern DISPLAYED_PLAYER = Pattern.compile(
-		"^\\[\\d+]\\s+([A-Za-z0-9_]{1,16})(?:\\s.*)?$");
+	private static final Pattern USERNAME = Pattern.compile("^[A-Za-z0-9_]{1,16}$");
 	private static Map<String, Integer> playerColours = Map.of();
 	private static boolean playerColoursDirty = true;
+	private static int playerColourTicks;
 	private final TickCache<HudPanel> panelCache = new TickCache<>();
 
 	public static int borderColour() { return HudBorderStyle.partyObjectives(); }
@@ -295,16 +295,22 @@ public final class PartyObjectiveHud implements HudElement {
 				(placedMask & 1) != 0 ? "✔" : "—", (placedMask & 2) != 0 ? "✔" : "—"));
 	}
 
-	/** Uses the server's tab-list text color; rank names need not be present. */
-	public static int playerNameColour(String name) {
-		if (name == null) return 0xFFFFFFFF;
+	/** Returns only an authoritative live tab-list colour, without a white fallback. */
+	static int observedPlayerNameColour(String name) {
+		if (name == null) return -1;
 		if (playerColoursDirty) snapshotPlayerColours();
-		return playerColours.getOrDefault(name.toLowerCase(Locale.ROOT), 0xFFFFFFFF);
+		return playerColours.getOrDefault(name.toLowerCase(Locale.ROOT), -1);
 	}
 
 	/** Invalidated only by world or player-list packets, including late arrivals. */
 	public static void invalidatePlayerColours() {
 		playerColoursDirty = true;
+		playerColourTicks = 0;
+	}
+
+	/** Proactively records visible ranks once after player-list changes. */
+	public static void tickPlayerColours() {
+		if (playerColoursDirty && ++playerColourTicks >= 20) snapshotPlayerColours();
 	}
 
 	private static void snapshotPlayerColours() {
@@ -317,15 +323,20 @@ public final class PartyObjectiveHud implements HudElement {
 		Map<String, Integer> colours = new HashMap<>();
 		for (PlayerInfo info : client.player.connection.getOnlinePlayers()) {
 			Component shown = info.getTabListDisplayName();
-			String name = displayedPlayerName(shown);
-			if (name == null) continue;
+			String name = info.getProfile().name();
+			if (shown == null || name == null || !USERNAME.matcher(name).matches()) continue;
+			String uuid = info.getProfile().id().toString();
+			CanonicalPlayerNames.rememberProfile(name, uuid);
 			String key = name.toLowerCase(Locale.ROOT);
 			Integer colour = componentNameColour(shown, key);
 			int resolved = colour == null ? 0xFFAAAAAA : 0xFF000000 | colour;
 			colours.put(key, resolved);
+			if (colour != null) PlayerIdentityStore.rememberLiveRank(name, uuid, resolved,
+				permanentRankLevel(shown.getString()));
 		}
 		playerColours = Map.copyOf(colours);
 		playerColoursDirty = false;
+		playerColourTicks = 0;
 	}
 
 	/** The UUID-backed owner identity remains rainbow; all other names retain rank color. */
@@ -333,12 +344,6 @@ public final class PartyObjectiveHud implements HudElement {
 		String displayed = CanonicalPlayerNames.display(name);
 		if (SharedSparklingProviders.specialName(displayed)) panel.rainbowIconPair(displayed, values);
 		else panel.iconPair(displayed, PlayerNameStyle.colour(displayed), values);
-	}
-
-	private static String displayedPlayerName(Component shown) {
-		if (shown == null) return null;
-		var match = DISPLAYED_PLAYER.matcher(shown.getString().trim());
-		return match.matches() ? match.group(1) : null;
 	}
 
 	private static Integer componentNameColour(Component component, String lowerName) {
@@ -349,6 +354,17 @@ public final class PartyObjectiveHud implements HudElement {
 		}
 		return component.getStyle().getColor() == null ? null
 			: component.getStyle().getColor().getValue();
+	}
+
+	private static int permanentRankLevel(String text) {
+		if (text == null) return -1;
+		String upper = text.toUpperCase(Locale.ROOT);
+		if (upper.contains("[MVP++]")) return -1;
+		if (upper.contains("[MVP+]")) return 4;
+		if (upper.contains("[MVP]")) return 3;
+		if (upper.contains("[VIP+]")) return 2;
+		if (upper.contains("[VIP]")) return 1;
+		return -1;
 	}
 
 	public static void addFeederRow(HudPanel panel, int type, int count) {

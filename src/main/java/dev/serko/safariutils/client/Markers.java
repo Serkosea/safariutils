@@ -14,10 +14,6 @@ import java.util.List;
 /** The positions worth highlighting, each behind its own setting. */
 public final class Markers {
 	private static final int LEARNED_CANDIDATE_COLOUR = 0xFFFF6B1A;
-	private static Object cachedLevel;
-	private static long cachedTick = Long.MIN_VALUE;
-	private static long cachedConfigRevision = Long.MIN_VALUE;
-	private static List<Marker> cachedMarkers = List.of();
 
 	/** How a marker is drawn. */
 	public enum Style {
@@ -47,21 +43,8 @@ public final class Markers {
 	private Markers() {
 	}
 
-	public static List<Marker> collect() {
-		net.minecraft.client.Minecraft client = net.minecraft.client.Minecraft.getInstance();
-		if (client.level != null && client.level == cachedLevel
-			&& client.level.getGameTime() == cachedTick
-			&& ConfigManager.revision() == cachedConfigRevision) return cachedMarkers;
-		List<Marker> result = collectFresh();
-		cachedLevel = client.level;
-		cachedTick = client.level == null ? Long.MIN_VALUE : client.level.getGameTime();
-		cachedConfigRevision = ConfigManager.revision();
-		cachedMarkers = List.copyOf(result);
-		return cachedMarkers;
-	}
-
-	/** Builds the current marker set once; render frames in the same game tick reuse it. */
-	private static List<Marker> collectFresh() {
+	/** MarkerRegistry is the sole cache owner and supplies matching recatch ownership. */
+	static List<Marker> collect(List<RecatchSpots.ActivePin> recatchPins) {
 		net.minecraft.client.Minecraft client = net.minecraft.client.Minecraft.getInstance();
 		List<Marker> markers = new ArrayList<>();
 		if (SessionManager.current() == null) {
@@ -118,7 +101,7 @@ public final class Markers {
 		// wherever you were standing when you threw it. Every active pin is drawn, not
 		// just one — several can be open at once when more than one capsule is out.
 		if (display.recatchHelper) {
-			for (RecatchSpots.ActivePin pin : RecatchSpots.active()) {
+			for (RecatchSpots.ActivePin pin : recatchPins) {
 				if (!pin.sparkling() && SparklingMode.hideOrdinarySpecies(pin.critter(), session)) continue;
 				int colour = display.recatchRarityColour
 					? WaypointRenderer.critterHitboxColour(pin.critter(), pin.sparkling())

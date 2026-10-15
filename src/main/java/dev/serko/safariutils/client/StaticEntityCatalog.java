@@ -2,8 +2,13 @@ package dev.serko.safariutils.client;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
 import dev.serko.safariutils.io.AtomicFiles;
+import dev.serko.safariutils.io.RecoverySnapshot;
+import dev.serko.safariutils.io.PersistentJson;
+import dev.serko.safariutils.BuildVersion;
 import net.minecraft.core.BlockPos;
 
 import java.io.IOException;
@@ -19,7 +24,7 @@ import java.util.Set;
 /** Bundled master and locally learned spawn positions for initially stationary critters. */
 public final class StaticEntityCatalog {
 	private static final int CURRENT_SCHEMA = 9;
-	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+	private static final Gson GSON = new GsonBuilder().create();
 	private static final Type DATA_TYPE = new TypeToken<Data>() { }.getType();
 	private static final String BUNDLED = "/assets/safariutils/static-entities.json";
 	/** Reviewed sightings that occur only while Hideyho transitions, not hiding spots. */
@@ -27,8 +32,14 @@ public final class StaticEntityCatalog {
 		new BlockPos(-21, 79, -52), new BlockPos(1, 78, -83));
 	private static final long SAVE_DELAY_MILLIS = 1_000;
 	private static Data local;
+	private static JsonObject preservedLocalRoot;
 	private static Data bundled;
 	private static boolean dirty;
+	private static boolean pendingUpgradeBackup;
+	private static boolean pendingVersionBackup;
+	private static boolean writesBlocked;
+	private static boolean saveBlockReported;
+	private static final RecoverySnapshot recoverySnapshot = new RecoverySnapshot("safariutils-static-entities-recovery");
 	private static long dirtyAt;
 	private static final Map<String, Set<BlockPos>> positionCache = new LinkedHashMap<>();
 	private static java.util.List<Candidate> candidateCache;
@@ -104,15 +115,60 @@ public final class StaticEntityCatalog {
 		boolean hasSavedCatalog = Files.isRegularFile(SafariPaths.staticEntities());
 		try {
 			if (hasSavedCatalog) {
-				local = GSON.fromJson(Files.readString(SafariPaths.staticEntities()), DATA_TYPE);
+				try {
+					PersistentJson.backupBeforeVersion(SafariPaths.staticEntities(),
+						SafariPaths.catalogBackups(), "safariutils-static-entities",
+						BuildVersion.releaseVersion());
+				} catch (IOException backupFailed) {
+					pendingVersionBackup = true;
+					OperationalLog.error("CATALOG/VERSION_BACKUP", backupFailed);
+				}
+				JsonObject root = JsonParser.parseString(
+					Files.readString(SafariPaths.staticEntities())).getAsJsonObject();
+				int schema = PersistentJson.schema(root, "schema");
+				if (schema > CURRENT_SCHEMA) writesBlocked = true;
+				Decoded decoded = decodeStore(root);
+				local = decoded.data();
+				writesBlocked |= decoded.rejected() > 0;
+				if (decoded.rejected() > 0) OperationalLog.info("CATALOG/PARTIAL",
+					"Recovered readable positions; protected source; rejected=" + decoded.rejected());
+				preservedLocalRoot = root.deepCopy();
+				if (local != null && local.schema < CURRENT_SCHEMA) {
+					try {
+						PersistentJson.backupBeforeUpgrade(SafariPaths.staticEntities(),
+							SafariPaths.catalogBackups(), "safariutils-static-entities", CURRENT_SCHEMA);
+					} catch (IOException backupFailed) {
+						pendingUpgradeBackup = true;
+						OperationalLog.error("CATALOG/BACKUP", backupFailed);
+					}
+				}
 			}
 		} catch (IOException | RuntimeException unreadable) {
 			OperationalLog.error("CATALOG/ENTITIES_LOAD", unreadable);
+			boolean preserved = false;
+			try {
+				var backup = SafariPaths.quarantineUnreadableJson(SafariPaths.staticEntities(),
+					SafariPaths.catalogBackups(), "safariutils-static-entities");
+				preserved = backup != null;
+				if (backup != null) OperationalLog.info("CATALOG/RECOVERY",
+					"Preserved unreadable entity catalog at " + backup.toAbsolutePath());
+			} catch (IOException backupFailed) {
+				OperationalLog.error("CATALOG/RECOVERY", backupFailed);
+			}
+			writesBlocked |= !preserved && Files.exists(SafariPaths.staticEntities());
 		}
 		if (local == null) local = new Data();
 		normalize(local);
 		if (!hasSavedCatalog) {
 			local.schema = CURRENT_SCHEMA;
+			return local;
+		}
+		// A newer build may own fields and position types this build does not know.
+		// Use them read-only and preserve them rather than destructively downgrading.
+		if (local.schema > CURRENT_SCHEMA) {
+			writesBlocked = true;
+			OperationalLog.info("CATALOG/FUTURE_SCHEMA",
+				"Static catalog schema is newer or unrecognized; using it read-only");
 			return local;
 		}
 		// Schema 2 discards Hideonfloor positions learned after the dormant critter moved.
@@ -156,7 +212,13 @@ public final class StaticEntityCatalog {
 	private static Data getBundled() {
 		if (bundled != null) return bundled;
 		try (var stream = StaticEntityCatalog.class.getResourceAsStream(BUNDLED)) {
-			if (stream != null) bundled = GSON.fromJson(new InputStreamReader(stream, StandardCharsets.UTF_8), DATA_TYPE);
+			if (stream != null) {
+				Decoded decoded = decodeStore(JsonParser.parseReader(
+					new InputStreamReader(stream, StandardCharsets.UTF_8)).getAsJsonObject());
+				bundled = decoded.data();
+				if (decoded.rejected() > 0) OperationalLog.info("CATALOG/BUNDLED_INVALID",
+					"Rejected bundled positions=" + decoded.rejected());
+			}
 		} catch (IOException | RuntimeException unreadable) {
 			OperationalLog.error("CATALOG/ENTITIES_BUNDLED", unreadable);
 		}
@@ -169,8 +231,40 @@ public final class StaticEntityCatalog {
 
 	private static void save() {
 		var path = SafariPaths.staticEntities();
+		if (writesBlocked) {
+			dirtyAt = System.currentTimeMillis();
+			if (!saveBlockReported) {
+				saveBlockReported = true;
+				OperationalLog.info("CATALOG/SAVE_BLOCKED",
+					"Static catalog source is protected; refusing to overwrite it");
+			}
+			try {
+				// Recovery represents this build's working catalog, never the future source schema.
+				JsonObject recovery = GSON.toJsonTree(getLocal(), DATA_TYPE).getAsJsonObject();
+				recovery.addProperty("schema", CURRENT_SCHEMA);
+				recoverySnapshot.write(SafariPaths.catalogBackups(), GSON.toJson(recovery));
+				dirty = false;
+				StructuredDiagnostics.decision("catalog", "recovery-saved", "species=" + local.positions.size());
+			} catch (IOException failed) {
+				OperationalLog.error("CATALOG/RECOVERY_SAVE", failed);
+			}
+			return;
+		}
 		try {
-			AtomicFiles.writeString(path, GSON.toJson(getLocal(), DATA_TYPE));
+			if (pendingVersionBackup && Files.isRegularFile(path)) {
+				PersistentJson.backupBeforeVersion(path, SafariPaths.catalogBackups(),
+					"safariutils-static-entities", BuildVersion.releaseVersion());
+				pendingVersionBackup = false;
+			}
+			if (pendingUpgradeBackup) {
+				PersistentJson.backupBeforeUpgrade(path, SafariPaths.catalogBackups(),
+					"safariutils-static-entities", CURRENT_SCHEMA);
+				pendingUpgradeBackup = false;
+			}
+			JsonObject written = PersistentJson.mergeRecord(preservedLocalRoot,
+				GSON.toJsonTree(getLocal(), DATA_TYPE).getAsJsonObject());
+			AtomicFiles.writeString(path, GSON.toJson(written));
+			preservedLocalRoot = written;
 			dirty = false;
 		} catch (IOException failed) {
 			// Keep retrying, but no faster than the normal coalesced-save interval.
@@ -181,6 +275,8 @@ public final class StaticEntityCatalog {
 
 	private static void normalize(Data data) {
 		if (data.positions == null) data.positions = new LinkedHashMap<>();
+		else data.positions.entrySet().removeIf(entry -> entry.getKey() == null
+			|| entry.getKey().isBlank() || entry.getValue() == null);
 	}
 
 	/** Schema 9 keys Hideyho by the center of its upper cube, not its old Y anchor. */
@@ -189,6 +285,10 @@ public final class StaticEntityCatalog {
 		for (var entry : data.positions.entrySet()) {
 			Set<String> canonical = new LinkedHashSet<>();
 			for (String stored : entry.getValue()) {
+				if (stored == null || stored.isBlank()) {
+					changed = true;
+					continue;
+				}
 				BlockPos pos = oldHideyhoY ? StaticLocationKeys.decode(stored)
 					: decodeOne(entry.getKey(), stored);
 				canonical.add(pos == null ? stored : encode(entry.getKey(), pos));
@@ -257,7 +357,30 @@ public final class StaticEntityCatalog {
 		return StaticLocationKeys.decode(value);
 	}
 
-	private static final class Data {
+	/** Valid positions survive malformed neighbors; the caller protects rejected source data. */
+	static Decoded decodeStore(JsonObject root) {
+		Data data = new Data();
+		data.schema = PersistentJson.schema(root, "schema");
+		if (!root.has("positions")) return new Decoded(data, 0);
+		if (!root.get("positions").isJsonObject()) return new Decoded(data, 1);
+		int rejected = 0;
+		for (var species : root.getAsJsonObject("positions").entrySet()) {
+			if (species.getKey().isBlank() || !species.getValue().isJsonArray()) { rejected++; continue; }
+			Set<String> positions = new LinkedHashSet<>();
+			for (var value : species.getValue().getAsJsonArray()) {
+				if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString()) { rejected++; continue; }
+				String encoded = value.getAsString();
+				if (StaticLocationKeys.decode(encoded) == null) { rejected++; continue; }
+				positions.add(encoded);
+			}
+			data.positions.put(species.getKey(), positions);
+		}
+		return new Decoded(data, rejected);
+	}
+
+	record Decoded(Data data, int rejected) { }
+
+	static final class Data {
 		int schema;
 		Map<String, Set<String>> positions = new LinkedHashMap<>();
 	}

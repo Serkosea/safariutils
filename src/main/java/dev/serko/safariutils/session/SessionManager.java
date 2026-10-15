@@ -8,6 +8,7 @@ import dev.serko.safariutils.client.FloorDrops;
 import dev.serko.safariutils.client.MoundSpotter;
 import dev.serko.safariutils.client.CritterCountLog;
 import dev.serko.safariutils.client.CritterState;
+import dev.serko.safariutils.client.CritterSpotter;
 import dev.serko.safariutils.client.DebugLog;
 import dev.serko.safariutils.client.HideyhoSolver;
 import dev.serko.safariutils.client.StillCritters;
@@ -24,13 +25,14 @@ import dev.serko.safariutils.client.RecatchSpots;
 import dev.serko.safariutils.state.SafariRuntimeState;
 import dev.serko.safariutils.client.DetectedCritters;
 import dev.serko.safariutils.client.StartingItemsWatch;
-import dev.serko.safariutils.client.PartyRosterWatch;
 import dev.serko.safariutils.client.SafariPartyWatch;
 import dev.serko.safariutils.client.OperationalLog;
 import dev.serko.safariutils.client.TicketTrading;
 import dev.serko.safariutils.api.PartyItemSyncProviders;
 import dev.serko.safariutils.client.WallTracker;
 import dev.serko.safariutils.client.SafeMode;
+import dev.serko.safariutils.state.PartySnapshot;
+import dev.serko.safariutils.state.PartyState;
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.CritterSpawnRanges;
 import dev.serko.safariutils.parse.ChatParser;
@@ -39,7 +41,6 @@ import dev.serko.safariutils.data.SafariBiome;
 import dev.serko.safariutils.parse.CritterEvent;
 import net.minecraft.client.Minecraft;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -47,7 +48,6 @@ import java.util.Set;
 /** Starts, updates, finishes, and saves Safari runs. */
 public final class SessionManager {
 
-	private static final int MAX_HISTORY = 20;
 	private static final String LEADER_RUN_START =
 		"[NPC] Safari Manager: I already saw your ticket, so you're free to go.";
 	private static final String TICKET_LOCKOUT =
@@ -67,7 +67,6 @@ public final class SessionManager {
 
 	private static SafariSession current;
 	private static SafariSession lastSession;
-	private static final List<SafariSession> history = new ArrayList<>();
 
 	private static final java.util.EnumSet<SafariBiome> announcedBiomes =
 		java.util.EnumSet.noneOf(SafariBiome.class);
@@ -141,8 +140,9 @@ public final class SessionManager {
 			&& !lobbyId.equals(visitLobbyId)) beginVisit(lobbyId);
 		else if (visitLobbyId == null && lobbyId != null) visitLobbyId = lobbyId;
 		visitPeakPlayers = Math.max(visitPeakPlayers, Math.max(1, SafariPartyWatch.joinedPlayers()));
-		if (!visitRosterLocked && PartyRosterWatch.rosterCapturedAt() >= visitEnteredAt) {
-			visitExpectedPlayers = Math.max(1, PartyRosterWatch.expectedPlayers());
+		PartySnapshot party = PartyState.snapshot();
+		if (!visitRosterLocked && party.capturedAtMillis() >= visitEnteredAt) {
+			visitExpectedPlayers = party.expectedPlayers();
 			visitRosterLocked = true;
 			if (current != null) runExpectedPlayers = visitExpectedPlayers;
 			DebugLog.line("PARTYTIME", "run roster locked at " + visitExpectedPlayers
@@ -200,17 +200,11 @@ public final class SessionManager {
 		if (changed) {
 			// Exhausting a finite source can complete a species without a catch. Announce
 			// that transition now instead of waiting for an unrelated later catch.
-			announceNewlyCompleteBiomes();
-			announceRunMilestones();
+			announceCompletionTransitions("availability");
 		}
 	}
 
 	/** Feeds one raw chat line into the active run. */
-	public static void onChatMessage(String rawText) {
-		String line = ChatParser.clean(rawText);
-		onChatMessage(line, ChatParser.parse(line, selfName()));
-	}
-
 	/** Feeds one cleaned chat line with the shared, already-parsed critter event. */
 	public static void onChatMessage(String line, CritterEvent parsedEvent) {
 		if (line.isEmpty()) return;
@@ -291,7 +285,7 @@ public final class SessionManager {
 
 		if (event.type() == CritterEvent.Type.ENTERED_SAFARI) {
 			ticketWindowLocked = false;
-			if (dev.serko.safariutils.BuildVersion.DEVELOPER) {
+			if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)) {
 				JoinWindowDiagnostics.onSelfEntry(line);
 			}
 			DebugLog.line("ACTIVATE", "self entry chat received at visitElapsed="
@@ -320,7 +314,7 @@ public final class SessionManager {
 		}
 		String entrant = ChatParser.safariEntrant(line);
 		boolean partyEntry = entrant != null
-			&& (entrant.equals(selfName()) || PartyRosterWatch.isListedMember(entrant));
+			&& (entrant.equals(selfName()) || PartyState.snapshot().containsName(entrant));
 		if (current != null || !ChatParser.safariQueueLine(line) && !partyEntry) return;
 		if (ticketWindowLocked && !visitPrepared) ticketWindowLocked = false;
 		if (pendingJoinStartedAt <= 0L || now - pendingJoinStartedAt > JOIN_SIGNAL_MAX_AGE_MILLIS
@@ -342,8 +336,6 @@ public final class SessionManager {
 		}
 		if (event.isCatch()) {
 			int caught = current.partyCatches(event.critter());
-			StillCritters.onConfirmedCatchTotal(event.critter(), caught);
-			RecatchSpots.onConfirmedCatchTotal(event.critter(), caught);
 			CritterState.onConfirmedCatchTotal(event.critter(), caught);
 			int expectedMaximum = CritterSpawnRanges.maximum(event.critter());
 			if (caught > expectedMaximum) {
@@ -355,43 +347,44 @@ public final class SessionManager {
 		if (!event.isCatch()) return;
 		SafariObjectives.onCatch(event.critter().name());
 		EncounterAlerts.onCatch(event.critter().name());
-		announceNewlyCompleteBiomes();
-		announceRunMilestones();
+		announceCompletionTransitions("catch:" + event.critter().name());
 	}
 
 	/**
-	 * Fires a completion alert the moment a biome's last species is caught by anyone.
-	 * Each biome announces at most once per run.
+	 * Evaluates every completion against one stable post-event state. The announcement
+	 * sets are edge detectors: polling or duplicate catch lines cannot re-emit a biome.
 	 */
-	private static void announceNewlyCompleteBiomes() {
-		boolean strongerMilestonePending = !announcedAllDone && current.dexComplete()
-			|| !announcedAllButMacaw && current.allCaughtExcept(Critters.MACAW);
+	private static void announceCompletionTransitions(String reason) {
+		if (current == null) return;
+		boolean allDone = current.dexComplete();
+		// This milestone means Macaw is genuinely the outstanding exception. Previously
+		// it could fire after Macaw had already been caught if another species finished last.
+		boolean allButMacaw = current.allButMacawComplete();
+		boolean strongerMilestonePending = !announcedAllDone && allDone
+			|| !announcedAllButMacaw && allButMacaw;
 		for (SafariBiome biome : SafariBiome.values()) {
 			if (announcedBiomes.contains(biome)) continue;
 			if (!current.biomeUniquesComplete(biome)) continue;
 			announcedBiomes.add(biome);
+			DebugLog.line("COMPLETION", "BIOME " + biome.name() + " reason=" + reason
+				+ " unique=" + current.partyUnique(biome) + "/" + Critters.totalIn(biome)
+				+ " suppressed=" + strongerMilestonePending);
 			// One catch can finish both a biome and the whole-run milestone. In that
 			// case the stronger message replaces the redundant biome message.
 			if (!strongerMilestonePending) EncounterAlerts.onBiomeComplete(biome);
 		}
-	}
-
-	/**
-	 * Fires the two whole-run milestones, at most once each per run.
-	 *
-	 * <p>They are mutually exclusive: if a single catch completes the dex outright,
-	 * only "Everything Done!" fires, and the weaker "except Macaw" message is marked
-	 * as already announced so it cannot follow it.
-	 */
-	private static void announceRunMilestones() {
-		if (!announcedAllDone && current.dexComplete()) {
+		if (!announcedAllDone && allDone) {
 			announcedAllDone = true;
 			announcedAllButMacaw = true;
+			DebugLog.line("COMPLETION", "ALL_DONE reason=" + reason
+				+ " unique=" + current.partyUnique() + "/" + Critters.total());
 			EncounterAlerts.onAllDone();
 			return;
 		}
-		if (!announcedAllButMacaw && current.allCaughtExcept(Critters.MACAW)) {
+		if (!announcedAllButMacaw && allButMacaw) {
 			announcedAllButMacaw = true;
+			DebugLog.line("COMPLETION", "ALL_BUT_MACAW reason=" + reason
+				+ " unique=" + current.partyUnique() + "/" + Critters.total());
 			EncounterAlerts.onAllButMacaw();
 		}
 	}
@@ -399,7 +392,7 @@ public final class SessionManager {
 	/** Opens a fresh run, then safely files the previous one. */
 	public static void startSession(String trigger) {
 		if (!visitPrepared) beginVisit(SafariLocation.lobbyId());
-		if (dev.serko.safariutils.BuildVersion.DEVELOPER) {
+		if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)) {
 			JoinWindowDiagnostics.onRunStarted(trigger);
 		}
 		pendingJoinStartedAt = 0L;
@@ -410,7 +403,7 @@ public final class SessionManager {
 		boolean finishedSuppressed = persistenceSuppressed();
 		current = new SafariSession(selfName(), System.currentTimeMillis());
 		SafariRuntimeState.runStarted(SafariLocation.lobbyId());
-		suppressCurrentRunPersistence = dev.serko.safariutils.BuildVersion.DEVELOPER
+		suppressCurrentRunPersistence = BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
 			&& ConfigManager.get().advanced.testingDoNotSaveRun;
 		runExpectedPlayers = Math.max(visitExpectedPlayers, visitPeakPlayers);
 		SparklingMode.onRunStarted();
@@ -429,9 +422,7 @@ public final class SessionManager {
 				OperationalLog.error("RUN/ARCHIVE_REPLACED", failed);
 			}
 		}
-		announcedBiomes.clear();
-		announcedAllButMacaw = false;
-		announcedAllDone = false;
+		resetCompletionAnnouncements();
 		PartyItemSyncProviders.onRunStarted();
 		TicketTrading.onRunStarted();
 	}
@@ -452,6 +443,7 @@ public final class SessionManager {
 		visitPeakPlayers = Math.max(1, SafariPartyWatch.joinedPlayers());
 		visitExpectedPlayers = visitPeakPlayers;
 		SafariRuntimeState.visitStarted(lobbyId);
+		CritterState.onVisitStarted();
 		runExpectedPlayers = 1;
 		CritterCountLog.reset();
 		SafariObjectives.reset();
@@ -468,6 +460,8 @@ public final class SessionManager {
 		WallTracker.SNOOPER.reset();
 		WallTracker.TROODON.reset();
 		DetectedCritters.reset();
+		CritterSpotter.reset();
+		SparklingWatch.reset();
 		StartingItemsWatch.onSafariVisitStarted();
 		DebugLog.line("RUN", "Safari visit tracking prepared lobby=" + lobbyId
 			+ " visitElapsed=0.000s");
@@ -538,6 +532,10 @@ public final class SessionManager {
 	}
 
 	private static void endSession() {
+		endSession(false);
+	}
+
+	private static void endSession(boolean interrupted) {
 		SafariSession finished = current;
 		boolean suppressed = persistenceSuppressed();
 		current = null;
@@ -550,7 +548,8 @@ public final class SessionManager {
 		// the next Safari visit.
 		RecatchSpots.clear();
 		if (finished == null || finished.isEmpty()) return;
-		finished.finish(System.currentTimeMillis());
+		if (interrupted) finished.finishInterrupted(System.currentTimeMillis());
+		else finished.finish(System.currentTimeMillis());
 		OperationalLog.info("RUN", "Finished Safari run");
 		try {
 			archive(finished, suppressed);
@@ -565,6 +564,42 @@ public final class SessionManager {
 		// valid scoreboard lobby id decides whether the run truly ended.
 	}
 
+	/** Discards server-derived state once a destination is known not to be Hypixel. */
+	public static void onNonHypixelConnection() {
+		if (current != null) {
+			OperationalLog.info("RUN", "Finishing interrupted Safari run after leaving Hypixel");
+			endSession(true);
+		}
+		current = null;
+		suppressCurrentRunPersistence = false;
+		runLobbyId = null;
+		waitingLobbyId = null;
+		startedBy = "nothing yet";
+		startedAt = 0L;
+		rewardSummaryOpen = false;
+		completedSummaryLobbyId = null;
+		visitPrepared = false;
+		visitLobbyId = null;
+		visitPeakPlayers = 1;
+		visitExpectedPlayers = 1;
+		runExpectedPlayers = 1;
+		visitEnteredAt = 0L;
+		visitRosterLocked = false;
+		pendingJoinStartedAt = 0L;
+		pendingConnectionJoinedAt = 0L;
+		ticketWindowStartedAt = 0L;
+		ticketWindowLocked = false;
+		TrackingMode.setUnavailable(Set.of());
+		resetCompletionAnnouncements();
+		SparklingWatch.reset();
+		RecatchSpots.clear();
+	}
+
+	/** Preserves a meaningful ticket-activated run when Minecraft closes mid-instance. */
+	public static void onClientStopping() {
+		if (current != null) endSession(true);
+	}
+
 	/** Captures the destination boundary before scoreboard-based Safari recognition. */
 	public static void onConnectionJoin() {
 		long now = System.currentTimeMillis();
@@ -577,20 +612,18 @@ public final class SessionManager {
 		}
 	}
 
-	/** Keeps a finished run in memory and writes it to history. */
+	/** Retains the latest summary and delegates all historical storage to RunHistory. */
 	private static void archive(SafariSession session, boolean suppressed) {
 		if (suppressed) {
 			OperationalLog.info("RUN", "Discarded developer test run without saving");
 			return;
 		}
 		lastSession = session;
-		history.add(session);
-		while (history.size() > MAX_HISTORY) history.removeFirst();
 		RunHistory.record(session);
 	}
 
 	private static boolean persistenceSuppressed() {
-		if (current != null && dev.serko.safariutils.BuildVersion.DEVELOPER
+		if (current != null && BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
 				&& ConfigManager.get().advanced.testingDoNotSaveRun) {
 			suppressCurrentRunPersistence = true;
 		}
@@ -630,13 +663,17 @@ public final class SessionManager {
 		return lastSession;
 	}
 
-	public static List<SafariSession> history() {
-		return List.copyOf(history);
-	}
-
 	/** Wipes the active run's tallies without waiting to leave the island. */
 	public static void reset() {
 		current = new SafariSession(selfName(), System.currentTimeMillis());
+		TrackingMode.setUnavailable(Set.of());
+		resetCompletionAnnouncements();
+	}
+
+	private static void resetCompletionAnnouncements() {
+		announcedBiomes.clear();
+		announcedAllButMacaw = false;
+		announcedAllDone = false;
 	}
 
 	private static String selfName() {

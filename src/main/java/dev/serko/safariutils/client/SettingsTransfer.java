@@ -3,17 +3,12 @@ package dev.serko.safariutils.client;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.serko.safariutils.BuildVersion;
-import dev.serko.safariutils.io.AtomicFiles;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
@@ -31,8 +26,6 @@ final class SettingsTransfer {
 	private static final int WHITESPACE_ALLOWANCE = 4_096;
 	private static final int MAX_JSON_BYTES = 4_000_000;
 	private static final int COMPRESSION_BUFFER_BYTES = 8_192;
-	private static final DateTimeFormatter BACKUP_TIME =
-		DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
 
 	record Preview(boolean valid, String message, String sourceVersion, int codeLength,
 		JsonObject settings) { }
@@ -80,7 +73,9 @@ final class SettingsTransfer {
 			String versionKey = versionOne ? "version" : "v";
 			String settingsKey = versionOne ? "settings" : "s";
 			int expectedFormat = versionOne ? FORMAT_V1 : FORMAT_V2;
-			if (!envelope.has(formatKey) || envelope.get(formatKey).getAsInt() != expectedFormat
+			if (!envelope.has(formatKey) || !envelope.get(formatKey).isJsonPrimitive()
+					|| !envelope.getAsJsonPrimitive(formatKey).isNumber()
+					|| envelope.get(formatKey).getAsBigDecimal().intValueExact() != expectedFormat
 					|| !envelope.has(settingsKey) || !envelope.get(settingsKey).isJsonObject()) {
 				return invalid("Unsupported settings code format");
 			}
@@ -102,19 +97,8 @@ final class SettingsTransfer {
 		if (preview == null || !preview.valid || preview.settings == null) {
 			return new ImportResult(false, "No valid settings code is ready", null);
 		}
-		Path path = SafariPaths.settings();
-		Path backup = SafariPaths.uniqueJsonBackup(SafariPaths.settingsBackups(),
-			"safariutils-settings-backup-"
-			+ BACKUP_TIME.format(LocalDateTime.now()));
 		try {
-			ConfigManager.save();
-			Files.createDirectories(backup.getParent());
-			if (Files.isRegularFile(path)) {
-				Files.copy(path, backup, StandardCopyOption.COPY_ATTRIBUTES);
-			} else {
-				AtomicFiles.writeString(backup, ConfigManager.settingsJson().toString());
-			}
-			ConfigManager.importSettings(preview.settings.deepCopy());
+			Path backup = ConfigManager.importSettings(preview.settings.deepCopy());
 			return new ImportResult(true, "Settings imported; previous settings backed up", backup);
 		} catch (IOException | RuntimeException failed) {
 			OperationalLog.error("CONFIG/IMPORT", failed);

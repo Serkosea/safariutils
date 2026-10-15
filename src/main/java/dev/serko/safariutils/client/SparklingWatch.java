@@ -44,7 +44,7 @@ public final class SparklingWatch {
 		long now = System.currentTimeMillis();
 		justCaught.entrySet().removeIf(entry -> now - entry.getValue() > CAUGHT_THEME_MILLIS);
 		replacementExpectedUntil.entrySet().removeIf(entry -> now > entry.getValue());
-		long scan = CritterEntities.scannedAt();
+		long scan = CritterEntities.scanRevision();
 		long configRevision = ConfigManager.revision();
 		if (scan == lastScan && configRevision == lastConfigRevision) return;
 		lastScan = scan;

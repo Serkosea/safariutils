@@ -1,6 +1,7 @@
 package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.data.Critters;
+import dev.serko.safariutils.data.Critter;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.Vec3;
 
@@ -15,6 +16,7 @@ import java.util.Set;
 public final class HideyhoSolver {
 
 	private static final String NAME = "Hideyho";
+	private static final Critter CRITTER = Critters.byName(NAME);
 
 	/** How its own lines arrive once formatting is stripped. */
 	private static final String SPEAKER = "[MOB] Hideyho:";
@@ -195,10 +197,8 @@ public final class HideyhoSolver {
 		var client = net.minecraft.client.Minecraft.getInstance();
 		if (!SafeMode.hideyho() || client.level == null) return;
 		Set<BlockPos> loaded = new LinkedHashSet<>();
-		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-			if (NAME.equals(sighting.critter().name())) {
-				loaded.add(sighting.label().blockPosition());
-			}
+		for (CritterEntities.Sighting sighting : CritterEntities.all(CRITTER)) {
+			loaded.add(sighting.label().blockPosition());
 		}
 		unchecked.removeIf(pos -> client.level.isLoaded(pos)
 			&& VisibilityCheck.canInspectCandidate(pos)
@@ -290,8 +290,7 @@ public final class HideyhoSolver {
 	private static BlockPos fromSightings() {
 		lastSightingVisible = false;
 		lastSightingExact = null;
-		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-			if (!NAME.equals(sighting.critter().name())) continue;
+		for (CritterEntities.Sighting sighting : CritterEntities.all(CRITTER)) {
 			// Hideyho's named entity is Hideyho itself. Generic body pairing can select
 			// an unrelated nearby critter and would poison the learned location catalog.
 			var target = sighting.label();
@@ -311,9 +310,7 @@ public final class HideyhoSolver {
 	}
 
 	private static boolean displayAllowed() {
-		var critter = Critters.byName(NAME);
-		return position == null || critter == null
-			|| !SafeMode.hiddenCritter(critter, sparkling) || visiblyConfirmed;
+		return position == null || !SafeMode.hiddenCritter(CRITTER, sparkling) || visiblyConfirmed;
 	}
 
 	private static String pos(BlockPos pos) {

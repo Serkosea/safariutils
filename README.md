@@ -10,8 +10,8 @@ SafariUtils is a Fabric mod made for Hypixel SkyBlock's Critter Safari. It keeps
 - A dedicated Sparkling menu with editable collection totals, party-shared lists, Sparkling Mode, selectable always-active critters and waypoints, and special catch effects.
 - Helpful markers for Safari objectives and encounters.
 - Party-ready alerts and ticket protection while waiting for everyone to arrive.
-- Optional Ticket Trading with trusted players, backup slots, Sparkling filters, and timed party automation.
-- Optional Party Sync for sharing objective state through parsed party chat when every member uses SafariUtils and explicitly enables it.
+- Optional Ticket Trading with draggable invite queues, per-player guest controls, Sparkling filters, and timed party automation.
+- Player lookups for tickets and Sparkling collections, cached rank colors, and party-shared collections with no API key setup.
 - Selective hiding for processed general chat and independently grouped Cavern, Icy, Haunted, and Forest objective messages.
 - Automatic Hideyho acceptance, Birdfeeder inventory/empty alerts, and configurable starting-item party messages.
 - A real-time Miria's Contest timer with bracket, score, and ticket tracking.
@@ -27,8 +27,8 @@ Choose the jar that matches your Minecraft version.
 
 | Minecraft | Safe Mode | Extra |
 |---|---|---|
-| 26.1.2 | `safariutils-2.8.0+mc26.1.2.jar` | `safariutils-2.8.0-extra+mc26.1.2.jar` |
-| 26.2 | `safariutils-2.8.0+mc26.2.jar` | `safariutils-2.8.0-extra+mc26.2.jar` |
+| 26.1.2 | `safariutils-3.0.0+mc26.1.2.jar` | `safariutils-3.0.0-extra+mc26.1.2.jar` |
+| 26.2 | `safariutils-3.0.0+mc26.2.jar` | `safariutils-3.0.0-extra+mc26.2.jar` |
 
 The Safe Mode edition is the recommended download. Extra includes features that may provide information the player cannot directly see and may not be safe to use.
 
@@ -43,9 +43,7 @@ SafariUtils requires Java 25, Fabric Loader 0.19 or newer, and Fabric API. Mod M
 3. Start Minecraft and enter `/su` to open the settings.
 
 Existing SafariUtils settings and history are moved into `config/safariutils/` automatically when possible.
-Important mod errors are recorded automatically in timestamped `SafariUtils_*.log` files under `config/safariutils/logs/`.
-
-Party Sync is disabled on every launch. When enabled under Gameplay's Safari tab, it sends one compact visible verification token for a new stable Safari party and exchanges parsed objective updates only after every member confirms the same capability. Verification and shutdown tokens are bound to their displayed sender and current Safari lobby. Disabling it during an active synchronized run visibly notifies the party and stops synchronization for everyone.
+Important mod errors appear in Minecraft's log. Developer builds additionally record compressed diagnostics under `config/safariutils/logs/`.
 
 ## Commands
 

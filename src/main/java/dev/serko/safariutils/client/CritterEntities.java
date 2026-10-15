@@ -1,18 +1,15 @@
 package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.data.Critter;
-import dev.serko.safariutils.data.Critters;
+import dev.serko.safariutils.state.MonotonicTime;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntityType;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 /** Scans loaded critter labels once and shares the paired bodies with every tracker. */
@@ -20,59 +17,11 @@ public final class CritterEntities {
 
 	/** Spawns do not appear fast enough to be worth scanning every tick. */
 	private static final int SCAN_INTERVAL_TICKS = 5;
-	/**
-	 * Maximum label-to-body distance. Doomspiral and Mantis Shrimp can exceed the old
-	 * three-block limit because of their size and movement.
-	 */
-	private static final double LABEL_TO_MOB_RADIUS = 4.0;
-	/** The word a rare variant is assumed to carry in its name. */
-	private static final String SPARKLING = "Sparkling";
-	/** Body types repeatedly verified in research logs; unlisted species retain generic pairing. */
-	private static final Map<String, Set<String>> EXPECTED_BODY_TYPES = Map.ofEntries(
-		Map.entry("Foxtrot", Set.of("fox")),
-		Map.entry("Bluebird", Set.of("parrot")),
-		Map.entry("Honeybug", Set.of("bee")),
-		Map.entry("Treefrog", Set.of("frog")),
-		Map.entry("Woodchucker", Set.of("creaking")),
-		Map.entry("Fluffling", Set.of("panda")),
-		Map.entry("Hideonfloor", Set.of("shulker", "silverfish")),
-		Map.entry("Parakeet", Set.of("parrot")),
-		Map.entry("Macaw", Set.of("parrot")),
-		Map.entry("Cavernfish", Set.of("tropical_fish")),
-		Map.entry("Flitter", Set.of("bat")),
-		Map.entry("Shyworm", Set.of("slime", "zombie")),
-		Map.entry("Driftling", Set.of("silverfish")),
-		Map.entry("Chuckwalla", Set.of("silverfish")),
-		Map.entry("Rockmite", Set.of("silverfish")),
-		Map.entry("Scrappy", Set.of("armadillo")),
-		Map.entry("Mantis Shrimp", Set.of("tropical_fish")),
-		Map.entry("Gimmiegold", Set.of("tropical_fish")),
-		Map.entry("Nozzlenose", Set.of("dolphin")),
-		Map.entry("Wumpa", Set.of("ravager")),
-		Map.entry("Billygoat", Set.of("goat")),
-		Map.entry("Gemzie", Set.of("vex")),
-		Map.entry("Polaris", Set.of("polar_bear")),
-		Map.entry("Shuddersquid", Set.of("glow_squid")),
-		Map.entry("Snoozle", Set.of("sniffer")),
-		Map.entry("Tepid", Set.of("tropical_fish")),
-		Map.entry("Troodon", Set.of("silverfish")),
-		Map.entry("Strongarm", Set.of("snow_golem")),
-		Map.entry("Areita", Set.of("cave_spider")),
-		Map.entry("Bloodbat", Set.of("bat")),
-		Map.entry("Litterbug", Set.of("endermite")),
-		Map.entry("Solsnatcher", Set.of("phantom")),
-		Map.entry("Hideonwall", Set.of("shulker", "silverfish")),
-		Map.entry("Duplico", Set.of("interaction", "silverfish")),
-		Map.entry("Doomspiral", Set.of("warden"))
-	);
-
-	private static List<Sighting> sightings = List.of();
-	/** Immutable per-species index rebuilt with the shared scan, avoiding render-time filtering. */
-	private static Map<Critter, List<Sighting>> sightingsByCritter = Map.of();
-	private static Map<UUID, Critter> bodylessLabels = Map.of();
-	/** Constant-time reverse lookup shared by render hooks for this scan snapshot. */
-	private static Map<UUID, Sighting> sightingsByEntity = Map.of();
-	private static long scannedAt;
+	/** All indexes belong to the same completed scan; entity references remain live. */
+	private record Observations(List<Sighting> sightings, Map<Critter, List<Sighting>> byCritter,
+			Map<UUID, Critter> bodyless, Map<UUID, Sighting> byEntity) { }
+	private static final Observations EMPTY = new Observations(List.of(), Map.of(), Map.of(), Map.of());
+	private static final ScanPublication<Observations> observations = new ScanPublication<>(EMPTY);
 	private static int ticks;
 
 	/** A critter label and its paired body. The body may be missing for unusual mobs. */
@@ -83,45 +32,40 @@ public final class CritterEntities {
 		}
 	}
 
-	/** A named label waiting to be paired with its body. */
-	private record Label(Critter critter, Entity entity, boolean sparkling) {
-	}
-
 	private CritterEntities() {
 	}
 
 	public static void tick() {
-		if (++ticks < SCAN_INTERVAL_TICKS) return;
+		// Ordinary exploration does not need a full entity-pairing sweep every tick.
+		// During an unresolved capture, however, disappearance and uniform shrink are
+		// ownership evidence, so temporarily sample each tick to eliminate avoidable
+		// presentation latency without imposing that cost for the rest of the run.
+		int interval = CritterState.captureTrackingActive() ? 1 : SCAN_INTERVAL_TICKS;
+		if (++ticks < interval) return;
 		ticks = 0;
 		if (!DebugLog.isEnabled()) {
 			lastPairFailureLogged.clear();
 		} else if (!lastPairFailureLogged.isEmpty()) {
-			long cutoff = System.currentTimeMillis() - PAIR_FAILURE_LOG_INTERVAL_MILLIS * 2;
+			long cutoff = MonotonicTime.nowMillis() - PAIR_FAILURE_LOG_INTERVAL_MILLIS * 2;
 			lastPairFailureLogged.values().removeIf(time -> time < cutoff);
 		}
 
 		Minecraft client = Minecraft.getInstance();
-		scannedAt = System.currentTimeMillis();
 		if (client.level == null || !SafariLocation.inSafari()) {
 			logDiff(List.of());
-			sightings = List.of();
-			sightingsByCritter = Map.of();
-			bodylessLabels = Map.of();
-			sightingsByEntity = Map.of();
+			observations.publish(EMPTY);
 			ballCandidates.clear();
 			ballCandidatePositions.clear();
 			return;
 		}
-		List<Sighting> result = scan(client);
+		List<Sighting> result = scan();
 		logDiff(result);
 		checkBallCandidates(client, result);
-		sightings = result;
 		Map<Critter, List<Sighting>> grouped = new HashMap<>();
 		for (Sighting sighting : result) {
 			grouped.computeIfAbsent(sighting.critter(), ignored -> new ArrayList<>()).add(sighting);
 		}
 		grouped.replaceAll((critter, entries) -> List.copyOf(entries));
-		sightingsByCritter = Map.copyOf(grouped);
 		Map<UUID, Critter> nextBodylessLabels = new HashMap<>();
 		Map<UUID, Sighting> nextSightingsByEntity = new HashMap<>(Math.max(16, result.size() * 2));
 		for (Sighting sighting : result) {
@@ -131,8 +75,8 @@ public final class CritterEntities {
 				nextBodylessLabels.put(sighting.label().getUUID(), sighting.critter());
 			}
 		}
-		bodylessLabels = Map.copyOf(nextBodylessLabels);
-		sightingsByEntity = Map.copyOf(nextSightingsByEntity);
+		observations.publish(new Observations(List.copyOf(result), Map.copyOf(grouped),
+			Map.copyOf(nextBodylessLabels), Map.copyOf(nextSightingsByEntity)));
 	}
 
 	/** Correlates debug-only capsule candidates with nearby reappearing critters. */
@@ -293,295 +237,91 @@ public final class CritterEntities {
 
 	/** Every critter currently labelled in the world. Never null; empty outside the Safari. */
 	public static List<Sighting> all() {
-		return sightings;
+		return observations.current().value().sightings();
 	}
 
 	/** Current sightings of one species from the same immutable shared-scan snapshot. */
 	public static List<Sighting> all(Critter critter) {
-		return critter == null ? List.of() : sightingsByCritter.getOrDefault(critter, List.of());
+		return critter == null ? List.of() : observations.current().value().byCritter().getOrDefault(critter, List.of());
 	}
 
-	/**
-	 * When the list was last rebuilt.
-	 *
-	 * <p>Between sweeps {@link #all()} returns the previous answer, so anything keeping
-	 * its own timestamps has to key off this rather than off the tick it read them on.
-	 */
-	public static long scannedAt() {
-		return scannedAt;
+	/** Immutable species index already constructed by the shared scan. */
+	static Map<Critter, List<Sighting>> byCritter() {
+		return observations.current().value().byCritter();
 	}
 
-	private static List<Sighting> scan(Minecraft client) {
-		List<Label> labels = new ArrayList<>();
-		List<Entity> candidates = new ArrayList<>();
-		List<Entity> interactions = new ArrayList<>();
-		// Gazer is the only critter whose body is an unnamed armor stand.
-		List<Entity> unnamedArmorStands = new ArrayList<>();
+	/** Identity of the completed scan, independent of wall-clock time and world resets. */
+	public static long scanRevision() {
+		return observations.current().revision();
+	}
 
+	/** Drops entity references immediately when the client changes worlds. */
+	public static void onWorldChange() {
+		observations.publish(EMPTY);
+		previous = List.of();
+		ticks = 0;
+		ballCandidates.clear();
+		ballCandidatePositions.clear();
+		lastPairFailureLogged.clear();
+	}
+
+	private static List<Sighting> scan() {
+		List<CritterScan.Sample> samples = new ArrayList<>();
 		for (Entity entity : WorldEntities.current()) {
-			// The name identifies a label, not the entity type: most are armor stands
-			// but a Hideyho arrives as a player.
-			String name = entity.hasCustomName()
-				? SafariLocation.strip(entity.getCustomName().getString()) : null;
-			Critter named = name == null ? null : Critters.byName(name);
-			boolean rare = false;
-
-			// A sparkling one is assumed to be named for it. Only this one prefix is
-			// tolerated, rather than searching the label for any species name: an armor
-			// stand reading "Tepid Shard" must not count as a Tepid.
-			if (named == null && name != null && startsWithSparkling(name)) {
-				named = Critters.byName(name.substring(SPARKLING.length()).trim());
-				rare = named != null;
-			}
-
-			if (named != null) {
-				labels.add(new Label(named, entity, rare));
-			} else if (EntityTypeIds.is(entity, "interaction")) {
-				interactions.add(entity);
-			} else if (isMobLike(entity)) {
-				candidates.add(entity);
-			} else if (EntityTypeIds.is(entity, "armor_stand") && !entity.hasCustomName()) {
-				unnamedArmorStands.add(entity);
-			}
+			String name = entity.hasCustomName() ? SafariLocation.strip(entity.getCustomName().getString()) : null;
+			samples.add(new CritterScan.Sample(entity.getUUID(), EntityTypeIds.path(entity), name,
+				entity.getX(), entity.getY(), entity.getZ()));
 		}
-
-		EntityGrid candidateGrid = new EntityGrid(candidates);
-		EntityGrid interactionGrid = new EntityGrid(interactions);
-		EntityGrid armorStandGrid = new EntityGrid(unnamedArmorStands);
-
 		Map<UUID, UUID> previousBodies = new HashMap<>();
 		for (Sighting sighting : previous) {
-			if (sighting.mob() != null) {
-				previousBodies.put(sighting.label().getUUID(), sighting.mob().getUUID());
+			if (sighting.mob() != null) previousBodies.put(sighting.label().getUUID(), sighting.mob().getUUID());
+		}
+		List<CritterScan.Match> matches = CritterScan.scan(samples, previousBodies,
+			DebugLog.isEnabled() ? CritterEntities::logPairFailure : null);
+		List<Sighting> result = new ArrayList<>(matches.size());
+		for (var match : matches) {
+			if (match.conflict()) {
+				StructuredDiagnostics.decision("SCAN/PAIRING", "ownership-conflict",
+					"label=" + shortId(match.label().id()) + " species=" + match.critter().name());
 			}
+			result.add(new Sighting(match.critter(), WorldEntities.find(match.label().id()),
+				match.body() == null ? null : WorldEntities.find(match.body().id()), match.sparkling()));
 		}
-		Set<UUID> claimedBodies = new java.util.HashSet<>();
-		Map<UUID, Sighting> pairedByLabel = new HashMap<>();
-		List<Label> pairingOrder = new ArrayList<>(labels);
-		// Existing pairs stay stable. New labels then compete by actual proximity, so
-		// a capsule label cannot steal a newly spawned nearby critter's body.
-		Map<UUID, PairingRank> pairingRanks = new HashMap<>();
-		for (Label label : pairingOrder) {
-			pairingRanks.put(label.entity().getUUID(), pairingRank(label, candidateGrid,
-				interactionGrid, armorStandGrid, previousBodies.get(label.entity().getUUID())));
-		}
-		pairingOrder.sort(Comparator.comparing(
-			label -> pairingRanks.get(label.entity().getUUID())));
-		for (Label label : pairingOrder) {
-			// Hideyho's named player is the critter itself. Generic nearest-body
-			// pairing used to attach a nearby silverfish (or another critter) to its
-			// label and render a second, incorrectly sized Hideyho hitbox.
-			Entity body = "Hideyho".equals(label.critter().name()) ? label.entity()
-				: nearest(candidates, candidateGrid, interactionGrid,
-					label.entity(), label.critter(), armorStandGrid, claimedBodies,
-					previousBodies.get(label.entity().getUUID()));
-			if (body != null) claimedBodies.add(body.getUUID());
-			pairedByLabel.put(label.entity().getUUID(),
-				new Sighting(label.critter(), label.entity(), body, label.sparkling()));
-		}
-
-		List<Sighting> result = new ArrayList<>(labels.size());
-		for (Label label : labels) result.add(pairedByLabel.get(label.entity().getUUID()));
 		return result;
 	}
 
-	private static int pairingPriority(Label label) {
-		String name = label.critter().name();
-		return EXPECTED_BODY_TYPES.containsKey(name) || "Duplico".equals(name) || "Gazer".equals(name) ? 0 : 1;
-	}
-
-	private static PairingRank pairingRank(Label label, EntityGrid candidateGrid,
-			EntityGrid interactionGrid, EntityGrid armorStandGrid, UUID previousBodyId) {
-		if (retainedBody(candidateGrid, interactionGrid, armorStandGrid, label.entity(),
-			label.critter(), Set.of(), previousBodyId) != null) {
-			return new PairingRank(0, 0.0);
-		}
-		List<Entity> pool;
-		if ("Duplico".equals(label.critter().name())) pool = interactionGrid.near(label.entity());
-		else if ("Gazer".equals(label.critter().name())) pool = armorStandGrid.near(label.entity());
-		else pool = candidateGrid.near(label.entity());
-		double nearestSq = LABEL_TO_MOB_RADIUS * LABEL_TO_MOB_RADIUS;
-		for (Entity candidate : pool) {
-			if (!isExpectedBody(label.critter(), candidate)) continue;
-			nearestSq = Math.min(nearestSq, distanceSquared(candidate, label.entity()));
-		}
-		return new PairingRank(1 + pairingPriority(label), nearestSq);
-	}
-
-	private static boolean startsWithSparkling(String name) {
-		return name.length() > SPARKLING.length()
-			&& name.regionMatches(true, 0, SPARKLING, 0, SPARKLING.length());
-	}
-
-	/** Excludes the scaffolding entities Hypixel builds its props out of. */
-	private static boolean isMobLike(Entity entity) {
-		EntityType<?> type = entity.getType();
-		return !EntityTypeIds.is(type, "armor_stand")
-			&& !EntityTypeIds.is(type, "interaction")
-			&& !EntityTypeIds.is(type, "item_display")
-			&& !EntityTypeIds.is(type, "block_display")
-			&& !EntityTypeIds.is(type, "text_display")
-			&& !EntityTypeIds.is(type, "player")
-			&& !EntityTypeIds.is(type, "item")
-			// Props and projectiles near a label are never its critter body.
-			&& !EntityTypeIds.is(type, "painting")
-			&& !EntityTypeIds.is(type, "item_frame")
-			&& !EntityTypeIds.is(type, "glow_item_frame")
-			&& !EntityTypeIds.is(type, "leash_knot")
-			&& !EntityTypeIds.is(type, "experience_orb")
-			&& !EntityTypeIds.is(type, "end_crystal")
-			&& !EntityTypeIds.is(type, "falling_block")
-			&& !EntityTypeIds.is(type, "lightning_bolt")
-			&& !EntityTypeIds.is(type, "marker")
-			// Hypixel's floating Icy props use tiny happy ghasts near Nozzlenose labels.
-			&& !EntityTypeIds.is(type, "happy_ghast")
-			&& !EntityTypeIds.is(type, "arrow")
-			&& !EntityTypeIds.is(type, "spectral_arrow")
-			&& !EntityTypeIds.is(type, "trident")
-			&& !EntityTypeIds.is(type, "snowball")
-			&& !EntityTypeIds.is(type, "egg")
-			&& !EntityTypeIds.is(type, "ender_pearl")
-			&& !EntityTypeIds.is(type, "firework_rocket")
-			&& !EntityTypeIds.is(type, "tnt")
-			&& !EntityTypeIds.is(type, "fishing_bobber");
-	}
-
-	/** Last time a given label's failed pairing was logged, so it is not re-logged every scan. */
-	private static final Map<java.util.UUID, Long> lastPairFailureLogged = new java.util.HashMap<>();
-	/** How often the same still-unpaired label is worth logging again. */
+	private static final Map<UUID, Long> lastPairFailureLogged = new HashMap<>();
 	private static final long PAIR_FAILURE_LOG_INTERVAL_MILLIS = 5_000;
 
-	/** How close Gazer's own body (an unnamed armor stand) sits to its label — confirmed consistently ~2 blocks. */
-	private static final double GAZER_BODY_RADIUS = 3.0;
-
-	/** Returns the nearest qualifying body and logs throttled pairing diagnostics. */
-	private static Entity nearest(List<Entity> candidates, EntityGrid candidateGrid,
-					EntityGrid interactionGrid,
-					Entity label, Critter critter, EntityGrid armorStandGrid,
-					Set<UUID> claimedBodies, UUID previousBodyId) {
-		Entity best = null;
-		double bestSq = LABEL_TO_MOB_RADIUS * LABEL_TO_MOB_RADIUS;
-
-		Entity closestAnyDistance = null;
-		double closestAnyDistanceSq = Double.MAX_VALUE;
-		boolean diagnostics = DebugLog.isEnabled();
-		Entity retained = retainedBody(candidateGrid, interactionGrid, armorStandGrid,
-			label, critter, claimedBodies, previousBodyId);
-		if (retained != null) return retained;
-
-		// Duplico's persistent body is an interaction entity; its armor stand is only
-		// the name label. Resolve that body independently so an unrelated nearby mob
-		// can never win merely by being a little closer to the label.
-		if ("Duplico".equals(critter.name())) {
-			Entity interactionBest = null;
-			double interactionBestSq = LABEL_TO_MOB_RADIUS * LABEL_TO_MOB_RADIUS;
-			for (Entity interaction : interactionGrid.near(label)) {
-				if (claimedBodies.contains(interaction.getUUID())) continue;
-				double distanceSq = distanceSquared(interaction, label);
-				if (distanceSq >= interactionBestSq) continue;
-				interactionBestSq = distanceSq;
-				interactionBest = interaction;
-			}
-			if (interactionBest != null) return interactionBest;
-		}
-
-		List<Entity> nearbyCandidates = candidateGrid.near(label);
-		for (Entity candidate : nearbyCandidates) {
-			if (claimedBodies.contains(candidate.getUUID())) continue;
-			double distanceSq = distanceSquared(candidate, label);
-			if (diagnostics && distanceSq < closestAnyDistanceSq) {
-				closestAnyDistanceSq = distanceSq;
-				closestAnyDistance = candidate;
-			}
-			if (!isExpectedBody(critter, candidate)) continue;
-			if (distanceSq >= bestSq) continue;
-			bestSq = distanceSq;
-			best = candidate;
-		}
-		// Debug diagnostics report the genuinely closest candidate even when it lies
-		// outside the pairing grid's radius.
-		if (diagnostics && best == null) {
-			for (Entity candidate : candidates) {
-				if (claimedBodies.contains(candidate.getUUID())) continue;
-				double distanceSq = distanceSquared(candidate, label);
-				if (distanceSq >= closestAnyDistanceSq) continue;
-				closestAnyDistanceSq = distanceSq;
-				closestAnyDistance = candidate;
-			}
-		}
-
-		// Gazer's body is an unnamed armor stand about two blocks from its label.
-		// Keep this fallback narrow because other armor stands are usually labels.
-		if (best == null && "Gazer".equals(critter.name())) {
-			double gazerBestSq = GAZER_BODY_RADIUS * GAZER_BODY_RADIUS;
-			for (Entity candidate : armorStandGrid.near(label)) {
-				if (claimedBodies.contains(candidate.getUUID())) continue;
-				double distanceSq = distanceSquared(candidate, label);
-				if (distanceSq >= gazerBestSq) continue;
-				gazerBestSq = distanceSq;
-				best = candidate;
-			}
-		}
-
-		if (best == null && diagnostics) {
-			long now = System.currentTimeMillis();
-			java.util.UUID labelId = label.getUUID();
-			Long lastLogged = lastPairFailureLogged.get(labelId);
-			if (lastLogged == null || now - lastLogged >= PAIR_FAILURE_LOG_INTERVAL_MILLIS) {
-				lastPairFailureLogged.put(labelId, now);
-				String labelName = label.hasCustomName() ? label.getCustomName().getString() : "?";
-				if (closestAnyDistance == null) {
-					DebugLog.line("PAIR", "\"" + labelName + "\" no candidates in entitiesForRendering() at all");
-				} else {
-					DebugLog.line("PAIR", "\"" + labelName + "\" closest candidate is " + closestAnyDistance.getType()
-						+ " at " + String.format("%.2f", Math.sqrt(closestAnyDistanceSq))
-						+ " blocks (radius is " + LABEL_TO_MOB_RADIUS + ")");
-				}
-			}
-		}
-
-		return best;
-	}
-
-	/** Keeps an established label/body relationship stable while both entities remain valid. */
-	private static Entity retainedBody(EntityGrid candidateGrid, EntityGrid interactionGrid,
-					EntityGrid armorStandGrid, Entity label, Critter critter,
-					Set<UUID> claimedBodies, UUID previousBodyId) {
-		if (previousBodyId == null || claimedBodies.contains(previousBodyId)) return null;
-		List<Entity> pool;
-		if ("Duplico".equals(critter.name())) pool = interactionGrid.near(label);
-		else if ("Gazer".equals(critter.name())) pool = armorStandGrid.near(label);
-		else pool = candidateGrid.near(label);
-		double maxSq = ("Gazer".equals(critter.name()) ? GAZER_BODY_RADIUS : LABEL_TO_MOB_RADIUS);
-		maxSq *= maxSq;
-		for (Entity candidate : pool) {
-			if (!candidate.getUUID().equals(previousBodyId)) continue;
-			if (distanceSquared(candidate, label) >= maxSq) return null;
-			if (!"Duplico".equals(critter.name()) && !"Gazer".equals(critter.name())
-				&& !isExpectedBody(critter, candidate)) return null;
-			return candidate;
-		}
-		return null;
+	private static void logPairFailure(CritterScan.Failure failure) {
+		long now = MonotonicTime.nowMillis();
+		Long last = lastPairFailureLogged.get(failure.label().id());
+		if (last != null && now - last < PAIR_FAILURE_LOG_INTERVAL_MILLIS) return;
+		lastPairFailureLogged.put(failure.label().id(), now);
+		DebugLog.line("PAIR", "\"" + failure.label().name() + "\" "
+			+ (failure.closest() == null ? "no generic body candidates"
+				: "closest generic candidate is " + failure.closest().type() + " at "
+					+ String.format("%.2f", Math.sqrt(failure.distanceSq())) + " blocks")
+			+ " (radius is " + failure.radius() + ")");
 	}
 
 	/** Whether this entity is a positively identified body rather than a proximity guess. */
 	static boolean isVerifiedBody(Critter critter, Entity candidate) {
-		if ("Duplico".equals(critter.name())) {
-			return EntityTypeIds.is(candidate, "interaction") || EntityTypeIds.is(candidate, "silverfish");
-		}
-		if ("Gazer".equals(critter.name())) return EntityTypeIds.is(candidate, "armor_stand");
-		Set<String> expected = EXPECTED_BODY_TYPES.get(critter.name());
-		return expected != null && expected.contains(EntityTypeIds.path(candidate));
+		return verifiedBodyType(critter, EntityTypeIds.path(candidate));
 	}
+
+	static boolean verifiedBodyType(Critter critter, String type) { return CritterBodyTypes.verified(critter, type); }
+	static boolean acceptsBodyType(Critter critter, String type) { return CritterBodyTypes.accepts(critter, type); }
+	static boolean isMobBodyType(String type) { return CritterBodyTypes.generic(type); }
 
 	/** The bodyless label's species, used to hide capsule nametags during capture. */
 	static Critter bodylessLabelCritter(UUID labelId) {
-		return bodylessLabels.get(labelId);
+		return observations.current().value().bodyless().get(labelId);
 	}
 
 	/** The current paired sighting represented by either this label or body id. */
 	static Sighting sightingFor(UUID entityId) {
-		return sightingsByEntity.get(entityId);
+		return observations.current().value().byEntity().get(entityId);
 	}
 
 	/** Whether this sighting is temporary capsule/capture scaffolding, not a live critter. */
@@ -591,63 +331,4 @@ public final class CritterEntities {
 			: RecatchSpots.isCaptureArtifact(sighting.critter(), sighting.mob());
 	}
 
-	/** Prevents nearby wildlife and capture helpers from stealing verified critter labels. */
-	private static boolean isExpectedBody(Critter critter, Entity candidate) {
-		Set<String> expected = EXPECTED_BODY_TYPES.get(critter.name());
-		return expected == null || expected.contains(EntityTypeIds.path(candidate));
-	}
-
-	private static double distanceSquared(Entity first, Entity second) {
-		double dx = first.getX() - second.getX();
-		double dy = first.getY() - second.getY();
-		double dz = first.getZ() - second.getZ();
-		return dx * dx + dy * dy + dz * dz;
-	}
-
-	/** Four-block buckets keep pairing local while retaining source-list tie ordering. */
-	private static final class EntityGrid {
-		private static final double CELL_SIZE = LABEL_TO_MOB_RADIUS;
-		private final Map<Cell, List<IndexedEntity>> cells = new HashMap<>();
-
-		private EntityGrid(List<Entity> entities) {
-			for (int i = 0; i < entities.size(); i++) {
-				Entity entity = entities.get(i);
-				cells.computeIfAbsent(cell(entity), ignored -> new ArrayList<>())
-					.add(new IndexedEntity(i, entity));
-			}
-		}
-
-		private List<Entity> near(Entity anchor) {
-			Cell centre = cell(anchor);
-			List<IndexedEntity> found = new ArrayList<>();
-			for (int x = centre.x() - 1; x <= centre.x() + 1; x++) {
-				for (int y = centre.y() - 1; y <= centre.y() + 1; y++) {
-					for (int z = centre.z() - 1; z <= centre.z() + 1; z++) {
-						List<IndexedEntity> bucket = cells.get(new Cell(x, y, z));
-						if (bucket != null) found.addAll(bucket);
-					}
-				}
-			}
-			found.sort(Comparator.comparingInt(IndexedEntity::index));
-			List<Entity> result = new ArrayList<>(found.size());
-			for (IndexedEntity indexed : found) result.add(indexed.entity());
-			return result;
-		}
-
-		private static Cell cell(Entity entity) {
-			return new Cell((int) Math.floor(entity.getX() / CELL_SIZE),
-				(int) Math.floor(entity.getY() / CELL_SIZE),
-				(int) Math.floor(entity.getZ() / CELL_SIZE));
-		}
-	}
-
-	private record Cell(int x, int y, int z) { }
-	private record IndexedEntity(int index, Entity entity) { }
-	private record PairingRank(int priority, double distanceSq) implements Comparable<PairingRank> {
-		@Override
-		public int compareTo(PairingRank other) {
-			int compared = Integer.compare(priority, other.priority);
-			return compared != 0 ? compared : Double.compare(distanceSq, other.distanceSq);
-		}
-	}
 }

@@ -52,6 +52,8 @@ public final class WallTracker {
 	private final java.util.Map<BlockPos, State> safeStates = new java.util.HashMap<>();
 	/** Walls whose resident critter was caught or positively observed missing. */
 	private final Set<BlockPos> completed = new HashSet<>();
+	/** Monotonic completion reported by an authenticated member of this run's exact party. */
+	private final Set<BlockPos> partyCompleted = new HashSet<>();
 	/** So a state change is logged once, not every one of the many calls a frame makes. */
 	private final java.util.Map<BlockPos, State> lastLoggedState = new java.util.HashMap<>();
 	private Object cachedLevel;
@@ -78,7 +80,7 @@ public final class WallTracker {
 	/** Every tracked wall with its current state, nearest first. */
 	public List<Wall> walls() {
 		Minecraft client = Minecraft.getInstance();
-		if (client.level == null || client.player == null) return List.of();
+		if (client == null || client.level == null || client.player == null) return List.of();
 		boolean safeMode = safeModeEnabled();
 		long tick = client.level.getGameTime();
 		if (client.level == cachedLevel && tick == cachedTick && safeMode == cachedSafeMode) {
@@ -90,17 +92,21 @@ public final class WallTracker {
 		for (int[] coords : positions) {
 			BlockPos pos = new BlockPos(coords[0], coords[1], coords[2]);
 			State state;
-			if (completed.contains(pos)) {
+			if (completed.contains(pos) || !safeMode && partyCompleted.contains(pos)) {
 				state = State.BROKEN;
 			} else if (!client.level.isLoaded(pos)) {
 				state = State.UNKNOWN;
 			} else if (safeMode) {
 				State live = client.level.getBlockState(pos).isAir() ? State.BROKEN : State.INTACT;
 				boolean visible = VisibilityCheck.canInspectCandidate(pos);
-				if (visible) safeStates.put(pos, live);
+				if (visible) {
+					safeStates.put(pos, live);
+					if (live == State.BROKEN) recordLocalCompletion(pos, "wall broken");
+				}
 				state = safeStates.getOrDefault(pos, State.UNKNOWN);
 			} else {
 				state = client.level.getBlockState(pos).isAir() ? State.BROKEN : State.INTACT;
+				if (state == State.BROKEN) recordLocalCompletion(pos, "wall broken");
 			}
 			if (logging && lastLoggedState.get(pos) != state) {
 				lastLoggedState.put(pos, state);
@@ -168,15 +174,70 @@ public final class WallTracker {
 			nearest = pos;
 			nearestDistance = distance;
 		}
-		if (nearest == null || !completed.add(nearest)) return;
+		if (nearest != null) recordLocalCompletion(nearest, "critter resolved");
+	}
+
+	/** Local completion is monotonic for one run, including after its chunk unloads. */
+	private void recordLocalCompletion(BlockPos pos, String evidence) {
+		if (pos == null || !completed.add(pos)) return;
 		cachedTick = Long.MIN_VALUE;
-		DebugLog.line("WALL", name + " " + nearest.getX() + "," + nearest.getY() + ","
-			+ nearest.getZ() + " -> COMPLETED (critter resolved)");
+		DebugLog.line("WALL", name + " " + pos.getX() + "," + pos.getY() + ","
+			+ pos.getZ() + " -> COMPLETED (" + evidence + ")");
+	}
+
+	/**
+	 * Compact canonical completion mask suitable for the party snapshot. Remote evidence
+	 * is deliberately excluded so a received bit can never be echoed as local evidence.
+	 */
+	public int localCompletionMask() {
+		// Refresh direct-visibility evidence once before serializing it. Presentation and
+		// networking therefore consume the same cached wall evaluation.
+		walls();
+		Minecraft client = Minecraft.getInstance();
+		boolean safeMode = safeModeEnabled();
+		int mask = 0;
+		for (int index = 0; index < positions.length; index++) {
+			BlockPos pos = position(index);
+			boolean broken = completed.contains(pos);
+			if (!broken && client.level != null && client.level.isLoaded(pos)) {
+				if (safeMode) broken = safeStates.get(pos) == State.BROKEN;
+				else broken = client.level.getBlockState(pos).isAir();
+			}
+			if (broken) mask |= 1 << index;
+		}
+		return mask;
+	}
+
+	/** Applies only valid canonical bits; Safe Mode presentation intentionally ignores them. */
+	public boolean mergePartyCompletionMask(int mask) {
+		int validMask = (1 << positions.length) - 1;
+		if (mask < 0 || (mask & ~validMask) != 0) return false;
+		boolean changed = false;
+		for (int index = 0; index < positions.length; index++) {
+			if ((mask & (1 << index)) != 0) changed |= partyCompleted.add(position(index));
+		}
+		if (changed) {
+			cachedTick = Long.MIN_VALUE;
+			DebugLog.line("WALL", name + " party completion mask=" + mask);
+			StructuredDiagnostics.decision("party-sync", "walls",
+				name.toLowerCase(java.util.Locale.ROOT) + "Mask=" + mask);
+		}
+		return true;
+	}
+
+	public int slotCount() {
+		return positions.length;
+	}
+
+	private BlockPos position(int index) {
+		int[] coords = positions[index];
+		return new BlockPos(coords[0], coords[1], coords[2]);
 	}
 
 	public void reset() {
 		safeStates.clear();
 		completed.clear();
+		partyCompleted.clear();
 		lastLoggedState.clear();
 		cachedLevel = null;
 		cachedTick = Long.MIN_VALUE;

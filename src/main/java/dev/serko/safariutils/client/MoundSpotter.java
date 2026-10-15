@@ -43,6 +43,7 @@ public final class MoundSpotter {
 	/** Cavern bounds derived from the biome map and cached after first access. */
 	private static int[] cavernBounds;
 	private static boolean cavernBoundsLoaded;
+	private static List<BlockPos> orderedCatalog;
 
 	/**
 	 * Mounds are on the Cavern floor, which is below this. Hitbox size alone is weak
@@ -97,6 +98,10 @@ public final class MoundSpotter {
 	private static final Set<BlockPos> completed = new HashSet<>();
 	/** Completion supported by direct inspection or an authoritative local break. */
 	private static final Set<BlockPos> safeCompleted = new HashSet<>();
+	/** Resolved live mounds safe to publish as local party evidence. */
+	private static final Set<BlockPos> shareableCompleted = new HashSet<>();
+	/** Monotonic completion learned from authenticated members of the exact run roster. */
+	private static final Set<BlockPos> partyCompleted = new HashSet<>();
 	/** Local breaks stay suppressed while their server-side interaction finishes despawning. */
 	private static final Map<BlockPos, Long> breakSuppressedUntil = new java.util.HashMap<>();
 	/** First reliable scan on which a previously detected mound was absent. */
@@ -231,7 +236,9 @@ public final class MoundSpotter {
 				long firstAbsent = absentSince.computeIfAbsent(pos, ignored -> now);
 				if (now - firstAbsent < ABSENCE_CONFIRM_MILLIS) continue;
 			}
+			boolean wasDetected = detectedLive.contains(pos);
 			completed.add(pos);
+			if (wasDetected) shareableCompleted.add(pos);
 			if (safeMode) safeCompleted.add(pos);
 			everSeen.remove(pos);
 			detectedLive.remove(pos);
@@ -241,6 +248,7 @@ public final class MoundSpotter {
 		// A live scan or newly remembered mound proves this run contained one.
 		if (!liveNow.isEmpty() || everSeen.size() > beforeSize) everDetectedAny = true;
 
+		if (!safeMode && !partyCompleted.isEmpty()) everSeen.removeAll(partyCompleted);
 		cached = everSeen.stream()
 			.filter(pos -> safeMode || detectedLive.contains(pos))
 			.toList();
@@ -263,6 +271,8 @@ public final class MoundSpotter {
 		confirmedVisible.clear();
 		completed.clear();
 		safeCompleted.clear();
+		shareableCompleted.clear();
+		partyCompleted.clear();
 		breakSuppressedUntil.clear();
 		absentSince.clear();
 		pendingLocalBreak = null;
@@ -294,6 +304,7 @@ public final class MoundSpotter {
 			BlockPos broken = pendingLocalBreak;
 			completed.add(broken);
 			safeCompleted.add(broken);
+			shareableCompleted.add(broken);
 			everSeen.remove(broken);
 			detectedLive.remove(broken);
 			confirmedVisible.remove(broken);
@@ -306,6 +317,50 @@ public final class MoundSpotter {
 		// If no recent local hit was available, the disappearance scan still resolves
 		// party-member breaks without guessing among nearby mounds.
 		// The next scheduled refresh resolves party-member breaks.
+	}
+
+	/** Two unsigned 16-bit words cover the 32 canonical mound slots without coordinates. */
+	public static int[] localCompletionWords() {
+		List<BlockPos> order = orderedCatalog();
+		int low = 0;
+		int high = 0;
+		for (int index = 0; index < order.size(); index++) {
+			if (!shareableCompleted.contains(order.get(index))) continue;
+			if (index < 16) low |= 1 << index;
+			else high |= 1 << (index - 16);
+		}
+		return new int[] {low, high};
+	}
+
+	/** Applies bounded canonical mound completion while preserving Safe Mode evidence rules. */
+	public static boolean mergePartyCompletionWords(int low, int high) {
+		if (low < 0 || low > 0xFFFF || high < 0 || high > 0xFFFF) return false;
+		List<BlockPos> order = orderedCatalog();
+		boolean changed = false;
+		for (int index = 0; index < order.size(); index++) {
+			int word = index < 16 ? low : high;
+			int bit = 1 << (index & 15);
+			if ((word & bit) != 0) changed |= partyCompleted.add(order.get(index));
+		}
+		if (changed) {
+			if (!SafeMode.mounds()) {
+				everSeen.removeAll(partyCompleted);
+				cached = cached.stream().filter(pos -> !partyCompleted.contains(pos)).toList();
+			}
+			DebugLog.line("MOUND", "party completion words=" + low + "," + high);
+			StructuredDiagnostics.decision("party-sync", "mounds",
+				"resolved=" + partyCompleted.size());
+		}
+		return true;
+	}
+
+	private static List<BlockPos> orderedCatalog() {
+		if (orderedCatalog == null) {
+			orderedCatalog = StaticWaypointCatalog.mounds().stream().sorted(java.util.Comparator
+				.comparingLong((BlockPos pos) -> pos.getX()).thenComparingLong(pos -> pos.getY())
+				.thenComparingLong(pos -> pos.getZ())).toList();
+		}
+		return orderedCatalog;
 	}
 
 	private static List<BlockPos> scan() {

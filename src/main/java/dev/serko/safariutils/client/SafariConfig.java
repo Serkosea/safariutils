@@ -12,6 +12,10 @@ import java.util.List;
  * an older key; UI annotations are owned by SafariUtils.
  */
 public class SafariConfig {
+	/** Incremented only when a migration changes persisted settings structure. */
+	@Expose
+	public int settingsSchemaVersion = ConfigManager.CURRENT_SETTINGS_SCHEMA;
+
 	public static class SavedAlertPreset {
 		@Expose public String name = "Custom Alert";
 		@Expose public String recipe = "";
@@ -914,8 +918,8 @@ public class SafariConfig {
 		public boolean removeColdOverlay = true;
 
 		@SettingInfo(
-			name = "Remove Warden Darkness",
-			desc = "Removes Warden darkness effect while catching Doomspiral")
+			name = "Remove Haunted Darkness",
+			desc = "Removes darkness from Doomspiral, Hideyho, and Gazer encounters")
 		@SettingToggle
 		@Expose
 		public boolean removeDarkness = true;
@@ -1027,21 +1031,9 @@ public class SafariConfig {
 		@Expose
 		public boolean constellationThemeUnlocked = false;
 
-		@SettingInfo(name = "Enable Party Sync",
-			desc = "Shares Safari objective information with other party members through parsed party chat messages")
-		@SettingToggle
-		public transient boolean enablePartySync = false;
-
 		@SettingInfo(name = "Safe Mode", desc = "Limits tracking to information the player has visibly confirmed")
 		@SettingSection(id = SAFE_MODE)
 		public boolean safeModeAccordion = false;
-
-		@SettingInfo(name = "Safe Mode",
-			desc = "Uses the visibility-based behavior selected below")
-		@SettingToggle
-		@SettingGroup(id = SAFE_MODE)
-		// Migration-only legacy master switch. Individual options now apply directly.
-		public boolean safeMode = true;
 
 		@Expose
 		public int safeModeOptionsVersion = 1;
@@ -1468,7 +1460,7 @@ public class SafariConfig {
 		public Runnable testFullPartyJoinedAlert = () ->
 			EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.FULL_PARTY);
 
-		@SettingInfo(name = "Play Alert", desc = "Plays alert when all 4 members of your party have joined the Safari")
+		@SettingInfo(name = "Play Alert", desc = "Plays alert when your entire expected party has joined the Safari")
 		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = FULL_PARTY_JOINED) @Expose
 		public int fullPartyJoinedSoundMode = 3;
 
@@ -3087,7 +3079,7 @@ public class SafariConfig {
 		@SettingInfo(name = "Full Party Joined", desc = "")
 		@SettingSection(id = CHAT_FULL_PARTY) @SettingGroup(id = SAFARI_CHAT_ALERTS)
 		public boolean fullPartyJoinedChatAccordion = false;
-		@SettingInfo(name = "Send To", desc = "Sends when all 4 members of your party have joined the Safari")
+		@SettingInfo(name = "Send To", desc = "Sends when your entire expected party has joined the Safari")
 		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
 		@SettingGroup(id = CHAT_FULL_PARTY)
 		@Expose
@@ -3402,6 +3394,10 @@ public class SafariConfig {
 		// Edited by the dedicated Ticket Trading screen rather than ordinary cards.
 		@Expose public boolean ticketTradingEnabled = false;
 		@Expose public java.util.List<TicketTraderProfile> ticketTradingProfiles = new java.util.ArrayList<>();
+		@Expose public java.util.List<String> ticketTradingHostQueue = new java.util.ArrayList<>();
+		@Expose public java.util.List<String> ticketTradingGuestPlayers = new java.util.ArrayList<>();
+		@Expose public int ticketTradingRolesVersion = TicketTradingProfiles.ROLE_SCHEMA;
+		// Retained only so settings written by older releases can be migrated losslessly.
 		@Expose public String ticketTradingSlot1 = "";
 		@Expose public String ticketTradingSlot2 = "";
 		@Expose public String ticketTradingSlot3 = "";
@@ -3411,14 +3407,15 @@ public class SafariConfig {
 
 		public static class TicketTraderProfile {
 			@Expose public String username = "";
-			@Expose public boolean sparklingOnly = false;
 			@Expose public long sparklingCritters = dev.serko.safariutils.data.Critters.allSelectionMask();
+			@Expose public String hostInviteMode = "EVERY_RUN";
+			@Expose public String guestInviteMode = "OFF";
 
 			public TicketTraderProfile() { }
 
 			public TicketTraderProfile(String username, boolean sparklingOnly, long sparklingCritters) {
 				this.username = username;
-				this.sparklingOnly = sparklingOnly;
+				this.hostInviteMode = sparklingOnly ? "SPARKLING" : "EVERY_RUN";
 				this.sparklingCritters = sparklingCritters;
 			}
 		}

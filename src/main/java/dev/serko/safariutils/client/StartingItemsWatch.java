@@ -1,5 +1,6 @@
 package dev.serko.safariutils.client;
 
+import dev.serko.safariutils.state.PartyState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -103,13 +104,13 @@ public final class StartingItemsWatch {
 			boolean verifiedParty = "pc".equals(command)
 				&& dev.serko.safariutils.session.SessionManager.expectedRunPlayers() > 1;
 			boolean partyUnavailable = "pc".equals(command) && !verifiedParty
-				&& !PartyRosterWatch.canSendPartyChat();
+				&& !PartyState.snapshot().inParty();
 			if (items.isEmpty() || command == null) {
 				startingItemsAnnounced = true;
 			} else if (!partyUnavailable) {
 				String message = AlertText.format(party.startingItemsChatText, "<ITEMS>", items);
 				if (!message.isBlank()) {
-					if (verifiedParty) ChatQueue.enqueueVerifiedParty(command + " " + message);
+					if (verifiedParty) ChatQueue.enqueueRunScopedVerifiedParty(command + " " + message);
 					else EncounterAlerts.post(party.startingItems(), message);
 				}
 				startingItemsAnnounced = true;

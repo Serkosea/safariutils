@@ -1,4 +1,13 @@
 // Shared by standalone and integrated builds so both execute the same regression sources.
+// Keep Minecraft/Log4j test output out of source roots. Explicit file replay tasks retain
+// their original working directory so relative user-supplied paths keep their meaning.
+tasks.withType(JavaExec).configureEach {
+	if (name.endsWith('RegressionTest')) {
+		def testRunDirectory = layout.buildDirectory.dir("test-runs/${name}")
+		workingDir testRunDirectory
+		doFirst { java.nio.file.Files.createDirectories(testRunDirectory.get().asFile.toPath()) }
+	}
+}
 def regressionRoot = project.findProperty('safariRegressionRoot') ?: project.projectDir
 sourceSets {
 	regression {

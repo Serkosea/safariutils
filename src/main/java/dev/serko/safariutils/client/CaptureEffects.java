@@ -8,6 +8,7 @@ import java.util.UUID;
 /** One projection boundary for authoritative capture decisions; implementations do not choose targets. */
 interface CaptureEffects {
 	void started(long attempt, Critter species);
+	void bodyReplaced(Critter species, UUID before, UUID after);
 	void reassign(long attempt, Critter species, UUID before, UUID after, AABB visual, AABB body, boolean sparkling, int pity);
 	void anchor(long attempt, UUID entity, Critter species, AABB box);
 	void freeze(long attempt, UUID entity);
@@ -20,6 +21,10 @@ interface CaptureEffects {
 
 	CaptureEffects LIVE = new CaptureEffects() {
 		public void started(long attempt, Critter species) { RecatchSpots.onCaptureStarted(attempt, species); }
+		public void bodyReplaced(Critter species, UUID before, UUID after) {
+			RecatchSpots.onBodyReplaced(species, before, after);
+			StillCritters.onBodyReplaced(species, before);
+		}
 		public void reassign(long attempt, Critter species, UUID before, UUID after, AABB visual, AABB body, boolean sparkling, int pity) {
 			RecatchSpots.reassignIdentity(attempt, species, before, after, visual, sparkling, pity);
 			StillCritters.reassignIdentity(attempt, species, before, after, body);

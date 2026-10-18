@@ -13,7 +13,7 @@ public final class SafariPaths {
 	private static final Path CONFIG = FabricLoader.getInstance().getConfigDir();
 	private static final Path STANDALONE_ROOT = CONFIG.resolve("safariutils");
 	private static final Path ROOT = CONFIG.resolve(BuildVersion.configDirectory()).normalize();
-	private static final Path LOGS = ROOT.resolve("logs");
+	private static final Path LOGS = CONFIG.resolve(BuildVersion.logDirectory()).normalize();
 	private static final Path BACKUPS = ROOT.resolve("backups");
 	private static final Path RUN_BACKUPS = BACKUPS.resolve("runs");
 	private static final Path SETTINGS_BACKUPS = BACKUPS.resolve("settings");
@@ -42,6 +42,10 @@ public final class SafariPaths {
 
 	public static Path playerIdentities() {
 		return ROOT.resolve("safariutils-player-identities.json");
+	}
+
+	public static Path savedRunLogs() {
+		return ROOT.resolve("logs").resolve("saved-runs");
 	}
 
 	public static Path logs() {

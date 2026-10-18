@@ -40,6 +40,29 @@ public final class CritterScanRegression {
 		check(CritterScan.scan(List.of(bat, first), Map.of(bat.id(), second.id()), null).getFirst().body().equals(first), "Removed body retained"); checks++;
 
 		// Dense same-species groups: every prior pair stays exclusive even after bodies cross.
+		for (String name : List.of("Hideonfloor", "Hideonwall")) {
+			var label = new CritterScan.Sample(new UUID(9, 1), "armor_stand", name, 0, 1.25, 0);
+			var dormant = sample(90, "shulker", null, 0);
+			var awake = sample(91, "silverfish", null, 0);
+			check(CritterScan.scan(List.of(label, dormant), Map.of(), null).getFirst().body().equals(dormant),
+				"concealed Hideon lost pairing"); checks++;
+			check(CritterScan.scan(List.of(label, awake), Map.of(label.id(), dormant.id()), null).getFirst().body().equals(awake),
+				"awakened Hideon became a bodyless capsule label"); checks++;
+			check(CritterScan.scan(List.of(label, dormant), Map.of(label.id(), awake.id()), null).getFirst().body().equals(dormant),
+				"concealed form cannot return"); checks++;
+			var extraLabel = new CritterScan.Sample(new UUID(9, 2), "armor_stand", name, 0, .5, 0);
+			for (boolean reverse : new boolean[] {false, true}) {
+				var compound = CritterScan.scan(reverse ? List.of(extraLabel, awake, label, dormant)
+					: List.of(label, dormant, extraLabel, awake), Map.of(extraLabel.id(), awake.id()), null);
+				check(compound.size() == 1 && compound.getFirst().body().equals(dormant),
+					"overlapping Hideon forms became two critters"); checks++;
+			}
+			var separate = new CritterScan.Sample(awake.id(), "silverfish", null, .25, 0, 0);
+			check(CritterScan.scan(List.of(label, dormant, extraLabel, separate),
+				Map.of(extraLabel.id(), separate.id()), null).size() == 2,
+				"nearby separate mobile Hideon was removed"); checks++;
+		}
+
 		Random random = new Random(20261014);
 		for (int iteration = 0; iteration < 1000; iteration++) {
 			var samples = new ArrayList<CritterScan.Sample>();

@@ -28,7 +28,7 @@ final class CaptureReplaySession implements AutoCloseable {
 
 	CaptureReplaySession() throws Exception {
 		originalConfig = config.get(null); originalEffects = effects.get(null);
-		settings.advanced.disableAutomaticLogging = true;
+		settings.advanced.enableAutomaticLogging = false;
 		config.set(null, settings);
 		// Inert effects avoid world/catalog/presentation access. The production tracker itself is unchanged.
 		effects.set(null, Proxy.newProxyInstance(CaptureEffects.class.getClassLoader(),

@@ -47,9 +47,7 @@ tasks.register('verifySafariArtifact') {
 			def services = [
 				'dev.serko.safariutils.api.SharedSparklingProvider': 'dev.serko.safariutils.backend.BackendSparklingProvider',
 				'dev.serko.safariutils.api.PartyItemSyncProvider': 'dev.serko.safariutils.client.PartyItemSync']
-			if (edition == 'developer') {
-				services['dev.serko.safariutils.api.PartySyncNetworkProvider'] = 'dev.serko.safariutils.backend.RemotePartySyncProvider'
-			}
+			services['dev.serko.safariutils.api.PartySyncNetworkProvider'] = 'dev.serko.safariutils.backend.RemotePartySyncProvider'
 			services.each { service, provider ->
 				def entry = zip.getEntry("META-INF/services/${service}")
 				if (entry == null) throw new GradleException("Missing SafariUtils service: ${service}")
@@ -75,8 +73,7 @@ tasks.register('verifySafariArtifact') {
 			})
 			if (!forbidden.isEmpty()) throw new GradleException("Forbidden artifact entries: ${forbidden}")
 			def developerEntries = ['dev/serko/safariutils/client/TicketTradingTestScreen.class',
-				'dev/serko/safariutils/backend/RemotePartySyncProvider.class',
-				'META-INF/services/dev.serko.safariutils.api.PartySyncNetworkProvider']
+				'dev/serko/safariutils/client/TicketTradingSimulationAudit.class']
 			developerEntries.each { entry ->
 				if (names.contains(entry) != (edition == 'developer')) {
 					throw new GradleException("Incorrect ${edition} artifact boundary: ${entry}")

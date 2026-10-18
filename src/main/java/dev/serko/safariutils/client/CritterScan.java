@@ -59,7 +59,33 @@ final class CritterScan {
 			Label label = pair.label();
 			result.add(new Match(label.critter(), label.sample(), pair.body(), label.sparkling(), pair.ownershipConflict()));
 		}
+		collapseConcealedCarriers(result);
 		return List.copyOf(result);
+	}
+
+	/**
+	 * A Hideon may expose both its shulker and mobile carrier with separate labels
+	 * during a form transition. Publish one canonical body before identity/rendering
+	 * consumers see the batch. This is exact co-location, not a nearby-peer heuristic;
+	 * a mobile body without a labelled shulker remains a normal observation.
+	 */
+	private static void collapseConcealedCarriers(List<Match> matches) {
+		for (int index = matches.size() - 1; index >= 0; index--) {
+			Match carrier = matches.get(index);
+			if (carrier.body() == null || !carrier.body().type().equals("silverfish")
+				|| !(carrier.critter().name().equals("Hideonwall") || carrier.critter().name().equals("Hideonfloor"))) continue;
+			for (int other = 0; other < matches.size(); other++) {
+				Match shell = matches.get(other);
+				if (!shell.critter().equals(carrier.critter()) || shell.body() == null
+					|| !shell.body().type().equals("shulker")
+					|| distance(shell.body(), carrier.body()) > 1.0 / (64 * 64)) continue;
+				if (carrier.sparkling() && !shell.sparkling()) {
+					matches.set(other, new Match(shell.critter(), shell.label(), shell.body(), true, shell.conflict()));
+				}
+				matches.remove(index);
+				break;
+			}
+		}
 	}
 
 	private static ScanPairing.Rank rank(Label label, Pools pools, UUID previous) {
@@ -74,6 +100,8 @@ final class CritterScan {
 	}
 
 	private static Sample resolve(Label label, Pools pools, Set<UUID> claimed, UUID previous) {
+		Sample concealed = concealedHideon(label, pools, claimed);
+		if (concealed != null) return concealed;
 		Sample retained = retained(label, pools, claimed, previous);
 		if (retained != null) return retained;
 		if (label.critter().name().equals("Duplico")) {
@@ -89,6 +117,8 @@ final class CritterScan {
 
 	private static Sample retained(Label label, Pools pools, Set<UUID> claimed, UUID previous) {
 		if (previous == null || claimed.contains(previous)) return null;
+		Sample concealed = concealedHideon(label, pools, claimed);
+		if (concealed != null && !concealed.id().equals(previous)) return null;
 		for (Sample candidate : pools.primary(label)) {
 			if (candidate.id().equals(previous)) {
 				return distance(candidate, label.sample()) < radius(label) * radius(label)
@@ -105,6 +135,20 @@ final class CritterScan {
 			if (claimed.contains(candidate.id()) || !CritterBodyTypes.accepts(label.critter(), candidate.type())) continue;
 			double distance = distance(candidate, label.sample());
 			if (distance < bestDistance) { best = candidate; bestDistance = distance; }
+		}
+		return best;
+	}
+	/** A directly aligned concealed body wins over its overlapping mobile carrier. */
+	private static Sample concealedHideon(Label label, Pools pools, Set<UUID> claimed) {
+		if (!label.critter().name().equals("Hideonfloor") && !label.critter().name().equals("Hideonwall")) return null;
+		Sample best = null;
+		double bestDistance = BODY_RADIUS * BODY_RADIUS;
+		for (Sample body : pools.bodies.near(label.sample())) {
+			if (!body.type().equals("shulker") || claimed.contains(body.id())) continue;
+			double dx = body.x() - label.sample().x(), dz = body.z() - label.sample().z();
+			if (dx * dx + dz * dz > 0.25) continue;
+			double distance = distance(body, label.sample());
+			if (distance < bestDistance) { best = body; bestDistance = distance; }
 		}
 		return best;
 	}

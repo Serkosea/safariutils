@@ -20,6 +20,7 @@ final class CritterBodyTypes {
 		Map.entry("Treefrog", Set.of("frog")),
 		Map.entry("Woodchucker", Set.of("creaking")),
 		Map.entry("Fluffling", Set.of("panda")),
+		// Concealed and awakened bodies are both real forms, not capture outcomes.
 		Map.entry("Hideonfloor", Set.of("shulker", "silverfish")),
 		Map.entry("Parakeet", Set.of("parrot")),
 		Map.entry("Macaw", Set.of("parrot")),
@@ -53,6 +54,12 @@ final class CritterBodyTypes {
 	);
 
 	static boolean known(Critter critter) { return EXPECTED_BODY_TYPES.containsKey(critter.name()); }
+	static boolean mobileConcealedBody(Critter critter, String type) {
+		return type.equals("silverfish") && switch (critter.name()) {
+			case "Hideonfloor", "Hideonwall", "Duplico" -> true;
+			default -> false;
+		};
+	}
 	static boolean verified(Critter critter, String type) {
 		Set<String> expected = EXPECTED_BODY_TYPES.get(critter.name());
 		return expected != null && expected.contains(type);

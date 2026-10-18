@@ -85,6 +85,13 @@ public final class SafariSettingsScreen extends Screen {
 	private final List<SettingCategoryView> categories = new ArrayList<>();
 	private final List<SettingsArea> settingsAreas = new ArrayList<>();
 	private final Set<String> expandedSettingSections = new java.util.HashSet<>();
+	private final SettingsMotion menuMotion = new SettingsMotion();
+	private final Map<String, Integer> tabScrollPositions = new java.util.HashMap<>();
+	private final Map<String, String> areaTabs = new java.util.HashMap<>();
+	private Field navigationTarget;
+	private boolean navigationPending;
+	private int navigationScrollTarget = -1;
+	private long navigationHighlightUntil;
 	private final Map<SettingsTab, Map<SettingsPage, Integer>> effectiveDepthCache =
 		new java.util.IdentityHashMap<>();
 	private final Map<SettingsPage, List<List<Field>>> settingCardCache =
@@ -356,13 +363,14 @@ public final class SafariSettingsScreen extends Screen {
 		normalSettingCardCache.clear();
 		settingOrderCache.clear();
 		settingTextLayoutCache.clear();
-		SettingsArea display = area("display", "Display", "HUDs, waypoints, colors, and Safari presentation");
-		SettingsArea gameplay = area("gameplay", "Gameplay", "Safari behavior, party tools, and profit tracking");
+		SettingsArea display = area("display", "HUDs", "HUD layout, interface theme, and accessibility");
+		SettingsArea gameplay = area("gameplay", "Safari Runs", "Safari behavior, party tools, and profit tracking");
+		SettingsArea waypoints = area("markers", "Markers", "Critter overlays, world markers, and colors");
 		SettingsArea alerts = area("alerts", "Alerts", "On-screen and outgoing chat alerts");
 		SettingsArea sparkling = area("sparkling", "Sparkling", "Sparkling hunting, detection, and celebrations");
 		SettingsArea advanced = !BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS)
 			? null : area("advanced", "Safe Mode",
-			"Visibility-based detection and waypoint behavior");
+			"Visibility-based detection and marker behavior");
 		SettingsArea developer = BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
 			? area("developer", "Developer", "Diagnostics, research, and test-run controls") : null;
 
@@ -374,16 +382,18 @@ public final class SafariSettingsScreen extends Screen {
 		SettingCategoryView sparklingSource = source("sparkling");
 		SettingCategoryView advancedSource = source("advanced");
 
-		addRootPage(display, displaySource, "display.overview", "HUD Layout",
-			"Move and arrange the visible HUD panels", "editPositions");
-		if (advancedSource != null) addRootPage(display, advancedSource, "display.theme", "Special Theme",
-			"Apply the optional theme across settings and HUDs", "specialTheme");
 		addRootPage(display, displaySource, "display.safari.chat", "Chat Filtering",
 			"Hide selected server dialogue while retaining mod detection", "hiddenChatMessages");
 		addRootPage(display, displaySource, "display.safari.comfort", "Visual Comfort",
 			"Reduce disruptive Safari screen effects", "removeColdOverlay", "removeDarkness");
 		appendAllSections(display, displaySource, 0, "Display");
 		organizeWaypointSettings(display, displaySource);
+		for (SettingsPage page : List.copyOf(display.pages)) {
+			SettingsArea destination = page.key.startsWith("display.marker-settings")
+				|| page.breadcrumb.contains("Critter Markers") ? waypoints
+				: page.key.startsWith("display.safari.") ? gameplay : null;
+			if (destination != null) { destination.pages.add(page); display.pages.remove(page); }
+		}
 
 		addRootPage(gameplay, gameplaySource, "gameplay.auto-hideyho", "Hideyho",
 			"Automatically accept Hideyho's Hide N' Seek game", "autoAcceptHideyho");
@@ -413,6 +423,14 @@ public final class SafariSettingsScreen extends Screen {
 		}
 
 		buildSettingsTabs();
+		SettingsPage layout = navigationPage(displaySource.value, "display.edit-layout", "HUD Layout", "", 0, "editPositions");
+		for (int i = 0; i < display.tabs.size(); i++) {
+			SettingsTab tab = display.tabs.get(i);
+			List<SettingsPage> pages = new ArrayList<>();
+			pages.add(layout);
+			pages.addAll(tab.pages);
+			display.tabs.set(i, new SettingsTab(tab.key, tab.name, tab.description, List.copyOf(pages)));
+		}
 		settingsAreas.removeIf(area -> area.tabs.stream().noneMatch(SettingsTab::selectable));
 		indexSettingCards();
 		String selectedAreaKey = selectedArea == null ? null : selectedArea.key;
@@ -448,23 +466,24 @@ public final class SafariSettingsScreen extends Screen {
 	private void buildSettingsTabs() {
 		for (SettingsArea area : settingsAreas) area.tabs.clear();
 		SettingsArea display = areaByKey("display");
-		addTab(display, "huds", "HUDs", "Visible HUD panels, lines, and layout",
-			page -> page.key.equals("display.overview") || !page.breadcrumb.contains("Border Colors")
-				&& containsAny(page.breadcrumb,
-					"Progress HUD", "Missing HUD", "Contest HUD", "Party Objective HUD"));
-		addTab(display, "waypoints", "Waypoints", "World markers, critter overlays, and their colors",
-			page -> page.key.startsWith("display.waypoint-settings")
-				|| page.breadcrumb.contains("Critter Hitboxes"));
-		addTab(display, "theme", "Theme & Border Colors", "Interface theme and border colors",
-			page -> page.key.equals("display.theme") || page.breadcrumb.contains("Border Colors"));
-		addTab(display, "safari", "Safari", "Safari chat visibility and visual comfort",
-			page -> page.key.equals("display.safari.chat")
-				|| page.key.equals("display.safari.comfort"));
+		for (String hud : List.of("Progress HUD", "Missing HUD", "Contest HUD", "Party Objective HUD"))
+			addTab(display, hud, hud, "HUD visibility, content, and layout", page -> !page.breadcrumb.contains("Border Colors") && page.breadcrumb.contains(hud));
+		SettingsArea markers = areaByKey("markers");
+		addTab(markers, "general", "General", "Shared marker labels and visibility",
+			page -> page.key.equals("display.marker-settings"));
+		addTab(markers, "critters", "Critters", "Live critter boxes, titles, and color rules",
+			page -> page.key.equals("display.marker-settings.overlays")
+				|| page.key.equals("display.marker-settings.recatch") || page.key.equals("display.marker-settings.critters"));
+		addTab(markers, "objectives", "Objectives", "Floor drops, walls, mounds, and nests",
+			page -> page.key.equals("display.marker-settings.objectives"));
+		addTab(display, "borders", "Borders", "HUD border colors", page -> page.breadcrumb.contains("Border Colors"));
 
 		SettingsArea gameplay = areaByKey("gameplay");
-		addTab(gameplay, "safari", "Safari", "Safari convenience, tickets, and optional party synchronization",
+		addTab(gameplay, "safari", "General", "Safari convenience, tickets, and optional party synchronization",
 			page -> page.key.equals("gameplay.auto-hideyho") || page.key.equals("gameplay.tickets")
 				|| page.key.equals("gameplay.party"));
+		addTab(gameplay, "visual", "Visual", "Safari chat visibility and visual comfort",
+			page -> page.key.startsWith("display.safari."));
 		addTab(gameplay, "profit", "Profit", "Run profit tracking and Bazaar pricing",
 			page -> page.key.equals("gameplay.profit"));
 
@@ -488,7 +507,7 @@ public final class SafariSettingsScreen extends Screen {
 			page -> true);
 
 		SettingsArea developer = areaByKey("developer");
-		addTab(developer, "diagnostics", "Diagnostics", "Automatic logging and diagnostic overlays",
+		addTab(developer, "diagnostics", "Diagnostics", "Diagnostic overlays",
 			page -> !page.breadcrumb.contains("Data Collecting"));
 		addTab(developer, "data", "Data Collection", "Test-run persistence and learned locations",
 			page -> page.breadcrumb.contains("Data Collecting"));
@@ -593,38 +612,37 @@ public final class SafariSettingsScreen extends Screen {
 		int insertion = -1;
 		for (int index = 0; index < area.pages.size(); index++) {
 			SettingsPage page = area.pages.get(index);
-			if (page.breadcrumb.contains("Waypoints") || page.breadcrumb.contains("Waypoint Colors")) {
+			if (page.breadcrumb.contains("Markers") || page.breadcrumb.contains("Marker Colors")) {
 				if (insertion < 0) insertion = index;
 			}
 		}
 		if (insertion < 0) return;
-		area.pages.removeIf(page -> page.breadcrumb.contains("Waypoints")
-			|| page.breadcrumb.contains("Waypoint Colors"));
+		area.pages.removeIf(page -> page.breadcrumb.contains("Markers")
+			|| page.breadcrumb.contains("Marker Colors") || page.breadcrumb.contains("Critter Markers"));
 		List<SettingsPage> organized = List.of(
-			settingsPage(source.value, "display.waypoint-settings", "Waypoint Settings", 0,
-				"waypointDistance", "hidePossibleWaypoints", "displayNametags", "eagleRarity"),
-			settingsPage(source.value, "display.waypoint-settings.objectives", "Objectives", 1,
+			settingsPage(source.value, "display.marker-settings", "General", 0,
+				"waypointDistance", "displayNametags", "hidePossibleWaypoints"),
+			settingsPage(source.value, "display.marker-settings.objectives", "Objectives", 0,
 				"floorDrops", "floorDropColour", "floorDropFaceColour",
 				"highlightMounds", "moundColour", "highlightSnooperWalls", "snooperWallColour",
 				"highlightTroodonWalls", "troodonWallColour", "highlightNests", "nestColour"),
-			settingsPage(source.value, "display.waypoint-settings.critters", "Critters", 1,
+			settingsPage(source.value, "display.marker-settings.overlays", "Critters", 0,
+				"enableHitboxes", "hitboxPityTitle", "eagleRarity", "hitboxColour", "uniqueHitboxColours",
+				"hitboxRarityColour"),
+			settingsPage(source.value, "display.marker-settings.critters", "Special Critters", 1,
+				"hitboxEntityColorOverride",
 				"hideyhoSolver", "hideyhoColour", "highlightHideonwalls", "hideonwallColour",
 				"highlightDuplico", "duplicoColour", "highlightBloodbat", "bloodbatColour",
 				"highlightHideonfloor", "hideonfloorColour"),
-			settingsPage(source.value, "display.waypoint-settings.critters.recatch", "Recatch", 2,
-				"recatchHelper", "recatchColour", "recatchPityTitle", "recatchRarityColour")
+			settingsPage(source.value, "display.marker-settings.recatch", "Recatch", 1,
+				"recatchHelper", "recatchColour", "recatchRarityColour")
 		);
 		area.pages.addAll(Math.min(insertion, area.pages.size()), organized);
 	}
 
 	private SettingsPage settingsPage(Object owner, String key, String name, int depth,
 			String... fieldNames) {
-		String breadcrumb = switch (key) {
-			case "display.waypoint-settings" -> "Display  ›  Waypoint Settings";
-			case "display.waypoint-settings.objectives" -> "Display  ›  Waypoint Settings  ›  Objectives";
-			case "display.waypoint-settings.critters" -> "Display  ›  Waypoint Settings  ›  Critters";
-			default -> "Display  ›  Waypoint Settings  ›  Critters  ›  " + name;
-		};
+		String breadcrumb = "Markers  ›  " + (depth > 0 ? "Critters  ›  " : "") + name;
 		return navigationPage(owner, key, name, breadcrumb, depth, fieldNames);
 	}
 
@@ -709,6 +727,7 @@ public final class SafariSettingsScreen extends Screen {
 	private List<Field> directSettings(Class<?> type, Integer parentId) {
 		List<Field> fields = new ArrayList<>();
 		for (Field field : publicFields(type)) {
+			if (BuildVersion.hostLoggingControls() && field.getName().equals("enableAutomaticLogging")) continue;
 			if (field.getAnnotation(SettingInfo.class) == null || isHeaderOnly(field)
 					|| field.getAnnotation(SettingSection.class) != null || !hasEditor(field)
 					|| !belongsTo(field, parentId)) continue;
@@ -799,6 +818,12 @@ public final class SafariSettingsScreen extends Screen {
 		else if (volumeFocused && customVolumeEditor != null) setFocused(customVolumeEditor);
 		else if (editorFocused && editor != null) setFocused(editor);
 		else if (searchFocused && search.visible) setFocused(search);
+		SettingsUiKit.available(search, !backgroundBlocked());
+	}
+
+	private boolean backgroundBlocked() {
+		return constellationPanel || customThemePanel || customSparklingPanel || specialSparklingConfirmation
+			|| editor != null && !editingInlineText || choiceField != null;
 	}
 
 	private void updateResponsiveLayout() {
@@ -843,6 +868,9 @@ public final class SafariSettingsScreen extends Screen {
 
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+		SettingsUiKit.beginFrame(menuMotion, (((width * 31 + height) * 31 + scroll) * 31
+			+ System.identityHashCode(selectedTab)) * 31 + (search == null ? 0 : search.getValue().hashCode())
+			+ expandedSettingSections.hashCode() + System.identityHashCode(choiceField) + (editor == null ? 0 : 7));
 		applyTheme();
 		boolean editingSameSlider = editingInlineText && editingNumber && editor != null
 			&& inside(mouseX, mouseY, editingSliderLeft, editingSliderTop,
@@ -850,18 +878,20 @@ public final class SafariSettingsScreen extends Screen {
 		boolean modalOpen = constellationPanel || customThemePanel || customSparklingPanel
 			|| specialSparklingConfirmation
 			|| editor != null && !editingInlineText || choiceField != null || editingSameSlider;
+		SettingsUiKit.available(search, !backgroundBlocked());
 		int backgroundMouseX = modalOpen ? Integer.MIN_VALUE : mouseX;
 		int backgroundMouseY = modalOpen ? Integer.MIN_VALUE : mouseY;
+		SettingsUiKit.pointer(backgroundMouseX, backgroundMouseY);
 		graphics.fill(0, 0, width, height, BACKGROUND);
 		graphics.fill(0, 0, navWidth, height, SURFACE);
 		graphics.fill(workspaceLeft, 0, width, HEADER_HEIGHT, SURFACE);
 		graphics.fill(workspaceLeft, height - FOOTER_HEIGHT, width, height, SURFACE);
-		graphics.fill(navWidth - 1, 0, navWidth, height, BORDER);
-		graphics.fill(0, HEADER_HEIGHT - 1, width, HEADER_HEIGHT, BORDER);
+		SettingsUiKit.divider(graphics, navWidth - 1, 0, navWidth, height, BORDER);
+		SettingsUiKit.divider(graphics, 0, HEADER_HEIGHT - 1, width, HEADER_HEIGHT, BORDER);
 		if (SpecialTheme.rainbow()) {
 			// One cached batch covers the whole workspace; individual cards do not own
 			// independent particle systems or allocate effects while scrolling.
-			SpecialTheme.stars(graphics, 0, 0, width, height, 0.7f);
+			SpecialTheme.settingsStars(graphics, width, height);
 		}
 		hits.clear();
 		soundPreviewHits.clear();
@@ -972,12 +1002,13 @@ public final class SafariSettingsScreen extends Screen {
 		themePalettes[4][5] = rainbow;
 		themePalettes[4][6] = rainbow;
 		themePalettes[4][9] = rainbow;
-		int[] value = id == 34 ? customThemePalette() : themePalettes[id];
+		int[] special = SpecialTheme.settingsPalette();
+		int[] value = special != null ? special : id == 34 ? customThemePalette() : themePalettes[id];
 		BACKGROUND = value[0]; SURFACE = value[1]; CARD = value[2]; CARD_HOVER = value[3];
 		BORDER = value[4]; BLUE = value[5]; CYAN = value[6]; GREEN = value[7]; RED = value[8];
 		GOLD = value[9]; TEXT = value[10]; MUTED = value[11]; DIM = value[12];
-		SELECTED = id == 34 ? value[13] : blendOpaque(CARD, BLUE, 0.38f);
-		SUB_SELECTED = id == 34 ? value[14] : blendOpaque(CARD, GOLD, 0.30f);
+		SELECTED = special == null && id == 34 ? value[13] : blendOpaque(CARD, BLUE, 0.38f);
+		SUB_SELECTED = special == null && id == 34 ? value[14] : blendOpaque(CARD, GOLD, 0.30f);
 		if (SpecialTheme.rainbow()) {
 			// Keep surfaces dark and readable while every semantic/accent role follows
 			// the same cached rainbow clock used by text, borders, and HUDs.
@@ -995,6 +1026,8 @@ public final class SafariSettingsScreen extends Screen {
 
 	/** Active settings palette, shared by the standalone HUD editor. */
 	static int[] activeThemePalette() {
+		int[] special = SpecialTheme.settingsPalette();
+		if (special != null) return special;
 		int rainbow = UIDraw.rainbowAt(0, 0.66f);
 		if (themePalettes == null) {
 			// Initialize through the normal path so the palette has one source of truth.
@@ -1051,9 +1084,9 @@ public final class SafariSettingsScreen extends Screen {
 	private void drawBrand(GuiGraphicsExtractor graphics) {
 		graphics.fillGradient(0, 0, navWidth - 1, HEADER_HEIGHT - 1, SURFACE, CARD);
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
-		int safariColour = display.settingsTheme == 34
+		int safariColour = !SpecialTheme.rainbow() && display.settingsTheme == 34
 			? Colours.argb(display.customThemeSafariTitle, CYAN) : CYAN;
-		int utilsColour = display.settingsTheme == 34
+		int utilsColour = !SpecialTheme.rainbow() && display.settingsTheme == 34
 			? Colours.argb(display.customThemeUtilsTitle, GOLD) : GOLD;
 		Component safariTitle = Component.literal("SAFARI ").withStyle(style -> style.withBold(true));
 		Component utilsTitle = Component.literal("UTILS").withStyle(style -> style.withBold(true));
@@ -1092,7 +1125,7 @@ public final class SafariSettingsScreen extends Screen {
 		graphics.fillGradient(x, y, x + themeButtonWidth, y + 28,
 			hovered ? SELECTED : CARD, hovered ? SUB_SELECTED : SURFACE);
 		outline(graphics, x, y, themeButtonWidth, 28, hovered ? CYAN : GOLD);
-		drawDiamond(graphics, x + 13, y + 14, 5, ConfigManager.get().display.settingsTheme == 4 ? CYAN : GOLD);
+		drawDiamond(graphics, x + 13, y + 14, 5, !SpecialTheme.rainbow() && ConfigManager.get().display.settingsTheme == 4 ? CYAN : GOLD);
 		if (themeButtonWidth >= 100) {
 			drawText(graphics, "THEME", x + 24, y + 5, DIM);
 			drawText(graphics, currentThemeLabel(), x + 24, y + 16, hovered ? TEXT : MUTED);
@@ -1122,6 +1155,8 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private String currentThemeLabel() {
+		String special = SpecialTheme.selectedName();
+		if (special != null) return special;
 		int current = ConfigManager.get().display.settingsTheme;
 		for (ThemeChoice theme : THEMES) {
 			if (theme.id == current) return theme.label;
@@ -1142,14 +1177,14 @@ public final class SafariSettingsScreen extends Screen {
 		int top = HEADER_HEIGHT;
 		int bottom = height - FOOTER_HEIGHT;
 		int y = HEADER_HEIGHT + 8 - navigationScroll;
+		int selectedY = y;
 		graphics.enableScissor(0, top, navWidth, bottom);
 		for (SettingsArea area : settingsAreas) {
 			boolean active = area == selectedArea;
 			boolean hovered = mouseX >= 0 && mouseX < navWidth && mouseY >= y && mouseY < y + 32;
-			if (active || hovered) {
-				graphics.fill(0, y, navWidth - 1, y + 32, active ? SELECTED : CARD_HOVER);
-				if (active) graphics.fill(0, y, 3, y + 32, CYAN);
-			}
+			graphics.fill(0, y, navWidth - 1, y + 32, active ? SELECTED
+				: SettingsUiKit.hoverColour(0, y, hovered, SURFACE, CARD_HOVER));
+			if (active) selectedY = y;
 			Component categoryTitle = Component.literal(trim(area.name, navWidth - 20))
 				.withStyle(style -> style.withBold(true));
 			drawText(graphics, categoryTitle, 12,
@@ -1163,6 +1198,7 @@ public final class SafariSettingsScreen extends Screen {
 		}
 
 		navigationContentHeight = Math.max(0, y + navigationScroll - (HEADER_HEIGHT + 8));
+		SettingsUiKit.selectionBar(graphics, 0, selectedY, 32, CYAN);
 		graphics.disableScissor();
 		drawUpdateStatus(graphics, mouseX, mouseY);
 	}
@@ -1192,8 +1228,7 @@ public final class SafariSettingsScreen extends Screen {
 			.withStyle(style -> style.withBold(true))
 			.append(Component.literal(label));
 		boolean hovered = inside(mouseX, mouseY, 0, rowY, navWidth, height);
-		graphics.fill(0, rowY, navWidth - 1, height, hovered ? CARD_HOVER : CARD);
-		graphics.fill(0, rowY, 3, height, colour);
+		SettingsUiKit.status(graphics, 0, rowY, navWidth - 1, FOOTER_HEIGHT, hovered, CARD, CARD_HOVER, colour);
 		drawText(graphics, statusText, 12,
 			rowY + (FOOTER_HEIGHT - font.lineHeight) / 2 + 2, colour);
 		hits.add(new Hit(0, rowY, navWidth, height,
@@ -1220,7 +1255,7 @@ public final class SafariSettingsScreen extends Screen {
 		}
 		contentHeaderBottom = Math.min(height - FOOTER_HEIGHT - 40, tabY + 31);
 		graphics.fill(workspaceLeft, HEADER_HEIGHT, width, contentHeaderBottom, SURFACE);
-		graphics.fill(workspaceLeft, contentHeaderBottom - 1, width, contentHeaderBottom, BORDER);
+		SettingsUiKit.divider(graphics, workspaceLeft, contentHeaderBottom - 1, width, contentHeaderBottom, BORDER);
 		tabX = left;
 		tabY = tabsY;
 		for (SettingsTab tab : selectedArea.tabs) {
@@ -1267,23 +1302,35 @@ public final class SafariSettingsScreen extends Screen {
 
 	private void selectArea(SettingsArea area) {
 		if (selectedArea == area) return;
+		rememberTabScroll();
 		selectedArea = area;
 		selectedTab = null;
-		expandedSettingSections.clear();
 		ensureSelectedTab();
-		scroll = 0;
+		String previousTab = areaTabs.get(area.key);
+		if (previousTab != null) selectedTab = area.tabs.stream().filter(tab -> tab.key.equals(previousTab))
+			.findFirst().orElse(selectedTab);
 		resetArmedUntil = 0;
 		search.setValue("");
+		scroll = tabScrollPositions.getOrDefault(tabLocation(), 0);
 	}
 
 	private void selectTab(SettingsTab tab) {
 		if (!tab.selectable()) return;
 		if (selectedTab == tab) return;
+		rememberTabScroll();
 		selectedTab = tab;
-		expandedSettingSections.clear();
-		scroll = 0;
 		resetArmedUntil = 0;
 		if (search != null) search.setValue("");
+		scroll = tabScrollPositions.getOrDefault(tabLocation(), 0);
+	}
+
+	private String tabLocation() {
+		return selectedArea == null || selectedTab == null ? "" : selectedArea.key + "/" + selectedTab.key;
+	}
+
+	private void rememberTabScroll() {
+		if (selectedArea != null && selectedTab != null) areaTabs.put(selectedArea.key, selectedTab.key);
+		if (search == null || search.getValue().isBlank()) tabScrollPositions.put(tabLocation(), scroll);
 	}
 
 	private void drawContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
@@ -1297,6 +1344,7 @@ public final class SafariSettingsScreen extends Screen {
 		contentViewportBottom = bottom;
 		contentScissor = new ScreenRectangle(left, top, right - left, bottom - top);
 		graphics.enableScissor(left, top, right, bottom);
+		SettingsUiKit.contentClip(contentScissor);
 		int y = top - scroll;
 		String query = search == null ? "" : search.getValue().trim().toLowerCase(Locale.ROOT);
 		if (query.isEmpty()) {
@@ -1305,8 +1353,14 @@ public final class SafariSettingsScreen extends Screen {
 			y = drawSearchResults(graphics, query, left, right, y, mouseX, mouseY);
 		}
 		contentHeight = Math.max(0, y + scroll - top);
+		if (navigationScrollTarget >= 0) {
+			scroll = Math.clamp(navigationScrollTarget, 0, Math.max(0, contentHeight - (bottom - top)));
+			navigationScrollTarget = -1;
+			navigationPending = false;
+		}
 		graphics.disableScissor();
 		contentScissor = null;
+		SettingsUiKit.contentClip(null);
 	}
 
 	private int drawTabPages(GuiGraphicsExtractor graphics, List<SettingsPage> pages,
@@ -1317,11 +1371,12 @@ public final class SafariSettingsScreen extends Screen {
 		int rootCount = 0;
 		SettingsPage root = null;
 		for (SettingsPage page : pages) {
+			if (page.key.equals("display.edit-layout")) continue;
 			if (effectiveDepths.getOrDefault(page, 0) != 0) continue;
 			rootCount++;
 			root = page;
 		}
-		SettingsPage hiddenRoot = rootCount == 1 && root != null && !root.selectable() ? root : null;
+		SettingsPage hiddenRoot = rootCount == 1 && root != null && !isStaticSection(root) ? root : null;
 		java.util.Arrays.fill(visibleSettingBranches, true);
 		for (int index = 0; index < pages.size(); index++) {
 			SettingsPage page = pages.get(index);
@@ -1358,7 +1413,8 @@ public final class SafariSettingsScreen extends Screen {
 				continue;
 			}
 
-			boolean expanded = expandedSettingSections.contains(page.key);
+			boolean staticSection = isStaticSection(page);
+			boolean expanded = staticSection || expandedSettingSections.contains(page.key);
 			int sectionLeft = left + Math.min(18, depth * 6);
 			y = drawCollapsibleSection(graphics, page, sectionLeft, right, y,
 				mouseX, mouseY, expanded);
@@ -1372,9 +1428,10 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private boolean isDirectSettingsPage(SettingsPage page, boolean hasChildren) {
+		if (page.key.endsWith(".diagnosticHitboxesAccordion")) return true;
 		if (page.key.equals("advanced.safe-mode.sparklings")) return true;
 		if (page.key.startsWith("advanced.safe-mode.")) return false;
-		if (page.key.startsWith("display.waypoint-settings")) return false;
+		if (page.key.startsWith("display.marker-settings")) return false;
 		if (!page.key.startsWith("dev.")) return true;
 		if (!hasChildren && page.fields.size() == 1) return true;
 		String pageName = compactSectionName(page.name).replace(" Alerts", "");
@@ -1398,18 +1455,19 @@ public final class SafariSettingsScreen extends Screen {
 	private int drawCollapsibleSection(GuiGraphicsExtractor graphics, SettingsPage page,
 			int left, int right, int y, int mouseX, int mouseY, boolean expanded) {
 		int height = 22;
-		boolean hovered = inside(mouseX, mouseY, left, y, right, y + height);
+		boolean staticSection = isStaticSection(page);
+		boolean hovered = !staticSection && inside(mouseX, mouseY, left, y, right, y + height);
 		if (y + height > contentViewportTop && y < contentViewportBottom) {
 			int accent = page.depth % 2 == 0 ? GOLD : CYAN;
-			graphics.fill(left, y, right, y + height, hovered ? CARD_HOVER : SURFACE);
-			graphics.fill(left, y, left + 3, y + height, accent);
+			SettingsUiKit.section(graphics, left, right, y, height,
+				SettingsUiKit.hoverColour(left, y, hovered, SURFACE, CARD_HOVER), accent);
 			drawText(graphics, trim(compactSectionName(page.name), right - left - 34),
 				left + 10, y + 7, TEXT);
-			drawCenteredText(graphics, expanded ? "−" : "+", right - 12, y + 7,
+			if (!staticSection) SettingsUiKit.disclosure(graphics, right - 12, y + height / 2, expanded,
 				expanded ? GOLD : MUTED);
 			int hitTop = Math.max(y, contentViewportTop);
 			int hitBottom = Math.min(y + height, contentViewportBottom);
-			if (hitBottom > hitTop) {
+			if (!staticSection && hitBottom > hitTop) {
 				hits.add(new Hit(left, hitTop, right, hitBottom,
 					() -> toggleSettingSection(page.key)));
 			}
@@ -1423,6 +1481,10 @@ public final class SafariSettingsScreen extends Screen {
 			collapseChildSections(key);
 		}
 		resetArmedUntil = 0;
+	}
+
+	private static boolean isStaticSection(SettingsPage page) {
+		return page.key.endsWith(".diagnosticHitboxesAccordion");
 	}
 
 	private void collapseChildSections(String parentKey) {
@@ -1456,11 +1518,14 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private List<List<Field>> settingCards(SettingsPage page) {
-		if (page.key.equals("display.waypoint-settings")) {
-			return List.of(page.fields);
+		if (page.key.equals("display.marker-settings")) {
+			return List.of(page.fields.subList(0, 2), page.fields.subList(2, 3));
 		}
-		if (page.key.equals("display.waypoint-settings.objectives")
-				|| page.key.equals("display.waypoint-settings.critters")) {
+		if (page.key.equals("display.marker-settings.overlays")) {
+			return List.of(page.fields.subList(0, 1), page.fields.subList(1, 3), page.fields.subList(3, 6));
+		}
+		if (page.key.equals("display.marker-settings.objectives")
+				|| page.key.equals("display.marker-settings.critters")) {
 			return featureColourCards(page.fields);
 		}
 		return List.of(page.fields);
@@ -1515,7 +1580,12 @@ public final class SafariSettingsScreen extends Screen {
 		for (SearchGroup group : cachedSearchGroups) {
 			String context = group.context;
 			if (!context.equals(previousContext) && !context.isBlank()) {
+				int contextTop = y;
 				y = drawSearchContext(graphics, context, left, right, y);
+				int hitTop = Math.max(contextTop, contentViewportTop);
+				int hitBottom = Math.min(contextTop + 28, contentViewportBottom);
+				if (hitBottom > hitTop) hits.add(new Hit(left, hitTop, right, hitBottom,
+					() -> navigateToSetting(group.owner, group.fields.getFirst())));
 				previousContext = context;
 			}
 			if (group.fields.size() > 1) {
@@ -1575,6 +1645,7 @@ public final class SafariSettingsScreen extends Screen {
 				collectSearchResults(owner, type, accordion.id(), nested, query,
 					ancestorMatches || matches, category, results);
 			} else if (hasEditor(field) && (ancestorMatches || matches)) {
+				if (BuildVersion.hostLoggingControls() && field.getName().equals("enableAutomaticLogging")) continue;
 				String mappedContext = navigationContext(owner, field);
 				StringBuilder path = new StringBuilder(mappedContext == null
 					? displayName(category) : mappedContext);
@@ -1592,18 +1663,19 @@ public final class SafariSettingsScreen extends Screen {
 		for (SettingsArea area : settingsAreas) {
 			for (SettingsPage page : area.pages) {
 				if (page.owner != owner || !page.fields.contains(field)) continue;
+				String path = area.name + "  ›  " + page.name;
 				List<List<Field>> cards = settingCardCache.computeIfAbsent(page, this::settingCards);
-				if (cards.size() <= 1) return page.breadcrumb;
+				if (cards.size() <= 1) return path;
 				for (List<Field> card : cards) {
 					if (!card.contains(field)) continue;
 					SettingInfo cardInfo = card.getFirst().getAnnotation(SettingInfo.class);
 					String cardName = cardInfo == null ? "" : displayName(cardInfo.name());
 					if (cardName.isBlank() || page.breadcrumb.endsWith("  ›  " + cardName)) {
-						return page.breadcrumb;
+						return path;
 					}
-					return page.breadcrumb + "  ›  " + cardName;
+					return path + "  ›  " + cardName;
 				}
-				return page.breadcrumb;
+				return path;
 			}
 		}
 		return null;
@@ -1618,7 +1690,7 @@ public final class SafariSettingsScreen extends Screen {
 				case "notification", "banner" -> "alert";
 				case "message" -> "chat text";
 				case "panel", "overlay" -> "hud";
-				case "marker", "pin" -> "waypoint";
+				case "marker", "pin" -> "marker";
 				case "colour" -> "color";
 				case "position", "move" -> "location vertical";
 				case "size" -> "scale";
@@ -1669,18 +1741,48 @@ public final class SafariSettingsScreen extends Screen {
 	private int drawSearchContext(GuiGraphicsExtractor graphics, String context,
 			int left, int right, int y) {
 		graphics.fill(left, y, right, y + 28, CARD);
-		graphics.fill(left, y, left + 3, y + 28, GOLD);
-		drawText(graphics, trim(context, right - left - 22), left + 12, y + 10, TEXT);
+		graphics.fill(left, y, left + 2, y + 28, GOLD);
+		drawText(graphics, trim(context, right - left - 45), left + 12, y + 10, TEXT);
+		drawText(graphics, "→", right - 20, y + 10, CYAN);
 		return y + 34;
+	}
+
+	private void navigateToSetting(Object owner, Field field) {
+		for (SettingsArea area : settingsAreas) for (SettingsTab tab : area.tabs) {
+			for (SettingsPage page : tab.pages) {
+				if (page.owner != owner || !page.fields.contains(field)) continue;
+				rememberTabScroll();
+				selectedArea = area;
+				selectedTab = tab;
+				for (SettingsPage parent : tab.pages) {
+					if (parent == page || page.breadcrumb.startsWith(parent.breadcrumb + "  ›  "))
+						expandedSettingSections.add(parent.key);
+				}
+				search.setValue("");
+				SettingsUiKit.blurToStart(search);
+				navigationTarget = field;
+				navigationPending = true;
+				navigationHighlightUntil = System.nanoTime() + 1_500_000_000L;
+				return;
+			}
+		}
+	}
+
+	private void locateNavigationTarget(Field field, int y) {
+		if (navigationPending && field.equals(navigationTarget))
+			navigationScrollTarget = Math.max(0, y + scroll - contentViewportTop - 6);
 	}
 
 	private int drawCombinedSettings(GuiGraphicsExtractor graphics, Object owner,
 			List<Field> fields, int left, int right, int y, int mouseX, int mouseY) {
 		List<SettingsUiKit.CardRow> rows = new ArrayList<>(fields.size());
 		String previousName = null;
+		int rowPosition = y;
 		for (Field field : fields) {
 			SettingInfo option = field.getAnnotation(SettingInfo.class);
 			int rowHeight = settingTextLayout(field, option, left, right).height;
+			locateNavigationTarget(field, rowPosition);
+			rowPosition += rowHeight;
 			String priorName = previousName;
 			rows.add(new SettingsUiKit.CardRow(rowHeight,
 				(rowTop, height) -> settingControlHovered(field, left, right,
@@ -1691,8 +1793,7 @@ public final class SafariSettingsScreen extends Screen {
 		}
 		return SettingsUiKit.drawCombinedCard(graphics, left, right, y,
 			contentViewportTop, contentViewportBottom, rows, CARD, CARD_HOVER,
-			BORDER, CYAN, (x, top, width, height, colour) ->
-				outline(graphics, x, top, width, height, colour)) + SETTINGS_GAP;
+			BORDER, CYAN) + SETTINGS_GAP;
 	}
 
 	private boolean settingControlHovered(Field field, int left, int right, int y, int height,
@@ -1765,6 +1866,7 @@ public final class SafariSettingsScreen extends Screen {
 
 	private int drawSetting(GuiGraphicsExtractor graphics, Object owner, Field field,
 			SettingInfo option, int left, int right, int y, int mouseX, int mouseY) {
+		locateNavigationTarget(field, y);
 		SettingTextLayout layout = settingTextLayout(field, option, left, right);
 		boolean stacked = stackedSetting(left, right);
 		int controlWidth = settingControlWidth(left, right, stacked);
@@ -1781,8 +1883,7 @@ public final class SafariSettingsScreen extends Screen {
 			? rowHovered : field.isAnnotationPresent(SettingRange.class)
 				? inside(mouseX, mouseY, controlX, y, right, y + height)
 				: controlHovered;
-		graphics.fill(left, y, right, y + height, hovered ? CARD_HOVER : CARD);
-		outline(graphics, left, y, right - left, height, hovered ? CYAN : BORDER);
+		SettingsUiKit.card(graphics, left, y, right - left, height, hovered, CARD, CARD_HOVER, BORDER, CYAN);
 		drawText(graphics, displayName(option.name()), left + 12, y + 9, TEXT);
 		int lineY = y + 24;
 		for (String line : layout.mainLines) {
@@ -1799,6 +1900,8 @@ public final class SafariSettingsScreen extends Screen {
 
 	private void drawControl(GuiGraphicsExtractor graphics, Object owner, Field field,
 			int left, int right, int y, int height, int mouseX, int mouseY) {
+		if (field.equals(navigationTarget) && System.nanoTime() < navigationHighlightUntil)
+			graphics.fill(left, y + 3, left + 3, y + height - 3, GOLD);
 		boolean stacked = stackedSetting(left, right);
 		int controlWidth = settingControlWidth(left, right, stacked);
 		int x = stacked ? left + 12 : right - controlWidth - 10;
@@ -1810,7 +1913,9 @@ public final class SafariSettingsScreen extends Screen {
 			SettingAction button = field.getAnnotation(SettingAction.class);
 			if (field.isAnnotationPresent(SettingToggle.class)) {
 				boolean enabled = field.getBoolean(owner);
-				drawToggle(graphics, x + controlWidth - 44, controlY + 2, enabled);
+				drawToggle(graphics, x + controlWidth - 44, controlY + 2, enabled,
+					SettingsUiKit.hovered(left, Math.max(y, contentViewportTop), right - left,
+						Math.max(0, Math.min(y + height, contentViewportBottom) - Math.max(y, contentViewportTop))));
 				hits.add(new Hit(left, y, right, y + height, () -> setBoolean(owner, field, !enabled)));
 			} else if (dropdown != null) {
 				int value = field.getInt(owner);
@@ -1867,9 +1972,7 @@ public final class SafariSettingsScreen extends Screen {
 				if (editingInlineText && editingField == field && editingOwner == owner) {
 					drawInlineEditorFrame(graphics, x, controlY, controlWidth);
 					setInlineEditorBounds(x, controlY, controlWidth, 22);
-					editor.setX(x + 8);
-					editor.setY(controlY + 7);
-					editor.setWidth(controlWidth - 16);
+					SettingsUiKit.inlineBounds(editor, x, controlY, controlWidth, 22);
 					editor.setTextColor(TEXT);
 					editor.setTextColorUneditable(MUTED);
 				} else {
@@ -1894,10 +1997,9 @@ public final class SafariSettingsScreen extends Screen {
 		return SettingsUiKit.controlWidth(left, right, stacked);
 	}
 
-	private void drawToggle(GuiGraphicsExtractor graphics, int x, int y, boolean enabled) {
-		SettingsUiKit.drawToggle(graphics, x, y, enabled, SURFACE, shade(BLUE, 0.48f),
-			BLUE, BORDER, CYAN, MUTED, (left, top, width, height, colour) ->
-				outline(graphics, left, top, width, height, colour));
+	private void drawToggle(GuiGraphicsExtractor graphics, int x, int y, boolean enabled, boolean hovered) {
+		SettingsUiKit.drawToggle(graphics, x, y, enabled, hovered, SURFACE, shade(BLUE, 0.48f),
+			BLUE, BORDER, CYAN, MUTED);
 	}
 
 	private static int shade(int colour, float amount) {
@@ -1916,8 +2018,8 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private void drawChoice(GuiGraphicsExtractor graphics, int x, int y, int width, String label) {
-		graphics.fill(x, y, x + width, y + 22, CARD);
-		outline(graphics, x, y, width, 22, BORDER);
+		SettingsUiKit.control(graphics, x, y, width, 22, SettingsUiKit.hovered(x, y, width, 22),
+			CARD, CARD_HOVER, BORDER, CYAN);
 		drawText(graphics, trim(label, width - 30), x + 8, y + 7, CYAN);
 		drawText(graphics, "▦", x + width - 15, y + 7, MUTED);
 	}
@@ -1947,7 +2049,8 @@ public final class SafariSettingsScreen extends Screen {
 		}
 		List<String> labels = choiceLabels();
 		boolean soundChoice = isSoundChoice(choiceField);
-		int hintHeight = soundChoice ? 12 : 0;
+		boolean themeChoice = choiceField != null && choiceField.getName().equals("settingsTheme");
+		int hintHeight = themeChoice ? 44 : soundChoice ? 12 : 0;
 		SettingsUiKit.ChoiceGrid grid = SettingsUiKit.choiceGrid(width, height,
 			labels.size(), hintHeight);
 		int columns = grid.columns();
@@ -1963,20 +2066,21 @@ public final class SafariSettingsScreen extends Screen {
 		if (soundChoice) {
 			drawText(graphics, "Right-click a sound to preview it", x + 14, y + 26, CYAN);
 		}
+		if (themeChoice) SettingsUiKit.specialThemeRow(graphics, font, x + 14, y + 36 + grid.rows() * 27, w - 28, mouseX, mouseY,
+			CARD, CARD_HOVER, SELECTED, BORDER, CYAN, TEXT, (l, t, r, b, action) -> hits.add(new Hit(l, t, r, b, action)));
 		int cellWidth = grid.cellWidth();
 		int current = choiceValue();
 		for (int index = 0; index < labels.size(); index++) {
 			int column = index % columns;
 			int row = index / columns;
 			int cellX = x + 14 + column * (cellWidth + 6);
-			int cellY = y + 36 + hintHeight + row * 27;
+			int cellY = y + 36 + (themeChoice ? 0 : hintHeight) + row * 27;
 			if (cellY + 22 > y + h - 30) continue;
 			int value = choiceStoredValue(index);
-			boolean active = current == value;
+			boolean active = current == value && (!themeChoice || SpecialTheme.selectedMode() == SpecialTheme.OFF);
 			boolean hovered = inside(mouseX, mouseY, cellX, cellY, cellX + cellWidth, cellY + 22);
-			graphics.fill(cellX, cellY, cellX + cellWidth, cellY + 22,
-				active ? SELECTED : hovered ? CARD_HOVER : CARD);
-			outline(graphics, cellX, cellY, cellWidth, 22, active ? CYAN : BORDER);
+			SettingsUiKit.pickerCell(graphics, cellX, cellY, cellWidth, 22, active, hovered,
+				CARD, CARD_HOVER, SELECTED, BORDER, CYAN);
 			drawCenteredText(graphics, trim(labels.get(index), cellWidth - 12),
 				cellX + cellWidth / 2, cellY + 7, active ? TEXT : MUTED);
 			hits.add(new Hit(cellX, cellY, cellX + cellWidth, cellY + 22,
@@ -1986,7 +2090,7 @@ public final class SafariSettingsScreen extends Screen {
 					cellX + cellWidth, cellY + 22, value));
 			}
 		}
-		drawButton(graphics, x + w - 74, y + h - 28, 60, "Cancel", mouseX, mouseY);
+		drawButton(graphics, x + w - 74, y + h - 28, 60, themeChoice ? "Done" : "Cancel", mouseX, mouseY);
 		hits.add(new Hit(x + w - 74, y + h - 28, x + w - 14, y + h - 6,
 			this::closeChoicePicker));
 	}
@@ -2193,7 +2297,8 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private void chooseDropdownValue(int value) {
-		boolean customTheme = isThemeChoice(choiceField) && value == 34;
+		boolean themeChoice = isThemeChoice(choiceField);
+		boolean customTheme = themeChoice && value == 34;
 		if (choiceField != null && choiceField.getName().equals("specialSparklingIntensity")
 			&& value > 0) {
 			int current = ConfigManager.get().sparkling.specialSparklingIntensity;
@@ -2207,10 +2312,11 @@ public final class SafariSettingsScreen extends Screen {
 		}
 		try {
 			choiceField.setInt(choiceOwner, value);
+			if (themeChoice) SpecialTheme.selectNormal(value);
 			ConfigManager.save();
 		} catch (IllegalAccessException ignored) {
 		}
-		closeChoicePicker();
+		if (!themeChoice || customTheme) closeChoicePicker();
 		if (customTheme) openCustomThemePanel();
 	}
 
@@ -3314,8 +3420,8 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private void drawColour(GuiGraphicsExtractor graphics, int x, int y, int width, int colour) {
-		graphics.fill(x, y, x + width, y + 22, CARD);
-		outline(graphics, x, y, width, 22, BORDER);
+		SettingsUiKit.control(graphics, x, y, width, 22, SettingsUiKit.hovered(x, y, width, 22),
+			CARD, CARD_HOVER, BORDER, CYAN);
 		graphics.fill(x + 5, y + 4, x + 35, y + 18, colour);
 		outline(graphics, x + 5, y + 4, 30, 14, BORDER);
 		String hex = "#%06X".formatted(colour & 0xFFFFFF);
@@ -3323,8 +3429,8 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private void drawTextValue(GuiGraphicsExtractor graphics, int x, int y, int width, String value) {
-		graphics.fill(x, y, x + width, y + 22, CARD);
-		outline(graphics, x, y, width, 22, BORDER);
+		SettingsUiKit.control(graphics, x, y, width, 22, SettingsUiKit.hovered(x, y, width, 22),
+			CARD, CARD_HOVER, BORDER, CYAN);
 		drawText(graphics, trim(value, width - 16), x + 8, y + 7, TEXT);
 	}
 
@@ -4130,7 +4236,7 @@ public final class SafariSettingsScreen extends Screen {
 	@Override
 	public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
 		if (event.button() == 0) blurInlineFieldsOutside(event.x(), event.y());
-		if (event.button() == 0 && search != null && search.visible
+		if (event.button() == 0 && !backgroundBlocked() && search != null && search.visible
 				&& inside(event.x(), event.y(), searchFrameX, searchFrameY,
 					searchFrameX + searchFrameWidth, searchFrameY + searchFrameHeight)) {
 			return focusEditorFrame(event, doubled, search, searchFrameX, searchFrameY,
@@ -4377,12 +4483,13 @@ public final class SafariSettingsScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(KeyEvent event) {
+		SettingsUiKit.available(search, !backgroundBlocked());
 		if (event.key() == 258) return true;
-		if (customSparklingPanel && customPresetNaming && event.key() == 257) {
+		if (customSparklingPanel && customPresetNaming && SettingsUiKit.enter(event.key())) {
 			finishPresetSave();
 			return true;
 		}
-		if (event.key() == 257 && blurFocusedInlineField()) return true;
+		if (SettingsUiKit.enter(event.key()) && blurFocusedInlineField()) return true;
 		// Alt+Tab can deliver the Tab key before Windows removes focus. Do not let
 		// Minecraft cycle focus into hidden widgets behind this modal.
 		if (customSparklingPanel && customPresetMenu && event.key() == 256) {
@@ -4397,7 +4504,7 @@ public final class SafariSettingsScreen extends Screen {
 			closeChoicePicker();
 			return true;
 		}
-		if (editor != null && event.key() == 257) {
+		if (editor != null && SettingsUiKit.enter(event.key())) {
 			applyEditor();
 			return true;
 		}
@@ -4484,7 +4591,7 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private static boolean isHeaderOnly(Field field) {
-		return isThemeChoice(field);
+		return isThemeChoice(field) || isSpecialThemeChoice(field);
 	}
 
 	private void beginSlider(Object owner, Field field, SettingRange slider,

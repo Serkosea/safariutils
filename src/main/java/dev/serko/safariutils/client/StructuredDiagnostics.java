@@ -24,6 +24,7 @@ public final class StructuredDiagnostics {
 				diagnostic("INVARIANT", "run closed from " + before.phase());
 			}
 			transition(reason, before, after);
+			OperationalLog.visitChanged(before.visit(), after.visit());
 		});
 	}
 
@@ -103,7 +104,7 @@ public final class StructuredDiagnostics {
 
 	static boolean enabled() {
 		return BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
-			&& !ConfigManager.automaticLoggingDisabled();
+			&& ConfigManager.automaticLoggingEnabled();
 	}
 
 	static void capturePairing(String stage, double[][] distances, double maximum,

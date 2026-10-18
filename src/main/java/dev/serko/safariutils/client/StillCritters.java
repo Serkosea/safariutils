@@ -199,15 +199,16 @@ public final class StillCritters {
 			Entity entity = sighting.mob();
 			BlockPos observedPos = entity == null
 				? sighting.label().blockPosition() : entity.blockPosition();
-			// A Hideon sheds its stationary shulker body when disturbed and moves as a
-			// silverfish. That mobile form is rendered live and must never become another
-			// remembered static spawn.
-			if (mobileHideon(sighting, entity)) {
+			// Awakened concealed critters use a mobile carrier. Even if it pauses (or
+			// appears briefly during capture), it is not another remembered static spawn.
+			if (entity != null && CritterBodyTypes.mobileConcealedBody(sighting.critter(), EntityTypeIds.path(entity))) {
 				boolean confirmed = VisibilityCheck.canSee(entity)
 					|| remembered.values().stream().anyMatch(entry ->
 						entry.critter().equals(sighting.critter()) && entry.visiblyConfirmed()
 							&& sameSpawn(entry.pos(), entity.blockPosition()));
 				supersedeNearby(sighting.critter(), entity.getUUID(), entity.blockPosition(), liveBodies);
+				remembered.remove(entity.getUUID());
+				staticAbsenceSince.remove(entity.getUUID());
 				if (confirmed && confirmedMovingBodies.add(entity.getUUID())) {
 					DebugLog.line("STILL", "CONFIRM moving " + sighting.critter().name()
 						+ " id=" + shortId(entity.getUUID()));
@@ -288,12 +289,6 @@ public final class StillCritters {
 		pruneMissingStaticCritters(System.nanoTime());
 		pruneVisibleEmptyCandidates();
 		staticAbsenceSince.retain(remembered.keySet());
-	}
-
-	private static boolean mobileHideon(CritterEntities.Sighting sighting, Entity entity) {
-		if (sighting == null || entity == null || !EntityTypeIds.is(entity, "silverfish")) return false;
-		String name = sighting.critter().name();
-		return "Hideonfloor".equals(name) || "Hideonwall".equals(name);
 	}
 
 	private static boolean caughtStatic(CritterEntities.Sighting sighting) {
@@ -542,6 +537,15 @@ public final class StillCritters {
 		if (!isStillResolving(oldId)) suppressedBodies.remove(oldId);
 		suppressedBodies.add(newId);
 		StructuredDiagnostics.decision("CAPTURE/STATIC", "target-corrected", "attempt=" + attemptId);
+	}
+
+	/** The new observed body owns its marker; an idle superseded form must not linger. */
+	static void onBodyReplaced(Critter critter, UUID oldId) {
+		if (!TRACKED.contains(critter.name()) || oldId == null || isStillResolving(oldId)) return;
+		remembered.remove(oldId);
+		staticAbsenceSince.remove(oldId);
+		suppressedBodies.remove(oldId);
+		MarkerRegistry.invalidate();
 	}
 
 	/** Migrates one static presentation owner when the same logical body receives a new UUID. */

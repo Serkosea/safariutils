@@ -1,8 +1,16 @@
 # Automatic diagnostics
 
-Developer builds (including SerkoAddons) write the existing compressed JSONL stream unless
-automatic logging is disabled. Normal/Extra do not acquire automatic diagnostic files from
-this change. Existing operational failure reporting remains available.
+`party-sparkling` records changed local snapshots, accepted shared discovery counts and
+reminder transitions. `party-network` and `party-sync` retain connection, roster and payload
+rejection diagnostics. Type `S` carries found/caught species masks, not chat, coordinates or
+credentials. With logging disabled these use the existing no-writer path.
+
+Developer builds (including SerkoAddons) write the compressed JSONL stream only with Enable
+Automatic Logging turned on. Fresh settings default off; schema 5 inverts the old disable
+flag without changing existing preferences. Logging fails closed before settings load, so
+disabled launches create no diagnostic file or writer executor. Disabling logging stops the
+writer and clears queued diagnostics. Normal/Extra never write these files; Minecraft's
+standard error reporting remains available independently.
 
 ## Capture outcome evidence
 
@@ -105,6 +113,20 @@ and terminal policy replay do not yet constitute a complete world-observation/re
 `check` runs headless repeat-bound, burst, expiry, clock-regression and capture-policy replay
 tests alongside the other core regressions. A passing replay/build is not an in-game test,
 and missing records cannot establish that a subsystem behaved correctly.
+## Saving one Safari run
+
+Developer-only `/safari debug save` (also `/su debug save` and `/safariutils debug save`)
+marks the current Safari visit for export. Automatic Logging must already be enabled; events
+from before it was enabled cannot be recovered. There is deliberately no `/safari save` alias.
+The existing writer seals its segment after the visit ends; a bounded local worker streams
+only the selected visit into `safariutils/logs/saved-runs/` under the component config root
+(`serkoaddons/safariutils/logs/saved-runs/` when embedded). Original session logs are unchanged.
+The range includes pre-command evidence, capture replay inputs without epoch fields, rotations,
+and the exit transition. A `saved-run` footer reports whether start/end boundaries were seen.
+Stopping logging early produces a partial export; missing/dropped source records cannot be
+reconstructed. This adds no duplicate live recording or work when automatic logging is off.
+`SavedRunLogRegression` covers extraction, rotation, adjacent visits, provenance and partial logs.
+
 ## Performance notes
 
 Developer builds time operations already routed through `OperationalLog.run` while in Safari.

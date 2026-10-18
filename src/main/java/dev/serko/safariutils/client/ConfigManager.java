@@ -21,7 +21,7 @@ import java.nio.file.Path;
 /** Owns the dependency-free settings model, migration, persistence, and screen. */
 public final class ConfigManager {
 	/** Append one migration step whenever persisted setting structure changes. */
-	public static final int CURRENT_SETTINGS_SCHEMA = 4;
+	public static final int CURRENT_SETTINGS_SCHEMA = 5;
 	private static final Gson GSON = new GsonBuilder()
 		.excludeFieldsWithoutExposeAnnotation().setPrettyPrinting().create();
 	private static SafariConfig config;
@@ -74,6 +74,7 @@ public final class ConfigManager {
 		AtomicFiles.writeString(SafariPaths.settings(), GSON.toJson(merged));
 		preservedSettings = merged;
 		config = imported;
+		OperationalLog.settingsChanged();
 		writesBlocked = false;
 		pendingVersionBackup = false;
 		RECOVERY.reset();
@@ -86,8 +87,8 @@ public final class ConfigManager {
 	}
 
 	/** Read-only, non-loading probe used by logging during config initialization. */
-	public static boolean automaticLoggingDisabled() {
-		return config != null && config.advanced.disableAutomaticLogging;
+	public static boolean automaticLoggingEnabled() {
+		return config != null && config.advanced.enableAutomaticLogging;
 	}
 
 	private static SafariConfig load() {
@@ -173,10 +174,21 @@ public final class ConfigManager {
 				case 1 -> migrateAutomaticPartySync(root);
 				case 2 -> migrateTicketTradingRoles(root);
 				case 3 -> migrateTicketTradingGuestMembership(root);
+				case 4 -> migrateAutomaticLogging(root);
 				default -> throw new IllegalStateException("Missing settings migration from schema " + version);
 			}
 			version++;
 			root.addProperty("settingsSchemaVersion", version);
+		}
+	}
+
+	private static void migrateAutomaticLogging(JsonObject root) {
+		if (!root.has("advanced") || !root.get("advanced").isJsonObject()) return;
+		JsonObject advanced = root.getAsJsonObject("advanced");
+		var old = advanced.remove("disableAutomaticLogging");
+		if (!advanced.has("enableAutomaticLogging") && old != null && old.isJsonPrimitive()
+			&& old.getAsJsonPrimitive().isBoolean()) {
+			advanced.addProperty("enableAutomaticLogging", !old.getAsBoolean());
 		}
 	}
 
@@ -707,6 +719,7 @@ public final class ConfigManager {
 	/** Writes atomically so an interrupted save cannot destroy a working config. */
 	public static synchronized void save() {
 		if (config == null) return;
+		OperationalLog.settingsChanged();
 		revision++;
 		Path path = SafariPaths.settings();
 		try {

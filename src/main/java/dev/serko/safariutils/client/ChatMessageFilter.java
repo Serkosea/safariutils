@@ -136,7 +136,8 @@ public final class ChatMessageFilter {
 	private static final Set<String> SHYWORM_MESSAGES = Set.of(
 		"The Shyworm surfaced nearby! Don't let it see you!",
 		"The Shyworm hid back into the ground.",
-		"The Shyworm fled because it was startled!"
+		"The Shyworm fled because it was startled!",
+		"The Shyworm saw a player and fled!"
 	);
 	private static final Set<String> SNOOZLE_MESSAGES = Set.of(
 		"You ran headfirst into the wall. Some more cracks appeared in it...",
@@ -193,7 +194,8 @@ public final class ChatMessageFilter {
 			if ((selected & GAZER) != 0 && GAZER_MESSAGES.contains(line)) return true;
 			if ((selected & GIMMIEGOLD) != 0 && line.equals(
 				"A Gimmiegold appeared out of nowhere and gobbled up your Shining Coin!")) return true;
-			if ((selected & HIDEYHO) != 0 && line.startsWith("[MOB] Hideyho:")) return true;
+			if ((selected & HIDEYHO) != 0 && (line.startsWith("[MOB] Hideyho:")
+				|| line.equals("Your Critter Capsule doesn't seem to work on this creature..."))) return true;
 			if ((selected & BIRD_SPAWNS) != 0 && BirdfeederWatch.isBirdSpawnMessage(line)) return true;
 			if ((selected & EMPTY_NESTS) != 0 && line.equals("Looks like the hive is empty now...")) return true;
 			if ((selected & DROP_ITEMS) != 0 && dropItemsMessage(line)) return true;

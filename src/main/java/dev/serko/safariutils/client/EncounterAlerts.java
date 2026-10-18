@@ -257,6 +257,7 @@ public final class EncounterAlerts implements HudElement {
 	 * colour, since this is not a ready/started/done progression.
 	 */
 	static void fireHideyho() {
+		if (!HideyhoSolver.markerEnabled()) return;
 		SafariConfig.AlertConfig alerts = ConfigManager.get().alerts;
 		if (alerts.hideyhoSoundMode == 0) return;
 		banner(alerts.hideyhoText, Colours.argb(alerts.hideyhoAlertColour, 0xFFFF55FF),
@@ -802,8 +803,8 @@ public final class EncounterAlerts implements HudElement {
 			config.sparklingBannerSoundVolume);
 	}
 
-	/** Persistent ticket-trading reminder; ordinary alerts temporarily draw over it. */
-	public static void showTicketTradingSparklingReminder(String critters, long durationMillis,
+	/** Persistent shared-Sparkling ticket reminder; ordinary alerts temporarily draw over it. */
+	public static void showSparklingTicketReminder(String critters, long durationMillis,
 			boolean useTicket, boolean playSound) {
 		long now = MonotonicTime.nowMillis();
 		ticketReminderTitle = "SPARKLING " + critters + " Found!";
@@ -813,23 +814,23 @@ public final class EncounterAlerts implements HudElement {
 			ticketReminderStartedAt = now;
 		}
 		ticketReminderUntil = now + Math.clamp(durationMillis, 1_000L, Long.MAX_VALUE - now);
-		if (playSound) playTicketTradingSparklingSound();
+		if (playSound) playSparklingTicketSound();
 	}
 
-	public static void playTicketTradingSparklingSound() {
+	public static void playSparklingTicketSound() {
 		SafariConfig.SparklingConfig config = ConfigManager.get().sparkling;
 		AlertSounds.playTicketTradingReminder(Minecraft.getInstance(),
 			config.sparklingBannerSoundVolume, config.sparklingBannerSoundPitch);
 	}
 
-	public static void clearTicketTradingSparklingReminder() {
+	public static void clearSparklingTicketReminder() {
 		if (ticketReminderTitle != null && ticketReminderFadeUntil == 0L) {
 			ticketReminderFadeUntil = MonotonicTime.nowMillis() + 500L;
 		}
 		AlertSounds.stopTicketTradingReminder();
 	}
 
-	private static void finishTicketTradingSparklingReminder() {
+	private static void finishSparklingTicketReminder() {
 		ticketReminderTitle = null;
 		ticketReminderUseTicket = false;
 		ticketReminderStartedAt = 0L;
@@ -954,7 +955,7 @@ public final class EncounterAlerts implements HudElement {
 		activePriority = 0;
 		rainbowMessage = false;
 		cachedBannerLayout = null;
-		finishTicketTradingSparklingReminder();
+		finishSparklingTicketReminder();
 		AlertSounds.clearTransientAlerts();
 	}
 
@@ -969,10 +970,10 @@ public final class EncounterAlerts implements HudElement {
 		}
 		if (ticketReminderTitle != null && ticketReminderFadeUntil == 0L
 				&& now > ticketReminderUntil) {
-			clearTicketTradingSparklingReminder();
+			clearSparklingTicketReminder();
 		}
 		if (ticketReminderFadeUntil > 0L && now >= ticketReminderFadeUntil) {
-			finishTicketTradingSparklingReminder();
+			finishSparklingTicketReminder();
 		}
 		boolean reminder = message == null && ticketReminderTitle != null;
 		if (message == null && !reminder) return;

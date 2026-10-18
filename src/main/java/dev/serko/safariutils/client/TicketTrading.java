@@ -2,19 +2,12 @@ package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.BuildVersion;
 import dev.serko.safariutils.session.SessionManager;
-import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.Critters;
-import dev.serko.safariutils.parse.ChatParser;
 import dev.serko.safariutils.state.PartySnapshot;
 import dev.serko.safariutils.state.PartyState;
 import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.Component;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -35,21 +28,14 @@ public final class TicketTrading {
 	static final long INVITE_RESPONSE_WINDOW_MILLIS = 5_000L;
 	static final long GUEST_LEAVE_SETTLE_MILLIS = 1_100L;
 	private static final long KICK_INVITE_LOCKOUT_MILLIS = 45_000L;
-	private static final long REMINDER_INTERVAL_MILLIS = 8_000L;
-	private static final long INBOUND_LOBBY_WAIT_MILLIS = 5_000L;
 	private static final long DIRECT_ACCEPT_WINDOW_MILLIS = 3_000L;
 	private static final long ACCEPT_DEDUPLICATION_MILLIS = 5_000L;
-	private static final long TICKETED_NOTICE_MILLIS = 4_000L;
-	private static final String SPARKLING_PROTOCOL = "SUT1";
 	private static final long ROSTER_CONFIRM_AT_MILLIS = 60_000L;
 	private static final Pattern INVITE = Pattern.compile(
 		"^(?:You have been invited to join\\s+)?(?:\\[[^]]+]\\s*)?([A-Za-z0-9_]{1,16})(?:'s party| has invited you to join (?:their|his|her) party)!?$",
 		Pattern.CASE_INSENSITIVE);
 	private static final Pattern PARTY_JOIN = Pattern.compile(
 		"^(?:\\[[^]]+]\\s*)?([A-Za-z0-9_]{1,16}) joined the party\\.?$",
-		Pattern.CASE_INSENSITIVE);
-	private static final Pattern PARTY_PROTOCOL = Pattern.compile(
-		"^Party > (?:\\[[^]]+]\\s*)?([A-Za-z0-9_]{1,16}):\\s+(SUT1)([FC])([0-9A-Fa-f]{2})([A-Za-z0-9_-]{12})$",
 		Pattern.CASE_INSENSITIVE);
 
 	private static final Set<String> joinedTargets = new HashSet<>();
@@ -71,7 +57,6 @@ public final class TicketTrading {
 	private static boolean tradeRunActive;
 	private static boolean warpSent;
 	private static boolean rosterMinuteChecked;
-	private static long sparklingFoundThisVisit;
 	private static String lastAccepted = "";
 	private static long lastAcceptedAt;
 	private static String pendingAcceptInviter = "";
@@ -79,15 +64,6 @@ public final class TicketTrading {
 	private static String directAcceptInviter = "";
 	private static long directAcceptAt;
 	private static long guestInviteBlockedUntil;
-	private static long nextReminderAt;
-	private static long remotelyFound;
-	private static long sentFound;
-	private static long sentCleared;
-	private static long pendingFound;
-	private static long pendingCleared;
-	private static final dev.serko.safariutils.state.DeferredObservations<InboundProtocol> pendingInbound =
-		new dev.serko.safariutils.state.DeferredObservations<>(128, INBOUND_LOBBY_WAIT_MILLIS * 1_000_000L);
-	private static boolean enabledLastTick;
 	private static boolean testMode;
 	private static int baselinePartySize = 1;
 	private static final List<String> pendingCleanupGuests = new ArrayList<>();
@@ -100,7 +76,6 @@ public final class TicketTrading {
 		TicketTradingProfiles.GuestMode guestMode, long sparklingCritters) {
 		boolean sparklingOnly() { return hostMode == TicketTradingProfiles.HostMode.SPARKLING; }
 	}
-	private record InboundProtocol(String sender, char event, int species, String fingerprint) { }
 
 	private TicketTrading() { }
 
@@ -123,7 +98,7 @@ public final class TicketTrading {
 		connectionStartedAt = System.currentTimeMillis() - elapsed;
 		hostQualificationPending = true;
 		OperationalLog.info("TICKET_TRADE", "Waiting for host authority queue=" + inviteQueue.size()
-			+ " alreadyFound=" + Long.bitCount(sparklingFoundThisVisit));
+			+ " alreadyFound=" + Long.bitCount(PartySparklingDiscoveries.activeMask()));
 	}
 
 	public static void tick() {
@@ -134,15 +109,6 @@ public final class TicketTrading {
 		if (testMode) return;
 		long now = System.currentTimeMillis();
 		boolean enabled = ConfigManager.get().sparkling.ticketTradingEnabled;
-		if (!enabled) {
-			if (enabledLastTick) {
-				clearProtocolVisitState();
-				sparklingFoundThisVisit = 0L;
-			}
-			enabledLastTick = false;
-		} else {
-			enabledLastTick = true;
-		}
 		if (pendingAcceptAt > 0L) {
 			if (!enabled || now < guestInviteBlockedUntil) clearPendingAccept();
 			else if (now >= pendingAcceptAt) {
@@ -157,9 +123,6 @@ public final class TicketTrading {
 			}
 		}
 		processPendingCleanup(now);
-		processPendingInbound();
-		updateRemoteReminder(now);
-		flushSparklingProtocol();
 		qualifyHost(now);
 		if (!hostScheduled && !tradeRunActive) return;
 		if (tradeRunActive && !rosterMinuteChecked
@@ -222,33 +185,6 @@ public final class TicketTrading {
 			}
 			resetRunAutomation();
 		}
-	}
-
-	/** Qualifies Sparkling-only traders while a pre-ticket or active invite window remains. */
-	public static void onSparklingDetected(Critter critter) {
-		if (testMode || !ConfigManager.get().sparkling.ticketTradingEnabled) return;
-		long bit = Critters.selectionMask(critter);
-		if (bit == 0L || (sparklingFoundThisVisit & bit) != 0L) return;
-		sparklingFoundThisVisit |= bit;
-		pendingFound |= bit;
-		pendingCleared &= ~bit;
-		OperationalLog.info("TICKET_TRADE", "Sparkling qualified this Safari visit species="
-			+ critter.name());
-	}
-
-	/** Stops remote reminders and informs current ticket-trading party members. */
-	public static void onSparklingCaught(Critter critter) {
-		if (testMode || critter == null) return;
-		long bit = Critters.selectionMask(critter);
-		if (bit == 0L) return;
-		remotelyFound &= ~bit;
-		if ((sparklingFoundThisVisit & bit) != 0L) {
-			sparklingFoundThisVisit &= ~bit;
-			pendingFound &= ~bit;
-			if ((sentFound & bit) != 0L) pendingCleared |= bit;
-			else pendingCleared &= ~bit;
-		}
-		refreshRemoteReminder(false);
 	}
 
 	/** Handles trusted invitations and observes the host party filling up. */
@@ -355,14 +291,10 @@ public final class TicketTrading {
 		if (testMode) {
 			resetRunAutomation();
 			clearPendingAccept();
-			sparklingFoundThisVisit = 0L;
-			clearProtocolVisitState();
 			return;
 		}
 		if (hostOwnedRun && tradeRunActive && warpSent) armCleanup();
 		resetRunAutomation();
-		sparklingFoundThisVisit = 0L;
-		clearProtocolVisitState();
 	}
 
 	public static void onDisconnect() {
@@ -372,16 +304,12 @@ public final class TicketTrading {
 		if (hostOwnedRun && tradeRunActive && warpSent) return;
 		resetRunAutomation();
 		clearPendingAccept();
-		sparklingFoundThisVisit = 0L;
-		clearProtocolVisitState();
 	}
 
 	public static void onConfirmedNonHypixel() {
 		resetRunAutomation();
 		clearPendingAccept();
 		clearCleanup("left Hypixel");
-		sparklingFoundThisVisit = 0L;
-		clearProtocolVisitState();
 	}
 
 	public static List<String> configuredPlayers() {
@@ -443,170 +371,6 @@ public final class TicketTrading {
 		return trimmed.matches("[A-Za-z0-9_]{1,16}") ? trimmed.toLowerCase(Locale.ROOT) : "";
 	}
 
-	/** Parses and hides valid internal party-Sparkling notices before player-chat filtering. */
-	public static boolean allowMessage(Component message, boolean overlay) {
-		if (overlay || message == null || !HypixelConnection.active()
-				|| !ConfigManager.get().sparkling.ticketTradingEnabled) {
-			return true;
-		}
-		String line = ChatParser.clean(message.getString());
-		Matcher protocol = PARTY_PROTOCOL.matcher(line);
-		if (!protocol.matches()) return true;
-		String sender = protocol.group(1);
-		char event = Character.toUpperCase(protocol.group(3).charAt(0));
-		int species = Integer.parseInt(protocol.group(4), 16);
-		if (species < 0 || species >= Critters.selectionOrder().size()) return true;
-		InboundProtocol inbound = new InboundProtocol(sender.toLowerCase(Locale.ROOT), event, species,
-			protocol.group(5));
-		if (!acceptInbound(inbound)) {
-			boolean added = pendingInbound.offer(inbound);
-			StructuredDiagnostics.decision("TICKET/SIGNAL", added ? "deferred" : "duplicate",
-				"pending=" + pendingInbound.size());
-		}
-		return false;
-	}
-
-	/** Ticket-trading hosts wait for their invited roster before freezing API state. */
-	public static boolean deferPartyApiRoster() {
-		if (!ConfigManager.get().sparkling.ticketTradingEnabled) return false;
-		if (SessionManager.current() == null
-				&& SessionManager.ticketWindowRemainingMillis() > 0L) return true;
-		return hostQualificationPending || hostScheduled && !warpSent;
-	}
-
-	private static void processPendingInbound() {
-		pendingInbound.drain(TicketTrading::acceptInbound);
-	}
-
-	private static boolean acceptInbound(InboundProtocol inbound) {
-		String lobby = SafariLocation.lobbyId();
-		if (lobby == null || lobby.isBlank()) return false;
-		String expected = fingerprint(inbound.sender(), lobby, inbound.event(), inbound.species());
-		if (!MessageDigest.isEqual(expected.getBytes(StandardCharsets.US_ASCII),
-				inbound.fingerprint().getBytes(StandardCharsets.US_ASCII))) {
-			DebugLog.line("TICKET_SIGNAL", "rejected sender=" + inbound.sender()
-				+ " reason=fingerprint");
-			return true;
-		}
-		String self = Minecraft.getInstance().getUser().getName();
-		if (inbound.sender().equalsIgnoreCase(self)) return true;
-		long bit = 1L << inbound.species();
-		Critter critter = Critters.selectionOrder().get(inbound.species());
-		if (inbound.event() == 'C') {
-			remotelyFound &= ~bit;
-			DebugLog.line("TICKET_SIGNAL", "cleared species=" + critter.name()
-				+ " sender=" + inbound.sender());
-			refreshRemoteReminder(false);
-			return true;
-		}
-		if (SessionManager.current() != null) {
-			EncounterAlerts.showTicketTradingSparklingReminder(critter.name(),
-				TICKETED_NOTICE_MILLIS, false, true);
-			DebugLog.line("TICKET_SIGNAL", "noticed species=" + critter.name()
-				+ " sender=" + inbound.sender() + " ticketed=true");
-			return true;
-		}
-		if ((remotelyFound & bit) != 0L) return true;
-		remotelyFound |= bit;
-		nextReminderAt = System.currentTimeMillis() + REMINDER_INTERVAL_MILLIS;
-		DebugLog.line("TICKET_SIGNAL", "noticed species=" + critter.name()
-			+ " sender=" + inbound.sender() + " ticketed=false");
-		refreshRemoteReminder(true);
-		return true;
-	}
-
-	private static void updateRemoteReminder(long now) {
-		if (remotelyFound == 0L) return;
-		long remaining = SessionManager.ticketWindowRemainingMillis();
-		if (SessionManager.current() != null || remaining <= 0L || !SafariLocation.inside()) {
-			clearRemoteSparklingState();
-			return;
-		}
-		if (now >= nextReminderAt) {
-			EncounterAlerts.playTicketTradingSparklingSound();
-			nextReminderAt = now + REMINDER_INTERVAL_MILLIS;
-			DebugLog.line("TICKET_SIGNAL", "guest reminder repeated remaining=" + remaining + "ms");
-		}
-	}
-
-	private static void refreshRemoteReminder(boolean playSound) {
-		if (remotelyFound == 0L) {
-			EncounterAlerts.clearTicketTradingSparklingReminder();
-			return;
-		}
-		long remaining = SessionManager.ticketWindowRemainingMillis();
-		if (remaining <= 0L) {
-			clearRemoteSparklingState();
-			return;
-		}
-		String names = java.util.stream.IntStream.range(0, Critters.selectionOrder().size())
-			.filter(index -> (remotelyFound & (1L << index)) != 0L)
-			.mapToObj(index -> Critters.selectionOrder().get(index).name())
-			.collect(java.util.stream.Collectors.joining(", "));
-		EncounterAlerts.showTicketTradingSparklingReminder(names,
-			remaining, true, playSound);
-	}
-
-	private static void flushSparklingProtocol() {
-		if ((pendingFound | pendingCleared) == 0L) return;
-		if (!ConfigManager.get().sparkling.ticketTradingEnabled || !PartyState.snapshot().inParty()) return;
-		if (hostScheduled && !warpSent) return;
-		String lobby = SafariLocation.lobbyId();
-		if (lobby == null || lobby.isBlank()) return;
-		String self = Minecraft.getInstance().getUser().getName();
-		long found = pendingFound & ~sentFound;
-		long cleared = pendingCleared & sentFound & ~sentCleared;
-		for (int index = 0; index < Critters.selectionOrder().size(); index++) {
-			long bit = 1L << index;
-			if ((found & bit) != 0L) {
-				ChatQueue.enqueueVisitScopedVerifiedPartyFirst("pc " + protocol(self, lobby, 'F', index));
-				sentFound |= bit;
-				pendingFound &= ~bit;
-				DebugLog.line("TICKET_SIGNAL", "queued found species="
-					+ Critters.selectionOrder().get(index).name());
-			}
-			if ((cleared & bit) != 0L) {
-				ChatQueue.enqueueVisitScopedVerifiedPartyFirst("pc " + protocol(self, lobby, 'C', index));
-				sentCleared |= bit;
-				pendingCleared &= ~bit;
-				DebugLog.line("TICKET_SIGNAL", "queued clear species="
-					+ Critters.selectionOrder().get(index).name());
-			}
-		}
-	}
-
-	private static String protocol(String sender, String lobby, char event, int species) {
-		String hex = "%02X".formatted(species);
-		return SPARKLING_PROTOCOL + event + hex + fingerprint(sender, lobby, event, species);
-	}
-
-	private static String fingerprint(String sender, String lobby, char event, int species) {
-		try {
-			MessageDigest digest = MessageDigest.getInstance("SHA-256");
-			byte[] hash = digest.digest((SPARKLING_PROTOCOL + '|' + sender.toLowerCase(Locale.ROOT)
-				+ '|' + lobby.toLowerCase(Locale.ROOT) + '|' + event + '|' + species)
-				.getBytes(StandardCharsets.UTF_8));
-			return Base64.getUrlEncoder().withoutPadding().encodeToString(hash).substring(0, 12);
-		} catch (NoSuchAlgorithmException impossible) {
-			throw new IllegalStateException("SHA-256 is unavailable", impossible);
-		}
-	}
-
-	private static void clearRemoteSparklingState() {
-		remotelyFound = 0L;
-		nextReminderAt = 0L;
-		pendingInbound.clear();
-		EncounterAlerts.clearTicketTradingSparklingReminder();
-	}
-
-	private static void clearProtocolVisitState() {
-		pendingFound = 0L;
-		pendingCleared = 0L;
-		sentFound = 0L;
-		sentCleared = 0L;
-		clearRemoteSparklingState();
-	}
-
 	private static boolean sendCommand(String command, CommandCoordinator.Category category,
 			CommandCoordinator.Cooldown cooldown, boolean requireLeader, boolean requireParty) {
 		var request = CommandCoordinator.request(command, category, cooldown,
@@ -653,7 +417,7 @@ public final class TicketTrading {
 		tradeRunActive = true;
 		OperationalLog.info("TICKET_TRADE", "Host authority confirmed; scheduled queue="
 			+ inviteQueue.size()
-			+ " alreadyFound=" + Long.bitCount(sparklingFoundThisVisit));
+			+ " alreadyFound=" + Long.bitCount(PartySparklingDiscoveries.activeMask()));
 	}
 
 	private static void resetRunAutomation() {
@@ -681,7 +445,7 @@ public final class TicketTrading {
 	private static List<String> pendingQueueTargets(boolean sparklingOnlyWave) {
 		return TicketInvitePolicy.select(inviteQueue, guestCapacityRemaining(), baselineMembers,
 			invitedTargets, sparklingOnlyWave, ConfiguredPlayer::name, ConfiguredPlayer::sparklingOnly,
-			target -> (target.sparklingCritters() & sparklingFoundThisVisit) != 0L)
+			target -> (target.sparklingCritters() & PartySparklingDiscoveries.activeMask()) != 0L)
 			.stream().map(ConfiguredPlayer::name).toList();
 	}
 

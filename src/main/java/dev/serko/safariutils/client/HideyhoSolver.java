@@ -160,6 +160,12 @@ public final class HideyhoSolver {
 		return displayAllowed() ? position : null;
 	}
 
+	/** Shared eligibility for the confirmed marker and its gameplay alert, not camera culling. */
+	public static boolean markerEnabled() {
+		return ConfigManager.get().display.enableHitboxes && position() != null
+			&& !SparklingMode.hideOrdinaryHitbox(CRITTER, sparkling);
+	}
+
 	/** Exact centre of the confirmed entity, preserving half-block hiding positions. */
 	public static Vec3 positionExact() {
 		return displayAllowed() ? positionExact : null;

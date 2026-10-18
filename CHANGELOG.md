@@ -1,5 +1,36 @@
 # Changelog
 
+## [3.1.0] - 2026-10-18
+
+### Changes & Additions
+
+- Enabled automatic network party sync in Normal and Extra standalone builds
+- Shared Sparkling discoveries through party sync and added ticket reminders outside Ticket Trading
+- Replaced encoded trading chat notices with bounded network snapshots; shared facts count as known in Safe Mode
+- Refined settings cards, toggles, pickers, and navigation with subtle transitions
+- Moved special themes into the theme picker and improved card hover visibility
+- Unified critter and recatch marker pity titles under one setting
+- Reorganized HUD, marker, ticket, and visual-comfort settings without changing saved values
+- Added search-result navigation and preserved section/scroll state when switching settings tabs
+
+### Fixes
+
+- Fixed simultaneous Hideon body forms splitting pity during repeated breakouts
+- Fixed body-form changes being mistaken for breakouts and leaving caught markers behind
+- Made normal and special themes mutually exclusive, with independent special-theme palettes
+- Fixed returning Hideons inheriting a temporary helper's zero-pity identity
+- Made Hideyho gameplay alerts follow its marker visibility settings
+- Fixed unknown Forest objective inventories being hidden instead of showing question marks
+- Fixed rapid final recatches losing accumulated pity and leaving a stale breakout marker
+- Fixed superseded breakout bodies leaving an extra zero-pity marker beside a final catch animation
+- Fixed moving Hideon markers losing their bodies and capture ownership, and temporary Duplico bodies leaving static markers
+- Fixed special-theme card borders using flat colors instead of horizontal gradients
+- Added missing Shyworm and Hideyho lines to their chat filters
+- Fixed shrinking markers ignoring special critter colors when color override is disabled
+- Fixed pity resetting during instant recatches when a critter's body and label change
+- Fixed Hideon capsule animations being mistaken for separate critters
+- Fixed party-shared Sparklings waiting for the Ticket Trading invite window before loading
+
 ## [3.0.0] - 2026-10-14
 
 ### New

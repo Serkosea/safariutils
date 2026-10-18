@@ -254,7 +254,6 @@ public final class SessionManager {
 		ChatParser.SparklingCatch sparkling = ChatParser.sparklingCatch(line);
 		if (sparkling != null) {
 			SparklingWatch.onCaught(sparkling.critter());
-			TicketTrading.onSparklingCaught(sparkling.critter());
 			if (current != null) {
 				SparklingMode.onSparklingCaught(sparkling.critter());
 				current.recordSparkling(sparkling.critter(), sparkling.catcher(), now);
@@ -521,7 +520,6 @@ public final class SessionManager {
 		long now = System.currentTimeMillis();
 		boolean alreadyRecorded = current != null && current.sparklings().contains(critter);
 		SparklingWatch.onCaught(critter);
-		TicketTrading.onSparklingCaught(critter);
 		if (current == null) return;
 		SparklingMode.onSparklingCaught(critter);
 		// Hideyho normally has no global catch line, but remain idempotent if Hypixel

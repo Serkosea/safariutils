@@ -124,8 +124,7 @@ public class SafariUtils implements ClientModInitializer {
 			return OperationalLog.get("CHAT/FILTER", () -> {
 				// Log before optional automation hides a clickable server prompt.
 				InteractionDebugLog.onGameMessage(message, overlay);
-				boolean allowed = TicketTrading.allowMessage(message, overlay)
-					&& PartyRosterWatch.allow(message, overlay)
+				boolean allowed = PartyRosterWatch.allow(message, overlay)
 					&& PartyErrorSuppressor.allow(message, overlay)
 					&& HideyhoAutoAccept.allow(message, overlay);
 				if (!allowed) return false;
@@ -193,6 +192,7 @@ public class SafariUtils implements ClientModInitializer {
 			tickSafely("critter-spotter", CritterSpotter::tick);
 			tickSafely("nests", NestTracker::tick);
 			tickSafely("sparkling-watch", SparklingWatch::tick);
+			tickSafely("sparkling-reminder", dev.serko.safariutils.client.PartySparklingDiscoveries::tick);
 			tickSafely("floor-drops", FloorDrops::tick);
 			tickSafely("mounds", MoundSpotter::tick);
 			tickSafely("static-entities", StaticEntityCatalog::tick);

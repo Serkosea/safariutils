@@ -10,7 +10,6 @@ import dev.serko.safariutils.client.SafariLocation;
 import dev.serko.safariutils.client.SafariPartyWatch;
 import dev.serko.safariutils.client.SparklingMode;
 import dev.serko.safariutils.client.SparklingScreen;
-import dev.serko.safariutils.client.TicketTrading;
 import dev.serko.safariutils.client.ClientMessages;
 import dev.serko.safariutils.client.ChatQueue;
 import dev.serko.safariutils.client.CanonicalPlayerNames;
@@ -24,7 +23,6 @@ import dev.serko.safariutils.session.SparklingStats;
 import dev.serko.safariutils.session.SessionManager;
 import dev.serko.safariutils.state.PartySnapshot;
 import dev.serko.safariutils.state.PartyState;
-import dev.serko.safariutils.state.MonotonicTime;
 import dev.serko.safariutils.state.SafariEpoch;
 import dev.serko.safariutils.state.SafariRuntimeState;
 import dev.serko.safariutils.concurrent.BoundedRequests;
@@ -52,8 +50,6 @@ import java.util.regex.Pattern;
 /** Shared profile lookup, per-player cache, roster observer, and mutual-set reducer. */
 public final class BackendSparklingProvider implements SharedSparklingProvider {
 	private static final Pattern USERNAME = Pattern.compile("^[A-Za-z0-9_]{1,16}$");
-	private static final long ROSTER_STABLE_MILLIS = 1_000L;
-	private static final int CHECK_EVERY_TICKS = 10;
 	private static final int NAME_CACHE_LIMIT = 512;
 	private static final int PARTY_CACHE_LIMIT = 64;
 
@@ -70,9 +66,7 @@ public final class BackendSparklingProvider implements SharedSparklingProvider {
 	private volatile SparklingPlayerLookup latestLocalCollection;
 	private volatile boolean stopped;
 
-	private int ticks;
-	private List<Member> candidateRoster = List.of();
-	private long candidateSince;
+	private final EntryRoster entryRoster = new EntryRoster();
 	private List<Member> activeRoster = List.of();
 	private String activeSignature = "";
 	private String attemptedSignature = "";
@@ -102,10 +96,8 @@ public final class BackendSparklingProvider implements SharedSparklingProvider {
 	@Override
 	public void tick() {
 		if (stopped) return;
-		if (++ticks % CHECK_EVERY_TICKS != 0) return;
 		if (!SafariLocation.inside()) {
-			candidateRoster = List.of();
-			candidateSince = 0;
+			entryRoster.reset();
 			observedVisit = false;
 			observedLobby = null;
 			lastRosterStatus = "";
@@ -118,8 +110,7 @@ public final class BackendSparklingProvider implements SharedSparklingProvider {
 			observedLobby = lobby;
 			visitEnteredAt = SafariLocation.insideSinceMillis();
 			if (visitEnteredAt == 0L) visitEnteredAt = System.currentTimeMillis();
-			candidateRoster = List.of();
-			candidateSince = 0;
+			entryRoster.reset();
 			activeRoster = List.of();
 			activeSignature = "";
 			attemptedSignature = "";
@@ -127,11 +118,11 @@ public final class BackendSparklingProvider implements SharedSparklingProvider {
 			lastRosterStatus = "";
 		}
 		else if (observedLobby == null && lobby != null) observedLobby = lobby;
-		if (TicketTrading.deferPartyApiRoster()) return;
+		entryRoster.observe(PartyState.snapshot(), visitEnteredAt);
+		PartySnapshot party = entryRoster.claim(SessionManager.current() != null);
+		if (party == null) return;
 		// Shared Sparklings belong to the full Minecraft party that entered Safari,
 		// not the temporary subset whose player entities have loaded into the instance.
-		PartySnapshot party = PartyState.snapshot();
-		if (party.capturedAtMillis() < visitEnteredAt) return;
 		List<Member> observed = BackendPartyRoster.apiParty(party);
 		int expectedParty = party.expectedPlayers();
 		String rosterStatus = observed.size() + "/" + expectedParty;
@@ -141,13 +132,6 @@ public final class BackendSparklingProvider implements SharedSparklingProvider {
 		}
 		if (observed.isEmpty()) return;
 		if (observed.size() < expectedParty) return;
-		long now = MonotonicTime.nowMillis();
-		if (!observed.equals(candidateRoster)) {
-			candidateRoster = observed;
-			candidateSince = now;
-			return;
-		}
-		if (now - candidateSince < ROSTER_STABLE_MILLIS) return;
 
 		String signature = signature(observed);
 		// Once selected, composition is immutable for this Safari visit. A member
@@ -189,14 +173,36 @@ public final class BackendSparklingProvider implements SharedSparklingProvider {
 
 	@Override
 	public void onPartyMembershipChanged() {
-		if (observedVisit && !attemptedSignature.isEmpty()) {
+		if (observedVisit) {
+			entryRoster.observe(PartyState.snapshot(), visitEnteredAt);
 			// The current Safari remains bound to its entry roster. The refreshed party
 			// list is intentionally ignored until a different Safari visit begins.
 			return;
 		}
-		candidateRoster = List.of();
-		candidateSince = 0;
 		compositionChanging = true;
+	}
+
+	/** First fresh central confirmation wins, even if it precedes ticket activation. */
+	static final class EntryRoster {
+		private PartySnapshot confirmed;
+		private boolean claimed;
+
+		void observe(PartySnapshot party, long enteredAt) {
+			if (confirmed == null && party.completeRoster() && party.capturedAtMillis() >= enteredAt) {
+				confirmed = party;
+			}
+		}
+
+		PartySnapshot claim(boolean runActive) {
+			if (!runActive || claimed || confirmed == null || confirmed.expectedPlayers() > 4) return null;
+			claimed = true;
+			return confirmed;
+		}
+
+		void reset() {
+			confirmed = null;
+			claimed = false;
+		}
 	}
 
 	@Override

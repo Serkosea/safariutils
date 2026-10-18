@@ -16,12 +16,12 @@ public final class CaptureObservationRegression {
 		field.setAccessible(true);
 		Object original = field.get(null);
 		var settings = new SafariConfig();
-		settings.advanced.disableAutomaticLogging = true;
+		settings.advanced.enableAutomaticLogging = false;
 		field.set(null, settings);
 		try { return runIsolated(); }
 		finally { field.set(null, original); }
 	}
-	private static int runIsolated() {
+	private static int runIsolated() throws ReflectiveOperationException {
 		int checks = 0;
 		var species = new Critter("Bloodbat", SafariBiome.CAVERN, Critter.Rarity.RARE, 1);
 		var first = new UUID(0, 101);
@@ -65,7 +65,85 @@ public final class CaptureObservationRegression {
 			check(CritterState.logicalCritters().stream().noneMatch(view -> view.critter().equals(hideyho)),
 				"Hideyho stays outside capsule identity tracking"); checks++;
 		} finally { CritterState.onVisitStarted(); RecatchSpots.clear(); }
-		return checks + rapidRecatches() + correctedInteraction() + reorderedArrivals() + evidenceTransitions() + deferredAim() + completion();
+		return checks + concealedForms() + activeRebound() + rapidRecatches() + correctedInteraction() + reorderedArrivals() + evidenceTransitions() + deferredAim() + completion();
+	}
+	private static int concealedForms() throws ReflectiveOperationException {
+		var effects = CritterState.class.getDeclaredField("effects");
+		effects.setAccessible(true);
+		Object original = effects.get(null);
+		effects.set(null, java.lang.reflect.Proxy.newProxyInstance(CaptureEffects.class.getClassLoader(),
+			new Class<?>[] {CaptureEffects.class}, (proxy, method, args) -> null));
+		try { return concealedFormsIsolated(); }
+		finally { effects.set(null, original); }
+	}
+	private static int concealedFormsIsolated() {
+		int checks = 0;
+		for (String name : List.of("Hideonfloor", "Hideonwall", "Duplico")) {
+			var species = dev.serko.safariutils.data.Critters.byName(name);
+			UUID a = new UUID(90, 1), mobile = new UUID(90, 2), b = new UUID(90, 3);
+			UUID la = new UUID(91, 1), lb = new UUID(91, 2);
+			var box = new AABB(0, 0, 0, 1, 1, 1);
+			var peer = box.move(20, 0, 0);
+			var aim = new CritterState.Aim(new Vec3(20.5, .5, -3), new Vec3(0, 0, 1));
+			CritterState.onVisitStarted(); RecatchSpots.clear();
+			try {
+				CritterState.observeBodies(List.of(body(species, la, a, box), body(species, lb, b, peer)), 1000);
+				long identity = logical(a).id();
+				CritterState.observeBodies(List.of(body(species, la, mobile, box), body(species, lb, b, peer)), 1050);
+				check(logical(mobile).id() == identity && logical(mobile).pity() == 0,
+					"waking must preserve identity without adding pity"); checks++;
+				CritterState.observeInteraction(b, peer.getCenter(), 1060);
+				CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT, species), false, 1070, aim);
+				CritterState.observeBodies(List.of(body(species, lb, b, peer)), 1100);
+				CritterState.advanceCaptureEvidence(List.of(), List.of(new CritterState.CaptureLabelObservation(species, la, box.getCenter())), 1100);
+				check(logical(b).pity() == 1 && logical(mobile).pity() == 0,
+					"bodyless known label stole another critter's attempt"); checks++;
+				check(CritterState.activeAttempts().stream().allMatch(attempt -> attempt.targetEntityId().equals(b)),
+					"form change retargeted a remote attempt"); checks++;
+				CritterState.observeBodies(List.of(body(species, la, a, box.move(1, 0, 0)), body(species, lb, b, peer)), 1150);
+				check(logical(a).id() == identity && logical(a).pity() == 0,
+					"settling form lost identity or invented pity"); checks++;
+			} finally { CritterState.onVisitStarted(); RecatchSpots.clear(); }
+		}
+		return checks;
+	}
+	private static int activeRebound() {
+		// The identity policy is species-independent; avoid static-catalog world effects here.
+		var species = dev.serko.safariutils.data.Critters.byName("Bloodbat");
+		var box = new AABB(0, 0, 0, 1, 1, 1);
+		var aim = new CritterState.Aim(new Vec3(.5, .5, -3), new Vec3(0, 0, 1));
+		UUID a = new UUID(80, 1), duplicate = new UUID(80, 2);
+		UUID la = new UUID(81, 1), lb = new UUID(81, 2);
+		int checks = 0;
+		try {
+			for (int scenario = 0; scenario < 3; scenario++) {
+				boolean bothVisible = scenario == 1, preexistingPeer = scenario == 2;
+				CritterState.onVisitStarted(); RecatchSpots.clear();
+				CritterState.observeBodies(List.of(body(species, la, a, box)), 1000);
+				long identity = logical(a).id();
+				CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT, species), false, 1010, aim);
+				CritterState.observeBodies(List.of(), 1050);
+				CritterState.applyEvent(event(CritterEvent.Type.FAILED, species), false, 3200, aim);
+				CritterState.observeBodies(List.of(body(species, la, a, box)), 3250);
+				if (preexistingPeer) CritterState.observeBodies(List.of(body(species, la, a, box),
+					body(species, lb, duplicate, box)), 3255);
+				CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT, species), false, 3260, aim);
+				check(logical(a).pity() == 2, "retry starts with accumulated pity"); checks++;
+				CritterState.observeBodies(List.of(body(species, la, a, box),
+					body(species, lb, duplicate, box)), 3270);
+				var rebound = body(species, lb, a, box);
+				CritterState.observeBodies(bothVisible ? List.of(rebound, body(species, la, duplicate, box))
+					: List.of(rebound), 3320);
+				check(CritterState.logicalCritters().size() == (bothVisible || preexistingPeer ? 2 : 1),
+					"active rebound cannot merge observed or preexisting peers"); checks++;
+				if (preexistingPeer) continue;
+				CritterState.advanceCaptureEvidence(List.of(), List.of(new CritterState.CaptureLabelObservation(
+					species, new UUID(82, 1), box.getCenter())), 3670);
+				check(logical(a).id() == identity && logical(a).pity() == 2,
+					"capture evidence cannot move retry pity onto a rebound artifact"); checks++;
+			}
+		} finally { CritterState.onVisitStarted(); RecatchSpots.clear(); }
+		return checks;
 	}
 	private static int correctedInteraction() {
 		int checks = 0;

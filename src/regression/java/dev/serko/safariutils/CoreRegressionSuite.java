@@ -36,6 +36,10 @@ public final class CoreRegressionSuite {
 		checks += RecoverySnapshotRegression.run();
 		checks += ImportBackupRegression.run();
 		checks += dev.serko.safariutils.client.SettingsTransferRegression.run();
+		checks += dev.serko.safariutils.client.LoggingOptInRegression.run();
+		checks += dev.serko.safariutils.client.SavedRunLogRegression.run();
+		checks += dev.serko.safariutils.client.SettingsMotionRegression.run();
+		checks += dev.serko.safariutils.client.ThemeSelectionRegression.run();
 		checks += SettingsFieldsRegression.run();
 		checks += GenerationDispatchRegression.run();
 		checks += MonotonicCooldownsRegression.run();
@@ -50,6 +54,7 @@ public final class CoreRegressionSuite {
 		checks += dev.serko.safariutils.client.ChatMessageFilterRegression.run();
 		checks += dev.serko.safariutils.client.TicketInvitePolicyRegression.run();
 		checks += dev.serko.safariutils.client.TicketGuestPolicyRegression.run();
+		checks += dev.serko.safariutils.client.PartySparklingRegression.run();
 		checks += dev.serko.safariutils.session.RunHistoryRegression.run();
 		checks += dev.serko.safariutils.session.SparklingStatsRegression.run();
 		checks += dev.serko.safariutils.client.CapturePairingRegression.run();

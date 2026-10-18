@@ -442,7 +442,7 @@ public final class SafariDashboardScreen extends Screen {
 			0xE0121922, PANEL_BACKGROUND);
 		if (SpecialTheme.rainbow()) {
 			SpecialTheme.stars(graphics, panelLeft + 2, panelTop + 2,
-				panelWidth - 4, panelHeight - 4, 1.1f);
+				panelWidth - 4, panelHeight - 4, 1.375f);
 			SpecialTheme.border(graphics, panelLeft, panelTop, panelWidth, panelHeight);
 		} else drawPanelBorder(graphics, tabBorderColour());
 		// Drawn after the main frame so a two-pixel themed border cannot cover it.

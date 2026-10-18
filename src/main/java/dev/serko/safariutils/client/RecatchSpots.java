@@ -463,6 +463,19 @@ public final class RecatchSpots {
 		MarkerRegistry.invalidate();
 	}
 
+	/** An authoritative idle form replacement retires the old breakout projection. */
+	static void onBodyReplaced(Critter critter, UUID oldId, UUID newId) {
+		if (oldId == null || oldId.equals(newId) || presentationByBody.containsKey(oldId)) return;
+		boolean removed = pins.remove(oldId) != null;
+		escapedPins.remove(oldId);
+		caughtBodies.remove(oldId);
+		Critter known = knownBodies.remove(oldId);
+		if (known != null) knownBodies.put(newId, known);
+		if (removed) DebugLog.line("RECATCH", "FORM-REJOIN " + critter.name()
+			+ " " + shortId(oldId) + " -> " + shortId(newId) + " retiredHold=true");
+		MarkerRegistry.invalidate();
+	}
+
 	/** A rekey retains old-body suppression while transferring the visible identity. */
 	static void reassignIdentity(long attemptId, Critter critter, UUID oldId, UUID newId,
 			AABB newBox, boolean sparkling, int logicalPity) {
@@ -478,6 +491,12 @@ public final class RecatchSpots {
 		}
 		Critter known = knownBodies.remove(oldId);
 		if (known != null) knownBodies.put(newId, known);
+		// A completed breakout can leave a hold before the retry has a presentation.
+		// The authoritative identity handoff retires that hold, not another attempt's body.
+		if (!presentationByBody.containsKey(oldId)) {
+			pins.remove(oldId);
+			escapedPins.remove(oldId);
+		}
 		caughtBodies.remove(oldId);
 		DebugLog.line("RECATCH", "IDENTITY-REKEY A" + attemptId + " " + critter.name()
 			+ " " + shortId(oldId) + " -> " + shortId(newId) + " pity=" + logicalPity);

@@ -8,6 +8,7 @@ import dev.serko.safariutils.state.SafariRuntimeState;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 
 import java.io.BufferedWriter;
+import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -49,21 +50,17 @@ public final class OperationalLog {
 	private static final long SLOW_OPERATION_NANOS = 5_000_000L;
 	private static final long SLOW_OPERATION_INTERVAL_NANOS = 10_000_000_000L;
 	private static final DiagnosticRepeats REPEATS = new DiagnosticRepeats(512, DEBUG_REPEAT_MILLIS);
-	private static final ScheduledExecutorService WRITER =
-		Executors.newSingleThreadScheduledExecutor(task -> {
-			Thread thread = new Thread(task, "safariutils-log");
-			thread.setDaemon(true);
-			return thread;
-		});
+	private static ScheduledExecutorService writerExecutor;
 	private static volatile BufferedWriter writer;
 	private static volatile Path activePath;
 	private static final List<Path> STRUCTURED_PATHS = new ArrayList<>();
 	private static String sessionName;
 	private static int sessionPart;
 	private static volatile boolean unavailable;
-	private static boolean scheduled;
 	private static volatile boolean stopping;
 	private static boolean shutdownHookRegistered;
+	private static volatile long savedVisit;
+	private static volatile boolean savedVisitEnded;
 
 	private record Entry(long time, String level, String category, String message,
 			long connection, long visit, long run, String phase) { }
@@ -79,7 +76,7 @@ public final class OperationalLog {
 				Runtime.getRuntime().addShutdownHook(new Thread(OperationalLog::shutdown,
 					"safariutils-log-close"));
 			}
-			sessionName = "SafariUtils_" + fileTime(Instant.now());
+			sessionName = BuildVersion.logName() + "_" + fileTime(Instant.now());
 			sessionPart = 1;
 			Path path = nextAvailablePath();
 			activePath = path;
@@ -93,9 +90,13 @@ public final class OperationalLog {
 				+ " version=" + BuildVersion.releaseVersion()
 				+ " source=" + BuildVersion.sourceFingerprint());
 			flush();
-			if (!scheduled) {
-				scheduled = true;
-				WRITER.scheduleAtFixedRate(OperationalLog::flush, 1, 1, TimeUnit.SECONDS);
+			if (writerExecutor == null) {
+				writerExecutor = Executors.newSingleThreadScheduledExecutor(task -> {
+					Thread thread = new Thread(task, "safariutils-log");
+					thread.setDaemon(true);
+					return thread;
+				});
+				writerExecutor.scheduleAtFixedRate(OperationalLog::flush, 1, 1, TimeUnit.SECONDS);
 			}
 		} catch (Exception error) {
 			unavailable = true;
@@ -123,6 +124,32 @@ public final class OperationalLog {
 		if (disabled() || unavailable || encoder == null) return;
 		if (writer == null) start();
 		if (writer != null) QUEUE.offer(new Queued(null, null, encoder));
+	}
+
+	/** Called from a client command; no file scanning or compression on the client thread. */
+	static synchronized String saveVisit(long visit) {
+		if (disabled()) return "Enable Automatic Logging before saving a Safari run.";
+		if (visit <= 0) return "Enter a Safari run before saving its log.";
+		if (unavailable || writer == null) return "Automatic logging is unavailable.";
+		if (savedVisit != 0) return "A Safari run is already marked for saving.";
+		savedVisitEnded = false;
+		savedVisit = visit;
+		return "This Safari run is marked for saving, including earlier logged events. It will finish when you leave Safari.";
+	}
+
+	static void visitChanged(long before, long after) {
+		if (before != after && savedVisit == before && before != 0) savedVisitEnded = true;
+	}
+
+	private static void exportSavedVisit(boolean interrupted) {
+		long visit = savedVisit;
+		if (visit == 0) return;
+		savedVisit = 0;
+		savedVisitEnded = false;
+		if (stopping) {
+			try { SavedRunLog.export(List.copyOf(STRUCTURED_PATHS), visit, SafariPaths.savedRunLogs(), interrupted); }
+			catch (IOException failure) { SafariUtils.LOGGER.warn("Could not save requested Safari run; original logs retained", failure); }
+		} else SavedRunLog.submit(List.copyOf(STRUCTURED_PATHS), visit, interrupted);
 	}
 
 	public static Path activeStructuredPath() {
@@ -244,8 +271,7 @@ public final class OperationalLog {
 
 	public static synchronized void flush() {
 		if (disabled()) {
-			QUEUE.clear();
-			REPEATS.clear();
+			pause();
 			return;
 		}
 		// A persisted disabled setting can be switched off while the client is open.
@@ -257,16 +283,16 @@ public final class OperationalLog {
 			expireRepeats(now);
 			long dropped = QUEUE.takeDropped();
 			if (dropped > 0) write(entry(now, "WARN", "LOG", "dropped=" + dropped));
-			for (int count = 0; count < MAX_QUEUED_LINES; count++) {
-				Queued queued = QUEUE.poll();
-				if (queued == null) break;
-				if (queued.entry() != null) write(queued.entry());
-				else {
-					writer.write(queued.deferred() == null ? queued.structured() : queued.deferred().get());
-					writer.newLine();
-				}
-			}
+			drainQueued();
 			writer.flush();
+			if (savedVisitEnded) {
+				List<Path> sealed = List.copyOf(STRUCTURED_PATHS);
+				rotate();
+				long visit = savedVisit;
+				savedVisit = 0;
+				savedVisitEnded = false;
+				SavedRunLog.submit(sealed, visit, false);
+			}
 			Path path = activePath;
 			if (Files.isRegularFile(path) && Files.size(path) >= MAX_BYTES) {
 				rotate();
@@ -276,6 +302,19 @@ public final class OperationalLog {
 			try { writer.close(); } catch (Exception ignored) { }
 			writer = null;
 			SafariUtils.LOGGER.warn("Could not write SafariUtils log", error);
+		}
+	}
+
+	/** Caller holds the writer monitor; bounded even if producers are still active. */
+	private static void drainQueued() throws Exception {
+		for (int count = 0; count < MAX_QUEUED_LINES; count++) {
+			Queued queued = QUEUE.poll();
+			if (queued == null) break;
+			if (queued.entry() != null) write(queued.entry());
+			else {
+				writer.write(queued.deferred() == null ? queued.structured() : queued.deferred().get());
+				writer.newLine();
+			}
 		}
 	}
 
@@ -298,10 +337,34 @@ public final class OperationalLog {
 		QUEUE.close();
 		flush();
 		stopping = true;
-		WRITER.shutdown();
+		if (writerExecutor != null) writerExecutor.shutdown();
+		writerExecutor = null;
 		if (writer == null) return;
 		try { writer.close(); } catch (Exception ignored) { }
 		writer = null;
+		exportSavedVisit(true);
+	}
+
+	/** Stop the writer when disabled, without closing the queue needed for later opt-in. */
+	public static synchronized void settingsChanged() {
+		if (disabled()) pause();
+	}
+
+	private static void pause() {
+		if (writerExecutor != null) writerExecutor.shutdown();
+		writerExecutor = null;
+		if (savedVisit != 0 && writer != null) {
+			try { drainQueued(); }
+			catch (Exception failure) { SafariUtils.LOGGER.warn("Could not finish saved-run diagnostics", failure); }
+		}
+		QUEUE.clear();
+		REPEATS.clear();
+		LAST_SLOW_OPERATION.clear();
+		if (writer != null) {
+			try { writer.close(); } catch (IOException ignored) { }
+			writer = null;
+		}
+		exportSavedVisit(true);
 	}
 
 	private static void enqueue(String level, String category, String message) {
@@ -317,7 +380,7 @@ public final class OperationalLog {
 
 	private static boolean disabled() {
 		return stopping || !BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
-			|| ConfigManager.automaticLoggingDisabled();
+			|| !ConfigManager.automaticLoggingEnabled();
 	}
 
 	private static void expireRepeats(long now) {

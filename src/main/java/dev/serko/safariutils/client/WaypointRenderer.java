@@ -565,7 +565,7 @@ public final class WaypointRenderer {
 			}
 
 			String label = (sparkling ? "SPARKLING " : "") + sighting.critter().name()
-				+ (display.hitboxPityTitle ? Markers.pityLabel(sighting.critter(), entity.getUUID()) : "");
+				+ Markers.pityLabel(sighting.critter(), entity.getUUID());
 			drawn.add(new Found(new Markers.Marker(box, label, colour, Markers.Style.HIGHLIGHT),
 				Math.sqrt(distanceSquared(box, camera)), seeThrough));
 			markVanillaNameReplaced(sighting);
@@ -672,7 +672,7 @@ public final class WaypointRenderer {
 						box, camera)) {
 					if (seeThrough) throughBoxesDrawn = true;
 					else depthBoxesDrawn = true;
-					String pity = display.hitboxPityTitle && body != null
+					String pity = body != null
 						? Markers.pityLabel(sighting.critter(), body.getUUID()) : "";
 					labels.add(new Found(new Markers.Marker(box,
 						"SPARKLING " + sighting.critter().name() + pity, colour,
@@ -984,8 +984,7 @@ public final class WaypointRenderer {
 					if (seeThrough) anyThroughWalls = true;
 					else anyDepthTested = true;
 
-					String pity = !genericRemembered || display.hitboxPityTitle
-						? Markers.pityLabel(critter, entity.getUUID()) : "";
+					String pity = Markers.pityLabel(critter, entity.getUUID());
 					String label = (sparkling ? "SPARKLING " : "") + tracked.label() + pity;
 					drawn.add(new Found(new Markers.Marker(box, label, colour,
 						genericRemembered ? Markers.Style.HIGHLIGHT : Markers.Style.WAYPOINT),
@@ -1026,8 +1025,7 @@ public final class WaypointRenderer {
 					anyDrawn = true;
 					if (seeThrough) anyThroughWalls = true;
 					else anyDepthTested = true;
-					String pity = !genericRemembered || display.hitboxPityTitle
-						? Markers.pityLabel(critter, remembered.id()) : "";
+					String pity = Markers.pityLabel(critter, remembered.id());
 					String label = (remembered.sparkling() ? "SPARKLING " : "")
 						+ tracked.label() + pity;
 					drawn.add(new Found(new Markers.Marker(box, label, colour,
@@ -1058,8 +1056,7 @@ public final class WaypointRenderer {
 					Markers.Style.WAYPOINT, true), Math.sqrt(distanceSquared(box, camera)), true));
 			}
 			BlockPos hideyho = HideyhoSolver.position();
-			if (display.enableHitboxes && hideyho != null
-				&& !SparklingMode.hideOrdinaryHitbox(hideyhoCritter, HideyhoSolver.sparkling())) {
+			if (HideyhoSolver.markerEnabled()) {
 				// Confirmed Hideyhos can stand on a block edge. Preserve the entity's
 				// exact horizontal centre instead of snapping its box to blockPosition().
 				Vec3 exact = HideyhoSolver.positionExact();
@@ -1133,14 +1130,7 @@ public final class WaypointRenderer {
 				&& SparklingMode.hideOrdinaryHitbox(shrink.critter(), false)) continue;
 			boolean diagnostic = BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
 				&& ConfigManager.get().advanced.showAllCritterHitboxes;
-			int uniqueColour = SparklingMode.uniqueHitboxColour(shrink.critter(),
-				SessionManager.current());
-			int colour = diagnostic ? 0xFFFF00FF
-				: shrink.sparkling() ? sparklingColour()
-				: uniqueColour != 0 ? uniqueColour
-				: display.hitboxRarityColour
-					? 0xFF000000 | shrink.critter().rarity().colour()
-					: Colours.argb(display.hitboxColour, 0xFFFFFFFF);
+			int colour = critterHitboxColour(shrink.critter(), shrink.sparkling());
 			boolean seeThrough = !SafeMode.critterHitboxes(shrink.sparkling()) || diagnostic;
 			boolean drawn = shrink.sparkling()
 				? drawRainbowBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
@@ -1150,8 +1140,7 @@ public final class WaypointRenderer {
 			if (!drawn) continue;
 			if (seeThrough) through = true;
 			else depth = true;
-			String pity = display.hitboxPityTitle
-				? Markers.pityLabel(shrink.critter(), shrink.entityId()) : "";
+			String pity = Markers.pityLabel(shrink.critter(), shrink.entityId());
 			String label = (shrink.sparkling() ? "SPARKLING " : "")
 				+ shrink.critter().name() + pity;
 			labels.add(new Found(new Markers.Marker(shrink.box(), label, colour,

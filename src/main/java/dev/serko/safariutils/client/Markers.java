@@ -107,7 +107,7 @@ public final class Markers {
 					? WaypointRenderer.critterHitboxColour(pin.critter(), pin.sparkling())
 					: Colours.argb(display.recatchColour, 0xFFFFFF55);
 				String label = (pin.sparkling() ? "SPARKLING " : "") + pin.critter().name()
-					+ (display.recatchPityTitle ? pityLabel(pin.critter(), pin.entityId()) : "");
+					+ pityLabel(pin.critter(), pin.entityId());
 				markers.add(new Marker(pin.box(), label, colour, Style.WAYPOINT,
 					true, false, true));
 			}
@@ -181,8 +181,9 @@ public final class Markers {
 		};
 	}
 
-	/** Returns this individual's pity count for hitboxes and waypoints. */
+	/** Shared pity-title policy for live, remembered, shrinking and recatch markers. */
 	public static String pityLabel(Critter critter, java.util.UUID entityId) {
+		if (!ConfigManager.get().display.hitboxPityTitle) return "";
 		// Guaranteed catches cannot escape or build useful pity. This includes
 		// Uncommons when the configured Eagle bonus raises their chance above 100%.
 		if (CritterCatchRules.guaranteedWithoutPity(critter)) return "";

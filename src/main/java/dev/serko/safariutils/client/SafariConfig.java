@@ -70,7 +70,7 @@ public class SafariConfig {
 		return runnableId == EDIT_POSITIONS;
 	}
 
-	@SettingCategory(name = "Display", desc = "HUDs, waypoints, colors, and interface appearance")
+	@SettingCategory(name = "Display", desc = "HUDs, markers, colors, and interface appearance")
 	@Expose
 	public DisplayConfig display = new DisplayConfig();
 
@@ -474,11 +474,11 @@ public class SafariConfig {
 		/** Accordion id for the grouped highlight toggles. */
 		private static final int HIGHLIGHTS = 3;
 
-		@SettingInfo(name = "Waypoints", desc = "")
+		@SettingInfo(name = "Markers", desc = "")
 		@SettingSection(id = HIGHLIGHTS)
 		public boolean highlightsAccordion = false;
 
-		@SettingInfo(name = "Include Distance", desc = "Shows your distance from each waypoint")
+		@SettingInfo(name = "Include Distance", desc = "Shows your distance from each marker")
 		@SettingToggle
 		@SettingGroup(id = HIGHLIGHTS)
 		@Expose
@@ -492,14 +492,14 @@ public class SafariConfig {
 		public boolean hidePossibleWaypoints = false;
 
 		@SettingInfo(name = "Display Nametags",
-			desc = "Chooses which names appear for critters with rendered hitboxes or waypoints")
-		@SettingChoice(values = {"None", "Vanilla", "Waypoint", "Both"})
+			desc = "Chooses which names appear for critters with rendered markers or markers")
+		@SettingChoice(values = {"None", "Vanilla", "Marker", "Both"})
 		@SettingGroup(id = HIGHLIGHTS)
 		@Expose
 		public int displayNametags = 3;
 
 		@SettingInfo(name = "Eagle Rarity",
-			desc = "Choose the rarity of your Eagle pet, used for pity titles and recatch waypoints")
+			desc = "Choose the rarity of your Eagle pet, used for pity titles and recatch markers")
 		@SettingChoice(values = {"None", "Common", "Uncommon", "Rare", "Epic", "Legendary"})
 		@SettingGroup(id = HIGHLIGHTS)
 		@Expose
@@ -537,15 +537,13 @@ public class SafariConfig {
 		@Expose
 		public boolean recatchHelper = true;
 
-		@SettingInfo(name = "Pity Title", desc = "Adds the pity count to the recatch mark's title")
-		@SettingToggle
-		@SettingGroup(id = RECATCH)
+		// Legacy saved value retained for compatibility; hitboxPityTitle now owns all marker pity titles.
 		@Expose
 		public boolean recatchPityTitle = true;
 
 		@SettingInfo(
-			name = "Match Critter Hitbox",
-			desc = "Matches the respective critter's hitbox color instead of a set color")
+			name = "Match Critter Marker",
+			desc = "Matches the respective critter's marker color instead of a set color")
 		@SettingToggle
 		@SettingGroup(id = RECATCH)
 		@Expose
@@ -630,7 +628,7 @@ public class SafariConfig {
 		/** Accordion id for the colour pickers, kept together so they fold away. */
 		private static final int COLOURS = 2;
 
-		@SettingInfo(name = "Waypoint Colors", desc = "")
+		@SettingInfo(name = "Marker Colors", desc = "")
 		@SettingSection(id = COLOURS)
 		public boolean coloursAccordion = false;
 
@@ -862,17 +860,17 @@ public class SafariConfig {
 		private static final int HITBOXES = 6;
 		private static final int HITBOX_COLOURS = 25;
 
-		@SettingInfo(name = "Critter Hitboxes", desc = "")
+		@SettingInfo(name = "Critter Markers", desc = "")
 		@SettingSection(id = HITBOXES)
 		public boolean hitboxesAccordion = false;
 
-		@SettingInfo(name = "Enable Hitboxes", desc = "Shows hitboxes for detected critters")
+		@SettingInfo(name = "Enable Markers", desc = "Shows markers for detected critters")
 		@SettingToggle
 		@SettingGroup(id = HITBOXES)
 		@Expose
 		public boolean enableHitboxes = true;
 
-		@SettingInfo(name = "Pity Title", desc = "Shows a pity count as each hitbox's title")
+		@SettingInfo(name = "Pity Title", desc = "Shows pity counts on critter and recatch markers")
 		@SettingToggle
 		@SettingGroup(id = HITBOXES)
 		@Expose
@@ -883,21 +881,21 @@ public class SafariConfig {
 		@SettingGroup(id = HITBOXES)
 		public boolean hitboxColoursAccordion = false;
 
-		@SettingInfo(name = "Hitbox Color", desc = "")
+		@SettingInfo(name = "Marker Color", desc = "")
 		@SettingColor
 		@SettingGroup(id = HITBOX_COLOURS)
 		@Expose
 		public String hitboxColour = colour(0xFF, 0xFF, 0xFF);
 
 		@SettingInfo(name = "Unique Status Colors",
-			desc = "Colors critter hitboxes red before their run unique and green afterward")
+			desc = "Colors critter markers red before their run unique and green afterward")
 		@SettingToggle
 		@SettingGroup(id = HITBOX_COLOURS)
 		@Expose
 		public boolean uniqueHitboxColours = true;
 
 		@SettingInfo(name = "Rarity Color",
-			desc = "Colors hitboxes and their titles by the critter's own rarity instead of a fixed color")
+			desc = "Colors markers and their titles by the critter's own rarity instead of a fixed color")
 		@SettingToggle
 		@SettingGroup(id = HITBOX_COLOURS)
 		@Expose
@@ -1076,13 +1074,13 @@ public class SafariConfig {
 		@Expose
 		public boolean safeConservativeCompletion = true;
 
-		@SettingInfo(name = "Critter Overlays", desc = "Controls when critter hitboxes and waypoints are shown")
+		@SettingInfo(name = "Critter Overlays", desc = "Controls when critter markers and markers are shown")
 		@SettingSection(id = SAFE_CRITTER_OVERLAYS)
 		@SettingGroup(id = SAFE_MODE_OPTIONS)
 		public boolean safeCritterOverlaysAccordion = false;
 
-		@SettingInfo(name = "Critter Hitboxes",
-			desc = "§6Safe: Shows a hitbox only while its critter or visible name tag is seen\n§7Normal: Shows loaded hitboxes through terrain")
+		@SettingInfo(name = "Critter Markers",
+			desc = "§6Safe: Shows a marker only while its critter or visible name tag is seen\n§7Normal: Shows loaded markers through terrain")
 		@SettingToggle
 		@SettingGroup(id = SAFE_CRITTER_OVERLAYS)
 		@Expose
@@ -1149,12 +1147,12 @@ public class SafariConfig {
 		@SettingSection(id = TESTING)
 		public boolean testingAccordion = false;
 
-		@SettingInfo(name = "Disable Automatic Logging",
-			desc = "Stops automatic diagnostic and error log files to minimize logging overhead")
+		@SettingInfo(name = "Enable Automatic Logging",
+			desc = "Records diagnostic logs for testing; may reduce performance")
 		@SettingToggle
 		@SettingGroup(id = TESTING)
 		@Expose
-		public boolean disableAutomaticLogging = false;
+		public boolean enableAutomaticLogging = false;
 
 		/** Accordion id for developer-only data collection and persistence controls. */
 		private static final int DATA_COLLECTING = 25;
@@ -1185,14 +1183,14 @@ public class SafariConfig {
 		/** Accordion id for hitboxes on entity types outside the normal critter set. */
 		private static final int DIAGNOSTIC_HITBOXES = 14;
 
-		@SettingInfo(name = "Diagnostic Hitboxes",
+		@SettingInfo(name = "Diagnostic Markers",
 			desc = "Shows entity wireframes for identifying critter bodies and nearby objects")
 		@SettingSection(id = DIAGNOSTIC_HITBOXES)
 		@SettingGroup(id = TESTING)
 		public boolean diagnosticHitboxesAccordion = false;
 
 		@SettingInfo(name = "Critters",
-			desc = "Every critter's own hitbox too, all in this diagnostic colour instead of rarity — " +
+			desc = "Every critter's own marker too, all in this diagnostic colour instead of rarity — " +
 				"there was previously no way to see them alongside the other diagnostic types below")
 		@SettingToggle
 		@SettingGroup(id = DIAGNOSTIC_HITBOXES)
@@ -1216,7 +1214,7 @@ public class SafariConfig {
 		public boolean showAllItemDisplays = false;
 
 		@SettingInfo(name = "Interactions",
-			desc = "Every interaction entity nearby — invisible hitboxes with no model of their own; " +
+			desc = "Every interaction entity nearby — invisible markers with no model of their own; " +
 				"this is what a Rockmite mound actually is")
 		@SettingToggle
 		@SettingGroup(id = DIAGNOSTIC_HITBOXES)
@@ -3425,13 +3423,13 @@ public class SafariConfig {
 		public boolean sparklingModeOptionsAccordion = false;
 
 		@SettingInfo(name = "Always Active Critters",
-			desc = "Keep selected ordinary critter hitboxes and critter waypoints visible in Sparkling Mode, even with Ignore Uniques or Only Show Sparkling")
+			desc = "Keep selected ordinary critter markers visible in Sparkling Mode, even with Ignore Uniques or Only Show Sparkling")
 		@SettingMultiChoice(critters = true, biomeColumns = true)
 		@SettingGroup(id = SPARKLING_MODE_OPTIONS) @Expose
 		public long sparklingAlwaysActiveCritters = 0L;
 
-		@SettingInfo(name = "Always Active Waypoints",
-			desc = "Keep selected objective and possible-location waypoints visible when Sparkling Mode would normally hide them")
+		@SettingInfo(name = "Always Active Markers",
+			desc = "Keep selected objective and possible-location markers visible when Sparkling Mode would normally hide them")
 		@SettingMultiChoice(
 			values = {"Floor Drops", "Mounds", "Snoozle Walls", "Floor Drops", "Troodon Walls",
 				"Floor Drops", "Floor Drops", "Bee Nests"},
@@ -3447,7 +3445,7 @@ public class SafariConfig {
 		public boolean sparklingIgnoreUniques = true;
 
 		@SettingInfo(name = "Only Show Sparkling",
-			desc = "Hides ordinary critter hitboxes and critter waypoints while Sparkling Mode is enabled")
+			desc = "Hides ordinary critter markers and critter markers while Sparkling Mode is enabled")
 		@SettingToggle @SettingGroup(id = SPARKLING_MODE_OPTIONS)
 		@Expose
 		public boolean sparklingOnlyShowSparkling = false;

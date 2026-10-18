@@ -9,13 +9,13 @@ public final class DebugLog {
 	/** Detailed gameplay diagnostics are useful only while a Safari world is active. */
 	public static boolean isEnabled() {
 		return BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
-			&& !ConfigManager.automaticLoggingDisabled()
+			&& ConfigManager.automaticLoggingEnabled()
 			&& SafariLocation.inSafari();
 	}
 
 	public static void line(String category, String message) {
 		if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
-				&& !ConfigManager.automaticLoggingDisabled()
+				&& ConfigManager.automaticLoggingEnabled()
 			&& (isEnabled() || alwaysUseful(category))) {
 			OperationalLog.debug(category, message);
 		}

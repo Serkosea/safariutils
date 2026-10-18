@@ -83,6 +83,45 @@ public final class SpecialTheme {
 		return mode() != OFF;
 	}
 
+	// Fixed dark surfaces/readability roles; animated accents are applied by the shared UI.
+	private static final int[] RAINBOW_PALETTE = {0xF00A0911, 0xEB151220, 0xDC1B1728, 0xEB29213B,
+		0xFF4C4165, 0xFFB68CFF, 0xFF85DFFF, 0xFF70FF9A, 0xFFFF708B, 0xFFFFD58A,
+		0xFFFFFFFF, 0xFFBBB4CC, 0xFF776F89};
+	private static final int[] ASTRAL_PALETTE = {0xF0080714, 0xEB121027, 0xDC1B1839, 0xEB27214E,
+		0xFF4A3D78, 0xFFA58AFF, 0xFFC5ACFF, 0xFF90DFC9, 0xFFFF82AD, 0xFFFFF2C2,
+		0xFFF8F4FF, 0xFFB2A8CA, 0xFF716886};
+
+	static int[] settingsPalette() {
+		return switch (mode()) {
+			case RAINBOW -> RAINBOW_PALETTE;
+			case CONSTELLATION -> ASTRAL_PALETTE;
+			default -> null;
+		};
+	}
+
+	/** Saved selection, independent of the temporary Easter-egg effect. */
+	public static int selectedMode() {
+		var advanced = ConfigManager.get().advanced;
+		if (advanced.specialTheme == CONSTELLATION && advanced.constellationThemeUnlocked) return CONSTELLATION;
+		return advanced.specialTheme == RAINBOW ? RAINBOW : OFF;
+	}
+
+	public static String selectedName() {
+		return selectedMode() == CONSTELLATION ? "Astral" : selectedMode() == RAINBOW ? "Rainbow" : null;
+	}
+
+	public static void selectNormal(int id) {
+		ConfigManager.get().display.settingsTheme = Math.clamp(id, 0, 34);
+		ConfigManager.get().advanced.specialTheme = OFF;
+		resolvedModeFrame = Long.MIN_VALUE;
+	}
+
+	public static void selectSpecial(int id) {
+		if (id != RAINBOW && (id != CONSTELLATION || !ConfigManager.get().advanced.constellationThemeUnlocked)) return;
+		ConfigManager.get().advanced.specialTheme = id;
+		resolvedModeFrame = Long.MIN_VALUE;
+	}
+
 	public static boolean constellation() {
 		return mode() == CONSTELLATION;
 	}
@@ -97,11 +136,7 @@ public final class SpecialTheme {
 
 	private static int resolveMode() {
 		if (MonotonicTime.nowMillis() < temporaryConstellationUntil) return CONSTELLATION;
-		SafariConfig.AdvancedConfig advanced = ConfigManager.get().advanced;
-		if (advanced.specialTheme == CONSTELLATION && advanced.constellationThemeUnlocked) {
-			return CONSTELLATION;
-		}
-		return advanced.specialTheme == RAINBOW ? RAINBOW : OFF;
+		return selectedMode();
 	}
 
 	/** Replays the temporary effect and permanently exposes its picker option. */
@@ -143,6 +178,11 @@ public final class SpecialTheme {
 	public static void rainbowText(GuiGraphicsExtractor graphics, Font font,
 							   Component component, int x, int y) {
 		UIDraw.specialText(graphics, font, component, x, y, 0.5f);
+	}
+
+	/** Denser settings-only decoration; other screens and HUDs retain their own density. */
+	public static void settingsStars(GuiGraphicsExtractor graphics, int width, int height) {
+		stars(graphics, 0, 0, width, height, 2.1f);
 	}
 
 	/** Small deterministic twinkles behind panel text, with no per-frame allocations. */
@@ -311,6 +351,11 @@ public final class SpecialTheme {
 	/** A smooth horizontal theme accent submitted as one GUI batch. */
 	public static void bar(GuiGraphicsExtractor graphics, int left, int top,
 			int width, int height) {
+		bar(graphics, left, top, width, height, null);
+	}
+
+	public static void bar(GuiGraphicsExtractor graphics, int left, int top,
+			int width, int height, ScreenRectangle scissorArea) {
 		if (width <= 0 || height <= 0) return;
 		int theme = mode();
 		int xPhase = Math.floorMod(left, 96);
@@ -321,7 +366,7 @@ public final class SpecialTheme {
 			cache.quads = barQuads(theme, xPhase, width, height, cache.quads);
 			cache.frameId = frameId;
 		}
-		GuiQuadBatchRenderState.submit(graphics, left, top, width, height, cache.quads);
+		GuiQuadBatchRenderState.submit(graphics, left, top, width, height, cache.quads, scissorArea);
 	}
 
 	private static int[] barQuads(int theme, int xPhase, int width, int height, int[] reusable) {

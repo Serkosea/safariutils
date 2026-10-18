@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
-/** Authenticated, reconnecting WebSocket transport used by Developer builds. */
+/** Authenticated, reconnecting WebSocket transport shared by every edition. */
 public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 	private static final URI ENDPOINT = BackendEndpoints.SYNC;
 	private static final long BASE_RETRY_MILLIS = 2_000L;
@@ -317,6 +317,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 			&& String.valueOf(PartySyncProtocol.VERSION).equals(
 				values[PartySyncProtocol.AGGREGATE_VERSION_INDEX]);
 		if ("U".equals(kind)) return values.length == PartySyncProtocol.USAGE_VALUES;
+		if ("S".equals(kind)) return values.length == PartySyncProtocol.SPARKLING_VALUES;
 		return "N".equals(kind) && values.length == PartySyncProtocol.NEST_VALUES;
 	}
 

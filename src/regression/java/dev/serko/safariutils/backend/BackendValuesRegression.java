@@ -1,6 +1,7 @@
 package dev.serko.safariutils.backend;
 
 import com.google.gson.JsonParser;
+import dev.serko.safariutils.state.PartySnapshot;
 import java.util.List;
 
 public final class BackendValuesRegression {
@@ -35,7 +36,52 @@ public final class BackendValuesRegression {
 				throw new AssertionError("Invalid schema accepted"); }
 			catch (IllegalArgumentException | ArithmeticException expected) { checks++; }
 		}
-		return checks;
+		return checks + entryRoster();
+	}
+
+	private static int entryRoster() {
+		var selection = new BackendSparklingProvider.EntryRoster();
+		long entered = 1_792_100_766_000L;
+		var solo = party(entered + 359, PartySnapshot.Status.SOLO, 1, "Host");
+		var guests = party(entered + 20_000, PartySnapshot.Status.PARTY, 2, "Host", "Guest");
+		selection.observe(party(entered - 1, PartySnapshot.Status.SOLO, 1, "Old"), entered);
+		check(selection.claim(true) == null, "previous visit roster cannot start loading");
+		selection.observe(party(entered + 100, PartySnapshot.Status.UNKNOWN, 1, "Host"), entered);
+		check(selection.claim(true) == null, "unknown party cannot start loading");
+		selection.observe(party(entered + 200, PartySnapshot.Status.TRANSITIONING, 1, "Host"), entered);
+		check(selection.claim(true) == null, "transitioning party cannot start loading");
+		selection.observe(party(entered + 250, PartySnapshot.Status.PARTY, 2, "Host"), entered);
+		check(selection.claim(true) == null, "incomplete party cannot start loading");
+		selection.observe(solo, entered);
+		check(selection.claim(true) == solo, "active ticket run loads immediately on central solo confirmation");
+		selection.observe(guests, entered);
+		for (int i = 0; i < 100; i++) {
+			check(selection.claim(true) == null, "late guests and repeated ticks cannot reload or swap composition");
+		}
+		selection.reset();
+		selection.observe(solo, entered);
+		check(selection.claim(false) == null, "scouting visit does not load before ticket activation");
+		selection.observe(guests, entered);
+		check(selection.claim(true) == solo, "pre-ticket confirmation survives later membership changes");
+		selection.reset();
+		selection.observe(guests, entered + 10_000);
+		check(selection.claim(true) == guests, "new visit selects its new composition");
+		selection.reset();
+		selection.observe(guests, entered + 10_000);
+		check(selection.claim(true) == guests, "same composition on another visit reaches existing cache path");
+		selection.reset();
+		selection.observe(party(entered + 1, PartySnapshot.Status.PARTY, 5,
+			"Host", "A", "B", "C", "D"), entered);
+		selection.observe(solo, entered);
+		check(selection.claim(true) == null, "oversized entry roster cannot become a smaller late composition");
+		return 110;
+	}
+
+	private static PartySnapshot party(long capturedAt, PartySnapshot.Status status,
+			int expected, String... names) {
+		return new PartySnapshot(1, capturedAt, status, true, expected,
+			java.util.Arrays.stream(names).map(name -> new PartySnapshot.Member(name, "")).toList(),
+			0, List.of());
 	}
 	private static void check(boolean value, String message) {
 		if (!value) throw new AssertionError(message);

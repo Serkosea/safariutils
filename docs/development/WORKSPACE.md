@@ -4,7 +4,7 @@
 
 - `src/main`: shared runtime and key-free API client
 - `src/26.1.2`, `src/26.2`: Minecraft compatibility adapters
-- `src/developer`: simulator and experimental networking, excluded from public editions
+- `src/developer`: simulator and testing tools, excluded from public editions
 - `src/regression`: headless checks, never packaged into the mod
 - `gradle/versions`: supported Minecraft dependency profiles
 - `gradle/regressions.gradle`, `provenance.gradle`, `distribution.gradle`: verification,
@@ -23,6 +23,22 @@ workspace with its own dependencies and secret deployment lifecycle.
 `build`, `release-artifacts`, `.gradle`, and `.gradle-user` are generated/local caches.
 Preserve caches during routine work. Future temporary work belongs under ignored `local/`,
 not a new root staging folder. Never put a key in tracked source, build metadata, or logs.
+
+## Ready-to-use artifacts
+
+This workspace collects all seven current jars under SerkoAddons `release-artifacts/`:
+`safariutils/` contains the six standalone variants; `serkoaddons/` contains the combined jar.
+The ignored standalone `releaseArtifactsDir` setting selects that same destination when
+running `BuildArtifacts` directly. Without an override, standalone checkouts continue to use
+their own `release-artifacts/` directory. Collection synchronizes only the selected component
+directory, so old versions disappear without touching the other component's jars.
+`BuildAllArtifacts` refreshes both sets and verifies parity; SerkoAddons `DeployBuilds`
+also refreshes its collected jar. None of these collection tasks publish a release.
+
+`build/**/libs` are internal Gradle outputs, not additional release collections. Keep their
+profile/edition separation and incremental caches. Regression runtime logs belong under
+`build/**/test-runs/<task>/`, not the repository root. Real instance logs, saved runs,
+settings recovery backups, source assets, IDE settings and credentials are not cleanup targets.
 
 ## Commands (PowerShell)
 
@@ -54,7 +70,7 @@ Routine `check` stays independent of the standalone build matrix.
 
 `VerifyAllBuilds` in SerkoAddons runs `VerifySafariBuilds` (the standalone verification-only
 matrix), integrated checks and parity without collecting/deploying jars. Parity requires exact
-shared class-set equality as well as identical bytes, allowing only the five named integrated
+shared class-set equality as well as identical bytes, allowing only the explicitly named integrated
 UI adapters (and their nested classes). Stale extra component classes fail too.
 For a fully clean verification use `clean VerifyAllBuilds '-PcleanArtifacts=true'` there;
 `clean` clears the integrated output and the property cleans each standalone variant.

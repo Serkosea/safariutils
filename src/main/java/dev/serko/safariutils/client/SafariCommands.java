@@ -133,6 +133,7 @@ public final class SafariCommands {
 					return 1;
 				}));
 
+				debugRoot.then(ClientCommands.literal("save").executes(ctx -> saveRunLog(ctx.getSource())));
 				settingsRoot.then(debugRoot);
 			}
 
@@ -371,6 +372,12 @@ public final class SafariCommands {
 			source.sendFeedback(Component.literal(line).withStyle(ChatFormatting.GRAY));
 		}
 		copyResult(source, status);
+	}
+
+	private static int saveRunLog(FabricClientCommandSource source) {
+		long visit = dev.serko.safariutils.state.SafariRuntimeState.current().visit();
+		source.sendFeedback(ClientMessages.prefixed(OperationalLog.saveVisit(visit), ClientMessages.Tone.INFO));
+		return 1;
 	}
 
 	private static void replay(FabricClientCommandSource source) {

@@ -26,6 +26,13 @@ public final class CritterBodyTypesRegression {
 			}
 		}
 		var unknown = new Critter("Unknown test species", SafariBiome.CAVERN, Critter.Rarity.RARE, 1);
+		for (String name : new String[] {"Hideonfloor", "Hideonwall", "Duplico", "Rockmite"}) {
+			Critter species = Critters.byName(name);
+			check(CritterBodyTypes.mobileConcealedBody(species, "silverfish") == !name.equals("Rockmite"),
+				"mobile concealed-body memory classification: " + name); checks++;
+			check(!CritterBodyTypes.mobileConcealedBody(species, "shulker")
+				&& !CritterBodyTypes.mobileConcealedBody(species, "interaction"), "static form lost memory"); checks++;
+		}
 		check(CritterEntities.acceptsBodyType(unknown, "bat"), "unknown species lost generic pairing"); checks++;
 		check(!CritterEntities.verifiedBodyType(unknown, "bat"), "generic proximity became verified evidence"); checks++;
 		for (String type : new String[] {"armor_stand", "interaction", "item_display", "block_display",

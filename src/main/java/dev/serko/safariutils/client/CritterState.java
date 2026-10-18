@@ -422,6 +422,19 @@ public final class CritterState {
 			Long labelLogicalId = logicalByLabel.get(labelId);
 			Logical labelOwner = labelLogicalId == null ? null : logicals.get(labelLogicalId);
 			if (entityLogicalId == null && labelOwner != null
+				&& returningBodyReplacesHelper(sighting, labelOwner, live)) {
+				// A new full-sized body must enter the authoritative breakout matcher,
+				// not inherit a transient capsule helper's zero-pity label identity.
+				logicalByEntity.remove(labelOwner.entityId, labelOwner.id);
+				logicalByLabel.remove(labelOwner.labelId, labelOwner.id);
+				logicals.remove(labelOwner.id);
+				effects.bodyReplaced(labelOwner.critter, labelOwner.entityId, entityId);
+				DebugLog.line("IDENTITY", "RETURNING-FORM " + sighting.critter().name()
+					+ " retiredHelper=L" + labelOwner.id + " body=" + shortId(entityId));
+				labelOwner = null;
+				labelLogicalId = null;
+			}
+			if (entityLogicalId == null && labelOwner != null
 				&& (live.contains(labelOwner.entityId) || !labelOwner.critter.equals(sighting.critter()))) {
 				// A transferred label does not imply replacement while its old body is still here.
 				DebugLog.line("IDENTITY", "LABEL-FALLBACK-REJECT " + sighting.critter().name()
@@ -454,6 +467,9 @@ public final class CritterState {
 				logicalByEntity.remove(previousEntityId, logical.id);
 				logical.entityId = entityId;
 				logicalByEntity.put(entityId, logical.id);
+				DebugLog.line("IDENTITY", "LABEL-FORM " + logical.critter.name()
+					+ " logical=L" + logical.id + " " + shortId(previousEntityId) + " -> "
+					+ shortId(entityId) + " pity=" + logical.pity + " attempt=" + logical.activeAttempt);
 			}
 			bindLabel(logical, labelId);
 			logical.box = sighting.box();
@@ -464,6 +480,8 @@ public final class CritterState {
 				active.targetEntityId = entityId;
 				effects.reassign(active.id, logical.critter, previousEntityId,
 					entityId, logical.presentationBox, logical.box, logical.sparkling, logical.pity);
+			} else if (entityRekeyed && active == null) {
+				effects.bodyReplaced(logical.critter, previousEntityId, entityId);
 			}
 			if (active != null && active.outcome == Outcome.PENDING
 				&& active.presentationCommitted && !active.targetAbsent) {
@@ -511,6 +529,25 @@ public final class CritterState {
 		if (trace != null) trace.bodies(observations, now);
 	}
 
+	/** A confirmed breakout's full-sized return outranks its transient helper label. */
+	private static boolean returningBodyReplacesHelper(BodyObservation body, Logical helper, Set<UUID> live) {
+		if (helper.pity != 0 || helper.activeAttempt != 0 || live.contains(helper.entityId)
+			|| !helper.critter.equals(body.critter()) || helper.life == Life.CAUGHT
+			|| body.box().getXsize() < helper.box.getXsize() * 1.5
+			|| body.box().getYsize() < helper.box.getYsize() * 1.5) return false;
+		int candidates = 0;
+		for (Logical prior : logicals.values()) {
+			Attempt attempt = attempts.get(prior.activeAttempt);
+			if (prior == helper || !prior.critter.equals(body.critter()) || live.contains(prior.entityId)
+				|| attempt == null || attempt.outcome != Outcome.PENDING || guaranteed(attempt, prior)
+				|| helper.createdAt < attempt.startedAt || !hasQueuedBreakout(prior.critter, attempt.startedAt)
+				|| !prior.presentationBox.inflate(.1).contains(helper.box.getCenter())
+				|| !prior.presentationBox.inflate(.1).contains(body.box().getCenter())) continue;
+			if (++candidates > 1) return false;
+		}
+		return candidates == 1;
+	}
+
 	/**
 	 * Rejoins a fresh duplicate body identity to the established logical critter whose
 	 * label it inherited. This is deliberately narrow: the duplicate must be recent,
@@ -553,10 +590,17 @@ public final class CritterState {
 	}
 
 	private static boolean reboundDuplicate(Logical established, Logical duplicate, long now) {
-		return established.pity > 0 && duplicate.pity == 0
-			&& established.activeAttempt == 0L && duplicate.activeAttempt == 0L
-			&& duplicate.life != Life.CAUGHT
-			&& now - duplicate.createdAt <= RECENT_TARGET_MILLIS;
+		if (established.pity <= 0 || duplicate.pity != 0 || duplicate.activeAttempt != 0L
+			|| duplicate.life == Life.CAUGHT
+			|| now - duplicate.createdAt > RECENT_TARGET_MILLIS) return false;
+		if (established.activeAttempt == 0L) return true;
+		// A retry may already be active when its replacement body and label settle.
+		// Keep that attempt on the established identity, but never absorb a peer that
+		// existed before the attempt. The caller also requires a shared label, proximity,
+		// and absence of one representation from the complete observed-body batch.
+		Attempt active = attempts.get(established.activeAttempt);
+		return active != null && active.outcome == Outcome.PENDING
+			&& duplicate.createdAt >= active.startedAt;
 	}
 
 	/**
@@ -604,7 +648,7 @@ public final class CritterState {
 					// concurrently appearing peer as its reappearance steals that peer's
 					// identity and makes the next real attempt disappear from the model.
 					return attempt != null && attempt.outcome == Outcome.PENDING
-						&& !guaranteed(attempt, logical);
+						&& (!guaranteed(attempt, logical) || awaitingRetryBody(attempt, logical, now));
 				})
 				.toList();
 			if (candidates.isEmpty()) continue;
@@ -615,7 +659,14 @@ public final class CritterState {
 				for (int column = 0; column < candidates.size(); column++) {
 					Logical logical = candidates.get(column);
 					Attempt attempt = attempts.get(logical.activeAttempt);
-					distances[row][column] = evidenceDistanceSq(attempt, body);
+					double distance = evidenceDistanceSq(attempt, body);
+					// A delayed first body is a local form replacement, not an arbitrary
+					// same-species appearance near a travelling capsule.
+					if (guaranteed(attempt, logical)) {
+						distance = logical.box.getCenter().distanceToSqr(body);
+						if (distance > FORM_REKEY_DISTANCE_SQ) distance = Double.POSITIVE_INFINITY;
+					}
+					distances[row][column] = distance;
 				}
 			}
 			int[] assignment = CapturePairing.match(distances,
@@ -708,6 +759,7 @@ public final class CritterState {
 				logical.evidence = EvidenceLevel.VISIBLE;
 				logicalByEntity.put(logical.entityId, logical.id);
 				claimedBodies.add(freshIndex);
+				effects.bodyReplaced(logical.critter, oldId, logical.entityId);
 				DebugLog.line("IDENTITY", "FORM-REKEY " + logical.critter.name()
 					+ " logical=L" + logical.id + " " + shortId(oldId) + " -> "
 					+ shortId(logical.entityId) + " pity=" + logical.pity + " distance="
@@ -732,15 +784,18 @@ public final class CritterState {
 		Attempt active = logical.activeAttempt == 0L ? null : attempts.get(logical.activeAttempt);
 		boolean guaranteedCapture = active != null && guaranteed(active, logical);
 		boolean firstBody = acceptFirstAttemptBody(active, logical);
-		logical.life = guaranteedCapture || firstBody ? Life.ATTEMPTING : Life.BREAKOUT;
+		// A form substitution in one observation batch has no absence interval.
+		// Only a body returning after confirmed absence can establish a breakout.
+		boolean reappeared = active != null && active.targetAbsent && !guaranteedCapture && !firstBody;
+		logical.life = reappeared ? Life.BREAKOUT : Life.ATTEMPTING;
 		if (active != null && active.outcome == Outcome.PENDING
 			&& oldId.equals(active.targetEntityId)) {
 			active.targetEntityId = logical.entityId;
 			effects.reassign(active.id, logical.critter, oldId, logical.entityId,
 				logical.presentationBox, logical.box, logical.sparkling, logical.pity);
 		}
-		if (!guaranteedCapture && !firstBody) confirmReappearance(logical, now);
-		DebugLog.line("IDENTITY", "REAPPEAR " + logical.critter.name() + " logical=L" + logical.id
+		if (reappeared) confirmReappearance(logical, now);
+		DebugLog.line("IDENTITY", (reappeared ? "REAPPEAR " : "BODY-FORM ") + logical.critter.name() + " logical=L" + logical.id
 			+ " entity " + shortId(oldId) + " -> " + shortId(logical.entityId)
 			+ " distance=" + "%.2f".formatted(Math.sqrt(distanceSq)));
 	}
@@ -1136,6 +1191,12 @@ public final class CritterState {
 	private static void observeCaptureLabels(List<CaptureLabelObservation> observations, long now) {
 		for (CaptureLabelObservation sighting : observations) {
 			UUID labelId = sighting.labelId();
+			// A previously paired live/breakout label may temporarily lose its body
+			// during waking/form changes. It is not a new capsule, even when only one
+			// same-species throw is pending elsewhere.
+			Long bodyOwnerId = logicalByLabel.get(labelId);
+			Logical bodyOwner = bodyOwnerId == null ? null : logicals.get(bodyOwnerId);
+			if (bodyOwner != null) continue;
 			Long assignedId = attemptByCaptureLabel.get(labelId);
 			if (assignedId != null) {
 				Attempt assigned = attempts.get(assignedId);
@@ -1618,6 +1679,12 @@ public final class CritterState {
 			logicalIterator.remove();
 		}
 		if (DebugLog.isEnabled()) auditInvariants();
+	}
+
+	/** A remembered/rapid-retry target's first observed body is not a second breakout. */
+	private static boolean awaitingRetryBody(Attempt attempt, Logical logical, long now) {
+		return attempt.awaitingFirstBody && logical.pity > 1
+			&& now - attempt.startedAt <= DEFERRED_ATTEMPT_MILLIS;
 	}
 
 	/** A remembered/rapid-retry target's first observed body is not a second breakout. */

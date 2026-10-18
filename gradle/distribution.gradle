@@ -146,14 +146,15 @@ tasks.register('BuildArtifacts') {
 	group = 'fabric'
 	dependsOn verifyBuilds
 	doLast {
+		def destination = file(project.findProperty('releaseArtifactsDir') ?: 'release-artifacts')
 		def missing = releaseArtifactJars.findAll { !it.isFile() }
 		if (!missing.isEmpty()) {
 			throw new GradleException("Release artifacts were not built: ${missing.join(', ')}")
 		}
 		fileSystemOperations.sync {
 			from releaseArtifactJars
-			into file('release-artifacts')
+			into destination
 		}
-		logger.lifecycle("BuildArtifacts wrote ${releaseArtifactJars.size()} current jars to release-artifacts")
+		logger.lifecycle("BuildArtifacts wrote ${releaseArtifactJars.size()} current jars to ${destination}")
 	}
 }

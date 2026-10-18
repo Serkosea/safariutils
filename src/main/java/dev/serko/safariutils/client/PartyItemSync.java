@@ -72,6 +72,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 	private String visitLobby;
 	private long visitEnteredAt;
 	private String lastDebugTransport = "";
+	private long sentSparklingRevision = -1;
 
 	@Override
 	public void tick() {
@@ -137,7 +138,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		active = SessionManager.current() != null && !roster.isEmpty()
 			&& (roster.size() == 1 || remoteSupported);
 		boolean wasNetworkConnected = networkConnected;
-		if (active && remoteSupported && lobby != null && !lobby.isBlank()) {
+		if (!roster.isEmpty() && remoteSupported && lobby != null && !lobby.isBlank()) {
 			networkEngaged = true;
 			PartySyncNetworks.tick(new PartySyncNetworkProvider.Context(lobby, localUuid(),
 				roster.stream().map(Member::uuid).toList()),
@@ -149,7 +150,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		if (DebugLog.isEnabled()) {
 			String transportState = "roster=" + roster.size() + " active=" + active
 				+ " remote=" + (remoteSupported
-					? (networkConnected ? "connected" : active ? "connecting" : "idle") : "absent");
+					? (networkConnected ? "connected" : networkEngaged ? "connecting" : "idle") : "absent");
 			if (!transportState.equals(lastDebugTransport)) {
 				DebugLog.line("SYNC", "transport " + transportState);
 				StructuredDiagnostics.decision("party-sync", "transport", transportState);
@@ -157,11 +158,17 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			}
 		} else lastDebugTransport = "";
 		if (!wasNetworkConnected && networkConnected) {
+			sentSparklingRevision = -1;
 			stateSendAt = 0;
 			snapshotSent = true;
 			sendState();
 			sendNests();
 			DebugLog.line("SYNC", "authenticated transport connected roster=" + roster.size());
+		}
+		if (networkConnected && sentSparklingRevision != PartySparklingDiscoveries.localRevision()) {
+			PartySyncNetworks.send(++sequence, "S", PartySparklingDiscoveries.payload());
+			sentSparklingRevision = PartySparklingDiscoveries.localRevision();
+			StructuredDiagnostics.decision("party-sparkling", "sent", "snapshot");
 		}
 		if (!active) {
 			updateLocal();
@@ -448,12 +455,10 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			for (Member member : displayRoster()) {
 				State state = states.get(member.uuid());
 				boolean local = member.uuid().equals(localUuid());
-				boolean show = active
-					? state != null && state.heldFeed() > 0
-					: !local || state != null && state.heldFeed() > 0;
-				if (!show) continue;
-				HudPanel.IconValue[] value = active || local
-					? feed(state == null ? new State() : state)
+				boolean known = inventoryKnown(active, local, state != null && state.reported);
+				if (known && state.heldFeed() <= 0) continue;
+				HudPanel.IconValue[] value = known
+					? feed(state)
 					: unknownFeed();
 				PartyObjectiveHud.addPlayerRow(panel, member.name(), value);
 				showedPlayer = true;
@@ -490,9 +495,9 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			for (Member member : displayRoster()) {
 				State state = states.get(member.uuid());
 				boolean local = member.uuid().equals(localUuid());
-				boolean known = (active || local) && state != null && state.reported;
+				boolean known = inventoryKnown(active, local, state != null && state.reported);
 				if (known && state.limeGems + state.orangeGems + state.purpleGems <= 0) continue;
-				HudPanel.IconValue[] values = (active || local) && state != null && state.reported
+				HudPanel.IconValue[] values = known
 					? PartyObjectiveHud.gemValues(String.valueOf(state.purpleGems),
 						String.valueOf(state.limeGems), String.valueOf(state.orangeGems))
 					: PartyObjectiveHud.gemValues("?", "?", "?");
@@ -526,9 +531,9 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			for (Member member : displayRoster()) {
 				State state = states.get(member.uuid());
 				boolean local = member.uuid().equals(localUuid());
-				boolean known = (active || local) && state != null && state.reported;
+				boolean known = inventoryKnown(active, local, state != null && state.reported);
 				if (known && state.incense <= 0) continue;
-				HudPanel.IconValue[] values = (active || local) && state != null && state.reported
+				HudPanel.IconValue[] values = known
 					? PartyObjectiveHud.incenseValue(String.valueOf(state.incense))
 					: PartyObjectiveHud.incenseValue("?");
 				PartyObjectiveHud.addPlayerRow(panel, member.name(), values);
@@ -550,6 +555,11 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 				doomspiralSpawned() ? PartyObjectiveHud.INTERMEDIATE_COLOUR : 0xFFFFFFFF);
 		}
 		return panel;
+	}
+
+	/** An open transport or a Sparkling-only snapshot is not evidence of objective inventory. */
+	static boolean inventoryKnown(boolean active, boolean local, boolean reported) {
+		return (active || local) && reported;
 	}
 
 	private HudPanel objectivePanelBase() {
@@ -664,6 +674,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 				case "A" -> applyAggregate(state, values);
 				case "U" -> applyUsageMessage(values, localReporter);
 				case "N" -> applyNest(values);
+				case "S" -> localReporter || PartySparklingDiscoveries.accept(values);
 				default -> {
 					StructuredDiagnostics.decision("party-sync", "rejected", "unknownType");
 					yield false;
@@ -1145,6 +1156,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		if (networkEngaged) PartySyncNetworks.disconnect();
 		networkEngaged = false;
 		networkConnected = false;
+		sentSparklingRevision = -1;
 	}
 
 	private static int itemIn(String line) {

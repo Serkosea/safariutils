@@ -59,6 +59,7 @@ public final class SparklingWatch {
 		List<CritterEntities.Sighting> sparklingSightings = new ArrayList<>(bestBySpecies.values());
 		for (CritterEntities.Sighting sighting : sparklingSightings) visibleKeys.add(keyOf(sighting));
 		for (CritterEntities.Sighting sighting : sparklingSightings) {
+			if (PartySparklingDiscoveries.wasCaught(sighting.critter())) continue;
 			boolean visiblyConfirmed = visuallyConfirmed(sighting);
 			if (SafeMode.sparklingCritters()) {
 				// A dormant hidden species has no player-visible name tag. Its internal
@@ -114,7 +115,7 @@ public final class SparklingWatch {
 				+ " label=" + shortId(labelId) + " body=" + shortId(bodyId)
 				+ " key=" + shortId(key) + " pos=" + pos(pos)
 				+ " source=" + ParticleDiagnostics.source(sighting));
-			TicketTrading.onSparklingDetected(sighting.critter());
+			PartySparklingDiscoveries.discovered(sighting.critter());
 			postVisibleFoundAlerts(sighting, key);
 		}
 	}
@@ -236,6 +237,7 @@ public final class SparklingWatch {
 
 	/** Keeps the special HUD frame briefly after the detected critter is caught. */
 	public static void onCaught(Critter critter) {
+		PartySparklingDiscoveries.caught(critter);
 		List<UUID> removed = outstanding.entrySet().stream()
 			.filter(entry -> entry.getValue().critter() == critter)
 			.map(Map.Entry::getKey)
@@ -251,8 +253,14 @@ public final class SparklingWatch {
 	}
 
 	/** Whether every visible HUD should use the shared Sparkling presentation. */
+	static void onSharedCaught(long mask) {
+		outstanding.entrySet().removeIf(entry ->
+			(mask & dev.serko.safariutils.data.Critters.selectionMask(entry.getValue().critter())) != 0);
+	}
+
 	public static boolean hudThemeActive() {
-		return outstanding.values().stream().anyMatch(SparklingWatch::presentable)
+		return PartySparklingDiscoveries.sharedMask() != 0
+			|| outstanding.values().stream().anyMatch(SparklingWatch::presentable)
 			|| System.currentTimeMillis() < caughtThemeUntil;
 	}
 
@@ -266,6 +274,10 @@ public final class SparklingWatch {
 		outstanding.values().stream().filter(SparklingWatch::presentable).map(Outstanding::critter)
 			.filter(critter -> critter.biome() == biome)
 			.forEach(critter -> counts.merge(critter, 1, Integer::sum));
+		long shared = PartySparklingDiscoveries.sharedMask();
+		dev.serko.safariutils.data.Critters.selectionOrder().stream()
+			.filter(c -> c.biome() == biome && (shared & dev.serko.safariutils.data.Critters.selectionMask(c)) != 0)
+			.forEach(c -> counts.putIfAbsent(c, 1));
 		return counts;
 	}
 
@@ -290,6 +302,7 @@ public final class SparklingWatch {
 
 	/** A new run has its own sparklings; the last one's are gone. */
 	public static void reset() {
+		PartySparklingDiscoveries.reset();
 		announcedLabels.clear();
 		announcedBodies.clear();
 		visuallyAnnounced.clear();

@@ -182,7 +182,7 @@ public final class SparklingScreen extends Screen {
 		graphics.fillGradient(panelLeft, panelTop, panelLeft + panelWidth, panelTop + panelHeight,
 			0xE0181220, BACKGROUND);
 		SpecialTheme.stars(graphics, panelLeft + 2, panelTop + 2,
-			panelWidth - 4, panelHeight - 4, 1.1f);
+			panelWidth - 4, panelHeight - 4, 1.375f);
 		drawRainbowBorder(graphics);
 		UIDraw.outline(graphics, panelLeft + 2, panelTop + 2, panelWidth - 4, panelHeight - 4, KEYLINE);
 		hits.clear();

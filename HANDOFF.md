@@ -14,6 +14,24 @@ never serialize those process-relative values as saved dates.
 Capture reconciliation samples immutable body/capsule/label observations before applying
 identity decisions. Label fallback must consider the complete observed-body batch: a label
 moving to a newcomer cannot replace its prior owner's identity while that body remains present.
+Hideons have both concealed shulker and awakened silverfish forms; Duplicos use interaction
+and silverfish bodies. Waking/settling is not capture evidence and does not increment pity.
+An active attempt's body-form replacement without an observed absence remains ATTEMPTING,
+not BREAKOUT. `IDENTITY/BODY-FORM` distinguishes it from a returning body; otherwise a valid
+later catch can be excluded by the outcome selector and leave an orphaned recatch pin.
+When separate Hideon labels simultaneously pair with a shulker and silverfish at the exact
+same position, `CritterScan` publishes only the shulker representation. Standalone mobile
+forms and nearby distinct peers remain eligible. Collapse this compound representation before
+identity/pity and marker consumers, never by hiding one marker after splitting its identity.
+A previously body-owned label becoming bodyless must not be assigned as a new capsule label
+to another attempt. Mobile concealed-species carriers are rendered live, never remembered as
+additional stationary spawns. `IDENTITY/LABEL-FORM` reports same-label body substitutions.
+A guaranteed retry may acquire its first delayed body within the existing short form-rekey
+window and distance; this is not a breakout. Retire any unowned prior breakout hold during
+that identity handoff, preserving other attempts' ownership and the accumulated pity.
+Resolved body-form and same-label replacements must also notify `CaptureEffects.bodyReplaced`:
+retire the unowned old breakout/remembered projection even when there is no active attempt.
+Do not clear another attempt's owned body or infer retirement from proximity in the renderer.
 Deferred attempts retain the original attempt's camera ray; later camera movement is not
 targeting evidence for an earlier throw. Diagnostic replay runs separately from HTTP workers
 and must report skipped/omitted/corrupt records as incomplete rather than silently passing.
@@ -31,12 +49,12 @@ SafariUtils is a client-side Fabric mod for Hypixel SkyBlock's Critter Safari. I
 - Profile compatibility code: `src/<profile>/java`
 - Shared Ticket Trading: `src/main/java/dev/serko/safariutils/client/TicketTrading*.java`
 - Shared key-free API client: `src/main/java/dev/serko/safariutils/backend/`
-- Developer-only simulator and experimental network sync: `src/developer/`
+- Developer-only simulator: `src/developer/`
 - Safe build: `./gradlew build`
 - Extra build: `./gradlew build -PextraBuild=true`
 - Other profile: add `-PminecraftProfile=<profile>`
 - Private edition is retired for v3; `-PincludePrivateApi=true` is rejected
-- Developer build: add `-PdeveloperBuild=true` (Testing UI, commands, experimental sync, and automatic diagnostics)
+- Developer build: add `-PdeveloperBuild=true` (Testing UI, commands, and automatic diagnostics)
 
 Build type alone controls the Safe Mode and Developer settings categories. Ordinary
 settings remain visible regardless of the configuration class that owns their persisted
@@ -108,6 +126,11 @@ Forest retains its nine-drop count because every feed matters. Cavern and Haunte
 
 Safe Mode exposes visible or otherwise player-observable evidence. Extra Mode may expose additional internal detections. Its feature toggles apply independently; the former master switch is retained only as a one-time configuration migration source. Presentation settings never discard tracker state: switching modes or toggles mid-run must immediately render the appropriate already-known subset. Caches that affect presentation include the configuration revision.
 
+Validated party-sync facts count as logically known information in Safe Mode. This grants
+only the facts received: a species discovery does not supply an entity identity or position,
+so it must not authorize guessing a hidden body or creating a location marker. Local discovery
+still follows the sender's Safe Mode policy. Authentication/context/payload checks remain mandatory.
+
 - Bee Nests clear after a left/right interaction is followed within five seconds by either a new nearby Honeybug or Hypixel's empty-hive confirmation
 - Loaded air alone never completes an objective candidate
 - Ordinary capsule failures against non-Common capturable critters create recatch pins
@@ -130,11 +153,28 @@ All editions include the shared key-free backend provider for automatic party co
 
 Manual profile lookups have a ten-second request cooldown and a five-minute result cache. Automatic party caching does not consume the manual cooldown. Screen-facing provider state must be lock-free; opening a UI may never wait on an HTTP worker or rate-limit sleep.
 
-Local party objective tracking is shared. Experimental authenticated remote Party Sync is Developer-only and engages automatically for applicable run/lobby context; it does not require party-chat verification messages or an enable toggle. PartySyncNetworks isolates the optional provider. Connection loss preserves local evidence; lifecycle exit disconnects transport. Incoming data must pass sender, context, sequence and payload validation before changing shared state. Do not describe transport privacy as an absolute guarantee or expose authentication credentials in diagnostics.
+Automatic shared Sparkling loading retains the first fresh complete central party roster
+for the visit, including confirmation before ticket use, and starts once the ticket activates
+the run. Ticket Trading host qualification, invited guests, warps, and the ticket-window
+deadline must not delay it or replace that composition. Each visit selects once; existing
+composition/player caches remain reusable and there is no periodic reload.
+
+Local party objective tracking is shared. Authenticated remote Party Sync is shared by all editions and engages automatically for applicable run/lobby context; it does not require party-chat verification messages or an enable toggle. PartySyncNetworks isolates the optional provider. Connection loss preserves local evidence; lifecycle exit disconnects transport. Incoming data must pass sender, context, sequence and payload validation before changing shared state. Do not describe transport privacy as an absolute guarantee or expose authentication credentials in diagnostics.
+
+Transport may connect during the pre-ticket visit; objective inventory/run activation remain
+ticket-gated. `PartySparklingState` owns visit-scoped monotone found/caught species masks;
+only locally observed facts are sent as type `S` snapshots (four bounded integer words).
+Received facts never echo into transport or chat. Terminal catches dominate stale discoveries.
+The relay retains/merges snapshots for late arrivals within the same exact roster/lobby group.
+`PartySparklingDiscoveries` drives one persistent reminder for any available Sparkling while
+the local player has not used a ticket and the join window is open, independently of trading.
+It stops after ticket use, catch, window expiry or visit exit. Ordinary optional chat alerts
+remain human-readable; the old `SUT1` chat protocol is removed. Trading reads this discovery
+store directly; its existing invite/warp deadlines and co-host protections are unchanged.
 
 Ticket Trading is public, opt-in, and resets off each launch. The shared implementation owns
-trusted profiles, ordered invite and receive-invite lists, timed party commands, Sparkling filters, and compact
-lobby-bound Sparkling notices. Host automation requires a fresh authoritative roster proving
+ trusted profiles, ordered invite and receive-invite lists, timed party commands, and Sparkling filters.
+Host automation requires a fresh authoritative roster proving
 local leadership; confirmed solo guests accept directly, confirmed party guests leave before
 accepting Sparkling invites, and unknown party state retries only after Hypixel proves a party
 conflict. Failed server joins suspend guest acceptance for 45 seconds. The command-free simulator
@@ -151,9 +191,16 @@ Chat-message hiding is display-only. Its stable bit mask is serialized as `hidde
 
 ## UI and performance
 
+Shared UI implementation rules and validation: [settings presentation](docs/development/SETTINGS_UI.md).
+`SettingsMotion` is screen-owned and bounded; its animation is presentation-only. Menu particles
+cover the full menu in one shared batch, and menu motion is always enabled without changing gameplay or HUD behavior.
+Settings categories separate HUD/theme, runs/tickets, markers, alerts, Sparkling and visual comfort.
+Redundant single-root tab accordions are flattened; other groups remain expandable and diagnostic hitboxes are static. Section state and per-tab scroll are
+retained when navigating; search context headers jump to and highlight the original control.
+
 `SafariConfig` fields annotated with `@Expose` are persistent keys. Rename them only with `@SerializedName` aliases or explicit `ConfigManager` migration. Deliberately transient session state must remain unexposed and be reset explicitly on load. Existing run history and settings must remain forward-compatible.
 
-`SafariSettingsScreen` presents one compact category sidebar plus a fixed wrapping tab header and collapsed, nested section accordions over the unchanged `SafariConfig` schema. Each logical section shares a card; collections of distinct waypoint features split into one toggle-and-color card per feature. Search follows the same area/tab/page/card order, preserves relevant shared cards, and appends feature names to broad section breadcrumbs. Changing tabs collapses the previous tab's sections, and collapsing a parent also collapses all descendants. Areas, tabs, and sections may reorganize controls across their source config classes, but they must retain the original owner and reflected `Field`; never move persisted fields merely to change navigation. Global search, tab reset, build visibility, warnings, and custom editors all reuse those same controls. Safe Mode controls follow the build variant, and Developer exists only in developer builds. Clicking the SafariUtils title opens the repeatable constellation Easter egg; completing it temporarily themes all SafariUtils UI and permanently unlocks the Astral special-theme choice.
+`SafariSettingsScreen` presents one compact category sidebar plus a fixed wrapping tab header and collapsed, nested section accordions over the unchanged `SafariConfig` schema. Each logical section shares a card; collections of distinct waypoint features split into one toggle-and-color card per feature. Search follows the same area/tab/page/card order, preserves relevant shared cards, and appends feature names to broad section breadcrumbs. Changing tabs preserves scroll and section state; explicitly collapsing a large parent collapses its descendants. Areas, tabs, and sections may reorganize controls across their source config classes, but they must retain the original owner and reflected `Field`; never move persisted fields merely to change navigation. Global search, tab reset, build visibility, warnings, and custom editors all reuse those same controls. Safe Mode controls follow the build variant, and Developer exists only in developer builds. Clicking the SafariUtils title opens the repeatable constellation Easter egg; completing it temporarily themes all SafariUtils UI and permanently unlocks the Astral special-theme choice.
 
 Display's Safari tab owns presentation-only chat filtering and screen-effect removal. Gameplay's Safari tab owns Hideyho convenience, ticket protection/trading, and Party Sync; Profit remains separate. These are navigation groupings only, and persisted fields remain in their existing config owners.
 
@@ -201,7 +248,7 @@ config/safariutils/
 
 The optional static-entities JSON appears only when Hideonfloor research saves a new candidate. Settings, history, and research data use protected atomic replacement. Remote Party Sync has no persisted connection state; it reconnects only in eligible context. Diagnostic segments are compressed JSONL, not separate human-readable log files.
 
-Public jars include Ticket Trading and the key-free API provider, but not Developer tools, offline regression harnesses or experimental remote-sync providers. No build may contain API secrets, user configuration/history/logs or generated key payloads. Never commit `private-api/`, key files, generated private sources, user data, or built jars. Artifact verification enforces edition and regression-class boundaries.
+Public jars include Ticket Trading, authenticated party networking and the key-free API provider, but not Developer tools, offline regression harnesses. No build may contain API secrets, user configuration/history/logs or generated key payloads. Never commit `private-api/`, key files, generated private sources, user data, or built jars. Artifact verification enforces edition and regression-class boundaries.
 
 ## Release checklist
 

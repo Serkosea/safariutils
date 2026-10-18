@@ -62,7 +62,7 @@ loom {
 	accessWidenerPath = file("src/main/resources/safariutils.accesswidener")
 }
 
-// The key-free backend client is shared. Testing and experimental sync stay isolated.
+// Key-free API and party networking are shared. Developer testing stays isolated.
 if (developerBuild) {
 	sourceSets.main.java.srcDir('src/developer/java')
 	sourceSets.main.resources.srcDir('src/developer/resources')

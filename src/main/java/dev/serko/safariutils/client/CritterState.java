@@ -707,8 +707,10 @@ public final class CritterState {
 	/**
 	 * Some critters replace their entity form after a breakout. Once the prior attempt is
 	 * resolved there is no active-attempt candidate for the normal reappearance matcher,
-	 * so join an unclaimed body to a recently vanished breakout at the same location. The
-	 * global assignment and tight distance/time bounds prevent two nearby peers sharing pity.
+	 * so join an unclaimed body to a vanished breakout at the same location. Hideons can
+	 * wait there outside observation range: their resolved identity lasts for the visit,
+	 * not a one-second animation window. Delayed spatial handoffs require an unambiguous
+	 * candidate in both directions; other species keep the short form-change window.
 	 */
 	private static void matchResolvedBodyForms(List<BodyObservation> fresh,
 			Set<Integer> claimedBodies, long now) {
@@ -724,7 +726,7 @@ public final class CritterState {
 				.filter(logical -> logical.critter.equals(speciesRows.getKey())
 					&& logical.activeAttempt == 0L && logical.pity > 0 && !logical.visible
 					&& logical.life == Life.BREAKOUT
-					&& now - logical.seenAt <= FORM_REKEY_MILLIS)
+					&& (now - logical.seenAt <= FORM_REKEY_MILLIS || stationaryHideonBreakout(logical)))
 				.toList();
 			if (candidates.isEmpty()) continue;
 			List<Integer> rows = speciesRows.getValue();
@@ -737,6 +739,14 @@ public final class CritterState {
 			}
 			int[] assignment = CapturePairing.match(distances,
 				FORM_REKEY_DISTANCE_SQ, FORM_REKEY_DISTANCE_SQ + 1.0);
+			for (int row = 0; row < assignment.length; row++) {
+				int column = assignment[row];
+				if (column < 0 || now - candidates.get(column).seenAt <= FORM_REKEY_MILLIS) continue;
+				int bodyChoices = 0, identityChoices = 0;
+				for (double distance : distances[row]) if (distance <= FORM_REKEY_DISTANCE_SQ) identityChoices++;
+				for (double[] bodyDistances : distances) if (bodyDistances[column] <= FORM_REKEY_DISTANCE_SQ) bodyChoices++;
+				if (bodyChoices != 1 || identityChoices != 1) assignment[row] = -1;
+			}
 			StructuredDiagnostics.capturePairing("form-rekey", distances,
 				FORM_REKEY_DISTANCE_SQ, FORM_REKEY_DISTANCE_SQ + 1.0, assignment,
 				() -> rows.stream().map(index -> fresh.get(index).entityId().toString()).toList(),
@@ -748,6 +758,7 @@ public final class CritterState {
 				Logical logical = candidates.get(column);
 				BodyObservation sighting = fresh.get(freshIndex);
 				UUID oldId = logical.entityId;
+				long unseenMillis = now - logical.seenAt;
 				logicalByEntity.remove(oldId, logical.id);
 				logical.entityId = sighting.entityId();
 				bindLabel(logical, sighting.labelId());
@@ -763,9 +774,13 @@ public final class CritterState {
 				DebugLog.line("IDENTITY", "FORM-REKEY " + logical.critter.name()
 					+ " logical=L" + logical.id + " " + shortId(oldId) + " -> "
 					+ shortId(logical.entityId) + " pity=" + logical.pity + " distance="
-					+ "%.2f".formatted(Math.sqrt(distances[row][column])));
+					+ "%.2f".formatted(Math.sqrt(distances[row][column])) + " unseenMs=" + unseenMillis);
 			}
 		}
+	}
+
+	private static boolean stationaryHideonBreakout(Logical logical) {
+		return "Hideonfloor".equals(logical.critter.name()) || "Hideonwall".equals(logical.critter.name());
 	}
 
 	private static void reassignBody(Logical logical, BodyObservation sighting,
@@ -1033,9 +1048,13 @@ public final class CritterState {
 		// overlap in tight groups. A guaranteed animation therefore begins immediately
 		// only when this is the sole eligible body; otherwise capsule intersection,
 		// native shrink, or disappearance confirms the exact individual first.
-		else if (isSoleEligibleTarget(attempt, now)) {
+		else if (isSoleEligibleTarget(attempt)) {
 			commitPresentation(attempt, target,
 				exactTarget ? "unique-interaction" : "unique-attempt", now);
+		} else {
+			DebugLog.line("IDENTITY", "PRESENTATION-WAIT A" + attempt.id + " "
+				+ target.critter.name() + " entity=" + shortId(target.entityId)
+				+ " reason=uncaught-peer (awaiting physical evidence)");
 		}
 		return attempt;
 	}
@@ -1281,7 +1300,7 @@ public final class CritterState {
 			if (currentDisappeared) {
 				attempt.targetAbsent = true;
 				commitPresentation(attempt, current, "disappearance", now);
-			} else if (isSoleEligibleTarget(attempt, now)) {
+			} else if (isSoleEligibleTarget(attempt)) {
 				commitPresentation(attempt, current, "unique-impact", now);
 			}
 		}
@@ -1357,12 +1376,12 @@ public final class CritterState {
 			&& logical.disappearedAt + DISAPPEARANCE_EVIDENCE_LEAD_MILLIS >= attempt.startedAt;
 	}
 
-	private static boolean isSoleEligibleTarget(Attempt attempt, long now) {
+	private static boolean isSoleEligibleTarget(Attempt attempt) {
 		int eligible = 0;
 		for (Logical logical : logicals.values()) {
-			if (!logical.critter.equals(attempt.critter) || logical.life == Life.CAUGHT
-				|| !logical.visible && logical.activeAttempt == 0L
-					&& now - logical.seenAt > RECENT_TARGET_MILLIS) continue;
+			// Observation freshness ranks provisional targets; it cannot prove uniqueness.
+			// A distant, still-uncaught peer may be the actual target of this throw.
+			if (!logical.critter.equals(attempt.critter) || logical.life == Life.CAUGHT) continue;
 			eligible++;
 			if (eligible > 1) return false;
 		}

@@ -59,17 +59,17 @@ final class CritterScan {
 			Label label = pair.label();
 			result.add(new Match(label.critter(), label.sample(), pair.body(), label.sparkling(), pair.ownershipConflict()));
 		}
-		collapseConcealedCarriers(result);
+		collapseConcealedCarriers(result, Set.copyOf(previous.values()));
 		return List.copyOf(result);
 	}
 
 	/**
 	 * A Hideon may expose both its shulker and mobile carrier with separate labels
 	 * during a form transition. Publish one canonical body before identity/rendering
-	 * consumers see the batch. This is exact co-location, not a nearby-peer heuristic;
-	 * a mobile body without a labelled shulker remains a normal observation.
+	 * consumers see the batch. Exact co-location or an unclaimed carrier inside one
+	 * shell footprint is compound evidence; retained mobile peers remain independent.
 	 */
-	private static void collapseConcealedCarriers(List<Match> matches) {
+	private static void collapseConcealedCarriers(List<Match> matches, Set<UUID> priorBodies) {
 		for (int index = matches.size() - 1; index >= 0; index--) {
 			Match carrier = matches.get(index);
 			if (carrier.body() == null || !carrier.body().type().equals("silverfish")
@@ -78,7 +78,16 @@ final class CritterScan {
 				Match shell = matches.get(other);
 				if (!shell.critter().equals(carrier.critter()) || shell.body() == null
 					|| !shell.body().type().equals("shulker")
-					|| distance(shell.body(), carrier.body()) > 1.0 / (64 * 64)) continue;
+					|| !compoundForms(shell, carrier, priorBodies)) continue;
+				// Offset fresh forms must be mutually unique; never choose between peers.
+				if (distance(shell.body(), carrier.body()) > 1.0 / (64 * 64)) {
+					int shells = 0, carriers = 0;
+					for (Match candidate : matches) {
+						if (compoundForms(candidate, carrier, priorBodies)) shells++;
+						if (compoundForms(shell, candidate, priorBodies)) carriers++;
+					}
+					if (shells != 1 || carriers != 1) continue;
+				}
 				if (carrier.sparkling() && !shell.sparkling()) {
 					matches.set(other, new Match(shell.critter(), shell.label(), shell.body(), true, shell.conflict()));
 				}
@@ -86,6 +95,18 @@ final class CritterScan {
 				break;
 			}
 		}
+	}
+
+	private static boolean compoundForms(Match shell, Match carrier, Set<UUID> priorBodies) {
+		if (shell.body() == null || carrier.body() == null || !shell.critter().equals(carrier.critter())
+			|| !shell.body().type().equals("shulker") || !carrier.body().type().equals("silverfish")) return false;
+		if (distance(shell.body(), carrier.body()) <= 1.0 / (64 * 64)) return true;
+		// A breakout's new shell snaps to its block while its new carrier can retain
+		// the pre-capture offset inside that footprint. Existing mobile peers stay distinct.
+		return !priorBodies.contains(carrier.body().id())
+			&& Math.abs(shell.body().y() - carrier.body().y()) <= 1.0 / 64
+			&& Math.abs(shell.body().x() - carrier.body().x()) < .5
+			&& Math.abs(shell.body().z() - carrier.body().z()) < .5;
 	}
 
 	private static ScanPairing.Rank rank(Label label, Pools pools, UUID previous) {

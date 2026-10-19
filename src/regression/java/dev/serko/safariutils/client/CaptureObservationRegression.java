@@ -73,8 +73,47 @@ public final class CaptureObservationRegression {
 		Object original = effects.get(null);
 		effects.set(null, java.lang.reflect.Proxy.newProxyInstance(CaptureEffects.class.getClassLoader(),
 			new Class<?>[] {CaptureEffects.class}, (proxy, method, args) -> null));
-		try { return concealedFormsIsolated(); }
+		try { return concealedFormsIsolated() + delayedHideonForms() + unseenPeerPresentation(); }
 		finally { effects.set(null, original); }
+	}
+	private static int unseenPeerPresentation() throws ReflectiveOperationException {
+		var effects = CritterState.class.getDeclaredField("effects");
+		effects.setAccessible(true);
+		Object original = effects.get(null);
+		var presented = new java.util.ArrayList<UUID>();
+		effects.set(null, java.lang.reflect.Proxy.newProxyInstance(CaptureEffects.class.getClassLoader(),
+			new Class<?>[] {CaptureEffects.class}, (proxy, method, args) -> {
+				if (method.getName().equals("present")) presented.add((UUID) args[2]);
+				return null;
+			}));
+		int checks = 0;
+		try {
+			for (String name : List.of("Hideonfloor", "Hideonwall", "Bloodbat")) {
+				var species = dev.serko.safariutils.data.Critters.byName(name);
+				UUID a = new UUID(97, 1), b = new UUID(97, 2);
+				UUID la = new UUID(98, 1), lb = new UUID(98, 2);
+				var box = new AABB(0, 0, 0, 1, 1, 1);
+				var peer = box.move(20, 0, 0);
+				var aim = new CritterState.Aim(new Vec3(.5, .5, -3), new Vec3(0, 0, 1));
+				for (boolean hasPeer : List.of(false, true)) {
+					CritterState.onVisitStarted(); presented.clear();
+					CritterState.observeBodies(hasPeer ? List.of(body(species, la, a, box), body(species, lb, b, peer))
+						: List.of(body(species, la, a, box)), 1000);
+					CritterState.observeBodies(List.of(body(species, la, a, box)), 65_000);
+					CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT, species), true, 65_010, aim);
+					check(presented.isEmpty() == hasPeer, "unseen uncaught peer prevents premature guaranteed animation"); checks++;
+					if (hasPeer) {
+						// The distant peer, not the recent provisional target, begins its native capture shrink.
+						CritterState.observeBodies(List.of(body(species, la, a, box),
+							body(species, lb, b, peer.deflate(.2))), 65_050);
+						CritterState.advanceCaptureEvidence(List.of(), List.of(), 65_050);
+						check(presented.equals(List.of(b)), "native evidence presents only the actual distant target"); checks++;
+						check(logical(a).pity() == 0 && logical(b).pity() == 1, "correction preserves each peer's pity"); checks++;
+					}
+				}
+			}
+		} finally { CritterState.onVisitStarted(); effects.set(null, original); }
+		return checks;
 	}
 	private static int concealedFormsIsolated() {
 		int checks = 0;
@@ -104,6 +143,45 @@ public final class CaptureObservationRegression {
 				check(logical(a).id() == identity && logical(a).pity() == 0,
 					"settling form lost identity or invented pity"); checks++;
 			} finally { CritterState.onVisitStarted(); RecatchSpots.clear(); }
+		}
+		return checks;
+	}
+	private static int delayedHideonForms() {
+		int checks = 0;
+		for (String name : List.of("Hideonfloor", "Hideonwall", "Bloodbat")) {
+			var species = dev.serko.safariutils.data.Critters.byName(name);
+			for (int scenario = 0; scenario < 5; scenario++) {
+				UUID old = new UUID(95, 1), replacement = new UUID(95, 2), other = new UUID(95, 3);
+				UUID label = new UUID(96, 1), nextLabel = new UUID(96, 2);
+				var box = new AABB(0, 0, 0, 1, 1, 1);
+				var aim = new CritterState.Aim(new Vec3(.5, .5, -3), new Vec3(0, 0, 1));
+				CritterState.onVisitStarted();
+				try {
+					CritterState.observeBodies(List.of(body(species, label, old, box)), 1000);
+					long identity = logical(old).id();
+					CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT, species), false, 1010, aim);
+					CritterState.observeBodies(List.of(), 1050);
+					CritterState.applyEvent(event(CritterEvent.Type.FAILED, species), false, 3200, aim);
+					CritterState.observeBodies(List.of(body(species, label, old, box)), 3250);
+					check(logical(old).pity() == 1, "breakout retains first attempt"); checks++;
+					CritterState.observeBodies(List.of(), 3500);
+					long now = scenario == 0 ? 4500 : 65_000;
+					var fresh = body(species, nextLabel, replacement, scenario == 3 ? box.move(8, 0, 0) : box);
+					var observed = scenario == 2 ? List.of(fresh, body(species, label, old, box))
+						: scenario == 4 ? List.of(fresh, body(species, new UUID(96, 3), other, box.move(.5, 0, 0)))
+						: List.of(fresh);
+					CritterState.observeBodies(observed, now);
+					boolean retains = !name.equals("Bloodbat") && scenario < 2;
+					check((logical(replacement).id() == identity) == retains,
+						"delayed handoff must preserve only unambiguous Hideon breakout identity"); checks++;
+					check(logical(replacement).pity() == (retains ? 1 : 0), "delayed handoff pity"); checks++;
+					if (retains) {
+						CritterState.observeInteraction(replacement, box.getCenter(), now + 10);
+						CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT, species), false, now + 20, aim);
+						check(logical(replacement).pity() == 2, "retry after delayed form change advances to two"); checks++;
+					}
+				} finally { CritterState.onVisitStarted(); RecatchSpots.clear(); }
+			}
 		}
 		return checks;
 	}

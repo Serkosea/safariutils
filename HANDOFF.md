@@ -20,7 +20,10 @@ An active attempt's body-form replacement without an observed absence remains AT
 not BREAKOUT. `IDENTITY/BODY-FORM` distinguishes it from a returning body; otherwise a valid
 later catch can be excluded by the outcome selector and leave an orphaned recatch pin.
 When separate Hideon labels simultaneously pair with a shulker and silverfish at the exact
-same position, `CritterScan` publishes only the shulker representation. Standalone mobile
+same position, `CritterScan` publishes only the shulker representation. A fresh offset carrier
+inside the shell footprint at the same base height also collapses when that relationship is
+mutually unique. Previously tracked mobile peers and ambiguous overlaps stay independent.
+This handles block-snapped breakout shells without assigning pity to a duplicate carrier. Standalone mobile
 forms and nearby distinct peers remain eligible. Collapse this compound representation before
 identity/pity and marker consumers, never by hiding one marker after splitting its identity.
 A previously body-owned label becoming bodyless must not be assigned as a new capsule label
@@ -32,6 +35,15 @@ that identity handoff, preserving other attempts' ownership and the accumulated 
 Resolved body-form and same-label replacements must also notify `CaptureEffects.bodyReplaced`:
 retire the unowned old breakout/remembered projection even when there is no active attempt.
 Do not clear another attempt's owned body or infer retirement from proximity in the renderer.
+Resolved Hideon breakout identities remain eligible for a tight spatial body-form handoff
+throughout the visit, including when the observer leaves detection range. Delayed handoffs
+require one eligible identity and one fresh body within the form radius; ambiguous clusters
+remain unmatched. Other species retain the short form-rekey deadline. FORM-REKEY logs include
+the observation gap; marker retirement still flows through CaptureEffects.bodyReplaced.
+Guaranteed presentation cannot infer a sole target by excluding stale/out-of-range uncaught
+identities. Freshness may rank provisional targets, but known peers require physical capture
+evidence before shrinking. PRESENTATION-WAIT records this once at attempt creation; the
+existing PRESENTATION/TARGET-RETARGET records identify the subsequent evidence and owner.
 Deferred attempts retain the original attempt's camera ray; later camera movement is not
 targeting evidence for an earlier throw. Diagnostic replay runs separately from HTTP workers
 and must report skipped/omitted/corrupt records as incomplete rather than silently passing.
@@ -81,7 +93,7 @@ Ordinary builds do not rewrite the checked-in component snapshot; `SyncSafariCom
 At the v3 release checkpoint, current-client settings, saved data, lookups,
 solo transitions, and grouped/distant captures have received in-game testing. The October 14
 22H-18M journal strictly replayed all 4,855 capture inputs. Developer two-client sync and broader
-Bridge runtime testing remain separate limitations; see `docs/development/V3_VALIDATION.md`.
+Bridge runtime testing remain separate limitations. Review and validation reports are local-only.
 
 ## Runtime and lifecycle
 
@@ -190,6 +202,11 @@ failures; rendering never waits on network I/O.
 Chat-message hiding is display-only. Its stable bit mask is serialized as `hiddenChatMessageGroups`, defaults to zero, and is grouped into General, Cavern, Icy, Haunted, and Forest columns. Visible order may differ from persisted bit order through `SettingMultiChoice.bits`; never shift existing persisted meanings just to insert an option. Selected Safari lines must pass through the complete tracker pipeline before `ALLOW_GAME` rejects them; never move the filter ahead of parsing or suppress player-written chat by keyword. The NPC option dynamically captures each Shard Trader's offered species, requested item, and server-provided colors. It retains the original clickable selector components and adds a non-clickable `Trade: cost -> shard` line through `MODIFY_GAME`; successful receipt lines remain visible and add the shard to run income exactly once.
 
 ## UI and performance
+
+Haunted darkness removal affects only local fog applicability, never status-effect storage
+or packets. Other mods may return a null fog effect to disable an environment (NoammAddons
+does this for No Blindness); DarknessFilter must exclude that environment before dereferencing
+the holder or consulting client/settings state, including when our own option is disabled.
 
 Shared UI implementation rules and validation: [settings presentation](docs/development/SETTINGS_UI.md).
 `SettingsMotion` is screen-owned and bounded; its animation is presentation-only. Menu particles

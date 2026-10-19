@@ -22,12 +22,15 @@ public final class DarknessFilter {
 			loggedBlindness = false;
 			return;
 		}
-		if (!player.hasEffect(MobEffects.DARKNESS)) loggedDarkness = false;
-		if (!player.hasEffect(MobEffects.BLINDNESS)) loggedBlindness = false;
+		// Log once per enabled Safari context, not once per rendered frame when
+		// another mod suppresses effect queries or vanilla probes an inactive layer.
 	}
 
 	/** Leaves effect state untouched and hides only its local fog environment. */
 	public static boolean suppressesFog(Entity entity, Holder<MobEffect> effect) {
+		// Other fog-removal mods can return null from getMobEffect to disable their
+		// environment. Respect that sentinel before consulting client/settings state.
+		if (effect == null) return true;
 		LocalPlayer player = Minecraft.getInstance().player;
 		boolean suppress = enabled() && player != null && entity == player
 			&& (effect.is(MobEffects.DARKNESS) || effect.is(MobEffects.BLINDNESS));

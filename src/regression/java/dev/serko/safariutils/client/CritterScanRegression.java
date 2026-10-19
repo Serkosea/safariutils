@@ -58,6 +58,18 @@ public final class CritterScanRegression {
 					"overlapping Hideon forms became two critters"); checks++;
 			}
 			var separate = new CritterScan.Sample(awake.id(), "silverfish", null, .25, 0, 0);
+			var offset = new CritterScan.Sample(awake.id(), "silverfish", null, .46875, 0, -.4375);
+			var offsetScan = CritterScan.scan(List.of(label, dormant, extraLabel, offset), Map.of(), null);
+			check(offsetScan.size() == 1 && offsetScan.getFirst().body().equals(dormant),
+				"fresh offset breakout carrier split the shell identity"); checks++;
+			check(CritterScan.scan(List.of(label, dormant, extraLabel, offset),
+				Map.of(offsetScan.getFirst().label().id(), dormant.id()), null).size() == 1,
+				"canonical offset shell split on the next scan"); checks++;
+			var otherLabel = new CritterScan.Sample(new UUID(9, 3), "armor_stand", name, -.3, .5, 0);
+			var otherCarrier = sample(92, "silverfish", null, -.3);
+			check(CritterScan.scan(List.of(label, dormant, extraLabel, offset, otherLabel, otherCarrier),
+				Map.of(label.id(), dormant.id()), null).size() == 3,
+				"ambiguous fresh carriers must not merge with a shell"); checks++;
 			check(CritterScan.scan(List.of(label, dormant, extraLabel, separate),
 				Map.of(extraLabel.id(), separate.id()), null).size() == 2,
 				"nearby separate mobile Hideon was removed"); checks++;

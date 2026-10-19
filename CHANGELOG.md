@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.1.1] - 2026-10-19
+
+### Fixes
+
+- Handled disabled fog effects from other mods, including NoammAddons' No Blindness option, without crashing
+- Added a short explanation of Ticket Trading above its Host and Guest instructions
+- Prevented premature guaranteed-catch marker shrinking on the wrong critter when another known target is out of detection range
+- Preserved Hideon pity when a breakout body changes after a gap in detection, without merging ambiguous nearby critters
+- Preserved Hideon pity during rapid retries when its new body and offset carrier appear together
+- Reduced repeated darkness-removal diagnostics
+
 ## [3.1.0] - 2026-10-18
 
 ### Changes & Additions

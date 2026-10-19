@@ -3,7 +3,7 @@
 Scope: the approved SafariUtils/SerkoAddons architecture review and public API transition.
 Publishing requires subsequent user testing; this document tracks implementation, not completion claims.
 
-For current validation scopes and remaining gates, see [v3 validation status](docs/development/V3_VALIDATION.md).
+Current review and validation reports are maintained locally and excluded from Git.
 Older pending statements and counts below are historical, not a cumulative current checklist.
 
 ## Verified implementation progress

@@ -56,7 +56,7 @@ public abstract class SoundEngineMixin {
 		safariutils$wasMuted = muted;
 		// Existing music and loops need one gain update when the setting changes.
 		instanceToChannel.forEach((sound, handle) -> {
-			if (safariutils$alerts.contains(sound)) return;
+			if (sound == null || handle == null || safariutils$alerts.contains(sound)) return;
 			float volume = calculateVolume(sound);
 			handle.execute(channel -> channel.setVolume(volume));
 		});

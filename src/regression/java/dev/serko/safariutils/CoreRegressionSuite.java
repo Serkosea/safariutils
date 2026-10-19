@@ -76,6 +76,10 @@ public final class CoreRegressionSuite {
 		checks += dev.serko.safariutils.client.PlayerIdentityStoreRegression.run();
 		checks += dev.serko.safariutils.client.StaticEntityCatalogRegression.run();
 		checks += dev.serko.safariutils.client.CaptureOwnershipRegression.run();
+		if (!dev.serko.safariutils.client.DarknessFilter.suppressesFog(null, null)) {
+			throw new AssertionError("Disabled fog effect must be safely excluded before reading client state");
+		}
+		checks++;
 		checks += dev.serko.safariutils.client.CaptureObservationRegression.run();
 		checks += dev.serko.safariutils.client.CapturePresentationRegression.run();
 		checks += dev.serko.safariutils.client.DiagnosticsRegression.run();

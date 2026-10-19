@@ -31,6 +31,10 @@ public final class TicketTradingScreen extends Screen {
 		.map(biome -> Critters.selectionOrder().stream()
 			.filter(critter -> critter.biome() == biome).toList()).toList();
 	private static final List<String> INFO = List.of(
+		"Ticket Trading lets players take turns hosting Safari runs, sharing catches while only the host uses a ticket. Guests can save their tickets for later runs or use one if a Sparkling is found before ticket entry closes.",
+		"",
+		"Guests must be warped in before the host's 30-second connection window closes. Connecting starts each guest's own 30-second ticket window, giving them time to use a ticket if needed.",
+		"",
 		"Host",
 		"Uses your ticket and invites players from the Host queue in order.",
 		"- Every Run: Invites this player during the normal invite window",
@@ -104,7 +108,7 @@ public final class TicketTradingScreen extends Screen {
 	private void layout() {
 		int preferredW = view == View.NEW_PLAYER ? 420
 			: view == View.MAIN ? 750 : 720;
-		int preferredH = view == View.INFO ? 280
+		int preferredH = view == View.INFO ? 112 + wrapInfo(preferredW - 52).size() * 16
 			: view == View.NEW_PLAYER ? 140 : view == View.MAIN ? 426 : 330;
 		scale = ResponsiveUI.fitScale(width, height, preferredW, preferredH, 8);
 		logicalWidth = ResponsiveUI.logicalWidth(width, scale);

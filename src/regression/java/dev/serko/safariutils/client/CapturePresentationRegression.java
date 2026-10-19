@@ -195,7 +195,7 @@ public final class CapturePresentationRegression {
 
 	private static int compoundHideonRetries() {
 		int checks = 0;
-		for (String name : List.of("Hideonwall", "Hideonfloor")) {
+		for (boolean offset : List.of(false, true)) for (String name : List.of("Hideonwall", "Hideonfloor")) {
 			CritterState.onVisitStarted(); RecatchSpots.clear();
 			var species = Critters.byName(name);
 			var box = new AABB(0, 0, 0, 1, 1, 1);
@@ -207,10 +207,10 @@ public final class CapturePresentationRegression {
 				UUID shellLabel = new UUID(92, attempt), carrierLabel = new UUID(93, attempt);
 				var scan = CritterScan.scan(List.of(
 					new CritterScan.Sample(carrierLabel, "armor_stand", name, .5, .5, .5),
-					new CritterScan.Sample(carrier, "silverfish", null, .5, 0, .5),
+					new CritterScan.Sample(carrier, "silverfish", null, offset ? .96875 : .5, 0, offset ? .0625 : .5),
 					new CritterScan.Sample(shellLabel, "armor_stand", name, .5, 1.5, .5),
 					new CritterScan.Sample(shell, "shulker", null, .5, 0, .5)),
-					java.util.Map.of(carrierLabel, carrier), null);
+					java.util.Map.of(), null);
 				CritterState.observeBodies(scan.stream().map(match -> new CritterState.BodyObservation(
 					match.critter(), match.label().id(), match.body().id(), box, match.sparkling())).toList(), now);
 				CritterState.applyEvent(new CritterEvent(CritterEvent.Type.ATTEMPT, species, null, 1, false), false, now + 1, aim);

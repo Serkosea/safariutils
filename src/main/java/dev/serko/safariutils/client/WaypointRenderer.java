@@ -258,6 +258,7 @@ public final class WaypointRenderer {
 
 	/** Rendering-only test used by the entity-name mixin. */
 	public static boolean replacesVanillaName(Entity entity) {
+		if (entity == null) return false;
 		if (!HypixelConnection.active() || showsVanillaNametags() || !SafariLocation.inside()) return false;
 		if (replacedVanillaNames.contains(entity.getUUID())) return true;
 		MarkerRegistry.Snapshot markerSnapshot = MarkerRegistry.snapshot();

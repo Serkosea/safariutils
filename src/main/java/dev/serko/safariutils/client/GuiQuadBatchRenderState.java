@@ -53,10 +53,12 @@ final class GuiQuadBatchRenderState implements GuiElementRenderState {
 			int width, int height, int[] quads, int quadLength, ScreenRectangle scissorArea) {
 		int used = Math.clamp(quadLength - Math.floorMod(quadLength, 5), 0, quads.length);
 		if (used == 0 || width <= 0 || height <= 0) return;
+		var renderState = ((GuiGraphicsExtractorAccessor) graphics).safariutils$getGuiRenderState();
+		if (renderState == null) return;
 		Matrix3x2f pose = new Matrix3x2f(graphics.pose());
 		GuiQuadBatchRenderState state = new GuiQuadBatchRenderState(
 			pose, originX, originY, width, height, quads, used, scissorArea);
-		((GuiGraphicsExtractorAccessor) graphics).safariutils$getGuiRenderState().addGuiElement(state);
+		renderState.addGuiElement(state);
 	}
 
 	@Override

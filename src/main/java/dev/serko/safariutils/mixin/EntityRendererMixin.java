@@ -29,6 +29,7 @@ public abstract class EntityRendererMixin<T extends Entity, S extends EntityRend
 			CallbackInfoReturnable<S> callback) {
 		if (!WaypointRenderer.replacesVanillaName(entity)) return;
 		S completed = callback.getReturnValue();
+		if (completed == null) return; // Another renderer hook may suppress state creation.
 		completed.nameTag = null;
 		completed.scoreText = null;
 	}

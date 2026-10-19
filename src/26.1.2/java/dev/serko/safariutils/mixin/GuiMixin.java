@@ -7,16 +7,17 @@ import net.minecraft.client.gui.Gui;
 import net.minecraft.client.player.LocalPlayer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Redirect;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 
 /** Suppresses only the vanilla freezing overlay while the player is inside Safari. */
 @Mixin(Gui.class)
 public abstract class GuiMixin {
-	@Redirect(method = "extractCameraOverlays", at = @At(value = "INVOKE",
-		target = "Lnet/minecraft/client/player/LocalPlayer;getTicksFrozen()I"))
-	private int safariutils$removeSafariColdOverlay(LocalPlayer player) {
+	@WrapOperation(method = "extractCameraOverlays", at = @At(value = "INVOKE",
+		target = "Lnet/minecraft/client/player/LocalPlayer;getTicksFrozen()I"), require = 0)
+	private int safariutils$removeSafariColdOverlay(LocalPlayer player, Operation<Integer> original) {
 		return HypixelConnection.active() && ConfigManager.get().display.removeColdOverlay
 			&& SafariLocation.inSafari()
-			? 0 : player.getTicksFrozen();
+			? 0 : player == null ? 0 : original.call(player);
 	}
 }

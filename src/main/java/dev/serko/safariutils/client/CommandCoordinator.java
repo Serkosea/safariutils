@@ -31,6 +31,7 @@ public final class CommandCoordinator {
 	}
 
 	public enum Cooldown {
+		SHARED(1_000L),
 		NONE(0L),
 		CHAT(1_200L),
 		PARTY_ACTION(3_100L),
@@ -96,6 +97,7 @@ public final class CommandCoordinator {
 			return false;
 		}
 		client.getConnection().sendCommand(stripSlash(request.command()));
+		cooldowns.mark(Cooldown.SHARED);
 		cooldowns.mark(request.cooldown());
 		sequence++;
 		remember(new SentCommand(sequence, System.nanoTime(), request.category(), root(request.command())));
@@ -114,6 +116,7 @@ public final class CommandCoordinator {
 		if (!scopeMatches(guard, epoch)) return false;
 		if (remaining(Cooldown.CHAT) > 0L) return false;
 		client.getConnection().sendChat(message);
+		cooldowns.mark(Cooldown.SHARED);
 		cooldowns.mark(Cooldown.CHAT);
 		sequence++;
 		remember(new SentCommand(sequence, System.nanoTime(), category, "chat"));
@@ -122,8 +125,13 @@ public final class CommandCoordinator {
 	}
 
 	public static long remaining(Cooldown cooldown) {
-		if (cooldown == null || cooldown.millis <= 0L) return 0L;
-		return cooldowns.remainingMillis(cooldown, cooldown.millis);
+		return Math.max(cooldowns.remainingMillis(Cooldown.SHARED, Cooldown.SHARED.millis),
+			cooldown == null ? 0L : cooldowns.remainingMillis(cooldown, cooldown.millis));
+	}
+
+	/** Observes manual/other-mod commands without delaying or changing their send. */
+	public static void observeOutboundCommand() {
+		cooldowns.mark(Cooldown.SHARED);
 	}
 
 	public static void resetConnection() {
@@ -136,7 +144,11 @@ public final class CommandCoordinator {
 		if (line == null || line.isBlank() || recent.isEmpty()) return;
 		String lower = line.toLowerCase(Locale.ROOT);
 		String result = null;
-		if (lower.contains("command is on cooldown")) result = "cooldown";
+		if (lower.contains("command is on cooldown") || lower.contains("woah slow down")
+				|| lower.contains("you're doing that too fast")) {
+			result = "cooldown";
+			cooldowns.mark(Cooldown.SHARED);
+		}
 		else if (lower.contains("you are not in a party")
 				|| lower.contains("not currently in a party")) result = "not-in-party";
 		else if (lower.contains("you are not the party leader")) result = "not-leader";

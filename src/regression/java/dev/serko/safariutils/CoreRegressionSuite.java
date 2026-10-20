@@ -30,6 +30,8 @@ public final class CoreRegressionSuite {
 		timeline();
 		lifecycle();
 		profiles();
+		checks += SparklingImportRegression.run();
+		checks += dev.serko.safariutils.client.CommandSpacingRegression.run();
 		checks += PersistenceRegression.run();
 		checks += OrderedSnapshotRegression.run();
 		checks += DeferredObservationsRegression.run();

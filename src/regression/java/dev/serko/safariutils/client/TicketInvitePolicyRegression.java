@@ -9,6 +9,18 @@ public final class TicketInvitePolicyRegression {
 	private record Player(String name, boolean sparkling, boolean qualifies) { }
 	public static int run() {
 		int checks = 0;
+		for (boolean sparkling : List.of(false, true))
+			for (boolean waiting : List.of(false, true))
+				for (boolean more : List.of(false, true)) {
+					boolean actual = TicketInvitePolicy.earlyWarpReady(sparkling,
+						Set.of("a", "b"), Set.of("a"), waiting ? Set.of() : Set.of("b"), more);
+					if (actual != (sparkling && !waiting && !more))
+						throw new AssertionError("Early warp must await guests and the eligible queue");
+					checks++;
+				}
+		if (TicketInvitePolicy.earlyWarpReady(true, Set.of("a"), Set.of(), Set.of("a"), false))
+			throw new AssertionError("Do not warp an empty guest party");
+		checks++;
 		Random random = new Random(0x534146415249L);
 		for (int sample = 0; sample < 2000; sample++) {
 			List<Player> queue = new ArrayList<>();

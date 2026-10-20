@@ -61,6 +61,9 @@ public final class TicketTrading {
 	private static long lastAcceptedAt;
 	private static String pendingAcceptInviter = "";
 	private static long pendingAcceptAt;
+	private static long pendingAcceptDeadline;
+	private static boolean pendingLeave;
+	private static boolean pendingSwitch;
 	private static String directAcceptInviter = "";
 	private static long directAcceptAt;
 	private static long guestInviteBlockedUntil;
@@ -71,6 +74,7 @@ public final class TicketTrading {
 	private static long cleanupGeneration = -1L;
 	private static long cleanupDeadline;
 	private static long nextCleanupAt;
+	private static final Set<String> cleanupExpectedMembers = new HashSet<>();
 
 	private record ConfiguredPlayer(String name, TicketTradingProfiles.HostMode hostMode,
 		TicketTradingProfiles.GuestMode guestMode, long sparklingCritters) {
@@ -110,15 +114,29 @@ public final class TicketTrading {
 		long now = System.currentTimeMillis();
 		boolean enabled = ConfigManager.get().sparkling.ticketTradingEnabled;
 		if (pendingAcceptAt > 0L) {
-			if (!enabled || now < guestInviteBlockedUntil) clearPendingAccept();
+			if (!enabled || now < guestInviteBlockedUntil || now > pendingAcceptDeadline) clearPendingAccept();
 			else if (now >= pendingAcceptAt) {
 				if (!TicketGuestPolicy.pending(enabled,
 						configuredGuest(normalizeName(pendingAcceptInviter)) != null,
 						now < guestInviteBlockedUntil)) clearPendingAccept();
-				else if (sendCommand("party accept " + pendingAcceptInviter,
+				else if (pendingLeave) {
+					ConfiguredPlayer guest = configuredGuest(normalizeName(pendingAcceptInviter));
+					if (guest == null || guest.guestMode() != TicketTradingProfiles.GuestMode.SWITCH) {
+						clearPendingAccept();
+					} else if (sendCommand("party leave", CommandCoordinator.Category.TICKET_GUEST,
+							CommandCoordinator.Cooldown.PARTY_MEMBERSHIP, false, false)) {
+						pendingLeave = false;
+						pendingAcceptAt = now + GUEST_LEAVE_SETTLE_MILLIS;
+						PartyRosterWatch.deferRefreshUntil(pendingAcceptAt + GUEST_LEAVE_SETTLE_MILLIS);
+					}
+				} else if (sendCommand("party accept " + pendingAcceptInviter,
 						CommandCoordinator.Category.TICKET_GUEST,
 						CommandCoordinator.Cooldown.PARTY_MEMBERSHIP, false, false)) {
+					String inviter = pendingAcceptInviter;
+					boolean switchParty = pendingSwitch;
 					clearPendingAccept();
+					directAcceptInviter = switchParty ? inviter : "";
+					directAcceptAt = switchParty ? now : 0L;
 				}
 			}
 		}
@@ -149,6 +167,7 @@ public final class TicketTrading {
 			return;
 		}
 		long elapsed = now - connectionStartedAt;
+		if (warpSent) return; // Only the 60-second attendance check remains after a successful warp.
 		if (!pendingResponses.isEmpty() && now >= inviteResponseUntil) {
 			unavailableTargets.addAll(pendingResponses);
 			OperationalLog.info("TICKET_TRADE", "Invite wave timed out count="
@@ -166,22 +185,25 @@ public final class TicketTrading {
 			if (!pending.isEmpty()) sendInviteBatch(pending, now);
 		}
 		boolean hasJoinedPlayer = !joinedTargets.isEmpty();
-		// Always preserve the full scouting window: even a complete party waits until 27s.
-		// A first late join between 27s and 29s is picked up on the next client tick.
-		boolean warpReady = hasJoinedPlayer && now >= connectionStartedAt + WARP_AT_MILLIS
+		boolean earlyWarp = TicketInvitePolicy.earlyWarpReady(
+			PartySparklingDiscoveries.activeMask() != 0L, invitedTargets, joinedTargets,
+			unavailableTargets, !pendingQueueTargets(false).isEmpty());
+		// Ordinary trading retains its scouting window; settled sparkling parties can go now.
+		boolean warpReady = hasJoinedPlayer && (earlyWarp || now >= connectionStartedAt + WARP_AT_MILLIS)
 			&& now - lastHostCommandAt >= COMMAND_COOLDOWN_MILLIS;
 		if (!warpSent && warpReady && now < connectionStartedAt + LAST_WARP_AT_MILLIS) {
 			if (sendCommand("party warp", CommandCoordinator.Category.TICKET_HOST,
 					CommandCoordinator.Cooldown.PARTY_ACTION, true, true)) {
 				lastHostCommandAt = now;
 				warpSent = true;
+				OperationalLog.info("TICKET_TRADE", "Warp sent early=" + earlyWarp
+					+ " joined=" + joinedTargets.size() + " elapsedMs=" + elapsed);
 			}
 		}
 		if (!warpSent && now >= connectionStartedAt + LAST_WARP_AT_MILLIS) {
 			if (!joinedTargets.isEmpty()) armCleanup();
 			else if (baselinePartySize == 1 && !invitedTargets.isEmpty()) {
-				sendCommand("party disband", CommandCoordinator.Category.TICKET_CLEANUP,
-					CommandCoordinator.Cooldown.PARTY_CLEANUP, true, false);
+				armCleanup();
 			}
 			resetRunAutomation();
 		}
@@ -217,10 +239,7 @@ public final class TicketTrading {
 				now < guestInviteBlockedUntil, now - directAcceptAt, DIRECT_ACCEPT_WINDOW_MILLIS)
 				&& partyRejection) {
 			PartyRosterWatch.deferRefreshUntil(now + GUEST_LEAVE_SETTLE_MILLIS * 2L);
-			if (!sendCommand("party leave", CommandCoordinator.Category.TICKET_GUEST,
-					CommandCoordinator.Cooldown.PARTY_MEMBERSHIP, false, false)) return;
-			pendingAcceptInviter = directAcceptInviter;
-			pendingAcceptAt = now + GUEST_LEAVE_SETTLE_MILLIS;
+			scheduleGuestAccept(directAcceptInviter, true, true, now);
 			directAcceptInviter = "";
 			directAcceptAt = 0L;
 			OperationalLog.info("TICKET_TRADE", "Direct accept found an existing party; leaving and retrying");
@@ -260,19 +279,12 @@ public final class TicketTrading {
 			// Leave and accept share Hypixel's short command cooldown. Keep the
 			// automatic roster refresh from occupying either side of that window.
 			PartyRosterWatch.deferRefreshUntil(now + GUEST_LEAVE_SETTLE_MILLIS * 2L);
-			if (!sendCommand("party leave", CommandCoordinator.Category.TICKET_GUEST,
-					CommandCoordinator.Cooldown.PARTY_MEMBERSHIP, false, true)) return;
-			pendingAcceptInviter = inviter;
-			pendingAcceptAt = now + GUEST_LEAVE_SETTLE_MILLIS;
+			scheduleGuestAccept(inviter, true, true, now);
 			OperationalLog.info("TICKET_TRADE", "Leaving current party before Sparkling trade accept");
 		} else {
-			if (!sendCommand("party accept " + inviter,
-					CommandCoordinator.Category.TICKET_GUEST,
-					CommandCoordinator.Cooldown.PARTY_MEMBERSHIP, false, false)) return;
-			directAcceptInviter = switchParty ? inviter : "";
-			directAcceptAt = switchParty ? now : 0L;
+			scheduleGuestAccept(inviter, false, switchParty, now);
 		}
-		// A denied command must not consume the invite deduplication window.
+		// A scheduled invite survives temporary command cooldowns; duplicates do not replace it.
 		lastAccepted = normalized;
 		lastAcceptedAt = now;
 	}
@@ -497,8 +509,18 @@ public final class TicketTrading {
 	private static void clearPendingAccept() {
 		pendingAcceptInviter = "";
 		pendingAcceptAt = 0L;
+		pendingAcceptDeadline = 0L;
+		pendingLeave = pendingSwitch = false;
 		directAcceptInviter = "";
 		directAcceptAt = 0L;
+	}
+
+	private static void scheduleGuestAccept(String inviter, boolean leave, boolean switchParty, long now) {
+		pendingAcceptInviter = inviter;
+		pendingLeave = leave;
+		pendingSwitch = switchParty;
+		pendingAcceptAt = now;
+		pendingAcceptDeadline = now + 10_000L;
 	}
 
 	private static void freezeBaselineParty() {
@@ -525,11 +547,13 @@ public final class TicketTrading {
 		for (String joined : joinedTargets) {
 			if (!baselineMembers.contains(joined)) pendingCleanupGuests.add(joined);
 		}
-		pendingCleanupDisband = baselinePartySize <= 1 && !pendingCleanupGuests.isEmpty();
+		pendingCleanupDisband = baselinePartySize <= 1 && !invitedTargets.isEmpty();
 		if (!pendingCleanupDisband && pendingCleanupGuests.isEmpty()) return;
 		cleanupGeneration = -1L;
+		cleanupExpectedMembers.clear();
 		cleanupDeadline = System.currentTimeMillis() + 15_000L;
-		nextCleanupAt = System.currentTimeMillis();
+		// The user's exit warp has just consumed Hypixel's command cooldown.
+		nextCleanupAt = System.currentTimeMillis() + GUEST_LEAVE_SETTLE_MILLIS;
 		OperationalLog.info("TICKET_TRADE", pendingCleanupDisband
 			? "Armed host party disband after leaving Safari"
 			: "Armed guest-only cleanup count=" + pendingCleanupGuests.size());
@@ -543,10 +567,15 @@ public final class TicketTrading {
 		}
 		PartySnapshot party = PartyState.snapshot();
 		if (!party.known() || !party.localLeader()) return;
-		if (cleanupGeneration < 0L) cleanupGeneration = party.generation();
 		if (cleanupGeneration != party.generation()) {
-			clearCleanup("party changed");
-			return;
+			Set<String> members = party.members().stream().map(member -> normalizeName(member.name()))
+				.collect(java.util.stream.Collectors.toSet());
+			if (cleanupGeneration < 0L) cleanupExpectedMembers.addAll(members);
+			else if (!cleanupExpectedMembers.equals(members)) {
+				clearCleanup("party changed");
+				return;
+			}
+			cleanupGeneration = party.generation();
 		}
 		if (now < nextCleanupAt) return;
 		if (pendingCleanupDisband) {
@@ -560,6 +589,7 @@ public final class TicketTrading {
 		if (sendCommand("party kick " + target, CommandCoordinator.Category.TICKET_CLEANUP,
 				CommandCoordinator.Cooldown.PARTY_CLEANUP, true, true)) {
 			pendingCleanupGuests.removeFirst();
+			cleanupExpectedMembers.remove(target);
 			nextCleanupAt = now + 1_000L;
 			if (pendingCleanupGuests.isEmpty()) clearCleanup("guests kicked");
 		}
@@ -570,6 +600,7 @@ public final class TicketTrading {
 			OperationalLog.info("TICKET_TRADE", "Cleanup finished: " + reason);
 		}
 		pendingCleanupGuests.clear();
+		cleanupExpectedMembers.clear();
 		pendingCleanupDisband = false;
 		cleanupGeneration = -1L;
 		cleanupDeadline = 0L;

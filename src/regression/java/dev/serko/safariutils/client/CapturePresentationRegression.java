@@ -102,6 +102,7 @@ public final class CapturePresentationRegression {
 				}
 			}
 			checks += overlappingContact();
+			checks += inFlightCapsuleContact();
 			checks += hideonRecatches();
 			checks += returningHelperLabel();
 			checks += compoundHideonRetries();
@@ -115,6 +116,41 @@ public final class CapturePresentationRegression {
 			cache.setAccessible(true);
 			((java.util.Map<?, ?>) cache.get(null)).clear();
 		}
+	}
+
+	/** Impact chat can arrive after the capsule has already been flying for several scans. */
+	private static int inFlightCapsuleContact() {
+		int checks = 0;
+		for (int scenario = 0; scenario < 5; scenario++) {
+			CritterState.onVisitStarted(); RecatchSpots.clear();
+			var species = Critters.byName("Duplico");
+			UUID target = new UUID(96, 1), neighbor = new UUID(96, 2), capsule = new UUID(96, 3);
+			var box = new AABB(0, 0, 0, 1.1, 1.1, 1.1);
+			var peer = scenario == 3 ? box : box.move(0, 11, -12);
+			CritterState.observeBodies(List.of(
+				new CritterState.BodyObservation(species, target, target, box, false),
+				new CritterState.BodyObservation(species, neighbor, neighbor, peer, false)), 1000);
+			Vec3 outside = new Vec3(.5, .5, -4), inside = box.getCenter();
+			CritterState.advanceCaptureEvidence(List.of(new CritterState.CapsuleObservation(capsule, outside)), List.of(), 1000);
+			if (scenario == 1) {
+				// A previous crossing must not become new impact evidence on a later retry.
+				CritterState.advanceCaptureEvidence(List.of(new CritterState.CapsuleObservation(capsule, inside)), List.of(), 1100);
+			}
+			long attemptAt = scenario == 2 ? 7000 : 1500;
+			CritterState.applyEvent(new CritterEvent(CritterEvent.Type.ATTEMPT, species, null, 1, false),
+				true, attemptAt, new CritterState.Aim(new Vec3(.5, .5, -6), new Vec3(0, 0, 1)));
+			Vec3 latest = scenario == 4 ? new Vec3(3, .5, -2) : inside;
+			CritterState.advanceCaptureEvidence(List.of(new CritterState.CapsuleObservation(capsule, latest)), List.of(), attemptAt + 8);
+			var snapshot = RecatchSpots.snapshot(true, Set.of());
+			check(snapshot.isAnimated(target) == (scenario == 0), "in-flight capsule contact scenario " + scenario); checks++;
+			check(!snapshot.suppresses(neighbor), "in-flight capsule animated untouched peer"); checks++;
+			if (scenario == 0) {
+				checks += frames(snapshot, target, neighbor);
+				CritterState.applyEvent(new CritterEvent(CritterEvent.Type.OWN_CATCH, species, null, 1, false), false, attemptAt + 2200, (CritterState.Aim) null);
+				check(RecatchSpots.snapshot(true, Set.of()).shrinkStates().isEmpty(), "confirmed Duplico left shrink behind"); checks++;
+			}
+		}
+		return checks;
 	}
 
 	/** Exercises the actual frame iteration using snapshots emitted by the real tracker/effects. */

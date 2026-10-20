@@ -41,6 +41,8 @@ public final class SparklingWatch {
 
 	/** Intentionally runs for the whole Safari visit, including before ticket use. */
 	public static void tick() {
+		// The shared entity scan can still contain the last visit until its next sweep.
+		if (!SafariLocation.inside()) return;
 		long now = System.currentTimeMillis();
 		justCaught.entrySet().removeIf(entry -> now - entry.getValue() > CAUGHT_THEME_MILLIS);
 		replacementExpectedUntil.entrySet().removeIf(entry -> now > entry.getValue());
@@ -259,9 +261,9 @@ public final class SparklingWatch {
 	}
 
 	public static boolean hudThemeActive() {
-		return PartySparklingDiscoveries.sharedMask() != 0
+		return SafariLocation.inside() && (PartySparklingDiscoveries.sharedMask() != 0
 			|| outstanding.values().stream().anyMatch(SparklingWatch::presentable)
-			|| System.currentTimeMillis() < caughtThemeUntil;
+			|| System.currentTimeMillis() < caughtThemeUntil);
 	}
 
 	/** Kept as an alias for callers concerned specifically with the Missing HUD. */

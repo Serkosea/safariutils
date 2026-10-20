@@ -504,30 +504,17 @@ public final class SparklingScreen extends Screen {
 	}
 
 	private void checkCachedLocalCollection() {
+		if (pendingImport != null && collectionMatches(pendingImport)) dismissPendingImport();
 		if (!SharedSparklingProviders.available() || pendingImport != null) return;
 		SharedSparklingProviders.cachedLocalCollection()
-			.filter(result -> result.fetchedAt() != dismissedImportFetchedAt)
+			.filter(result -> result.fetchedAt() > dismissedImportFetchedAt)
 			.filter(result -> SparklingStats.apiComparisonAllowed(result.fetchedAt()))
 			.filter(result -> !collectionMatches(result))
 			.ifPresent(result -> pendingImport = result);
 	}
 
 	private static boolean collectionMatches(SparklingPlayerLookup result) {
-		Set<String> saved = new LinkedHashSet<>();
-		Set<String> api = new LinkedHashSet<>();
-		for (Critter critter : Critters.all()) {
-			String id = speciesId(critter.name());
-			if (SparklingStats.count(critter) > 0) saved.add(id);
-			if (result.species().contains(id)) api.add(id);
-		}
-		int knownDuplicates = SparklingStats.hasImportedDuplicates()
-			? SparklingStats.importedDuplicates() : SparklingStats.duplicates();
-		if (!saved.equals(api)) return false;
-		if (SparklingStats.hasImportedDuplicates()) {
-			return SparklingStats.importedSetUnchanged()
-				&& (result.duplicates() < 0 || knownDuplicates == result.duplicates());
-		}
-		return result.duplicates() < 0 || knownDuplicates == result.duplicates();
+		return !SparklingStats.apiCollectionAddsInformation(result.species(), result.duplicates());
 	}
 
 	private void drawImportConfirmation(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
@@ -540,7 +527,7 @@ public final class SparklingScreen extends Screen {
 		graphics.fill(x, y, x + width, y + height, 0xFF141B25);
 		themedOutline(graphics, x, y, width, height, GOLD);
 		centered(graphics, "Import Your API Collection?", x, width, y + 12, COLLECTION_GOLD);
-		centered(graphics, "Your saved collection does not match Hypixel", x, width, y + 31, WHITE);
+		centered(graphics, "Hypixel has additional collection information", x, width, y + 31, WHITE);
 		centered(graphics, "Import sets every API-owned unique to at least 1 and saves",
 			x, width, y + 45, LABEL);
 		centered(graphics, "the API duplicate total without assigning dupes to random species",
@@ -549,6 +536,7 @@ public final class SparklingScreen extends Screen {
 			mouseX, mouseY, this::dismissPendingImport);
 		button(graphics, x + width / 2 + 10, y + 82, 88, 20, "Import", true,
 			mouseX, mouseY, () -> {
+				if (pendingImport == null) return;
 				SparklingStats.importApiCollection(pendingImport.species(), pendingImport.duplicates());
 				updatePanelBounds();
 				setStatus("Imported your Hypixel Sparkling collection", GREEN);
@@ -557,7 +545,8 @@ public final class SparklingScreen extends Screen {
 	}
 
 	private void dismissPendingImport() {
-		if (pendingImport != null) dismissedImportFetchedAt = pendingImport.fetchedAt();
+		if (pendingImport != null) dismissedImportFetchedAt =
+			Math.max(dismissedImportFetchedAt, pendingImport.fetchedAt());
 		pendingImport = null;
 	}
 
@@ -702,6 +691,8 @@ public final class SparklingScreen extends Screen {
 		Minecraft client = Minecraft.getInstance();
 		if (client.player == null
 			|| !result.username().equalsIgnoreCase(client.player.getGameProfile().name())
+			|| result.fetchedAt() <= dismissedImportFetchedAt
+			|| pendingImport != null && pendingImport.fetchedAt() > result.fetchedAt()
 			|| collectionMatches(result)) return;
 		pendingImport = result;
 	}

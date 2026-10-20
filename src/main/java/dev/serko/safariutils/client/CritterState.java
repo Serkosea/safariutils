@@ -179,6 +179,7 @@ public final class CritterState {
 		private final ArrayDeque<Vec3> points = new ArrayDeque<>(CAPSULE_PATH_LIMIT);
 		private long firstSeenAt;
 		private long seenAt;
+		private long movedAt;
 
 		private CapsulePath(UUID id) {
 			this.id = id;
@@ -188,6 +189,7 @@ public final class CritterState {
 			if (firstSeenAt == 0L) firstSeenAt = now;
 			if (points.isEmpty() || points.peekLast().distanceToSqr(point) > 1.0e-6) {
 				points.addLast(point);
+				movedAt = now;
 				while (points.size() > CAPSULE_PATH_LIMIT) points.removeFirst();
 			}
 			seenAt = now;
@@ -1151,11 +1153,18 @@ public final class CritterState {
 		if (previous == null) previous = latest;
 		for (Attempt attempt : attempts.values()) {
 			if (attempt.outcome != Outcome.PENDING || attempt.capsuleEntityId != null
-				|| now - attempt.startedAt > CAPSULE_AFTER_MILLIS
-				|| path.firstSeenAt + 250L < attempt.startedAt) continue;
+				|| now - attempt.startedAt > CAPSULE_AFTER_MILLIS) continue;
 			Logical logical = logicals.get(attempt.logicalId);
 			AABB target = logical == null ? null : logical.box;
 			boolean intersects = capsuleTouches(target, previous, latest);
+			// ATTEMPT chat describes impact, not launch. A capsule already in flight
+			// can therefore predate it. Require a newly sampled entry into the target,
+			// not an old segment or a stationary capsule left by an earlier attempt.
+			if (path.firstSeenAt + 250L < attempt.startedAt
+				&& (now - path.firstSeenAt > CAPSULE_AFTER_MILLIS || path.movedAt != now
+					|| firstObservation || target == null
+					|| target.inflate(0.4).contains(previous)
+					|| !target.inflate(0.4).contains(latest))) continue;
 			if (firstObservation && !intersects) continue;
 			double distance = segmentDistanceSq(previous, latest, attempt.anchor);
 			if (!intersects && distance > CAPSULE_ASSIGN_DISTANCE_SQ) continue;
@@ -1174,7 +1183,8 @@ public final class CritterState {
 		DebugLog.line("IDENTITY", "CAPSULE A" + best.id + " entity=" + shortId(path.id)
 			+ " mode=" + (bestIntersects ? "INTERSECT" : "NEAR")
 			+ " distance=" + "%.2f".formatted(Math.sqrt(bestDistanceSq))
-			+ " points=" + path.points.size());
+			+ " points=" + path.points.size() + " flightMs=" + (now - path.firstSeenAt)
+			+ " preImpact=" + (path.firstSeenAt + 250L < best.startedAt));
 	}
 
 	/** Initial observations inside a body are contact too, not just outside-to-inside crossings. */

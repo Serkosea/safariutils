@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.1.2] - 2026-10-20
+
+### Fixes
+
+- Coordinated automatic command spacing with manual commands, retained delayed guest joins, and preserved co-host cleanup across guest kicks
+
+- Prevented a captured critter's label from acquiring a nearby Duplico's carrier and leaving an incorrect marker
+
+- Prevented stale or repeated API collection imports from lowering known Sparkling totals
+- Delayed ticket-trading party cleanup after leaving a run and allowed settled Sparkling invite parties to warp early
+- Cleared Sparkling effects when leaving a visit without using a ticket
+
+- Fixed missed guaranteed-catch marker shrinking when a capsule was already in flight before the capture-attempt message, including moving Duplicos
+
 ## [3.1.1] - 2026-10-19
 
 ### Fixes

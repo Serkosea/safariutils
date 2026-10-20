@@ -4,6 +4,18 @@ This document records the invariants needed to maintain the current codebase. Us
 
 Workspace layout and verified build commands: [development workflow](docs/development/WORKSPACE.md).
 
+Sparkling API imports are additive: only missing ownership or a higher duplicate aggregate
+offers an import, and the ledger never lowers either known duplicate total on import.
+Ticketless visit exit clears Sparkling/watch/reminder state just as a ticketed run does;
+Sparkling detection and HUD theme presentation require the current Safari visit.
+Ticket-trading cleanup waits 1.1 seconds after exit, through the command coordinator.
+All automatic command categories share a one-second minimum gap, including after observed
+manual commands. Manual sends are never intercepted or delayed. Guest invite actions remain
+pending across cooldowns with a bounded expiry; leave/accept keeps its existing settle delay.
+Co-host cleanup accepts roster changes caused by its own kicks, but cancels on other changes.
+Sparkling parties may warp before 27 seconds only when invited guests have joined or
+become unavailable and no remaining eligible queue entry fits; normal scouting keeps 27 seconds.
+
 Current overhaul progress and outstanding validation gates: [v3 implementation ledger](IMPLEMENTATION_V3.md).
 Settings imports preserve both `original.json` (unaltered disk bytes, when present) and
 `settings.json` (current working settings) under a unique `backups/settings/settings-import-*`
@@ -11,6 +23,11 @@ directory before replacement. Protected-source working snapshots are recovery da
 automatic replacement for newer-schema originals. Transient deadlines use `MonotonicTime`;
 never serialize those process-relative values as saved dates.
 
+CritterScan reserves Duplico compound-body evidence before generic pairing:
+an interaction-backed Duplico's nearby silverfish carrier cannot serve a different species'
+farther label (including a capsule label). Closer independent labels remain eligible, as does
+Duplico's silverfish fallback when no interaction is present. This is per-scan evidence, not
+persisted proximity ownership or a renderer-only suppression.
 Capture reconciliation samples immutable body/capsule/label observations before applying
 identity decisions. Label fallback must consider the complete observed-body batch: a label
 moving to a newcomer cannot replace its prior owner's identity while that body remains present.
@@ -47,6 +64,12 @@ existing PRESENTATION/TARGET-RETARGET records identify the subsequent evidence a
 Deferred attempts retain the original attempt's camera ray; later camera movement is not
 targeting evidence for an earlier throw. Diagnostic replay runs separately from HTTP workers
 and must report skipped/omitted/corrupt records as incomplete rather than silently passing.
+
+Capsules can be observed in flight before ATTEMPT chat. Older unassigned paths require a
+fresh outside-to-inside contact sample within the bounded flight window; stationary or stale
+segments must never be reused as retry evidence. Existing exclusive ownership and overlapping
+peer checks still apply. CAPSULE diagnostics include flightMs/preImpact on assignment only.
+
 Developer `ci` journals replay the production capture tracker through the offline `replayCaptures`
 task. `CaptureEffects` owns the projection boundary; only the headless harness substitutes inert
 effects. The harness never ships in jars. This is model replay, not complete entity-scan/render replay.

@@ -16,7 +16,7 @@ final class CritterScan {
 	private static final String SPARKLING = "Sparkling";
 	record Sample(UUID id, String type, String name, double x, double y, double z) { }
 	record Match(Critter critter, Sample label, Sample body, boolean sparkling, boolean conflict) { }
-	record Failure(Sample label, Sample closest, double distanceSq, double radius) { }
+	record Failure(Sample label, Sample closest, double distanceSq, double radius, boolean companionBlocked) { }
 	private record Label(Critter critter, Sample sample, boolean sparkling) { }
 
 	static List<Match> scan(List<Sample> samples, Map<UUID, UUID> previous, Consumer<Failure> failures) {
@@ -37,6 +37,20 @@ final class CritterScan {
 			else if (sample.type().equals("armor_stand") && name == null) stands.add(sample);
 		}
 		Pools pools = new Pools(bodies, interactions, stands);
+		// A Duplico's interaction and silverfish carrier represent one critter.
+		// Reserve compound-body evidence before generic labels (including capsule
+		// labels) compete for it. Otherwise one physical critter can acquire two species.
+		var duplicos = labels.stream().filter(label -> label.critter().name().equals("Duplico")).toList();
+		for (var pair : ScanPairing.assign(duplicos,
+				label -> rank(label, pools, previous.get(label.sample().id())),
+				(label, claimed) -> resolve(label, pools, claimed, previous.get(label.sample().id())),
+				Sample::id)) {
+			if (pair.body() == null || !pair.body().type().equals("interaction")) continue;
+			for (Sample carrier : pools.bodies.near(pair.body())) {
+				if (!carrier.type().equals("silverfish") || distance(carrier, pair.body()) > 2.25) continue;
+				pools.companions.computeIfAbsent(carrier.id(), ignored -> new ArrayList<>()).add(pair.label());
+			}
+		}
 		List<ScanPairing.Pair<Label, Sample>> pairs = ScanPairing.assign(labels,
 			label -> rank(label, pools, previous.get(label.sample().id())),
 			(label, claimed) -> {
@@ -50,7 +64,9 @@ final class CritterScan {
 						double candidateDistance = distance(candidate, label.sample());
 						if (candidateDistance < distance) { closest = candidate; distance = candidateDistance; }
 					}
-					failures.accept(new Failure(label.sample(), closest, distance, radius(label)));
+					failures.accept(new Failure(label.sample(), closest, distance, radius(label),
+						closest != null && CritterBodyTypes.accepts(label.critter(), closest.type())
+							&& !pools.eligible(label, closest)));
 				}
 				return body;
 			}, Sample::id);
@@ -113,7 +129,7 @@ final class CritterScan {
 		if (retained(label, pools, Set.of(), previous) != null) return new ScanPairing.Rank(0, 0);
 		double nearest = radius(label) * radius(label);
 		for (Sample candidate : pools.primary(label)) {
-			if (CritterBodyTypes.accepts(label.critter(), candidate.type())) {
+			if (pools.eligible(label, candidate)) {
 				nearest = Math.min(nearest, distance(candidate, label.sample()));
 			}
 		}
@@ -126,12 +142,12 @@ final class CritterScan {
 		Sample retained = retained(label, pools, claimed, previous);
 		if (retained != null) return retained;
 		if (label.critter().name().equals("Duplico")) {
-			Sample interaction = nearest(label, pools.interactions.near(label.sample()), claimed, BODY_RADIUS);
+			Sample interaction = nearest(label, pools, pools.interactions.near(label.sample()), claimed, BODY_RADIUS);
 			if (interaction != null) return interaction;
 		}
-		Sample body = nearest(label, pools.bodies.near(label.sample()), claimed, BODY_RADIUS);
+		Sample body = nearest(label, pools, pools.bodies.near(label.sample()), claimed, BODY_RADIUS);
 		if (body == null && label.critter().name().equals("Gazer")) {
-			body = nearest(label, pools.stands.near(label.sample()), claimed, GAZER_RADIUS);
+			body = nearest(label, pools, pools.stands.near(label.sample()), claimed, GAZER_RADIUS);
 		}
 		return body;
 	}
@@ -143,17 +159,17 @@ final class CritterScan {
 		for (Sample candidate : pools.primary(label)) {
 			if (candidate.id().equals(previous)) {
 				return distance(candidate, label.sample()) < radius(label) * radius(label)
-					&& CritterBodyTypes.accepts(label.critter(), candidate.type()) ? candidate : null;
+					&& pools.eligible(label, candidate) ? candidate : null;
 			}
 		}
 		return null;
 	}
 
-	private static Sample nearest(Label label, List<Sample> candidates, Set<UUID> claimed, double radius) {
+	private static Sample nearest(Label label, Pools pools, List<Sample> candidates, Set<UUID> claimed, double radius) {
 		Sample best = null;
 		double bestDistance = radius * radius;
 		for (Sample candidate : candidates) {
-			if (claimed.contains(candidate.id()) || !CritterBodyTypes.accepts(label.critter(), candidate.type())) continue;
+			if (claimed.contains(candidate.id()) || !pools.eligible(label, candidate)) continue;
 			double distance = distance(candidate, label.sample());
 			if (distance < bestDistance) { best = candidate; bestDistance = distance; }
 		}
@@ -185,6 +201,19 @@ final class CritterScan {
 	}
 	private static final class Pools {
 		private final Grid bodies, interactions, stands;
+		private final Map<UUID, List<Label>> companions = new java.util.HashMap<>();
+		boolean eligible(Label label, Sample body) {
+			if (!CritterBodyTypes.accepts(label.critter(), body.type())) return false;
+			var owners = companions.get(body.id());
+			if (owners == null) return true;
+			for (Label owner : owners) {
+				// A closer independently labelled critter stays independent. Equal
+				// evidence is ambiguous and must not fabricate a cross-species body.
+				if (!owner.critter().equals(label.critter())
+					&& distance(body, owner.sample()) <= distance(body, label.sample())) return false;
+			}
+			return true;
+		}
 		Pools(List<Sample> bodies, List<Sample> interactions, List<Sample> stands) {
 			this.bodies = new Grid(bodies); this.interactions = new Grid(interactions); this.stands = new Grid(stands);
 		}

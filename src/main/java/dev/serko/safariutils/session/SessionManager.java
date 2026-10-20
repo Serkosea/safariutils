@@ -126,7 +126,12 @@ public final class SessionManager {
 				// During a server transfer the scoreboard can disappear before the next
 				// lobby identity is known. Keep an activated run's epoch alive until the
 				// existing lobby/run logic actually closes it.
-				if (current == null) SafariRuntimeState.visitEnded();
+				if (current == null) {
+					SafariRuntimeState.visitEnded();
+					SparklingWatch.reset();
+					RecatchSpots.clear();
+					EncounterAlerts.reset();
+				}
 			}
 			visitPrepared = false;
 			visitLobbyId = null;

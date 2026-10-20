@@ -15,6 +15,13 @@ final class TicketInvitePolicy {
 		return Math.max(0, 4 - Math.max(1, baselinePlayers) - Math.max(0, joinedGuests));
 	}
 
+	/** Early warp only after a sparkling wave settles without skipping eligible guests. */
+	static boolean earlyWarpReady(boolean sparkling, Set<String> invited, Set<String> joined,
+			Set<String> unavailable, boolean moreEligible) {
+		return sparkling && !joined.isEmpty() && !moreEligible
+			&& invited.stream().allMatch(name -> joined.contains(name) || unavailable.contains(name));
+	}
+
 	static <T> List<T> select(List<T> queue, int capacity, Set<String> baseline,
 			Set<String> invited, boolean sparklingOnlyWave, Function<T, String> name,
 			Predicate<T> sparklingOnly, Predicate<T> qualifies) {

@@ -39,6 +39,57 @@ public final class CritterScanRegression {
 		check(CritterScan.scan(List.of(bat, first, second), Map.of(bat.id(), second.id()), null).getFirst().body().equals(second), "Retained ownership lost"); checks++;
 		check(CritterScan.scan(List.of(bat, first), Map.of(bat.id(), second.id()), null).getFirst().body().equals(first), "Removed body retained"); checks++;
 
+		// October 20: a Hideon capsule label acquired a nearby Duplico's carrier,
+		// incorrectly turning a successful catch into a breakout and an orphaned pin.
+		var capsuleLabel = new CritterScan.Sample(new UUID(12, 1), "armor_stand", "Hideonwall",
+			-21.65625, 78.75, -56.65625);
+		var dupLabel = new CritterScan.Sample(new UUID(12, 2), "armor_stand", "Duplico",
+			-18.875, 78.65625, -59.15625);
+		var dupBody = new CritterScan.Sample(new UUID(12, 3), "interaction", null,
+			-18.875, 77.40625, -59.15625);
+		var carrier = new CritterScan.Sample(new UUID(12, 4), "silverfish", null,
+			-18.875, 77.40625, -59.15625);
+		for (boolean reverse : List.of(false, true)) {
+			for (boolean stalePair : List.of(false, true)) {
+				var input = reverse ? List.of(carrier, capsuleLabel, dupBody, dupLabel)
+					: List.of(dupLabel, dupBody, capsuleLabel, carrier);
+				var prior = new HashMap<UUID, UUID>();
+				prior.put(dupLabel.id(), dupBody.id());
+				if (stalePair) prior.put(capsuleLabel.id(), carrier.id());
+				var result = CritterScan.scan(input, prior, null);
+				check(result.stream().filter(m -> m.label().equals(capsuleLabel))
+					.allMatch(m -> m.body() == null), "capsule label stole Duplico carrier"); checks++;
+				check(result.stream().filter(m -> m.label().equals(dupLabel))
+					.allMatch(m -> dupBody.equals(m.body())), "Duplico lost canonical interaction"); checks++;
+			}
+		}
+		var nearbyHideon = new CritterScan.Sample(new UUID(12, 5), "armor_stand", "Hideonfloor",
+			carrier.x(), carrier.y() + .5, carrier.z());
+		check(CritterScan.scan(List.of(dupLabel, dupBody, nearbyHideon, carrier), Map.of(), null)
+			.stream().anyMatch(m -> m.label().equals(nearbyHideon) && carrier.equals(m.body())),
+			"stronger independently labelled Hideon lost its body"); checks++;
+		check(CritterScan.scan(List.of(dupLabel, carrier), Map.of(), null).getFirst().body().equals(carrier),
+			"Duplico cannot switch to its carrier after interaction disappears"); checks++;
+		failures.clear();
+		CritterScan.scan(List.of(dupLabel, dupBody, capsuleLabel, carrier), Map.of(), failures::add);
+		check(failures.stream().anyMatch(f -> f.label().equals(capsuleLabel) && f.companionBlocked()),
+			"compound ownership rejection lacks diagnostics"); checks++;
+		// Entity updates need not arrive together. Preserve the decision with a
+		// carrier one interpolation step behind its moving interaction and label.
+		for (int step = 0; step < 20; step++) {
+			double x = carrier.x() + step * .1;
+			var movingCarrier = new CritterScan.Sample(carrier.id(), carrier.type(), null,
+				x, carrier.y(), carrier.z());
+			var movingInteraction = new CritterScan.Sample(dupBody.id(), dupBody.type(), null,
+				x + .4, carrier.y() + .2, carrier.z());
+			var movingLabel = new CritterScan.Sample(dupLabel.id(), dupLabel.type(), dupLabel.name(),
+				x + .4, carrier.y() + 1.25, carrier.z());
+			check(CritterScan.scan(List.of(capsuleLabel, movingCarrier, movingLabel, movingInteraction),
+				Map.of(dupLabel.id(), dupBody.id()), null).stream()
+				.filter(m -> m.label().equals(capsuleLabel)).allMatch(m -> m.body() == null),
+				"moving compound body became a false Hideon breakout"); checks++;
+		}
+
 		// Dense same-species groups: every prior pair stays exclusive even after bodies cross.
 		for (String name : List.of("Hideonfloor", "Hideonwall")) {
 			var label = new CritterScan.Sample(new UUID(9, 1), "armor_stand", name, 0, 1.25, 0);

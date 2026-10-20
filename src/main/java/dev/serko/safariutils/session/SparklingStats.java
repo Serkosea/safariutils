@@ -119,9 +119,10 @@ public final class SparklingStats {
 	public static void recordSparkling(Critter critter) {
 		if (critter == null) return;
 		boolean duplicate = count(critter) > 0;
+		int previousDuplicates = knownDuplicates();
 		increment(critter.name());
 		if (duplicate && data.importedDuplicates >= 0) {
-			data.importedDuplicates++;
+			data.importedDuplicates = previousDuplicates + 1;
 			if (data.importedSetDuplicates >= 0) data.importedSetDuplicates++;
 		}
 		// Hypixel's profile endpoint can trail a newly caught Sparkling. Require a
@@ -161,7 +162,7 @@ public final class SparklingStats {
 
 	/** API-imported aggregate, or {@code -1} when only per-species totals are known. */
 	public static int importedDuplicates() {
-		return data.importedDuplicates;
+		return data.importedDuplicates < 0 ? -1 : knownDuplicates();
 	}
 
 	public static boolean hasImportedDuplicates() {
@@ -172,14 +173,29 @@ public final class SparklingStats {
 		return data.importedSetDuplicates < 0 || duplicates() == data.importedSetDuplicates;
 	}
 
+	/** Both sources are lower bounds; delayed API results must never undo catches. */
+	public static int knownDuplicates() {
+		return Math.max(duplicates(), data.importedDuplicates);
+	}
+
+	public static boolean apiCollectionAddsInformation(java.util.Set<String> species, int duplicates) {
+		if (duplicates > knownDuplicates()) return true;
+		for (Critter critter : Critters.all()) {
+			String id = critter.name().trim().toUpperCase(java.util.Locale.ROOT).replace(' ', '_');
+			if (count(critter) == 0 && species.contains(id)) return true;
+		}
+		return false;
+	}
+
 	/** Imports ownership without assigning aggregate duplicates to arbitrary species. */
 	public static void importApiCollection(java.util.Set<String> species, int duplicates) {
+		int previousDuplicates = knownDuplicates();
 		for (Critter critter : Critters.all()) {
 			String id = critter.name().trim().toUpperCase(java.util.Locale.ROOT).replace(' ', '_');
 			if (species.contains(id) && count(critter) == 0) data.species.put(critter.name(), 1);
 		}
 		rebuildTotals();
-		data.importedDuplicates = Math.max(-1, duplicates);
+		data.importedDuplicates = Math.max(previousDuplicates, duplicates);
 		data.importedSetDuplicates = SparklingStats.duplicates();
 		data.apiComparisonNotBefore = 0L;
 		save();

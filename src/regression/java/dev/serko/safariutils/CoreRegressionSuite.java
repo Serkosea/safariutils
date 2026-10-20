@@ -24,6 +24,10 @@ public final class CoreRegressionSuite {
 	private static int checks;
 
 	public static void main(String[] args) throws Exception {
+		net.minecraft.SharedConstants.tryDetectVersion();
+		net.minecraft.server.Bootstrap.bootStrap();
+		dev.serko.safariutils.client.ConfigManager.verifyPersistenceModel();
+		checks++;
 		singleFlight();
 		boundedRequests();
 		boundedBodies();

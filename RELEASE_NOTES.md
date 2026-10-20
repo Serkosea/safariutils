@@ -1,3 +1,7 @@
+## Changes & Additions
+
+- Ticket Trading now remembers whether it is enabled across Minecraft restarts
+
 ## Fixes
 
 - Prevented stale API imports from lowering your Sparkling collection totals or repeatedly prompting for the same data

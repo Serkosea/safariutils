@@ -207,7 +207,8 @@ It stops after ticket use, catch, window expiry or visit exit. Ordinary optional
 remain human-readable; the old `SUT1` chat protocol is removed. Trading reads this discovery
 store directly; its existing invite/warp deadlines and co-host protections are unchanged.
 
-Ticket Trading is public, opt-in, and resets off each launch. The shared implementation owns
+Ticket Trading is public and opt-in, defaults off, and retains its enabled preference across launches.
+Only the preference persists; pending commands and run state remain session-local. The shared implementation owns
  trusted profiles, ordered invite and receive-invite lists, timed party commands, and Sparkling filters.
 Host automation requires a fresh authoritative roster proving
 local leadership; confirmed solo guests accept directly, confirmed party guests leave before

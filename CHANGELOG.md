@@ -2,6 +2,10 @@
 
 ## [3.1.2] - 2026-10-20
 
+### Changes & Additions
+
+- Ticket Trading now remembers whether it is enabled across Minecraft restarts; new configurations still default to disabled
+
 ### Fixes
 
 - Coordinated automatic command spacing with manual commands, retained delayed guest joins, and preserved co-host cleanup across guest kicks

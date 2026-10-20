@@ -156,7 +156,6 @@ public final class ConfigManager {
 			loaded.display.uniqueHitboxColours = true;
 			loaded.sparkling.sparklingUniqueHitboxColours = false;
 		}
-		resetSessionOptions(loaded);
 		return loaded;
 	}
 
@@ -265,7 +264,13 @@ public final class ConfigManager {
 	 */
 	public static void verifyPersistenceModel() {
 		SafariConfig probe = new SafariConfig();
+		if (probe.sparkling.ticketTradingEnabled
+				|| parseSettings(new JsonObject()).sparkling.ticketTradingEnabled) {
+			throw new IllegalStateException("Ticket Trading must default to disabled");
+		}
 		exercisePersistedSettings(probe, "settings");
+		// The dedicated trading screen persists this preference without a settings annotation.
+		probe.sparkling.ticketTradingEnabled = true;
 		JsonObject expected = GSON.toJsonTree(probe).getAsJsonObject();
 		SafariConfig decoded = parseSettings(expected.deepCopy());
 		JsonObject actual = GSON.toJsonTree(decoded).getAsJsonObject();
@@ -709,11 +714,6 @@ public final class ConfigManager {
 			category.remove(setting[1]);
 			category.remove(setting[2]);
 		}
-	}
-
-	/** Security-sensitive automation remains opt-in for every Minecraft launch. */
-	private static void resetSessionOptions(SafariConfig loaded) {
-		loaded.sparkling.ticketTradingEnabled = false;
 	}
 
 	/** Writes atomically so an interrupted save cannot destroy a working config. */

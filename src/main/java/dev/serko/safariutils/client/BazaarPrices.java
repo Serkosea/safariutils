@@ -1,8 +1,5 @@
 package dev.serko.safariutils.client;
 
-import com.google.gson.stream.JsonReader;
-import com.google.gson.stream.JsonToken;
-import dev.serko.safariutils.SafariUtils;
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.Critters;
 import dev.serko.safariutils.session.RunHistory;
@@ -12,11 +9,6 @@ import dev.serko.safariutils.state.MonotonicCooldowns;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.URI;
-import java.net.http.HttpRequest;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -32,15 +24,12 @@ import java.util.concurrent.CompletionException;
  */
 public final class BazaarPrices {
 
-	private static final URI ENDPOINT = URI.create("https://api.hypixel.net/v2/skyblock/bazaar");
 	private static final String SAFARI_ESSENCE = "ESSENCE_SAFARI";
 	private static final String RAINBOW_FEATHER = "RAINBOW_FEATHER";
 
 	/** Successful and failed automatic requests both wait five minutes before retrying. */
 	private static final long REFRESH_MILLIS = 300_000;
 	private static final int QUIET_FAILURES = 3;
-	private static final Duration REQUEST_BUDGET = Duration.ofSeconds(20);
-	private static final int MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 
 	/** Bazaar tax on the sell side, which both price modes are. */
 	private static final double TAX = 0.0125;
@@ -99,31 +88,18 @@ public final class BazaarPrices {
 		// Held off before the job starts, so a slow request cannot queue a second one.
 		REFRESH.mark(true);
 		fetching = true;
-		NetworkRuntime.submit(BazaarPrices::fetch).whenComplete((parsed, error) ->
+		BazaarMarket.request().thenApply(BazaarPrices::project).whenComplete((parsed, error) ->
 			net.minecraft.client.Minecraft.getInstance().execute(() -> apply(parsed, error)));
 	}
 
-	private static Map<String, Price> fetch() {
-		try {
-			HttpRequest request = HttpRequest.newBuilder(ENDPOINT)
-				.timeout(REQUEST_BUDGET)
-				.header("User-Agent", SafariUtils.MOD_ID)
-				.GET().build();
-			Map<String, Price> parsed = NetworkRuntime.read(request, MAX_RESPONSE_BYTES, REQUEST_BUDGET,
-				(status, body) -> {
-					if (status != 200) throw new IOException("HTTP " + status);
-					return parse(body);
-				});
-			// An empty result is a shape change, not an update: the old prices are still
-			// the best thing known, so they are kept rather than blanked.
-			if (parsed.isEmpty()) throw new IOException("no shard products in the response");
-			return Map.copyOf(parsed);
-		} catch (InterruptedException interrupted) {
-			Thread.currentThread().interrupt();
-			throw new CompletionException(interrupted);
-		} catch (IOException failure) {
-			throw new CompletionException(failure);
+	private static Map<String, Price> project(BazaarMarket.Snapshot snapshot) {
+		Map<String, Price> result = new HashMap<>();
+		for (String id : WANTED) {
+			BazaarMarket.Product product = snapshot.products().get(id);
+			if (product != null) result.put(id, new Price(product.instantSell(), product.sellOffer()));
 		}
+		if (result.isEmpty()) throw new CompletionException(new IOException("No Safari products in Bazaar snapshot"));
+		return Map.copyOf(result);
 	}
 
 	private static void apply(Map<String, Price> parsed, Throwable failed) {
@@ -162,80 +138,9 @@ public final class BazaarPrices {
 		fetching = false;
 	}
 
-	/**
-	 * Reads the response as a stream, keeping only the 37 products this mod cares about.
-	 *
-	 * <p>The payload includes unrelated order books. Those are scanned but not materialized,
-	 * and transport limits bound the total bytes and time spent consuming the response.
-	 */
+	/** Shared bounded parser, with Safari-only valuation projected from its immutable snapshot. */
 	static Map<String, Price> parse(InputStream body) throws IOException {
-		Map<String, Price> found = new HashMap<>();
-		try (JsonReader reader = new JsonReader(new InputStreamReader(body, StandardCharsets.UTF_8))) {
-			reader.beginObject();
-			while (reader.hasNext()) {
-				String field = reader.nextName();
-				if (field.equals("success")) {
-					if (!reader.nextBoolean()) throw new IOException("Bazaar response unsuccessful");
-					continue;
-				}
-				if (!field.equals("products")) {
-					reader.skipValue();
-					continue;
-				}
-				reader.beginObject();
-				while (reader.hasNext()) {
-					String id = reader.nextName();
-					if (!WANTED.contains(id)) {
-						reader.skipValue();
-						continue;
-					}
-					found.put(id, product(reader));
-				}
-				reader.endObject();
-			}
-			reader.endObject();
-			if (reader.peek() != JsonToken.END_DOCUMENT) throw new IOException("Trailing Bazaar data");
-		}
-		return found;
-	}
-
-	private static Price product(JsonReader reader) throws IOException {
-		double instantSell = 0;
-		double sellOffer = 0;
-		reader.beginObject();
-		while (reader.hasNext()) {
-			switch (reader.nextName()) {
-				// Hypixel's naming is the reverse of what it reads like: sell_summary holds
-				// the buy orders you can sell into, buy_summary the sell offers you buy from.
-				case "sell_summary" -> instantSell = topOfBook(reader, true);
-				case "buy_summary" -> sellOffer = topOfBook(reader, false);
-				default -> reader.skipValue();
-			}
-		}
-		reader.endObject();
-		return new Price(instantSell, sellOffer);
-	}
-
-	/** The best price in one summary — highest for buy orders, lowest for sell offers. */
-	private static double topOfBook(JsonReader reader, boolean highest) throws IOException {
-		double best = 0;
-		reader.beginArray();
-		while (reader.hasNext()) {
-			double price = 0;
-			reader.beginObject();
-			while (reader.hasNext()) {
-				if (reader.nextName().equals("pricePerUnit")) {
-					price = reader.nextDouble();
-					if (!Double.isFinite(price)) throw new IOException("Invalid Bazaar price");
-				}
-				else reader.skipValue();
-			}
-			reader.endObject();
-			if (price <= 0) continue;
-			best = best == 0 ? price : highest ? Math.max(best, price) : Math.min(best, price);
-		}
-		reader.endArray();
-		return best;
+		return project(BazaarMarket.parse(body));
 	}
 
 	// --- pricing -------------------------------------------------------------

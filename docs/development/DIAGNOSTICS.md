@@ -1,5 +1,9 @@
 # Automatic diagnostics
 
+`MARKET/BAZAAR` reports one completion per actual shared public Bazaar request, with
+product count or failure category/status. Consumer cache reads do not emit records.
+No market response payloads are logged. Failures retain the last good price snapshot.
+
 `party-sparkling` records changed local snapshots, accepted shared discovery counts and
 reminder transitions. `party-network` and `party-sync` retain connection, roster and payload
 rejection diagnostics. Type `S` carries found/caught species masks, not chat, coordinates or
@@ -128,6 +132,20 @@ reconstructed. This adds no duplicate live recording or work when automatic logg
 `SavedRunLogRegression` covers extraction, rotation, adjacent visits, provenance and partial logs.
 
 ## Performance notes
+
+`network-auth` reports establishment via `uuid-claim` or the bounded failure stage
+`session`. The current client does not obtain Minecraft profile keys or send Minecraft
+credentials. A claimed UUID is a quota identity, not proof of account ownership. Never
+record service tokens or request bodies. Legacy backend authentication routes may report
+a verified username after successful proof; the UUID route must not label supplied names
+or UUIDs as verified identities.
+Missing backend events can still mean a local network failure, edge blocking or log limits.
+
+`MARKET/AUCTION` records demand-driven auction snapshot status, usable state and product
+count. Failure diagnostics contain only exception classes or numeric HTTP status, never
+tokens or response bodies. `fresh` proves receipt of a valid complete backend snapshot,
+not that every item has a price or that an estimate matches a completed sale. No collector
+or price-render timing runs on the game thread; logging remains opt-in.
 
 Developer builds time operations already routed through `OperationalLog.run` while in Safari.
 An operation taking at least 5 ms emits a `PERF` record with its category, elapsed microseconds,

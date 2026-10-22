@@ -24,6 +24,16 @@ workspace with its own dependencies and secret deployment lifecycle.
 Preserve caches during routine work. Future temporary work belongs under ignored `local/`,
 not a new root staging folder. Never put a key in tracked source, build metadata, or logs.
 
+## Website release updates
+
+The authoritative local website is `private-api/serkosea-site/` in this standalone
+checkout, deployed directly to the existing Cloudflare Pages project `serkosea`.
+The copy under SerkoAddons' `components/SafariUtils/private-api/` is an obsolete
+v2.7.0 snapshot, not a deployment source. Never deploy the whole `private-api/`
+directory: it contains credentials. The site folder contains public static assets only.
+Update `safariutils/index.html` within the site folder after preparing release assets;
+publish GitHub downloads before deploying the site, and verify all four public links.
+
 ## Ready-to-use artifacts
 
 This workspace collects all seven current jars under SerkoAddons `release-artifacts/`:

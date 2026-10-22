@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.1.3] - 2026-10-22
+
+### Changes & Additions
+
+- Replaced the API client's profile-key/session-verification dependency with compatible UUID-based service sessions shared by lookups, market data and party sync
+- Added independent service admission budgets and global socket limits alongside existing Hypixel limits; UUIDs are caller-declared identifiers, not verified Minecraft identities
+- Centralized public Bazaar requests and immutable price snapshots with shared retry backoff and bounded parsing, retaining existing profit valuation
+- Added a demand-driven shared client for bounded official auction snapshots, with freshness and unavailable-price handling
+
 ## [3.1.2] - 2026-10-20
 
 ### Changes & Additions

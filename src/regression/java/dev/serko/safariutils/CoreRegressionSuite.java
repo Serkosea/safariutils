@@ -56,6 +56,8 @@ public final class CoreRegressionSuite {
 		checks += dev.serko.safariutils.client.ReleaseMetadataRegression.run();
 		checks += DeadlineStreamRegression.run();
 		checks += dev.serko.safariutils.client.BazaarPricesRegression.run();
+		checks += dev.serko.safariutils.client.BazaarMarketRegression.run();
+		checks += dev.serko.safariutils.backend.AuctionMarketRegression.run();
 		checks += dev.serko.safariutils.client.ChatQueueRegression.run();
 		checks += dev.serko.safariutils.client.ChatMessageFilterRegression.run();
 		checks += dev.serko.safariutils.client.TicketInvitePolicyRegression.run();

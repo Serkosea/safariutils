@@ -92,6 +92,8 @@ public final class NetworkRuntime {
 
 	public static void shutdown() {
 		stopping = true;
+		BazaarMarket.shutdown();
+		dev.serko.safariutils.backend.AuctionMarketClient.shutdown();
 		try { HTTP.shutdownNow(); }
 		finally {
 			try { AUTHENTICATED_HTTP.shutdownNow(); }

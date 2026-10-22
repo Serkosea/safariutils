@@ -1,6 +1,37 @@
 # SafariUtils developer handoff
 
+## UUID service sessions (2026-10-22)
+
+The user explicitly chose compatibility over verified Minecraft identity. Updated clients
+POST only their UUID to /v1/auth/uuid/session; no profile keys, Minecraft credentials, join,
+hasJoined, or external verification host. Signed service tokens prove service issuance, NOT
+ownership of the claimed UUID. Anyone can claim another UUID; party-sync roster/lobby checks
+isolate honest clients but cannot prevent intentional impersonation or fabricated updates.
+Never use this identity for secrets, private account data, payments, or privileged actions.
+Old backend authentication routes remain solely for installed-client compatibility and are
+not called by updated clients. They must never become prerequisites for UUID sessions.
+Existing shared API caches, service tokens, and HMAC subject budgets are preserved.
+Do not promise availability for every user or a hard billing cap: network failures and
+resource budgets remain possible. See cloudflare-api/SECURITY.md in the local backend workspace.
+
 This document records the invariants needed to maintain the current codebase. User-facing features, installation, and commands belong in [README.md](README.md); release history belongs in [CHANGELOG.md](CHANGELOG.md).
+
+RemoteSession is the one worker-only authentication owner for lookups, market and Party Sync.
+It owns UUID service session renewal for every consumer. Refreshing tokens does not reset
+UUID-derived budgets, but changing/impersonating UUIDs is possible. Global admission budgets,
+per-IP regional gates, and global socket/Hypixel caps must remain independent of claimed UUIDs.
+Never read Minecraft access tokens or profile keys for this service. No credentials are sent
+to our backend. Preserve no-redirect HTTP and bounded parsing for service tokens.
+The client caches session TTL using monotonic time, suppresses repeated failures for 30 seconds,
+and refuses publication after account/connection changes. Live login/warp testing is still required.
+
+AuctionMarketClient is a demand-driven shared service on NetworkRuntime and RemoteSession.
+It consumes only the authenticated backend's compact official-Hypixel snapshot; never scan
+auction pages on clients or add third-party price feeds. Quotes are lowest active BIN
+estimates, not sale guarantees. Fresh-loot armor keys include exact visible star tiers
+(`_N_STAR`, no suffix for zero); ascended/recombined/enchanted variants are excluded.
+Missing quotes remain Optional.empty and snapshots expire after 30 minutes. No shared
+service depends on IQ; the private consumer owns its valuation adapter and incomplete-total notice.
 
 Workspace layout and verified build commands: [development workflow](docs/development/WORKSPACE.md).
 
@@ -262,6 +293,11 @@ Performance rules:
 - `HudPanel` caches measured layouts and icon quads
 - `RunHistory` revisions invalidate dashboard caches only when history changes
 - `BazaarPrices` values runs once per price snapshot/source and totals once per history revision
+- `BazaarMarket` owns public Bazaar transport, a bounded immutable all-product snapshot,
+  single-flight admission, shared five-minute success/failure caching and 429 backoff.
+  Consumers project their own valuation semantics without owning duplicate HTTP requests.
+  First-book prices and best-book prices are separate fields; do not interchange them.
+  Shutdown rejects new demand and late publication through the shared network lifecycle.
 - `Markers` builds one marker list per tick/config revision
 - `WaypointRenderer` batches geometry, culls off-screen markers, and bounds label caches
 - `WorldEntities` provides one entity snapshot per tick; `CritterEntities` scans once every five ticks and spatially indexes pairing

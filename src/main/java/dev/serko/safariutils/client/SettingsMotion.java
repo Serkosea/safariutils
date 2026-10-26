@@ -5,6 +5,42 @@ import java.util.Map;
 
 /** Screen-owned, bounded presentation state. Never changes settings or performs background work. */
 public final class SettingsMotion {
+	/** Adapts per-frame easing to elapsed time, preserving its coefficient at 60 FPS. */
+	public static final class Frame {
+		private static final double BASE_FRAME_NANOS = 1_000_000_000d / 60d;
+		private static final long MAX_STEP_NANOS = 50_000_000L;
+		private final float[] speeds = new float[16];
+		private final float[] coefficients = new float[16];
+		private long previous;
+		private boolean started;
+		private double frames = 1d;
+		private int cached;
+
+		/** Once per rendered frame. Long pauses do not turn into unbounded animation steps. */
+		public void begin(long nowNanos) {
+			frames = started ? Math.clamp(nowNanos - previous, 0L, MAX_STEP_NANOS) / BASE_FRAME_NANOS : 1d;
+			previous = nowNanos;
+			started = true;
+			cached = 0;
+		}
+
+		public void reset() { started = false; cached = 0; frames = 1d; }
+
+		public float approach(float current, float target, float speedAt60Fps) {
+			if (current == target) return target;
+			if (!Float.isFinite(speedAt60Fps) || speedAt60Fps <= 0f) return current;
+			if (speedAt60Fps >= 1f) return target;
+			for (int index = 0; index < cached; index++)
+				if (speeds[index] == speedAt60Fps)
+					return current + (target - current) * coefficients[index];
+			float coefficient = (float) (1d - Math.pow(1d - speedAt60Fps, frames));
+			if (cached < speeds.length) {
+				speeds[cached] = speedAt60Fps;
+				coefficients[cached++] = coefficient;
+			}
+			return current + (target - current) * coefficient;
+		}
+	}
 	private static final long DURATION = 93_333_333L;
 	private static final int LIMIT = 512;
 	private static final class Transition {

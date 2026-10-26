@@ -9,6 +9,7 @@ import dev.serko.safariutils.data.Critters;
 import dev.serko.safariutils.data.SafariBiome;
 import dev.serko.safariutils.session.RunHistory;
 import dev.serko.safariutils.session.SparklingStats;
+import dev.serko.safariutils.state.MonotonicTime;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -37,14 +38,14 @@ public final class SparklingScreen extends Screen {
 	private static final int HOVER = 0xEF1B2532;
 	private static final int BORDER = 0x38FFFFFF;
 	private static final int KEYLINE = 0x24FFFFFF;
-	private static final int GOLD = 0xFFFFD700;
-	private static final int COLLECTION_GOLD = 0xFFFFE08A;
+	private static final int GOLD = StatColours.COINS;
+	private static final int COLLECTION_GOLD = StatColours.value(StatColours.COINS);
 	private static final int AQUA = 0xFF55FFFF;
 	private static final int GREEN = 0xFF55FF55;
 	private static final int RED = 0xFFFF7777;
 	private static final int WHITE = 0xFFFFFFFF;
-	private static final int LABEL = 0xFFBBBBBB;
-	private static final int DIM = 0xFF888888;
+	private static final int LABEL = StatColours.INFO;
+	private static final int DIM = StatColours.SECONDARY;
 	private static final int LINE = 13;
 	private static final int SUMMARY_EDGE_MARGIN = 16;
 	private static final int MAX_BIOME_ROWS = BIOMES.stream()
@@ -95,9 +96,7 @@ public final class SparklingScreen extends Screen {
 	private static SparklingPlayerLookup lastLookup;
 	private static String lastLookupName = "";
 	private static final LookupHistory recentLookups = new LookupHistory(10);
-	private static long dismissedImportFetchedAt;
 	private boolean recentLookupsOpen;
-	private SparklingPlayerLookup pendingImport;
 	private PartySparklingSnapshot cachedPartySnapshot;
 	private PartyRefreshStatus cachedPartyRefresh;
 	private long partyCacheUntil;
@@ -122,7 +121,6 @@ public final class SparklingScreen extends Screen {
 		if (editor != null) addRenderableWidget(editor);
 		if (editorFocused && editor != null) setFocused(editor);
 		else if (lookupFocused && lookupName != null) setFocused(lookupName);
-		checkCachedLocalCollection();
 	}
 
 	private void updatePanelBounds() {
@@ -213,10 +211,13 @@ public final class SparklingScreen extends Screen {
 			SpecialTheme.border(graphics, lookupName.getX(), lookupName.getY(),
 				lookupName.getWidth(), lookupName.getHeight(), 1);
 		}
-		checkCachedLocalCollection();
-		if (pendingImport != null) drawImportConfirmation(graphics, mx, my);
-		graphics.pose().popMatrix();
+        graphics.pose().popMatrix();
 	}
+
+    @Override public void tick() {
+        super.tick();
+        checkCachedLocalCollection();
+    }
 
 	private void updateLookupHint() {
 		if (lookupName == null) return;
@@ -275,8 +276,7 @@ public final class SparklingScreen extends Screen {
 			+ "   ✦   Sparklings  " + displayedSparklingTotal()
 			+ "   ✦   Duplicates  " + duplicateText();
 		String compactPrefix = "Rainbow Feathers  ";
-		String compactSuffix = "   ✦   Runs Since Last  "
-			+ (RunHistory.runsSinceLastSparkling() < 0 ? "—" : RunHistory.runsSinceLastSparkling());
+        String compactSuffix = "   \u2726   Emerald Dyes  " + RunHistory.totalEmeraldDyes();
 		String shownPrefix = compactSummary ? compactPrefix : prefix;
 		String shownSuffix = compactSummary ? compactSuffix : suffix;
 		int summaryWidth = font.width(shownPrefix + feathers + shownSuffix);
@@ -288,36 +288,30 @@ public final class SparklingScreen extends Screen {
 		if (contains(featherHitX, featherY - 2, featherWidth, 12, mouseX, mouseY)) {
 			graphics.fill(featherHitX, featherY - 2, featherHitX + featherWidth, featherY + 10, HOVER);
 		}
-		boolean collectionComplete = totalSpecies > 0 && SparklingStats.unique() == totalSpecies;
-		if (compactSummary) {
-			int firstX = panelLeft + (panelWidth - font.width(compactFirst)) / 2;
-			if (collectionComplete) SpecialTheme.rainbowText(graphics, font, compactFirst, firstX, top);
-			else text(graphics, compactFirst, firstX, top, COLLECTION_GOLD);
-		}
-		if (collectionComplete) {
-			// Completion uses the same screen-positioned gradient as the special theme,
-			// keeping one continuous wavelength across the entire summary line.
-			SpecialTheme.rainbowText(graphics, font, shownPrefix + feathers + shownSuffix,
-				summaryX, featherY);
-		} else {
-			text(graphics, shownPrefix, summaryX, featherY, COLLECTION_GOLD);
-			text(graphics, feathers, featherX, featherY, COLLECTION_GOLD);
-			text(graphics, shownSuffix, featherX + font.width(feathers), featherY, COLLECTION_GOLD);
-		}
+        // Preserve each statistic's semantic color even for a completed collection.
+        if (compactSummary) {
+            int firstX=panelLeft+(panelWidth-font.width(compactFirst))/2;
+            SpecialTheme.text(graphics,font,StatColours.collection(compactFirst,"   \u2726   "),firstX,top,LABEL);
+        }
+        SpecialTheme.text(graphics,font,StatColours.collection(shownPrefix+feathers+shownSuffix,"   \u2726   "),summaryX,featherY,LABEL);
 		numberHits.add(new NumberHit(featherHitX, featherY - 2, featherWidth, 12,
 			featherY, null, true));
 
 		int barLeft = panelLeft + 24;
 		int barRight = panelLeft + panelWidth - 24;
 		int barY = top + (compactSummary ? 28 : 16);
-		graphics.fill(barLeft, barY, barRight, barY + 4, 0x553A2A10);
-		int filled = totalSpecies == 0 ? 0
-			: (barRight - barLeft) * SparklingStats.unique() / totalSpecies;
-		if (SpecialTheme.rainbow() || collectionComplete) {
-			SpecialTheme.bar(graphics, barLeft, barY, filled, 4);
-		}
-		else graphics.fill(barLeft, barY, barLeft + filled, barY + 4, 0xFFFFC83D);
+        UIDraw.collectionProgress(graphics,barLeft,barY,barRight-barLeft,4,
+            SparklingStats.unique(),totalSpecies);
 		drawSpeciesColumns(graphics, barY + 12, mouseX, mouseY, null, true);
+        int statsY = barY + 12 + (17 + MAX_BIOME_ROWS * LINE + 8) * (4 / biomeColumns) + 4;
+        int since = dev.serko.safariutils.session.SparklingRunIntervals.sinceAny();
+        int sinceNew = dev.serko.safariutils.session.SparklingRunIntervals.sinceNew();
+        int half = (panelWidth - 32) / 2;
+        centered(graphics, "Runs Since Unique", panelLeft + 16, half, statsY, StatColours.UNIQUE);
+        centered(graphics, "Runs Since Sparkling", panelLeft + 16 + half, half, statsY, StatColours.PERSONAL_BEST);
+        centered(graphics, sinceNew < 0 ? "Unknown" : Integer.toString(sinceNew), panelLeft + 16, half, statsY + 13, StatColours.value(StatColours.UNIQUE));
+        centered(graphics, since < 0 ? "Unknown" : Integer.toString(since), panelLeft + 16 + half, half, statsY + 13, StatColours.value(StatColours.PERSONAL_BEST));
+
 	}
 
 	private void drawSpeciesColumns(GuiGraphicsExtractor graphics, int y, int mouseX, int mouseY,
@@ -340,18 +334,18 @@ public final class SparklingScreen extends Screen {
 				boolean remoteOwned = remoteSpecies != null
 					&& remoteSpecies.contains(speciesId(critter.name()));
 				int nameColour = remoteSpecies == null
-					? count == 0 ? 0xFF5F594E : 0xFF000000 | critter.rarity().colour()
-					: remoteOwned ? 0xFF000000 | critter.rarity().colour() : 0xFF5F594E;
+					? count == 0 ? StatColours.MISSING : 0xFF000000 | critter.rarity().colour()
+					: remoteOwned ? 0xFF000000 | critter.rarity().colour() : StatColours.MISSING;
 				text(graphics, critter.name(), x + 8, rowY, nameColour);
 				String value;
 				int colour;
 				if (remoteSpecies == null) {
 					value = count == 0 ? "—" : String.valueOf(count);
-					colour = count > 1 ? GOLD : count == 1 ? 0xFFFFF2B2 : 0xFF5F594E;
+					colour = count > 0 ? StatColours.value(nameColour) : StatColours.MISSING;
 				} else {
 					boolean owned = remoteSpecies.contains(speciesId(critter.name()));
 					value = owned ? "✓" : "—";
-					colour = owned ? GREEN : 0xFF5F594E;
+					colour = owned ? StatColours.value(nameColour) : StatColours.MISSING;
 				}
 				int valueWidth = editable
 					? Math.max(font.width("0000") + 8, font.width(value) + 10)
@@ -421,13 +415,13 @@ public final class SparklingScreen extends Screen {
 				boolean hovered = !apiManaged
 					&& contains(x + 4, rowY - 2, rowWidth, 12, mouseX, mouseY);
 				if (hovered) graphics.fill(x + 4, rowY - 2, x + 4 + rowWidth, rowY + 10, HOVER);
-				int colour = shownSelected ? 0xFF000000 | critter.rarity().colour() : 0xFF5F594E;
+				int colour = shownSelected ? 0xFF000000 | critter.rarity().colour() : StatColours.MISSING;
 				text(graphics, critter.name(), x + 8, rowY, colour);
 				String status = shownSelected ? "✓" : "—";
 				int statusWidth = Math.max(18, font.width(status) + 10);
 				int statusX = x + columnWidth - statusWidth - 8;
 				boldCentered(graphics, status, statusX, statusWidth, rowY,
-					shownSelected ? GREEN : 0xFF5F594E);
+					shownSelected ? GREEN : StatColours.MISSING);
 				if (!apiManaged) hits.add(new Hit(x + 4, rowY - 2, rowWidth, 12,
 					critter.name(), () -> toggleParty(critter)));
 			}
@@ -503,52 +497,9 @@ public final class SparklingScreen extends Screen {
 		partyCacheUntil = now + 250L;
 	}
 
-	private void checkCachedLocalCollection() {
-		if (pendingImport != null && collectionMatches(pendingImport)) dismissPendingImport();
-		if (!SharedSparklingProviders.available() || pendingImport != null) return;
-		SharedSparklingProviders.cachedLocalCollection()
-			.filter(result -> result.fetchedAt() > dismissedImportFetchedAt)
-			.filter(result -> SparklingStats.apiComparisonAllowed(result.fetchedAt()))
-			.filter(result -> !collectionMatches(result))
-			.ifPresent(result -> pendingImport = result);
-	}
-
-	private static boolean collectionMatches(SparklingPlayerLookup result) {
-		return !SparklingStats.apiCollectionAddsInformation(result.species(), result.duplicates());
-	}
-
-	private void drawImportConfirmation(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-		int width = Math.min(430, panelWidth - 40);
-		int height = 112;
-		int x = panelLeft + (panelWidth - width) / 2;
-		int y = panelTop + (panelHeight - height) / 2;
-		graphics.fill(panelLeft + 2, panelTop + 2, panelLeft + panelWidth - 2,
-			panelTop + panelHeight - 2, 0xA0000000);
-		graphics.fill(x, y, x + width, y + height, 0xFF141B25);
-		themedOutline(graphics, x, y, width, height, GOLD);
-		centered(graphics, "Import Your API Collection?", x, width, y + 12, COLLECTION_GOLD);
-		centered(graphics, "Hypixel has additional collection information", x, width, y + 31, WHITE);
-		centered(graphics, "Import sets every API-owned unique to at least 1 and saves",
-			x, width, y + 45, LABEL);
-		centered(graphics, "the API duplicate total without assigning dupes to random species",
-			x, width, y + 57, LABEL);
-		button(graphics, x + width / 2 - 98, y + 82, 88, 20, "Not Now", false,
-			mouseX, mouseY, this::dismissPendingImport);
-		button(graphics, x + width / 2 + 10, y + 82, 88, 20, "Import", true,
-			mouseX, mouseY, () -> {
-				if (pendingImport == null) return;
-				SparklingStats.importApiCollection(pendingImport.species(), pendingImport.duplicates());
-				updatePanelBounds();
-				setStatus("Imported your Hypixel Sparkling collection", GREEN);
-				dismissPendingImport();
-			});
-	}
-
-	private void dismissPendingImport() {
-		if (pendingImport != null) dismissedImportFetchedAt =
-			Math.max(dismissedImportFetchedAt, pendingImport.fetchedAt());
-		pendingImport = null;
-	}
+    private void checkCachedLocalCollection() {
+        SharedSparklingProviders.cachedLocalCollection().ifPresent(this::syncIfLocal);
+    }
 
 	private void drawLookup(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
 		if (!SharedSparklingProviders.available()) return;
@@ -564,7 +515,9 @@ public final class SparklingScreen extends Screen {
 		String summary = "Unique Sparklings  " + unique + "/" + Critters.total()
 			+ "   ✦   Sparklings  " + total + "   ✦   Duplicates  " + duplicates;
 		int summaryY = detailsBottom + 4;
-		centered(graphics, trimToWidth(summary, panelWidth - 24), panelLeft, panelWidth, summaryY, WHITE);
+		String shownSummary=trimToWidth(summary,panelWidth-24);
+        SpecialTheme.text(graphics,font,StatColours.collection(shownSummary,"   \u2726   "),
+            panelLeft+(panelWidth-font.width(shownSummary))/2,summaryY,LABEL);
 		drawSpeciesColumns(graphics, summaryY + 18, mouseX, mouseY, lastLookup.species(), false);
 	}
 
@@ -632,7 +585,8 @@ public final class SparklingScreen extends Screen {
 		boolean blank = entered.isEmpty();
 		boolean displayed = lastLookup != null;
 		long now = System.currentTimeMillis();
-		boolean freshCached = LookupHistory.fresh(lastLookup, now, LOOKUP_CACHE_MILLIS);
+		boolean freshCached = LookupHistory.fresh(lastLookup, now, LOOKUP_CACHE_MILLIS)
+			|| recentLookups.recentlyChecked(lastLookup, MonotonicTime.nowMillis(), LOOKUP_CACHE_MILLIS);
 		long cooldown = Math.max(0L, SharedSparklingProviders.lookupAvailableAt() - now);
 		boolean available = SharedSparklingProviders.available();
 		boolean refreshable = blank && displayed && !freshCached && cooldown == 0L && available;
@@ -664,7 +618,7 @@ public final class SparklingScreen extends Screen {
 		SharedSparklingProviders.lookupPlayer(username)
 			.whenComplete((result, error) -> Minecraft.getInstance().execute(() -> {
 				lookupLoading = false;
-				SparklingPlayerLookup accepted = error == null ? rememberLookup(result) : null;
+				SparklingPlayerLookup accepted = error == null ? rememberLookup(result, true) : null;
 				if (revision != lookupRevision || ClientCompat.screen() != this) {
 					DebugLog.line("PLAYER_LOOKUP", "superseded presentation skipped success=" + (error == null));
 					return;
@@ -679,7 +633,7 @@ public final class SparklingScreen extends Screen {
 					}
 					setFocused(null);
 					setStatus("Loaded " + result.username() + "'s Profile", GREEN);
-					offerImportIfLocal(accepted);
+					syncIfLocal(accepted);
 				}
 			}));
 		return true;
@@ -687,18 +641,21 @@ public final class SparklingScreen extends Screen {
 
 	private record LookupState(boolean enabled, String label, int colour) { }
 
-	private void offerImportIfLocal(SparklingPlayerLookup result) {
-		Minecraft client = Minecraft.getInstance();
-		if (client.player == null
-			|| !result.username().equalsIgnoreCase(client.player.getGameProfile().name())
-			|| result.fetchedAt() <= dismissedImportFetchedAt
-			|| pendingImport != null && pendingImport.fetchedAt() > result.fetchedAt()
-			|| collectionMatches(result)) return;
-		pendingImport = result;
-	}
+    private void syncIfLocal(SparklingPlayerLookup result) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player != null && result.username().equalsIgnoreCase(client.player.getGameProfile().name())
+                && SparklingStats.syncApiCollection(result.species(), result.duplicates(), result.fetchedAt())) {
+            updatePanelBounds();
+        }
+    }
 
 	private static SparklingPlayerLookup rememberLookup(SparklingPlayerLookup result) {
-		SparklingPlayerLookup accepted = recentLookups.remember(result);
+		return rememberLookup(result, false);
+	}
+
+	private static SparklingPlayerLookup rememberLookup(SparklingPlayerLookup result, boolean manual) {
+		SparklingPlayerLookup accepted = manual
+			? recentLookups.rememberChecked(result, MonotonicTime.nowMillis()) : recentLookups.remember(result);
 		CanonicalPlayerNames.remember(accepted.username());
 		if (lastLookup != null && lastLookup.username().equalsIgnoreCase(accepted.username())
 				&& accepted.fetchedAt() >= lastLookup.fetchedAt()) lastLookup = accepted;
@@ -856,8 +813,7 @@ public final class SparklingScreen extends Screen {
 			+ "   ✦   Duplicates  " + duplicateText()
 			+ "   ✦   Rainbow Feathers  ";
 		String feathers = String.valueOf(SparklingStats.rainbowFeathers());
-		int since = RunHistory.runsSinceLastSparkling();
-		String suffix = "   ✦   Runs Since Last  " + (since < 0 ? "—" : since);
+		String suffix = "   \u2726   Emerald Dyes  " + RunHistory.totalEmeraldDyes();
 		return new CollectionSummary(prefix, feathers, suffix);
 	}
 
@@ -892,17 +848,6 @@ public final class SparklingScreen extends Screen {
 		}
 		MouseButtonEvent scaledEvent = scale == 1f ? event
 			: new MouseButtonEvent(mouseX, mouseY, event.buttonInfo());
-		if (pendingImport != null) {
-			for (int i = hits.size() - 1; i >= 0; i--) {
-				Hit hit = hits.get(i);
-				if ((hit.label().equals("Import") || hit.label().equals("Not Now"))
-						&& hit.contains(mouseX, mouseY)) {
-					hit.action().run();
-					return true;
-				}
-			}
-			return true;
-		}
 		if (recentLookupsOpen) {
 			for (int i = hits.size() - 1; i >= 0; i--) {
 				Hit hit = hits.get(i);

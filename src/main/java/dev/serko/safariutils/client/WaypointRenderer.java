@@ -197,7 +197,8 @@ public final class WaypointRenderer {
 
 		if (!markers.isEmpty()) {
 			List<VisibleMarker> visibleMarkers = new java.util.ArrayList<>(markers.size());
-			for (Markers.Marker marker : markers) {
+			for (Markers.Marker cachedMarker : markers) {
+                Markers.Marker marker = cachedMarker.forFrame(framePartialTick);
 				double distanceSq = distanceSquared(marker.box(), camera);
 				float maxDistance = marker.researchCandidate() ? 512.0f : MAX_DISTANCE;
 				if (distanceSq > maxDistance * maxDistance || !visible(marker.box())) continue;

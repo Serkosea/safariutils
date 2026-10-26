@@ -5,7 +5,8 @@ import java.util.Arrays;
 
 public final class PartySparklingRegression {
 	public static int run() {
-		int checks = 0;
+		SparklingWatch.verifyIndividualTracking();
+		int checks = 4;
 		check(dev.serko.safariutils.BuildVersion.has(dev.serko.safariutils.BuildVersion.Capability.REMOTE_PARTY_SYNC),
 			"party transport unavailable in this edition"); checks++;
 		for (boolean active : new boolean[] {false, true}) {

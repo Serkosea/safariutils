@@ -54,6 +54,8 @@ public final class RunHistory {
 	private static int totalShards;
 	private static int totalSafariEssence;
 	private static int totalRainbowFeathers;
+    private static int totalEmeraldDyes;
+    public static int totalEmeraldDyes() { return totalEmeraldDyes; }
 	private static int totalSparklings;
 	private static int runsSinceLastSparkling = -1;
 	/** Monotonic view invalidation token; unlike size, this also catches a same-size reload. */
@@ -223,17 +225,24 @@ public final class RunHistory {
 	 */
 	public static synchronized void record(SafariSession session) {
 		if (session == null) return;
+		boolean diagnostics = dev.serko.safariutils.client.DebugLog.isEnabled();
+        long began = diagnostics ? System.nanoTime() : 0;
 		RunRecord record = RunRecord.of(session);
 		if (record.partyTotal() < MIN_CATCHES && record.safariEssence == 0
-			&& record.rainbowFeathers == 0
+			&& record.rainbowFeathers == 0 && record.rareDrops.isEmpty()
 			&& (record.sparklings == null || record.sparklings.isEmpty())) return;
 
 		runs.add(record);
 		if (writesBlocked) recoveryRuns.add(record);
 		validateExpectedRanges("save", List.of(record));
 		while (runs.size() > MAX_RUNS) runs.removeFirst();
-		rebuildStats();
-		save();
+        long snapshotDone = diagnostics ? System.nanoTime() : 0;
+        rebuildStats();
+        long statsDone = diagnostics ? System.nanoTime() : 0;
+        save();
+        if (diagnostics) dev.serko.safariutils.client.DebugLog.line("RUN/SAVE_TIMING",
+            "runs="+runs.size()+" snapshotMicros="+(snapshotDone-began)/1000
+            +" statsMicros="+(statsDone-snapshotDone)/1000+" saveMicros="+(System.nanoTime()-statsDone)/1000);
 	}
 
 	/** Reports suspicious counts without rewriting or rejecting historical data. */
@@ -345,6 +354,7 @@ public final class RunHistory {
 		totalShards = 0;
 		totalSafariEssence = 0;
 		totalRainbowFeathers = 0;
+        totalEmeraldDyes = 0;
 		totalSparklings = 0;
 		runsSinceLastSparkling = -1;
 		for (RunRecord run : runs) {
@@ -354,6 +364,7 @@ public final class RunHistory {
 			totalShards += run.totalShards;
 			totalSafariEssence += run.safariEssence;
 			totalRainbowFeathers += run.rainbowFeathers;
+            totalEmeraldDyes += run.emeraldDyes();
 			totalSparklings += run.sparklings == null ? 0 : run.sparklings.size();
 			for (Critter critter : Critters.all()) {
 				int caught = run.caught(critter);

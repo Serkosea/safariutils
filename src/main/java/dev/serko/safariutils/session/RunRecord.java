@@ -20,6 +20,7 @@ public class RunRecord {
 	/** Original record retained only to preserve fields introduced by newer builds. */
 	private transient JsonObject preservedJson;
 
+	public java.util.List<PersonalBestTracker.Split> personalBestSplits = new java.util.ArrayList<>();
 	public long started;
 	public long ended;
 	/** True when an activated run ended via disconnect, quit, or an unexpected transfer. */
@@ -27,6 +28,10 @@ public class RunRecord {
 	public String self;
 	/** Confirmed participants, including ticket-trading arrivals without catches. */
 	public java.util.List<String> players = new java.util.ArrayList<>();
+    /** Null in older records; do not invent individual teammates' catch totals. */
+    public Map<String,Map<String,Integer>> playerBiomeUniques;
+    /** Player -> species -> successful catches, including duplicates. Null for older runs. */
+    public Map<String,Map<String,Integer>> playerCatches;
 	/** Species name -> times you caught it. */
 	public Map<String, Integer> own = new LinkedHashMap<>();
 	/** Species name -> times a partymate caught it, summed across the party. */
@@ -45,6 +50,13 @@ public class RunRecord {
 	public int totalShards;
 	public int safariEssence;
 	public int rainbowFeathers;
+    /** Stable item IDs; independently recorded rewards, not inferred from catches. */
+    public Map<String, Integer> rareDrops = new LinkedHashMap<>();
+    public Map<String, RareDropValue> rareDropValues = new LinkedHashMap<>();
+    public record RareDropValue(int pricedQuantity, double estimatedTotal, String source, long observedAt, long valuedAt) { }
+    /** Null for legacy runs whose novelty was not recorded at catch time. */
+    public java.util.Set<String> newSparklingSpecies;
+    public int emeraldDyes() { return rareDrops == null ? 0 : rareDrops.getOrDefault("DYE_EMERALD", 0); }
 	/** Every Sparkling occurrence; repeated species are intentionally retained. */
 	public java.util.List<SparklingRecord> sparklings = new java.util.ArrayList<>();
 
@@ -66,10 +78,12 @@ public class RunRecord {
 	public static RunRecord of(SafariSession session) {
 		RunRecord record = new RunRecord();
 		record.started = session.startedAtMillis();
+        record.personalBestSplits.addAll(session.personalBests().splits());
 		record.ended = session.startedAtMillis() + session.durationMillis();
 		record.interrupted = session.interrupted();
 		record.self = session.selfName();
 		record.players.addAll(session.players());
+        record.playerCatches = session.catchesPerPlayer();
 		session.ownCatchCounts().forEach((critter, count) -> record.own.put(critter.name(), count));
 		session.sharedCatchCounts().forEach((critter, count) -> record.shared.put(critter.name(), count));
 		session.attemptCounts().forEach((critter, count) -> record.attempts.put(critter.name(), count));
@@ -78,12 +92,53 @@ public class RunRecord {
 		record.totalShards = session.totalShards();
 		record.safariEssence = session.safariEssence();
 		record.rainbowFeathers = session.rainbowFeathers();
+        record.rareDrops.putAll(session.rareDrops());
+        record.rareDropValues.putAll(session.rareDropValues());
+        record.newSparklingSpecies = new java.util.LinkedHashSet<>(session.newSparklingSpecies());
 		for (SafariSession.SparklingOccurrence occurrence : session.sparklingOccurrences()) {
 			record.sparklings.add(new SparklingRecord(occurrence.critter().name(),
 				occurrence.catcher(), occurrence.atMillis()));
 		}
 		return record;
 	}
+
+    /** Display-only attribution from saved catches; never rewrites history or qualifies old PBs. */
+    public Map<String,Map<String,Integer>> displayPlayerBiomeUniques() {
+        if (playerCatches != null) {
+            Map<String,Map<String,Integer>> result = new LinkedHashMap<>();
+            playerCatches.forEach((player,catches) -> addBiomeCounts(result,player,catches));
+            return result;
+        }
+        if (playerBiomeUniques != null) return playerBiomeUniques;
+        Map<String,Map<String,Integer>> result = new LinkedHashMap<>();
+        if (players.size() == 1) {
+            Map<String,Integer> catches = new LinkedHashMap<>(own);
+            shared.forEach((species,count) -> catches.merge(species,count,Integer::sum));
+            addBiomeCounts(result,players.getFirst(),catches);
+        } else {
+            if (self != null && !self.isBlank()) addBiomeCounts(result,self,own);
+            if (players.size() == 2 && self != null && players.stream().anyMatch(p -> p.equalsIgnoreCase(self)))
+                players.stream().filter(p -> !p.equalsIgnoreCase(self)).findFirst()
+                    .ifPresent(player -> addBiomeCounts(result,player,shared));
+        }
+        return result;
+    }
+
+    /** Missing attribution is shown explicitly rather than assigning team totals to an individual. */
+    public boolean missingIndividualTeammateTotals() {
+        return playerCatches == null && playerBiomeUniques == null && !shared.isEmpty()
+            && !(players.size() == 1 || (players.size() == 2 && self != null
+                && players.stream().anyMatch(p -> p.equalsIgnoreCase(self))));
+    }
+
+    private static void addBiomeCounts(Map<String,Map<String,Integer>> result, String player, Map<String,Integer> catches) {
+        Map<String,Integer> counts = new LinkedHashMap<>();
+        catches.forEach((species,total) -> {
+            Critter critter=Critters.byName(species);
+            if (critter != null && total > 0) counts.merge(critter.biome().name(),1,Integer::sum);
+        });
+        if (!counts.isEmpty()) result.put(player,counts);
+    }
 
 	public record SparklingRecord(String species, String catcher, long atMillis) {
 	}
@@ -132,6 +187,8 @@ public class RunRecord {
 				player.toLowerCase(java.util.Locale.ROOT), player);
 		}
 		players = new ArrayList<>(uniquePlayers.values());
+        playerBiomeUniques = normalizePlayerCounts(playerBiomeUniques);
+        playerCatches = normalizePlayerCounts(playerCatches);
 		own = normalizeCounts(own);
 		shared = normalizeCounts(shared);
 		attempts = normalizeCounts(attempts);
@@ -140,10 +197,27 @@ public class RunRecord {
 		totalShards = Math.max(ownShards, totalShards);
 		safariEssence = Math.max(0, safariEssence);
 		rainbowFeathers = Math.max(0, rainbowFeathers);
+        rareDrops = normalizeCounts(rareDrops);
+        if (rareDropValues == null) rareDropValues = new LinkedHashMap<>();
+        else if (rareDropValues.values().stream().anyMatch(v -> v == null || v.pricedQuantity <= 0
+                || !Double.isFinite(v.estimatedTotal) || v.estimatedTotal <= 0 || v.observedAt <= 0 || v.valuedAt <= 0))
+            throw new IllegalArgumentException("Invalid rare-drop valuation");
 		if (sparklings == null) sparklings = new ArrayList<>();
 		else sparklings.removeIf(entry -> entry == null || entry.species() == null
 			|| entry.species().isBlank());
 	}
+
+    private static Map<String,Map<String,Integer>> normalizePlayerCounts(Map<String,Map<String,Integer>> source) {
+        if (source == null) return null;
+        Map<String,Map<String,Integer>> result = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        source.forEach((player,counts) -> {
+            if (player == null || player.isBlank() || counts == null)
+                throw new IllegalArgumentException("Invalid per-player run totals");
+            Map<String,Integer> normalized = result.computeIfAbsent(player,ignored -> new LinkedHashMap<>());
+            normalizeCounts(counts).forEach((species,total) -> normalized.merge(species,total,Integer::sum));
+        });
+        return result;
+    }
 
 	private static int value(Map<String, Integer> counts, String species) {
 		if (counts == null) return 0;

@@ -56,11 +56,8 @@ public final class SafariObjectives {
 		if (reconcileDeathAt > 0 && System.currentTimeMillis() >= reconcileDeathAt) {
 			reconcileDeathAt = 0;
 			BirdfeederWatch.reconcileInventory(bagOfSeedsHeld(), wrigglewormsHeld(), yogiBerriesHeld());
-			var session = dev.serko.safariutils.session.SessionManager.current();
-			var gimmiegold = dev.serko.safariutils.data.Critters.byName("Gimmiegold");
-			int caught = session == null || gimmiegold == null ? 0 : session.ownCatches(gimmiegold);
-			ShiningCoinWatch.reconcileInventory(shiningCoinsHeld(), caught);
 		}
+		ShiningCoinWatch.observeInventory(shiningCoinsHeld(), dev.serko.safariutils.state.MonotonicTime.nowMillis());
 		BirdfeederWatch.onStableInventoryUpdated(stableFeed);
 	}
 

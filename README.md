@@ -6,13 +6,14 @@ SafariUtils is a Fabric mod made for Hypixel SkyBlock's Critter Safari. It keeps
 
 - Movable HUDs for run progress, missing critters, biome objectives, and contest status.
 - Confirmed Gemzie, Icy Wumpa, Haunted Doomspiral, and Forest Birdfeeder progress with selectable biome-completion marks in the Party Objective HUD.
-- Run history, lifetime totals, Safari Essence, Rainbow Feathers, and Bazaar profit.
+- Run history, per-player catch breakdowns, lifetime totals, Safari Essence, Rainbow Feathers, Emerald Dyes, and market-based profit estimates.
+- Personal Bests for biome and All Uniques clears, plus personal Gemzie, Doomspiral, Wumpa and Macaw catch times.
 - A dedicated Sparkling menu with editable collection totals, party-shared lists, Sparkling Mode, selectable always-active critters and waypoints, and special catch effects.
 - Helpful markers for Safari objectives and encounters.
 - Party-ready alerts and ticket protection while waiting for everyone to arrive.
 - Optional Ticket Trading with draggable invite queues, per-player guest controls, Sparkling filters, and timed party automation.
 - Player lookups for tickets and Sparkling collections, cached rank colors, and party-shared collections with no API key setup.
-- Automatic network party sync for objectives and Sparkling discoveries, with ticket reminders and unknown-state indicators for unsynced teammates.
+- Automatic network party sync for objectives and Sparkling discoveries, with ticket reminders and objective inventory rows for known, nonempty inventories.
 - Selective hiding for processed general chat and independently grouped Cavern, Icy, Haunted, and Forest objective messages.
 - Automatic Hideyho acceptance, Birdfeeder inventory/empty alerts, and configurable starting-item party messages.
 - A real-time Miria's Contest timer with bracket, score, and ticket tracking.
@@ -28,8 +29,8 @@ Choose the jar that matches your Minecraft version.
 
 | Minecraft | Safe Mode | Extra |
 |---|---|---|
-| 26.1.2 | `safariutils-3.1.3+mc26.1.2.jar` | `safariutils-3.1.3-extra+mc26.1.2.jar` |
-| 26.2 | `safariutils-3.1.3+mc26.2.jar` | `safariutils-3.1.3-extra+mc26.2.jar` |
+| 26.1.2 | `safariutils-3.2.0+mc26.1.2.jar` | `safariutils-3.2.0-extra+mc26.1.2.jar` |
+| 26.2 | `safariutils-3.2.0+mc26.2.jar` | `safariutils-3.2.0-extra+mc26.2.jar` |
 
 The Safe Mode edition is the recommended download. Extra includes features that may provide information the player cannot directly see and may not be safe to use.
 
@@ -52,7 +53,7 @@ Important mod errors appear in Minecraft's log. Developer builds additionally re
 |---|---|
 | `/su`, `/safari`, `/safariutils` | Opens SafariUtils settings. |
 | `/su gui` | Opens the HUD editor. |
-| `/safari stats` | Opens run history and statistics. |
+| `/safari stats` | Opens run history, statistics and Personal Bests. |
 | `/sparkling` | Opens the Sparkling collection and party menu. |
 
 The `/su`, `/safari`, and `/safariutils` aliases support the same subcommands.

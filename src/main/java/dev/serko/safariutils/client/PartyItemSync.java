@@ -456,10 +456,8 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 				State state = states.get(member.uuid());
 				boolean local = member.uuid().equals(localUuid());
 				boolean known = inventoryKnown(active, local, state != null && state.reported);
-				if (known && state.heldFeed() <= 0) continue;
-				HudPanel.IconValue[] value = known
-					? feed(state)
-					: unknownFeed();
+				if (!known || state == null || state.heldFeed() <= 0) continue;
+				HudPanel.IconValue[] value = feed(state);
 				PartyObjectiveHud.addPlayerRow(panel, member.name(), value);
 				showedPlayer = true;
 			}
@@ -496,11 +494,9 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 				State state = states.get(member.uuid());
 				boolean local = member.uuid().equals(localUuid());
 				boolean known = inventoryKnown(active, local, state != null && state.reported);
-				if (known && state.limeGems + state.orangeGems + state.purpleGems <= 0) continue;
-				HudPanel.IconValue[] values = known
-					? PartyObjectiveHud.gemValues(String.valueOf(state.purpleGems),
-						String.valueOf(state.limeGems), String.valueOf(state.orangeGems))
-					: PartyObjectiveHud.gemValues("?", "?", "?");
+				if (!known || state == null || state.limeGems + state.orangeGems + state.purpleGems <= 0) continue;
+				HudPanel.IconValue[] values = PartyObjectiveHud.gemValues(String.valueOf(state.purpleGems),
+						String.valueOf(state.limeGems), String.valueOf(state.orangeGems));
 				PartyObjectiveHud.addPlayerRow(panel, member.name(), values);
 				showedPlayer = true;
 			}
@@ -532,10 +528,8 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 				State state = states.get(member.uuid());
 				boolean local = member.uuid().equals(localUuid());
 				boolean known = inventoryKnown(active, local, state != null && state.reported);
-				if (known && state.incense <= 0) continue;
-				HudPanel.IconValue[] values = known
-					? PartyObjectiveHud.incenseValue(String.valueOf(state.incense))
-					: PartyObjectiveHud.incenseValue("?");
+				if (!known || state == null || state.incense <= 0) continue;
+				HudPanel.IconValue[] values = PartyObjectiveHud.incenseValue(String.valueOf(state.incense));
 				PartyObjectiveHud.addPlayerRow(panel, member.name(), values);
 				showedPlayer = true;
 			}
@@ -1078,14 +1072,6 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			new HudPanel.IconValue(HudPanel.HudIcon.BERRY, String.valueOf(state.berries), 0xFF2D69EA),
 			new HudPanel.IconValue(HudPanel.HudIcon.WORM, String.valueOf(state.worms), 0xFFFF64AD),
 			new HudPanel.IconValue(HudPanel.HudIcon.SEED_BAG, String.valueOf(state.seeds), 0xFFFFD36A)
-		};
-	}
-
-	private static HudPanel.IconValue[] unknownFeed() {
-		return new HudPanel.IconValue[] {
-			new HudPanel.IconValue(HudPanel.HudIcon.BERRY, "?", 0xFF2D69EA),
-			new HudPanel.IconValue(HudPanel.HudIcon.WORM, "?", 0xFFFF64AD),
-			new HudPanel.IconValue(HudPanel.HudIcon.SEED_BAG, "?", 0xFFFFD36A)
 		};
 	}
 

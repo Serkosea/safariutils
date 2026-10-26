@@ -84,7 +84,8 @@ public final class BazaarPrices {
 	public static void tick() {
 		if (stopped || fetching || NetworkRuntime.stopping() || !ConfigManager.get().profit.enabled) return;
 
-		if (REFRESH.remainingMillis(true, REFRESH_MILLIS) > 0) return;
+		dev.serko.safariutils.backend.AuctionMarketClient.requestIfNeeded();
+        if (REFRESH.remainingMillis(true, REFRESH_MILLIS) > 0) return;
 		// Held off before the job starts, so a slow request cannot queue a second one.
 		REFRESH.mark(true);
 		fetching = true;
@@ -152,7 +153,7 @@ public final class BazaarPrices {
 
 	/** Changes when a fresh price snapshot or the selected side of the market changes. */
 	static long revision() {
-		return priceRevision * 2L + ConfigManager.get().profit.priceSource().ordinal();
+		return combinedRevision() * 2L + ConfigManager.get().profit.priceSource().ordinal();
 	}
 
 	/** How long ago the prices were fetched, or {@code -1} if they never have been. */
@@ -198,6 +199,7 @@ public final class BazaarPrices {
 		double total = valueOf(session.shardCounts(), source);
 		total += price(SAFARI_ESSENCE, source) * session.safariEssence();
 		total += price(RAINBOW_FEATHER, source) * session.rainbowFeathers();
+        total += rareDropValue(session.rareDrops());
 		return Math.round(total);
 	}
 
@@ -207,13 +209,13 @@ public final class BazaarPrices {
 
 	/** What a saved run's shards are worth, or {@code 0} if it kept no breakdown. */
 	public static long valueOf(RunRecord run) {
-		if (run == null || !run.hasShardData()) return 0;
+		if (run == null) return 0;
 		SafariConfig.PriceSource source = ConfigManager.get().profit.priceSource();
 		prepareRunValueCache(source);
 		Long cached = RUN_VALUE_CACHE.get(run);
 		if (cached != null) return cached;
 		double total = 0;
-		for (Map.Entry<String, Integer> entry : run.shards.entrySet()) {
+		for (Map.Entry<String, Integer> entry : (run.shards == null ? Map.<String, Integer>of() : run.shards).entrySet()) {
 			// A saved run holds species by name, so one dropped from the roster since is
 			// simply skipped — the same thing the rest of the history does with it.
 			Critter critter = Critters.byName(entry.getKey());
@@ -221,14 +223,28 @@ public final class BazaarPrices {
 		}
 		total += price(SAFARI_ESSENCE, source) * run.safariEssence;
 		total += price(RAINBOW_FEATHER, source) * run.rainbowFeathers;
+        total += rareDropValue(run.rareDrops);
 		long value = Math.round(total);
 		RUN_VALUE_CACHE.put(run, value);
 		return value;
 	}
 
-	private static void prepareRunValueCache(SafariConfig.PriceSource source) {
+	private static long combinedRevision() {
+        return priceRevision * 1_000_003L + dev.serko.safariutils.backend.AuctionMarketClient.revision();
+    }
+    public static boolean rareDropPricingIncomplete(Map<String, Integer> drops) {
+        return drops != null && drops.entrySet().stream().anyMatch(e -> e.getValue()>0
+            && dev.serko.safariutils.backend.AuctionMarketClient.price(e.getKey()).isEmpty());
+    }
+    public static double rareDropValue(Map<String, Integer> drops) {
+        double total = 0;
+        if (drops != null) for (var drop : drops.entrySet())
+            total += dev.serko.safariutils.backend.AuctionMarketClient.price(drop.getKey()).orElse(0d) * drop.getValue();
+        return total; // Auction estimate before fees; Bazaar tax must not be applied to auctions.
+    }
+    private static void prepareRunValueCache(SafariConfig.PriceSource source) {
 		long historyRevision = RunHistory.revision();
-		long priceRevision = BazaarPrices.priceRevision;
+		long priceRevision = combinedRevision();
 		if (runValueHistoryRevision == historyRevision
 				&& runValuePriceRevision == priceRevision && runValuePriceSource == source) return;
 		RUN_VALUE_CACHE.clear();
@@ -252,7 +268,7 @@ public final class BazaarPrices {
 	/** Full saved-history value, calculated once per history/price/source combination. */
 	public static long totalHistoryValue() {
 		long historyRevision = RunHistory.revision();
-		long priceRevision = BazaarPrices.priceRevision;
+		long priceRevision = combinedRevision();
 		SafariConfig.PriceSource source = ConfigManager.get().profit.priceSource();
 		if (totalHistoryRevision == historyRevision
 				&& totalHistoryPriceRevision == priceRevision

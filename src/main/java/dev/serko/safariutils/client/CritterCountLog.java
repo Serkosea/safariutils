@@ -30,6 +30,11 @@ public final class CritterCountLog {
 			if (current != null && entry.getValue() <= current) continue;
 			peak.put(entry.getKey(), entry.getValue());
 			DebugLog.line("COUNT", entry.getKey().name() + " new peak: " + entry.getValue());
+            if (DebugLog.isEnabled()) {
+                String evidence = CritterEntities.all().stream().filter(s -> s.critter().equals(entry.getKey()))
+                    .map(s -> "label="+s.label().getUUID()+" body="+(s.mob()==null?"none":s.mob().getUUID())+" at="+s.body().blockPosition()).collect(java.util.stream.Collectors.joining("; "));
+                DebugLog.line("COUNT/EVIDENCE", entry.getKey().name()+" scan="+scan+" sightings="+evidence);
+            }
 			int expectedMaximum = CritterSpawnRanges.maximum(entry.getKey());
 			if (entry.getValue() > expectedMaximum) {
 				OperationalLog.debug("RANGE/OBSERVED", entry.getKey().name() + " concurrent="

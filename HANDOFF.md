@@ -11,6 +11,9 @@ Never use this identity for secrets, private account data, payments, or privileg
 Old backend authentication routes remain solely for installed-client compatibility and are
 not called by updated clients. They must never become prerequisites for UUID sessions.
 Existing shared API caches, service tokens, and HMAC subject budgets are preserved.
+The local backend now lives in the sibling `SerkoAddons/backend/`; website source is
+`SerkoAddons/website/`. See that repository's root WORKSPACE.md. Earlier cloudflare-api
+paths below are historical, not the current service workspace.
 Do not promise availability for every user or a hard billing cap: network failures and
 resource budgets remain possible. See cloudflare-api/SECURITY.md in the local backend workspace.
 
@@ -36,7 +39,7 @@ service depends on IQ; the private consumer owns its valuation adapter and incom
 Workspace layout and verified build commands: [development workflow](docs/development/WORKSPACE.md).
 
 Sparkling API imports are additive: only missing ownership or a higher duplicate aggregate
-offers an import, and the ledger never lowers either known duplicate total on import.
+is merged automatically, and the ledger never lowers either known duplicate total on import.
 Ticketless visit exit clears Sparkling/watch/reminder state just as a ticketed run does;
 Sparkling detection and HUD theme presentation require the current Safari visit.
 Ticket-trading cleanup waits 1.1 seconds after exit, through the command coordinator.
@@ -336,3 +339,52 @@ Public jars include Ticket Trading, authenticated party networking and the key-f
 5. Keep release notes concise, use only non-empty New, Changes & Additions, Fixes, and Downloads sections, and preserve the established Downloads wording unless the user changes it
 6. Synchronize README, CHANGELOG, RELEASE_NOTES, and this handoff
 7. Push or publish only after explicit user approval
+
+## Emerald Dye and collection intervals
+
+Rare drops use canonical Hypixel item IDs (`DYE_EMERALD`) in RunRecord. Only the current player's exact found announcement records a dye. Acquisition estimates are separate from current market valuation.
+Sparkling API merges are automatic and additive. Runs-since intervals depend only on RunHistory revision and recorded catches; API imports and manual collection edits cannot invalidate them. Modern records explicitly retain newly collected species; legacy records infer uniques from first appearances in saved history. Explicit duplicate-only records never imply a unique in partial history. Without a qualifying recorded catch the corresponding interval is Unknown. Old undated API timestamp fields are retained for persistence compatibility but have no runtime effect.
+The v2 auction contract carries source, sample count, confidence and expiration per quote. Missing prices remain unavailable, never a fabricated zero-valued quote. Historical values are estimates before auction fees.
+
+## Strict Personal Bests
+
+PersonalBestTracker consumes only confirmed catch events in SessionManager. Rule version 2 assigns each species to its first observed catcher (case-insensitive name). A biome split freezes the distinct contributors to its required species; ALL uses the union across all 37. Solo/Duo/Trio/Squad means 1/2/3/4 contributors, never attendance. Duplicate catches, including after a split, cannot change contributors. Personal/Team and Changing/Unknown have been removed. Rule-one attendance records lack attribution and cannot be converted to v2 PBs.
+
+The clock is monotonic from ticket activation. Pre-ticket catches or developer reset sessions cannot qualify exact timing. First local biome entry is optional supporting information, not the main clock. No API, undated remote snapshot, RNG exhaustion, marker state or logging dependency can create a completion. Saved splits include rule version, target, exact contributors, elapsed time, timing confidence, entry duration, and preceding best. PersonalBests is a revision-cached RunHistory projection, never another saved ledger.
+
+PB/START and PB/SPLIT log decisions only when diagnostics are enabled. Comparisons share one formatter/palette: faster green, equal cyan, under 5% slower yellow, under 15% orange, under 30% red, otherwise dark red. Preserve these semantic colors under special themes. Details opened from history return to history; from a PB card return to PBs; from Current Run return to History. Public and integrated builds share the same source.
+
+The dashboard has History, Stats and Personal Bests navigation. A selected RunRecord is a detail subview of its origin, never another main tab. Current Run is available from History and refreshes a temporary snapshot once per second only while open. New RunRecords retain playerBiomeUniques; null means old data without attribution. Never infer other players' catches from the shared aggregate. Details use the same RunRecord path for saved/PB/live selections and existing market services for valuation.
+
+Run detail presentation has Information/Personal Bests sections sharing a cached selected record, origin-aware Back, and a one-second live snapshot. Legacy per-player totals use unambiguous solo/duo attribution and retain own totals for larger groups; this is display-only and never rewrites history or qualifies a PB. Settings schema 6 changes only the former default History orange to green, preserving custom colors.
+
+New run records persist playerCatches (player -> species -> successful catch count) from existing session evidence, including duplicates with case-insensitive player keys. Unique biome totals derive from this snapshot; old playerBiomeUniques remains readable. Legacy solo/duo totals are inferred where the recorded roster makes attribution unambiguous; larger/unknown rosters retain own totals and flag missing teammate attribution. No historical inference feeds PB eligibility.
+
+PB cards show title/clear count and time; selected splits use two lines (biome/group + elapsed, comparison + since-entry). StatColours centralizes date/time/coins/catches/PB colors. Objective inventory rows require known positive inventory in all fallback and sync paths. SparklingWatch keeps distinct body keys rather than species-wide singletons; CaptureEffects forwards exact body replacement and catch outcomes. Species-only remote catch masks do not identify which local individual was caught, so cannot blanket-delete local observations. Repeat Sparkling occurrences remain separate within one RunRecord.
+
+StatColours separates semantic heading hues from softer value tints, with pale gold coins and dark grey reserved for missing collection state. Formatted summary Components use a bounded 128-entry client-thread cache; font metrics and special-theme output remain live. PB projections continue to invalidate only on RunHistory revision changes.
+
+## Party clear and shared Sparkling corrections (2026-10-26)
+
+PersonalBestTracker binds the local player at ticket activation. A completed target
+only produces a split if that player supplied a first unique catch; completion is
+frozen even when excluded so later duplicates cannot qualify it. PersonalBests
+also filters persisted splits by run.self. Group size remains unique contributors,
+not attendees. Shared Sparkling catch announcements bypass local capsule resolution:
+SparklingWatch consumes a sole matching outstanding individual; ambiguous multiple
+individuals remain intact with a diagnostic rather than deleting an arbitrary peer.
+Local catches continue using exact CaptureEffects ownership.
+
+
+### Personal biome-mob PBs (2026-10-26)
+
+PersonalBestTracker also records MOB_GEMZIE, MOB_DOOMSPIRAL, MOB_WUMPA and MOB_MACAW targets using the existing version-2 Split and RunRecord pipeline. These are the first confirmed local-player catches of those species, timed from ticket use; process them before the party first-unique deduplication, since a teammate may catch that species first. Mob targets require exactly the local player as contributor, independent of attendance or biome-clear contributors. Incomplete timing remains ineligible. Never infer historical mob times from aggregate catch counts. PersonalBests uses the same revision-cached projection; mob records do not inflate biome clear counts. Each biome card adds a clickable personal mob row below Squad, and run Completions includes those splits. Unique Clear PBs retains the existing personalBestMessages setting; Biome Mob PBs uses biomeMobBestMessages with All Catches/PBs Only/Off. PB/SPLIT diagnostics cover both.
+
+
+### Coin quota and PB presentation (2026-10-26)
+ShiningCoinWatch separates acquisition statistics from the Missing HUD quota. The quota is settled shared-inventory coins (including cursor) plus exact server-confirmed personal Gimmiegold spawns; dropping a coin without a spawn removes it, picking it back up restores it, and catches do not decrement the quota. Inventory/spawn ordering settles for 750 ms using MonotonicTime; late spawn evidence remains accepted. Do not infer quota from raw label peaks, which include temporary capture labels. COINS diagnostics log only quota changes and confirmed spawns. COUNT/EVIDENCE logs label/body identifiers at new species peaks, and RUN/SAVE_TIMING separates snapshot, aggregate rebuild, and persistence timings only with automatic logging enabled.
+ClientMessages owns the selectable display.clientMessagePrefix (normal default or SU), including themed rendering and picker previews. PB client wording is First Clear!, First Catch!, PB! -m:ss.SS, Tied PB?!, +m:ss.SS, Timing Error; personal mob notices have no group suffix. No change to PB timing or eligibility.
+
+
+### v3.2.0 release validation (2026-10-26)
+PB notices now send one prefixed line per milestone, with white parentheses around the semantic result. Moving recatch pins carry explicit snapshot ownership into per-frame projection using the same body interpolation as guaranteed shrinking; resolved breakout pins stay frozen, and marker deduplication includes body identity. Normal live markers already use entity partial-tick positions. Server corrections are not smoothed by speculative movement. The final test log replay verified 10,709 capture inputs; its only lifecycle-audit notice was the explicitly omitted pre-visit journal, with no run inputs skipped. End-of-run history serialization remains synchronous for durability: the measured run used ~14 ms rebuilding aggregates and ~70 ms saving 1,886 records, not sustained capture work.

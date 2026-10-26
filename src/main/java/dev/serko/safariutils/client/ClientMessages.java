@@ -29,6 +29,14 @@ public final class ClientMessages {
 		ClientCompat.addSystemMessage(prefixed(text, tone));
 	}
 
+    /** Separate notices preserve semantic colors and each receive the selected prefix. */
+    public static void sendLines(java.util.List<Component> lines) {
+        for (Component line : lines) {
+            MutableComponent message = SpecialTheme.rainbow() ? themedMessage("",false).copy() : prefix();
+            ClientCompat.addSystemMessage(message.append(line));
+        }
+    }
+
 	public static void sendUpdate(String available, URI release, String linkLabel) {
 		String body = "SafariUtils v" + available + " is available ";
 		String linkText = "[" + linkLabel + "]";
@@ -71,8 +79,13 @@ public final class ClientMessages {
 	 * retained chat lines never need to be rebuilt while they remain visible.
 	 */
 	private static Component themedMessage(String text, boolean boldBody) {
-		String complete = "[SafariUtils] " + text;
-		int bodyStart = "[SafariUtils] ".length();
+        return themedMessage(text, boldBody, ConfigManager.get().display.clientMessagePrefix);
+    }
+
+    private static Component themedMessage(String text, boolean boldBody, int choice) {
+        String label = "[" + prefixName(choice) + "] ";
+        String complete = label + text;
+        int bodyStart = label.length();
 		Font font = Minecraft.getInstance().font;
 		MutableComponent result = Component.empty();
 		int cursor = 0;
@@ -152,10 +165,21 @@ public final class ClientMessages {
 	}
 
 	private static MutableComponent prefix() {
+        return prefix(ConfigManager.get().display.clientMessagePrefix);
+    }
+
+    private static String prefixName(int choice) { return choice == 1 ? "SU" : choice == 2 ? "Safari" : "SafariUtils"; }
+
+    public static Component prefixPreview(int choice) {
+        return SpecialTheme.rainbow() ? themedMessage("", false, choice) : prefix(choice);
+    }
+
+    private static MutableComponent prefix(int choice) {
 		MutableComponent result = Component.literal("[").withStyle(style -> style.withColor(BRACKET));
-		String name = "SafariUtils";
+		String name = prefixName(choice);
 		for (int index = 0; index < name.length(); index++) {
-			float progress = index / (float) Math.max(1, name.length() - 1);
+			// All prefixes sample the original SafariUtils gradient without stretching it.
+            float progress = index / 10f;
 			int colour = blend(NAME_LEFT, NAME_RIGHT, progress);
 			result.append(Component.literal(String.valueOf(name.charAt(index)))
 				.withStyle(style -> style.withColor(colour)));

@@ -27,8 +27,6 @@ public final class SparklingWatch {
 	private static final Set<UUID> visuallyAnnounced = new HashSet<>();
 	/** Detected individuals retained until an authoritative catch removes each one. */
 	private static final Map<UUID, Outstanding> outstanding = new LinkedHashMap<>();
-	/** Suppresses labels lingering or appearing briefly after an authoritative catch. */
-	private static final Map<Critter, Long> justCaught = new LinkedHashMap<>();
 	/** A throw/breakout commonly replaces the same critter's entity IDs. */
 	private static final Map<Critter, Long> replacementExpectedUntil = new LinkedHashMap<>();
 	private static long caughtThemeUntil;
@@ -44,7 +42,6 @@ public final class SparklingWatch {
 		// The shared entity scan can still contain the last visit until its next sweep.
 		if (!SafariLocation.inside()) return;
 		long now = System.currentTimeMillis();
-		justCaught.entrySet().removeIf(entry -> now - entry.getValue() > CAUGHT_THEME_MILLIS);
 		replacementExpectedUntil.entrySet().removeIf(entry -> now > entry.getValue());
 		long scan = CritterEntities.scanRevision();
 		long configRevision = ConfigManager.revision();
@@ -52,16 +49,15 @@ public final class SparklingWatch {
 		lastScan = scan;
 		lastConfigRevision = configRevision;
 		Set<UUID> visibleKeys = new HashSet<>();
-		Map<Critter, CritterEntities.Sighting> bestBySpecies = new LinkedHashMap<>();
+		Map<UUID, CritterEntities.Sighting> bestByIndividual = new LinkedHashMap<>();
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-			if (!isSparkling(sighting)) continue;
-			bestBySpecies.merge(sighting.critter(), sighting,
+			if (!isSparkling(sighting) || CritterEntities.isCaptureScaffolding(sighting)) continue;
+			bestByIndividual.merge(keyOf(sighting), sighting,
 				(first, second) -> sightingScore(second) > sightingScore(first) ? second : first);
 		}
-		List<CritterEntities.Sighting> sparklingSightings = new ArrayList<>(bestBySpecies.values());
+		List<CritterEntities.Sighting> sparklingSightings = new ArrayList<>(bestByIndividual.values());
 		for (CritterEntities.Sighting sighting : sparklingSightings) visibleKeys.add(keyOf(sighting));
 		for (CritterEntities.Sighting sighting : sparklingSightings) {
-			if (PartySparklingDiscoveries.wasCaught(sighting.critter())) continue;
 			boolean visiblyConfirmed = visuallyConfirmed(sighting);
 			if (SafeMode.sparklingCritters()) {
 				// A dormant hidden species has no player-visible name tag. Its internal
@@ -88,16 +84,9 @@ public final class SparklingWatch {
 				|| bodyId != null && announcedBodies.contains(bodyId);
 			announcedLabels.add(labelId);
 			if (bodyId != null) announcedBodies.add(bodyId);
-			Long caughtAt = justCaught.get(sighting.critter());
-			if (caughtAt != null && now - caughtAt <= CAUGHT_THEME_MILLIS) continue;
-			// Hypixel can recreate a critter's label and body several times through one
-			// capture. A second Sparkling of the same species in one run is not a real
-			// Safari state, so fold every new identity into that species' existing find.
-			UUID replacement = outstandingFor(sighting.critter());
-			if (replacement == null) {
-				replacement = nearestReplacement(sighting.critter(), pos, visibleKeys,
-					replacementExpectedUntil.containsKey(sighting.critter()) || knownId);
-			}
+            // Body replacements are individual transitions; simultaneous visible bodies never merge.
+            UUID replacement = nearestReplacement(sighting.critter(), pos, visibleKeys,
+                knownId);
 			if (replacement != null) {
 				boolean alertsWereSent = visuallyAnnounced.remove(replacement);
 				Outstanding previous = outstanding.remove(replacement);
@@ -160,22 +149,14 @@ public final class SparklingWatch {
 		double bestDistance = REPLACEMENT_DISTANCE_SQ;
 		for (Map.Entry<UUID, Outstanding> entry : outstanding.entrySet()) {
 			if (entry.getValue().critter() != critter) continue;
-			// Without a throw/known ID, preserve two genuinely simultaneous Sparklings.
-			if (!replacementExpected && visibleKeys.contains(entry.getKey())) continue;
+			// Only an already-known identity can bridge a vanished body; a species-wide throw is not ownership.
+			if (!replacementExpected || visibleKeys.contains(entry.getKey())) continue;
 			double distance = entry.getValue().pos().distSqr(pos);
 			if (distance > bestDistance) continue;
 			best = entry.getKey();
 			bestDistance = distance;
 		}
 		return best;
-	}
-
-	private static UUID outstandingFor(Critter critter) {
-		return outstanding.entrySet().stream()
-			.filter(entry -> entry.getValue().critter() == critter)
-			.map(Map.Entry::getKey)
-			.findFirst()
-			.orElse(null);
 	}
 
 	/** Prefers a real, non-capture body over the duplicate labels used during transitions. */
@@ -238,27 +219,63 @@ public final class SparklingWatch {
 	}
 
 	/** Keeps the special HUD frame briefly after the detected critter is caught. */
-	public static void onCaught(Critter critter) {
-		PartySparklingDiscoveries.caught(critter);
-		List<UUID> removed = outstanding.entrySet().stream()
-			.filter(entry -> entry.getValue().critter() == critter)
-			.map(Map.Entry::getKey)
-			.toList();
-		removed.forEach(outstanding::remove);
-		DebugLog.line("SPARKLING", "caught " + critter.name() + " removed=" + shortId(removed)
-			+ " remaining=" + outstanding.size());
-		justCaught.put(critter, System.currentTimeMillis());
+	public static void onCaught(Critter critter) { onCaught(critter, false); }
+
+    public static void onCaught(Critter critter, boolean teammateCatch) {
+        // Shared catches never resolve a local capsule attempt. Consume only an
+        // unambiguous individual; do not guess ownership among same-species peers.
+        if (teammateCatch) resolveSharedCatch(critter);
+        // Global chat names a species, not an individual. CaptureEffects owns exact body removal.
+        // Hideyho is the single-spawn interaction-only exception with no capsule resolution.
+        if ("Hideyho".equals(critter.name()))
+            outstanding.entrySet().removeIf(entry -> entry.getValue().critter() == critter);
+        if (outstanding.values().stream().noneMatch(entry -> entry.critter() == critter))
+            PartySparklingDiscoveries.caught(critter);
+        DebugLog.line("SPARKLING", "caught announcement " + critter.name() + " remaining=" + outstanding.size());
 		replacementExpectedUntil.remove(critter);
-		ParticleDiagnostics.onCaught(critter);
 		caughtThemeUntil = System.currentTimeMillis() + CAUGHT_THEME_MILLIS;
 		FullScreenAlert.show("SPARKLING!", critter.name(), null, FullScreenAlert.SPARKLING);
 	}
 
+    private static void resolveSharedCatch(Critter species) {
+        UUID only = null;
+        for (var entry : outstanding.entrySet()) {
+            if (entry.getValue().critter() != species) continue;
+            if (only != null) {
+                DebugLog.line("SPARKLING", "shared catch identity ambiguous " + species.name());
+                return;
+            }
+            only = entry.getKey();
+        }
+        if (only != null) onCaptureResolved(species, only, only, CritterState.Outcome.CAUGHT);
+    }
+
 	/** Whether every visible HUD should use the shared Sparkling presentation. */
-	static void onSharedCaught(long mask) {
-		outstanding.entrySet().removeIf(entry ->
-			(mask & dev.serko.safariutils.data.Critters.selectionMask(entry.getValue().critter())) != 0);
-	}
+    static void onBodyReplaced(Critter species, UUID before, UUID after) {
+        if (before == null || after == null || before.equals(after)) return;
+        Outstanding previous=outstanding.get(before);
+        if(previous==null || previous.critter()!=species) return;
+        outstanding.remove(before);
+        outstanding.putIfAbsent(after,previous);
+        announcedBodies.add(after);
+        if(visuallyAnnounced.remove(before)) visuallyAnnounced.add(after);
+    }
+
+    static void onCaptureResolved(Critter species, UUID before, UUID after, CritterState.Outcome outcome) {
+        if(outcome!=CritterState.Outcome.CAUGHT) return;
+        boolean removed=false;
+        for(UUID id:new UUID[]{before,after}) {
+            Outstanding entry=outstanding.get(id);
+            if(entry!=null && entry.critter()==species) {
+                outstanding.remove(id); visuallyAnnounced.remove(id); removed=true;
+            }
+        }
+        if(removed) {
+            DebugLog.line("SPARKLING", "resolved individual " + species.name()+" body="+shortId(before)+" remaining="+outstanding.size());
+            if(outstanding.values().stream().noneMatch(entry -> entry.critter()==species))
+                PartySparklingDiscoveries.caught(species);
+        }
+    }
 
 	public static boolean hudThemeActive() {
 		return SafariLocation.inside() && (PartySparklingDiscoveries.sharedMask() != 0
@@ -302,6 +319,34 @@ public final class SparklingWatch {
 			.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5));
 	}
 
+    /** Headless lifecycle regression: same species, distinct bodies, and exact replacement ownership. */
+    static void verifyIndividualTracking() {
+        Critter species=dev.serko.safariutils.data.Critters.byName("Driftling");
+        UUID first=new UUID(1,1),second=new UUID(1,2),replacement=new UUID(1,3);
+        try {
+            outstanding.put(first,new Outstanding(species,BlockPos.ZERO,true));
+            outstanding.put(second,new Outstanding(species,new BlockPos(1,0,0),true));
+            if(nearestReplacement(species,BlockPos.ZERO,Set.of(first,second),true)!=null)
+                throw new AssertionError("Simultaneous Sparkling bodies merged");
+            resolveSharedCatch(species);
+            if(outstanding.size()!=2) throw new AssertionError("Ambiguous shared catch consumed a peer");
+            onBodyReplaced(species,first,replacement);
+            if(outstanding.size()!=2 || outstanding.containsKey(first) || !outstanding.containsKey(replacement))
+                throw new AssertionError("Sparkling replacement lost an individual");
+            onCaptureResolved(species,replacement,replacement,CritterState.Outcome.BREAKOUT);
+            if(outstanding.size()!=2) throw new AssertionError("Breakout removed a Sparkling");
+            onCaptureResolved(species,replacement,replacement,CritterState.Outcome.CAUGHT);
+            if(outstanding.size()!=1 || !outstanding.containsKey(second))
+                throw new AssertionError("Catch removed another Sparkling");
+            resolveSharedCatch(species);
+            if(!outstanding.isEmpty()) throw new AssertionError("Shared catch retained Sparkling HUD");
+            resolveSharedCatch(species);
+            if(!outstanding.isEmpty()) throw new AssertionError("Repeated shared catch changed state");
+        } finally {
+            outstanding.clear();announcedBodies.clear();visuallyAnnounced.clear();
+        }
+    }
+
 	/** A new run has its own sparklings; the last one's are gone. */
 	public static void reset() {
 		PartySparklingDiscoveries.reset();
@@ -309,7 +354,6 @@ public final class SparklingWatch {
 		announcedBodies.clear();
 		visuallyAnnounced.clear();
 		outstanding.clear();
-		justCaught.clear();
 		replacementExpectedUntil.clear();
 		ParticleDiagnostics.reset();
 		caughtThemeUntil = 0;

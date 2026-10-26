@@ -226,12 +226,6 @@ public final class PartyObjectiveHud implements HudElement {
 				feedValues(String.valueOf(berries), String.valueOf(worms), String.valueOf(seeds)));
 			showed = true;
 		}
-		String localName = client.player.getGameProfile().name();
-		for (String name : SafariPartyWatch.presentPlayerNames()) {
-			if (name.equalsIgnoreCase(localName)) continue;
-			addPlayerRow(panel, name, feedValues("?", "?", "?"));
-			showed = true;
-		}
 		if (showed) panel.blank();
 	}
 
@@ -250,12 +244,7 @@ public final class PartyObjectiveHud implements HudElement {
 				: incenseValue(String.valueOf(SafariObjectives.incenseHeld())));
 			showed = true;
 		}
-		for (String name : SafariPartyWatch.presentPlayerNames()) {
-			if (name.equalsIgnoreCase(localName)) continue;
-			addPlayerRow(panel, name, biome == SafariBiome.CAVERN
-				? gemValues("?", "?", "?") : incenseValue("?"));
-			showed = true;
-		}
+
 		if (showed) panel.blank();
 	}
 

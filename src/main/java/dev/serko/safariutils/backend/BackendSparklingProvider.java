@@ -264,7 +264,9 @@ public final class BackendSparklingProvider implements SharedSparklingProvider {
 		if (!USERNAME.matcher(username).matches()) {
 			return CompletableFuture.failedFuture(new IOException("Invalid Minecraft username"));
 		}
-		return requests.submit(() -> {
+		var player = Minecraft.getInstance().player;
+        var account = player == null ? null : player.getGameProfile().id();
+        return requests.submit(() -> {
 			long collectionCheckpoint = playerCache.checkpoint();
 			try {
 				HypixelApiClient.ProfileIdentity identity = client().identity(username);
@@ -284,7 +286,17 @@ public final class BackendSparklingProvider implements SharedSparklingProvider {
 				OperationalLog.error("API/PLAYER_LOOKUP", error);
 				throw new CompletionException(new IOException("Player lookup was interrupted", error));
 			}
-		});
+        }).thenApply(result -> {
+            Minecraft.getInstance().execute(() -> {
+                var current = Minecraft.getInstance().player;
+                if (!stopped && account != null && current != null && account.equals(current.getGameProfile().id())
+                        && result.username().equalsIgnoreCase(current.getGameProfile().name())) {
+                    latestLocalCollection = result;
+                    SparklingStats.syncApiCollection(result.species(), result.duplicates(), result.fetchedAt());
+                }
+            });
+            return result;
+        });
 	}
 
 	@Override
@@ -463,7 +475,10 @@ public final class BackendSparklingProvider implements SharedSparklingProvider {
 			resolvedParties.put(expectedSignature, result.roster());
 			Set<String> names = cachedPartyCollection(expectedSignature);
 			trimPartyCaches();
-			if (result.localCollection() != null) latestLocalCollection = result.localCollection();
+			if (result.localCollection() != null) {
+                latestLocalCollection = result.localCollection();
+                SparklingStats.syncApiCollection(latestLocalCollection.species(), latestLocalCollection.duplicates(), latestLocalCollection.fetchedAt());
+            }
 			SparklingScreen.cacheRecentLookups(result.lookups());
 			DebugLog.line("PARTYAPI", "refresh succeeded shared=" + names.size()
 				+ " recentLookups=" + result.lookups().size());

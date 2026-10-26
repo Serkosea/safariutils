@@ -126,10 +126,7 @@ public final class SafariSettingsScreen extends Screen {
 	private boolean editingColour;
 	private boolean editingNumber;
 	private boolean editingInlineText;
-	private float editingHue;
-	private float editingSaturation;
-	private float editingBrightness;
-	private int editingAlpha = 255;
+	private final SettingsColourState editingColourState = new SettingsColourState(1);
 	private int colourFieldLeft, colourFieldTop, colourFieldWidth, colourFieldHeight;
 	private int hueSliderLeft, hueSliderTop, hueSliderWidth;
 	private int alphaSliderLeft, alphaSliderTop, alphaSliderWidth;
@@ -386,6 +383,8 @@ public final class SafariSettingsScreen extends Screen {
 			"Hide selected server dialogue while retaining mod detection", "hiddenChatMessages");
 		addRootPage(display, displaySource, "display.safari.comfort", "Visual Comfort",
 			"Reduce disruptive Safari screen effects", "removeColdOverlay", "removeDarkness");
+        addRootPage(display, displaySource, "display.safari.prefix", "Client Message Prefix",
+            "Choose the prefix shown on SafariUtils client messages", "clientMessagePrefix");
 		appendAllSections(display, displaySource, 0, "Display");
 		organizeWaypointSettings(display, displaySource);
 		for (SettingsPage page : List.copyOf(display.pages)) {
@@ -395,11 +394,14 @@ public final class SafariSettingsScreen extends Screen {
 			if (destination != null) { destination.pages.add(page); display.pages.remove(page); }
 		}
 
-		addRootPage(gameplay, gameplaySource, "gameplay.auto-hideyho", "Hideyho",
+        addRootPage(gameplay, gameplaySource, "gameplay.auto-hideyho", "Hideyho",
 			"Automatically accept Hideyho's Hide N' Seek game", "autoAcceptHideyho");
 		addRootPage(gameplay, gameplaySource, "gameplay.tickets", "Tickets",
 			"Protect tickets and configure trusted players for timed ticket trading",
 			"protectSafariTicket", "configureTicketTrading");
+        addRootPage(gameplay, gameplaySource, "gameplay.personal-bests", "Personal Bests",
+            "Unique-clear and personal biome-mob catch messages", "personalBestMessages", "biomeMobBestMessages");
+
 		addRootPage(gameplay, profitSource, "gameplay.profit", "Profit Tracking",
 			"Control run profit tracking and Bazaar pricing");
 
@@ -481,7 +483,7 @@ public final class SafariSettingsScreen extends Screen {
 		SettingsArea gameplay = areaByKey("gameplay");
 		addTab(gameplay, "safari", "General", "Safari convenience, tickets, and optional party synchronization",
 			page -> page.key.equals("gameplay.auto-hideyho") || page.key.equals("gameplay.tickets")
-				|| page.key.equals("gameplay.party"));
+				|| page.key.equals("gameplay.party") || page.key.equals("gameplay.personal-bests"));
 		addTab(gameplay, "visual", "Visual", "Safari chat visibility and visual comfort",
 			page -> page.key.startsWith("display.safari."));
 		addTab(gameplay, "profit", "Profit", "Run profit tracking and Bazaar pricing",
@@ -2081,8 +2083,13 @@ public final class SafariSettingsScreen extends Screen {
 			boolean hovered = inside(mouseX, mouseY, cellX, cellY, cellX + cellWidth, cellY + 22);
 			SettingsUiKit.pickerCell(graphics, cellX, cellY, cellWidth, 22, active, hovered,
 				CARD, CARD_HOVER, SELECTED, BORDER, CYAN);
+            if (choiceField.getName().equals("clientMessagePrefix")) {
+                Component preview = ClientMessages.prefixPreview(value);
+                graphics.text(font, preview, cellX+(cellWidth-font.width(preview))/2, cellY+7, TEXT);
+            } else {
 			drawCenteredText(graphics, trim(labels.get(index), cellWidth - 12),
 				cellX + cellWidth / 2, cellY + 7, active ? TEXT : MUTED);
+            }
 			hits.add(new Hit(cellX, cellY, cellX + cellWidth, cellY + 22,
 				() -> chooseDropdownValue(value)));
 			if (soundChoice) {
@@ -2190,6 +2197,7 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private List<String> choiceLabels() {
+        if (choiceField.getName().equals("clientMessagePrefix")) return List.of("[SafariUtils]", "[Safari]", "[SU]");
 		if (isSoundChoice(choiceField)) return SOUND_LABELS;
 		if (isThemeChoice(choiceField)) return THEME_LABELS;
 		if (isSpecialThemeChoice(choiceField)) {
@@ -2201,6 +2209,7 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private int choiceStoredValue(int visibleIndex) {
+        if (choiceField.getName().equals("clientMessagePrefix")) return visibleIndex == 1 ? 2 : visibleIndex == 2 ? 1 : 0;
 		if (isSoundChoice(choiceField)) return AlertSounds.alphabetical().get(visibleIndex).id();
 		if (isThemeChoice(choiceField)) return THEMES.get(visibleIndex).id();
 		if (isSpecialThemeChoice(choiceField)) {
@@ -3678,9 +3687,9 @@ public final class SafariSettingsScreen extends Screen {
 			UIDraw.rainbowEditBox(editor, font);
 			int currentColour = Colours.argb(editingOriginal, 0xFFFFFFFF);
 			setEditingColourState(currentColour);
-			if (colour && !editingAllowsAlpha()) editingAlpha = 255;
+			if (colour && !editingAllowsAlpha()) editingColourState.alpha(255);
 			editor.setValue(colour
-				? (editingAlpha == 255 ? "#%06X".formatted(currentColour & 0xFFFFFF)
+				? (editingColourState.alpha() == 255 ? "#%06X".formatted(currentColour & 0xFFFFFF)
 					: "#%08X".formatted(currentColour))
 				: editingOriginal);
 			editor.setResponder(this::previewEditor);
@@ -3774,16 +3783,16 @@ public final class SafariSettingsScreen extends Screen {
 			int x1 = colourFieldLeft + colourFieldWidth * column / columns;
 			int x2 = colourFieldLeft + colourFieldWidth * (column + 1) / columns;
 			graphics.fillGradient(x1, colourFieldTop, x2, colourFieldTop + colourFieldHeight,
-				hsb(255, editingHue, saturation, 1f), 0xFF000000);
+				hsb(255, editingColourState.hue(), saturation, 1f), 0xFF000000);
 		}
 		outline(graphics, colourFieldLeft, colourFieldTop,
 			colourFieldWidth, colourFieldHeight, BORDER);
-		int selectorX = colourFieldLeft + Math.round(editingSaturation * colourFieldWidth);
-		int selectorY = colourFieldTop + Math.round((1f - editingBrightness) * colourFieldHeight);
+		int selectorX = colourFieldLeft + Math.round(editingColourState.saturation() * colourFieldWidth);
+		int selectorY = colourFieldTop + Math.round((1f - editingColourState.brightness()) * colourFieldHeight);
 		graphics.fill(selectorX - 5, selectorY - 5, selectorX + 6, selectorY + 6, BORDER);
 		graphics.fill(selectorX - 4, selectorY - 4, selectorX + 5, selectorY + 5, TEXT);
 		graphics.fill(selectorX - 2, selectorY - 2, selectorX + 3, selectorY + 3,
-			hsb(255, editingHue, editingSaturation, editingBrightness));
+			hsb(255, editingColourState.hue(), editingColourState.saturation(), editingColourState.brightness()));
 
 		drawText(graphics, "Hue", x + 14, y + 156, MUTED);
 		hueSliderLeft = x + 54;
@@ -3798,7 +3807,7 @@ public final class SafariSettingsScreen extends Screen {
 				hsb(255, i / (float) hueSegments, 1f, 1f));
 		}
 		outline(graphics, hueSliderLeft, hueSliderTop, hueSliderWidth, 12, BORDER);
-		drawSliderMarker(graphics, hueSliderLeft + Math.round(editingHue * hueSliderWidth),
+		drawSliderMarker(graphics, hueSliderLeft + Math.round(editingColourState.hue() * hueSliderWidth),
 			hueSliderTop, 12);
 		if (!editingAllowsAlpha()) {
 			alphaSliderWidth = 0;
@@ -3820,9 +3829,9 @@ public final class SafariSettingsScreen extends Screen {
 		}
 		outline(graphics, alphaSliderLeft, alphaSliderTop, alphaSliderWidth, 12, BORDER);
 		int alphaX = alphaSliderLeft
-			+ Math.round((editingAlpha - 1) / 254f * alphaSliderWidth);
+			+ Math.round((editingColourState.alpha() - 1) / 254f * alphaSliderWidth);
 		drawSliderMarker(graphics, alphaX, alphaSliderTop, 12);
-		drawText(graphics, Math.round(editingAlpha / 255f * 100f) + "%",
+		drawText(graphics, Math.round(editingColourState.alpha() / 255f * 100f) + "%",
 			x + w - 42, y + 199, TEXT);
 		drawText(graphics, "Drag the gradients or enter #RRGGBB / #AARRGGBB",
 			x + 14, y + 214, DIM);
@@ -3858,36 +3867,31 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private static int hsb(int alpha, float hue, float saturation, float brightness) {
-		return alpha << 24 | java.awt.Color.HSBtoRGB(hue, saturation, brightness) & 0xFFFFFF;
+		return SettingsColourState.argb(alpha, hue, saturation, brightness);
 	}
 
 	private int colourFromState() {
-		return hsb(editingAlpha, editingHue, editingSaturation, editingBrightness);
+		return hsb(editingColourState.alpha(), editingColourState.hue(), editingColourState.saturation(), editingColourState.brightness());
 	}
 
 	private void setEditingColourState(int colour) {
-		float[] hsb = java.awt.Color.RGBtoHSB(colour >> 16 & 0xFF,
-			colour >> 8 & 0xFF, colour & 0xFF, null);
-		editingHue = hsb[0];
-		editingSaturation = hsb[1];
-		editingBrightness = hsb[2];
-		editingAlpha = Math.max(1, colour >>> 24);
+		editingColourState.load(colour);
 	}
 
 	private boolean updateColourControl(double mouseX, double mouseY) {
 		if (!editingColour || editor == null) return false;
 		if (inside(mouseX, mouseY, colourFieldLeft, colourFieldTop,
 			colourFieldLeft + colourFieldWidth, colourFieldTop + colourFieldHeight)) {
-			editingSaturation = Math.clamp((float) ((mouseX - colourFieldLeft) / colourFieldWidth), 0f, 1f);
-			editingBrightness = 1f - Math.clamp(
-				(float) ((mouseY - colourFieldTop) / colourFieldHeight), 0f, 1f);
+			editingColourState.saturation(Math.clamp((float) ((mouseX - colourFieldLeft) / colourFieldWidth), 0f, 1f));
+			editingColourState.brightness(1f - Math.clamp(
+				(float) ((mouseY - colourFieldTop) / colourFieldHeight), 0f, 1f));
 			commitColourControls();
 			return true;
 		}
 		if (inside(mouseX, mouseY, hueSliderLeft, hueSliderTop,
 			hueSliderLeft + hueSliderWidth, hueSliderTop + 12)) {
-			editingHue = Math.clamp((float) ((mouseX - hueSliderLeft) / hueSliderWidth),
-				0f, Math.nextDown(1f));
+			editingColourState.hue(Math.clamp((float) ((mouseX - hueSliderLeft) / hueSliderWidth),
+				0f, Math.nextDown(1f)));
 			commitColourControls();
 			return true;
 		}
@@ -3895,7 +3899,7 @@ public final class SafariSettingsScreen extends Screen {
 			&& inside(mouseX, mouseY, alphaSliderLeft, alphaSliderTop,
 			alphaSliderLeft + alphaSliderWidth, alphaSliderTop + 12)) {
 			float progress = Math.clamp((float) ((mouseX - alphaSliderLeft) / alphaSliderWidth), 0f, 1f);
-			editingAlpha = 1 + Math.round(progress * 254f);
+			editingColourState.alpha(1 + Math.round(progress * 254f));
 			commitColourControls();
 			return true;
 		}
@@ -3905,7 +3909,7 @@ public final class SafariSettingsScreen extends Screen {
 	private void commitColourControls() {
 		int colour = colourFromState();
 		updatingColourControls = true;
-		editor.setValue(editingAlpha == 255 ? "#%06X".formatted(colour & 0xFFFFFF)
+		editor.setValue(editingColourState.alpha() == 255 ? "#%06X".formatted(colour & 0xFFFFFF)
 			: "#%08X".formatted(colour));
 		updatingColourControls = false;
 	}

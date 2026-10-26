@@ -21,7 +21,7 @@ import java.nio.file.Path;
 /** Owns the dependency-free settings model, migration, persistence, and screen. */
 public final class ConfigManager {
 	/** Append one migration step whenever persisted setting structure changes. */
-	public static final int CURRENT_SETTINGS_SCHEMA = 5;
+	public static final int CURRENT_SETTINGS_SCHEMA = 6;
 	private static final Gson GSON = new GsonBuilder()
 		.excludeFieldsWithoutExposeAnnotation().setPrettyPrinting().create();
 	private static SafariConfig config;
@@ -174,12 +174,23 @@ public final class ConfigManager {
 				case 2 -> migrateTicketTradingRoles(root);
 				case 3 -> migrateTicketTradingGuestMembership(root);
 				case 4 -> migrateAutomaticLogging(root);
+                case 5 -> migrateHistoryColour(root);
 				default -> throw new IllegalStateException("Missing settings migration from schema " + version);
 			}
 			version++;
 			root.addProperty("settingsSchemaVersion", version);
 		}
 	}
+
+    private static void migrateHistoryColour(JsonObject root) {
+        if (!root.has("display") || !root.get("display").isJsonObject()) return;
+        JsonObject display = root.getAsJsonObject("display");
+        var colour = display.get("historyTabBorderColour");
+        // Only replace the former default; preserve explicitly customized colors.
+        if (colour != null && colour.isJsonPrimitive() && colour.getAsJsonPrimitive().isString()
+                && "0:255:255:170:0".equals(colour.getAsString()))
+            display.addProperty("historyTabBorderColour", "0:255:85:255:85");
+    }
 
 	private static void migrateAutomaticLogging(JsonObject root) {
 		if (!root.has("advanced") || !root.get("advanced").isJsonObject()) return;
@@ -263,6 +274,16 @@ public final class ConfigManager {
 	 * files.
 	 */
 	public static void verifyPersistenceModel() {
+        JsonObject previousDefault = new JsonObject();
+        previousDefault.addProperty("settingsSchemaVersion", 5);
+        JsonObject previousDisplay = new JsonObject();
+        previousDefault.add("display", previousDisplay);
+        previousDisplay.addProperty("historyTabBorderColour", "0:255:255:170:0");
+        if (!parseSettings(previousDefault.deepCopy()).display.historyTabBorderColour.equals("0:255:85:255:85"))
+            throw new IllegalStateException("History default color migration failed");
+        previousDisplay.addProperty("historyTabBorderColour", "0:255:12:34:56");
+        if (!parseSettings(previousDefault.deepCopy()).display.historyTabBorderColour.equals("0:255:12:34:56"))
+            throw new IllegalStateException("History custom color was changed");
 		SafariConfig probe = new SafariConfig();
 		if (probe.sparkling.ticketTradingEnabled
 				|| parseSettings(new JsonObject()).sparkling.ticketTradingEnabled) {

@@ -29,7 +29,41 @@ public final class SettingsMotionRegression {
 		check(SettingsUiKit.hovered(10, 20, 100, 60), "card whitespace belongs to card hover");
 		SettingsUiKit.pointer(110, 40);
 		check(!SettingsUiKit.hovered(10, 20, 100, 60), "adjacent card edge excluded");
-		return 13;
+		return 13 + frameMotion();
+	}
+	private static int frameMotion() {
+		SettingsMotion.Frame frame = new SettingsMotion.Frame();
+		frame.begin(0);
+		check(Math.abs(frame.approach(0, 1, .2f) - .2f) < .000001f, "initial frame preserves legacy speed");
+		frame.begin(0);
+		check(frame.approach(0, 1, .2f) == 0, "zero elapsed time does not advance");
+		check(frame.approach(0, 1, 1) == 1, "disabled animation snaps even without elapsed time");
+		frame.begin(16_666_667);
+		float expected = frame.approach(0, 1, .2f);
+		check(Math.abs(expected - .2f) < .000001f, "60 FPS coefficient retained");
+		check(frame.approach(0, 1, .2f) == expected, "repeated controls use the same frame coefficient");
+		for (int rate : new int[]{20, 30, 60, 120, 144, 240}) {
+			SettingsMotion.Frame clock = new SettingsMotion.Frame();
+			clock.begin(0);
+			float value = 0;
+			for (int step = 1; step <= rate / 2; step++) {
+				clock.begin(Math.round(step * 1_000_000_000d / rate));
+				value = clock.approach(value, 1, .1f);
+			}
+			check(Math.abs(value - (1 - Math.pow(.9, 30))) < .00001, "equal elapsed animation at " + rate + " FPS");
+		}
+		frame.begin(9_000_000_000L);
+		check(Math.abs(frame.approach(0, 1, .2f) - .488f) < .000001f, "focus pause has bounded step");
+		frame.begin(8_000_000_000L);
+		check(frame.approach(0, 1, .2f) == 0, "backward timestamp does not reverse animation");
+		frame.reset(); frame.begin(20_000_000_000L);
+		check(Math.abs(frame.approach(0, 1, .2f) - .2f) < .000001f, "screen reinitialization resets clock only");
+		check(frame.approach(0, 1, Float.NaN) == 0 && frame.approach(0, 1, 0) == 0, "invalid or stopped speed cannot poison state");
+		for (int speed = 1; speed < 100; speed++) {
+			float value = frame.approach(0, 1, speed / 100f);
+			check(value > 0 && value < 1, "bounded cache overflow preserves calculation");
+		}
+		return 114;
 	}
 	private static void check(boolean value, String description) {
 		if (!value) throw new AssertionError(description);

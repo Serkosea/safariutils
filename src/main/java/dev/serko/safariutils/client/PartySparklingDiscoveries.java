@@ -21,7 +21,7 @@ public final class PartySparklingDiscoveries {
 	static boolean accept(int[] values) {
 		long before = state.active();
 		if (!state.accept(values)) return false;
-		SparklingWatch.onSharedCaught(state.caughtMask());
+		// Species-only remote catch masks cannot erase individually observed local bodies.
 		long added = state.active() & ~before;
 		if (added != 0 && SessionManager.current() != null)
 			EncounterAlerts.fireSparklingDetected(names(added));

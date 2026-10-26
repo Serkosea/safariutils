@@ -35,6 +35,9 @@ public final class CoreRegressionSuite {
 		lifecycle();
 		profiles();
 		checks += SparklingImportRegression.run();
+        checks += dev.serko.safariutils.client.ShiningCoinRegression.run();
+        checks += dev.serko.safariutils.session.EmeraldDyeRegression.run();
+        checks += dev.serko.safariutils.session.PersonalBestRegression.run();
 		checks += dev.serko.safariutils.client.CommandSpacingRegression.run();
 		checks += PersistenceRegression.run();
 		checks += OrderedSnapshotRegression.run();
@@ -45,6 +48,8 @@ public final class CoreRegressionSuite {
 		checks += dev.serko.safariutils.client.LoggingOptInRegression.run();
 		checks += dev.serko.safariutils.client.SavedRunLogRegression.run();
 		checks += dev.serko.safariutils.client.SettingsMotionRegression.run();
+		checks += dev.serko.safariutils.client.SettingsColourStateRegression.run();
+        checks += dev.serko.safariutils.client.StatColoursRegression.run();
 		checks += dev.serko.safariutils.client.ThemeSelectionRegression.run();
 		checks += SettingsFieldsRegression.run();
 		checks += GenerationDispatchRegression.run();

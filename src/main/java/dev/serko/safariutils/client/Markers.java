@@ -25,7 +25,15 @@ public final class Markers {
 
 	/** A labeled box to render. Only waypoint boxes can ignore depth. */
 	public record Marker(AABB box, String label, int colour, Style style,
-			boolean seeThrough, boolean researchCandidate, boolean critterLabel) {
+			boolean seeThrough, boolean researchCandidate, boolean critterLabel, RecatchSpots.ActivePin pin) {
+        public Marker(AABB box, String label, int colour, Style style, boolean seeThrough,
+                boolean researchCandidate, boolean critterLabel) {
+            this(box, label, colour, style, seeThrough, researchCandidate, critterLabel, null);
+        }
+        public Marker forFrame(float partialTick) {
+            if (pin == null || !pin.followsBody()) return this;
+            return new Marker(pin.frameBox(partialTick), label, colour, style, seeThrough, researchCandidate, critterLabel, pin);
+        }
 		public Marker(AABB box, String label, int colour, Style style, boolean seeThrough,
 				boolean researchCandidate) {
 			this(box, label, colour, style, seeThrough, researchCandidate, false);
@@ -109,7 +117,7 @@ public final class Markers {
 				String label = (pin.sparkling() ? "SPARKLING " : "") + pin.critter().name()
 					+ pityLabel(pin.critter(), pin.entityId());
 				markers.add(new Marker(pin.box(), label, colour, Style.WAYPOINT,
-					true, false, true));
+					true, false, true, pin));
 			}
 		}
 

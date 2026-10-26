@@ -43,6 +43,7 @@ import net.minecraft.client.Minecraft;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Set;
 
 /** Starts, updates, finishes, and saves Safari runs. */
@@ -92,6 +93,7 @@ public final class SessionManager {
 	private static int runExpectedPlayers = 1;
 	private static long visitEnteredAt;
 	private static boolean visitRosterLocked;
+    private static boolean catchBeforeTicket;
 	/** First queue or party-entry signal, retained across the entrance-to-instance transfer. */
 	private static long pendingJoinStartedAt;
 	/** Destination play-connection boundary; the stable server-window origin. */
@@ -167,6 +169,7 @@ public final class SessionManager {
 		}
 
 		if (current != null) {
+            observePersonalBestContext();
 			Integer balance = SafariLocation.safariEssence();
 			if (balance != null) current.updateEssenceBalance(balance, System.currentTimeMillis());
 		}
@@ -256,9 +259,16 @@ public final class SessionManager {
 			return;
 		}
 
-		ChatParser.SparklingCatch sparkling = ChatParser.sparklingCatch(line);
+		if (current != null && ChatParser.ownEmeraldDye(line, current.selfName())) {
+            current.recordRareDrop("DYE_EMERALD");
+            dev.serko.safariutils.backend.AuctionMarketClient.quote("DYE_EMERALD").ifPresent(q ->
+                current.recordRareDropValue("DYE_EMERALD",q.price(),q.source(),q.observedAt(),now));
+            DebugLog.line("RARE_DROP", "item=DYE_EMERALD count=" + current.rareDrops().get("DYE_EMERALD"));
+            return;
+        }
+        ChatParser.SparklingCatch sparkling = ChatParser.sparklingCatch(line);
 		if (sparkling != null) {
-			SparklingWatch.onCaught(sparkling.critter());
+			SparklingWatch.onCaught(sparkling.critter(), !sparkling.catcher().equalsIgnoreCase(selfName()));
 			if (current != null) {
 				SparklingMode.onSparklingCaught(sparkling.critter());
 				current.recordSparkling(sparkling.critter(), sparkling.catcher(), now);
@@ -299,7 +309,8 @@ public final class SessionManager {
 		}
 
 		if (current == null) {
-			// Pre-ticket messages never activate or populate a run. Objective and private
+			if (event.isCatch()) catchBeforeTicket = true;
+            // Pre-ticket messages never activate or populate a run. Objective and private
 			// synchronization trackers have their own Safari-visit context.
 			return;
 		}
@@ -334,7 +345,12 @@ public final class SessionManager {
 	}
 
 	private static void recordEvent(CritterEvent event, long now) {
-		current.record(event, now);
+		observePersonalBestContext();
+        current.record(event, now);
+        if (event.isCatch()) {
+            announcePersonalBests(current.personalBests().catchSpecies(event.critter(),
+                event.type() == CritterEvent.Type.OWN_CATCH ? current.selfName() : event.catcher(), current.personalBestElapsed()));
+        }
 		if (event.type() == CritterEvent.Type.SHARED_CATCH) {
 			TicketTrading.onSharedCatch(event.catcher());
 		}
@@ -393,6 +409,43 @@ public final class SessionManager {
 		}
 	}
 
+    private static void observePersonalBestContext() {
+        if (current == null) return;
+        long elapsed = current.personalBestElapsed();
+        current.personalBests().enter(SafariLocation.biome(), elapsed);
+
+    }
+
+    private static void announcePersonalBests(List<PersonalBestTracker.Split> added) {
+        if (added.isEmpty()) return;
+        List<net.minecraft.network.chat.Component> messages = new ArrayList<>();
+
+        for (var split : added) {
+            boolean mob = PersonalBestTracker.isMob(split.target());
+            int mode = mob ? ConfigManager.get().gameplay.biomeMobBestMessages : ConfigManager.get().gameplay.personalBestMessages;
+            var previous = PersonalBests.best(split.target(),split.group());
+            long old = previous == null ? -1 : previous.split().elapsedMillis();
+            current.personalBests().compared(split,old);
+            boolean eligible = PersonalBestTracker.eligible(split);
+            boolean improved = eligible && (old < 0 || split.elapsedMillis() < old);
+            DebugLog.line("PB/SPLIT", "target="+split.target()+" elapsed="+split.elapsedMillis()
+                +" contributors="+split.contributors().size()+" eligible="+eligible+" previous="+old+" rules="+split.rules());
+            if (mode == 2 || mode == 1 && !improved) continue;
+            String result = mob && eligible && old < 0 ? "First Catch!" : PersonalBestTracker.comparison(split.elapsedMillis(),old,eligible);
+            int colour = PersonalBestTracker.comparisonColour(split.elapsedMillis(),old,eligible);
+            var message = net.minecraft.network.chat.Component.literal(PersonalBestTracker.title(split.target())
+                +(mob ? " " : " ("+(split.group()==null ? split.contributors().size()+" contributors" : split.group().label)+") ")
+                +PersonalBestTracker.time(split.elapsedMillis()))
+                .withStyle(style -> style.withColor(PersonalBestTracker.ALL.equals(split.target()) ? 0xB58AFF : PersonalBestTracker.biome(split.target()).colour()));
+            message.append(net.minecraft.network.chat.Component.literal(" (").withStyle(style -> style.withColor(0xFFFFFF)));
+            message.append(net.minecraft.network.chat.Component.literal(result).withStyle(style -> style.withColor(colour)));
+            message.append(net.minecraft.network.chat.Component.literal(")").withStyle(style -> style.withColor(0xFFFFFF)));
+            messages.add(message);
+        }
+        if (!messages.isEmpty()) dev.serko.safariutils.client.ClientMessages.sendLines(messages);
+
+    }
+
 	/** Opens a fresh run, then safely files the previous one. */
 	public static void startSession(String trigger) {
 		if (!visitPrepared) beginVisit(SafariLocation.lobbyId());
@@ -410,6 +463,9 @@ public final class SessionManager {
 		suppressCurrentRunPersistence = BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
 			&& ConfigManager.get().advanced.testingDoNotSaveRun;
 		runExpectedPlayers = Math.max(visitExpectedPlayers, visitPeakPlayers);
+        current.startPersonalBests(!catchBeforeTicket && !suppressCurrentRunPersistence);
+        DebugLog.line("PB/START", "rules="+PersonalBestTracker.RULES+" partial="+catchBeforeTicket+" testing="+suppressCurrentRunPersistence);
+        observePersonalBestContext();
 		SparklingMode.onRunStarted();
 		runLobbyId = SafariLocation.lobbyId();
 		waitingLobbyId = runLobbyId;
@@ -437,6 +493,7 @@ public final class SessionManager {
 		visitPrepared = true;
 		visitLobbyId = lobbyId;
 		visitEnteredAt = now;
+        catchBeforeTicket = false;
 		// The destination connection arrives before the delayed sidebar, lobby id, and
 		// area state. This also works for a late party warp that has no local queue line.
 		ticketWindowStartedAt = pendingConnectionJoinedAt > 0L
@@ -505,7 +562,10 @@ public final class SessionManager {
 
 	private static void recordLifetimeSparkling(Critter critter) {
 		boolean suppressed = persistenceSuppressed();
-		if (!suppressed) SparklingStats.recordSparkling(critter);
+		if (!suppressed) {
+            if (current != null && SparklingStats.count(critter) == 0) current.recordNewSparkling(critter);
+            SparklingStats.recordSparkling(critter);
+        }
 		int total = SparklingStats.count(critter);
 		if (suppressed && current != null) {
 			total += (int) current.sparklingOccurrences().stream()

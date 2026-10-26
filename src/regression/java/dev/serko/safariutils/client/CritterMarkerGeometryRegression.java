@@ -63,7 +63,26 @@ public final class CritterMarkerGeometryRegression {
 				checks += 3;
 			}
 		}
-		return checks;
+        Critter macaw = dev.serko.safariutils.data.Critters.MACAW;
+        AABB stable = new AABB(0,0,0,1,1,1);
+        java.util.UUID owner = java.util.UUID.randomUUID();
+        var moving = new RecatchSpots.ActivePin(macaw, stable, owner, false, true);
+        var frozen = new RecatchSpots.ActivePin(macaw, stable, owner, false);
+        for (int frame=0;frame<=100;frame++) {
+            float partial=frame/100f;
+            AABB rendered=moving.frameBox(partial,(pin,tick)-> {
+                check(pin.entityId().equals(owner), "pin projection changed ownership");
+                return CritterMarkerGeometry.captureFrame(pin.critter(),pin.box(),stable,tick,0,0,1);
+            });
+            check(close(rendered.minX,partial) && close(rendered.getXsize(),1), "recatch movement stepped or resized");
+            check(frozen.frameBox(partial,(pin,tick)-> { throw new AssertionError("frozen pin followed body"); }).equals(stable), "frozen anchor moved");
+            checks+=3;
+        }
+        var marker1=new Markers.Marker(stable,"Macaw",0,Markers.Style.WAYPOINT,true,false,true,moving);
+        var marker2=new Markers.Marker(stable,"Macaw",0,Markers.Style.WAYPOINT,true,false,true,
+            new RecatchSpots.ActivePin(macaw,stable,java.util.UUID.randomUUID(),false,true));
+        check(MarkerRegistry.deduplicate(java.util.List.of(marker1,marker2)).size()==2,"overlapping distinct pins merged"); checks++;
+        return checks;
 	}
 
 	private static boolean close(double a, double b) { return Math.abs(a - b) < 1e-10; }

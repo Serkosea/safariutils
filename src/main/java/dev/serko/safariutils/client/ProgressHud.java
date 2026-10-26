@@ -30,7 +30,7 @@ public final class ProgressHud implements HudElement {
 		0xFF55FF55, 0xFFFFFF55, 0xFFFFAA00, 0xFFFF5555, 0xFFAA0000
 	};
 	/** Gold, as coins are everywhere else in SkyBlock. */
-	private static final int COINS = 0xFFFFD700;
+	private static final int COINS = StatColours.COINS;
 
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker deltaTracker) {

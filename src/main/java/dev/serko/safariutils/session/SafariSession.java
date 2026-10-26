@@ -26,6 +26,12 @@ public final class SafariSession {
 	/** Name used for the local player in per-player views. */
 	private final String selfName;
 	private final long startedAtMillis;
+    private final long personalBestStarted = dev.serko.safariutils.state.MonotonicTime.nowMillis();
+    private PersonalBestTracker personalBests = new PersonalBestTracker(false, null);
+    public void startPersonalBests(boolean timingKnown) { personalBests = new PersonalBestTracker(timingKnown, selfName); }
+    public PersonalBestTracker personalBests() { return personalBests; }
+    public long personalBestElapsed() { return Math.max(0, dev.serko.safariutils.state.MonotonicTime.nowMillis()-personalBestStarted); }
+
 
 	private final Map<Critter, Integer> ownCatches = new LinkedHashMap<>();
 	private final Map<Critter, Integer> attempts = new LinkedHashMap<>();
@@ -68,6 +74,18 @@ public final class SafariSession {
 	private Map<String, Map<SafariBiome, Integer>> uniquePerPlayerCache = Map.of();
 	private int safariEssence;
 	private int rainbowFeathers;
+    private final Map<String, Integer> rareDrops = new LinkedHashMap<>();
+    private final Map<String, RunRecord.RareDropValue> rareDropValues = new LinkedHashMap<>();
+    public Map<String, RunRecord.RareDropValue> rareDropValues() { return Collections.unmodifiableMap(rareDropValues); }
+    public void recordRareDropValue(String id, double price, String source, long observedAt, long at) {
+        rareDropValues.merge(id, new RunRecord.RareDropValue(1,price,source,observedAt,at), (a,b) ->
+            new RunRecord.RareDropValue(a.pricedQuantity()+1,a.estimatedTotal()+price, a.source().equals(source)?source:"mixed", Math.min(a.observedAt(),observedAt),at));
+    }
+    private final Set<String> newSparklingSpecies = new LinkedHashSet<>();
+    public Map<String, Integer> rareDrops() { return Collections.unmodifiableMap(rareDrops); }
+    public Set<String> newSparklingSpecies() { return Collections.unmodifiableSet(newSparklingSpecies); }
+    public void recordRareDrop(String id) { rareDrops.merge(id, 1, Integer::sum); }
+    public void recordNewSparkling(Critter critter) { newSparklingSpecies.add(critter.name()); }
 	private Integer lastEssenceBalance;
 	private long lastEventMillis;
 	private boolean interrupted;
@@ -119,7 +137,7 @@ public final class SafariSession {
 			case SHARED_CATCH -> {
 				addParticipant(event.catcher());
 				recordPartySpecies(critter);
-				sharedCatches.computeIfAbsent(critter, c -> new TreeMap<>())
+				sharedCatches.computeIfAbsent(critter, c -> new TreeMap<>(String.CASE_INSENSITIVE_ORDER))
 					.merge(event.catcher(), 1, Integer::sum);
 				sharedCatchTotals.merge(critter, 1, Integer::sum);
 				sharedTotal++;
@@ -387,6 +405,20 @@ public final class SafariSession {
 
 	// --- misc ----------------------------------------------------------------
 
+    /** Snapshot of existing catch evidence; no second tracker or additional chat parsing. */
+    public Map<String, Map<String, Integer>> catchesPerPlayer() {
+        Map<String, Map<String, Integer>> result = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        if (!ownCatches.isEmpty()) {
+            Map<String,Integer> mine = new LinkedHashMap<>();
+            ownCatches.forEach((critter,count) -> mine.put(critter.name(),count));
+            result.put(selfName,mine);
+        }
+        sharedCatches.forEach((critter,players) -> players.forEach((player,count) ->
+            result.computeIfAbsent(player,ignored -> new LinkedHashMap<>()).merge(critter.name(),count,Integer::sum)));
+        result.replaceAll((player,counts) -> Collections.unmodifiableMap(counts));
+        return Collections.unmodifiableMap(result);
+    }
+
 	/** Your catches by species for saved history and live summaries. */
 	public Map<Critter, Integer> ownCatchCounts() {
 		return Map.copyOf(ownCatches);
@@ -491,7 +523,7 @@ public final class SafariSession {
 	/** True when nothing has been recorded yet — used to suppress an empty HUD. */
 	public boolean isEmpty() {
 		return ownCatches.isEmpty() && sharedCatches.isEmpty() && attempts.isEmpty()
-			&& safariEssence == 0 && rainbowFeathers == 0 && sparklingOccurrences.isEmpty();
+			&& safariEssence == 0 && rainbowFeathers == 0 && sparklingOccurrences.isEmpty() && rareDrops.isEmpty();
 	}
 
 	public record SparklingOccurrence(Critter critter, String catcher, long atMillis) {

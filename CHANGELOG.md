@@ -1,5 +1,28 @@
 # Changelog
 
+## [3.2.0] - 2026-10-26
+
+## Changes & Additions
+
+- Added Personal Bests for biome and All Uniques clears, grouped by Solo, Duo, Trio and Squad contributors
+- Added personal Gemzie, Doomspiral, Wumpa and Macaw catch PBs, timed from ticket use
+- Added configurable PB messages with hundredth-second times and separate notices for simultaneous milestones
+- Combined detailed run information and completion times into History and PB run views, with individual catch and shard breakdowns
+- Added personal Emerald Dye tracking, collection totals and auction-based profit estimates
+- Automatically sync new Sparkling ownership and higher duplicate totals from player lookups without lowering saved collections
+- Refined stats, collection and lookup layouts, colors, special themes and progress effects
+- Added selectable [SafariUtils], [Safari] and [SU] client-message prefixes
+- Added cached auction history and source-aware fallback estimates when current listings are unavailable
+
+## Fixes & Improvements
+
+- Preserved history-based Runs Since Unique and Runs Since Sparkling values after API refreshes
+- Fixed lookup refresh controls, shared Sparkling cleanup and PB eligibility for clears you did not contribute to
+- Reconciled Gimmiegold quotas with held coins and confirmed spawns, excluding discarded unused coins
+- Smoothed moving recatch markers using frame interpolation while keeping absent-body pins fixed
+- Kept unknown or empty party inventories out of the objective HUD
+- Improved shared settings controls, focus handling and diagnostics; retained existing saved settings and run history
+
 ## [3.1.3] - 2026-10-22
 
 ### Changes & Additions

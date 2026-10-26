@@ -17,8 +17,8 @@
 
 `gradle-local.properties` selects deployment destinations and the live component root.
 `private-api` currently holds ignored credentials, not compiled source. Do not delete it
-or copy it into component snapshots/artifacts. `cloudflare-api` is an ignored backend
-workspace with its own dependencies and secret deployment lifecycle.
+or copy it into component snapshots/artifacts. The local backend has moved to the sibling
+`SerkoAddons/backend/` workspace, with its own dependencies and secret deployment lifecycle.
 
 `build`, `release-artifacts`, `.gradle`, and `.gradle-user` are generated/local caches.
 Preserve caches during routine work. Future temporary work belongs under ignored `local/`,
@@ -26,11 +26,11 @@ not a new root staging folder. Never put a key in tracked source, build metadata
 
 ## Website release updates
 
-The authoritative local website is `private-api/serkosea-site/` in this standalone
-checkout, deployed directly to the existing Cloudflare Pages project `serkosea`.
+The authoritative local website is now `../SerkoAddons/website/`, moved out of
+`private-api/serkosea-site/` and deployed to the existing Cloudflare Pages project `serkosea`.
 The copy under SerkoAddons' `components/SafariUtils/private-api/` is an obsolete
 v2.7.0 snapshot, not a deployment source. Never deploy the whole `private-api/`
-directory: it contains credentials. The site folder contains public static assets only.
+directory: it contains credentials. The website folder contains public static assets only.
 Update `safariutils/index.html` within the site folder after preparing release assets;
 publish GitHub downloads before deploying the site, and verify all four public links.
 

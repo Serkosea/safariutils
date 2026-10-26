@@ -8,7 +8,6 @@ import dev.serko.safariutils.session.SparklingStats;
 import dev.serko.safariutils.session.RunRecord;
 import dev.serko.safariutils.session.SafariSession;
 import dev.serko.safariutils.session.SessionManager;
-import dev.serko.safariutils.session.TrackingMode;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -62,12 +61,12 @@ public final class SafariDashboardScreen extends Screen {
 
 	private static final int CAUGHT_BY_YOU = 0xFF55FF55;
 	private static final int CAUGHT_BY_PARTY = 0xFF55FFFF;
-	private static final int UNCAUGHT = 0xFF777777;
+	private static final int UNCAUGHT = StatColours.MISSING;
 	private static final int HEADING = 0xFFFFAA00;
 	/** Gold, as coins are everywhere else in SkyBlock. */
-	private static final int COINS = 0xFFFFD700;
-	private static final int LABEL = 0xFFBBBBBB;
-	private static final int DIM = 0xFF888888;
+	private static final int COINS = StatColours.COINS;
+	private static final int LABEL = StatColours.INFO;
+	private static final int DIM = StatColours.SECONDARY;
 	private static final int WHITE = 0xFFFFFFFF;
 
 	private static final int PANEL_BACKGROUND = 0xE00B1017;
@@ -77,20 +76,30 @@ public final class SafariDashboardScreen extends Screen {
 	private static final int PANEL_KEYLINE = 0x24FFFFFF;
 	private static final int BAR_TRACK = 0x5A25303D;
 
-	private final SafariSession session;
-	private final boolean live;
+    private SafariSession detailSession;
+    private int liveDetailTicks;
 
 	/** Which view is showing. Static so it survives closing and reopening the screen. */
-	private static Tab tab = Tab.RUN;
+	private static Tab tab = Tab.HISTORY;
+    private static final int BEST_ROW_HEIGHT = 13;
+    private static final int BEST_MOB_GAP = 8;
+    private static final int BEST_MOB_SECTION_HEIGHT = BEST_ROW_HEIGHT + BEST_MOB_GAP;
+    private static final int BEST_CARD_HEIGHT = 22 + 4 * BEST_ROW_HEIGHT + 6;
+    private RunRecord selectedRun;
+    private boolean detailBests;
+    private Map<String,Map<String,Integer>> detailPlayerCounts;
+    private Tab runDetailBack = Tab.PERSONAL_BESTS;
+    private final List<BestHit> bestHits = new ArrayList<>();
+    private record BestHit(int x, int y, int width, int height, RunRecord run) { }
 
-	/** The four views available in the Critter Safari panel. */
+
+	/** Main navigation; run details are shared by History and Personal Bests. */
 	private enum Tab {
-		/** This run, or the last one if there is none. */
-		RUN("Run"),
 		/** Filterable saved runs. */
 		HISTORY("History"),
 		/** Totals per species across every saved run. */
-		STATS("Stats");
+		STATS("Stats"),
+        PERSONAL_BESTS("Personal Bests");
 
 		final String label;
 
@@ -161,9 +170,8 @@ public final class SafariDashboardScreen extends Screen {
 
 	public SafariDashboardScreen() {
 		super(Component.literal("Critter Safari"));
-		tab = Tab.RUN;
-		this.session = SessionManager.currentOrLast();
-		this.live = SessionManager.current() != null;
+		tab = Tab.HISTORY;
+
 		// History controls reset whenever the stats screen is reopened.
 		this.sparklingRunsOnly = false;
 		this.historySort = HistorySort.NEWEST;
@@ -182,12 +190,11 @@ public final class SafariDashboardScreen extends Screen {
 		int preferredWidth = Math.max(420, Math.max(preferredColumnsWidth,
 			measureTabTextWidth() + PANEL_PADDING * 2)) + 8;
 		int valueRows = showValue() ? 1 : 0;
-		int preferredPanelHeight = NAV_CONTENT_OFFSET + switch (tab) {
-			case RUN -> 46 + (2 + valueRows + 10) * LINE_HEIGHT
-				+ ((session == null ? 0 : session.uniquePerPlayer().size()) + 2) * LINE_HEIGHT + 40;
+		int preferredPanelHeight = navigationOffset() + (selectedRun != null ? runDetailHeight() : switch (tab) {
 			case HISTORY -> 46 + (HISTORY_ROWS + 2) * LINE_HEIGHT + 46;
 			case STATS -> 46 + (4 + valueRows + 10) * LINE_HEIGHT;
-		};
+            case PERSONAL_BESTS -> bestPanelHeight();
+		});
 		// Use native-size adaptive columns whenever they fit. Dense history tables or
 		// unusually short canvases alone fall back to proportional scaling.
 		responsiveScale = Math.min(1f, Math.min(width / (float) preferredWidth,
@@ -204,29 +211,301 @@ public final class SafariDashboardScreen extends Screen {
 		panelWidth = Math.min(layoutWidth - 8, Math.max(columnsWidth, textWidth));
 		// Price totals add one row to the header and Stats summary.
 		int statsValueRows = valueRows;
-		panelHeight = NAV_CONTENT_OFFSET + switch (tab) {
+		panelHeight = navigationOffset() + (selectedRun != null ? runDetailHeight() : switch (tab) {
 			// Header block, the longest biome column (Haunted has 10), then the player table.
-			case RUN -> 46 + (2 + valueRows + 10) * LINE_HEIGHT
-				+ ((session == null ? 0 : session.uniquePerPlayer().size()) + 2) * LINE_HEIGHT + 40;
 			// A summary block, then one line per run shown.
 			case HISTORY -> 46 + (HISTORY_ROWS + 2) * LINE_HEIGHT + 46;
 			// A summary block, then the species columns.
 			case STATS -> 46 + (4 + statsValueRows + 10) * LINE_HEIGHT;
-		};
+            case PERSONAL_BESTS -> bestPanelHeight();
+		});
 		panelLeft = Math.max(4, (layoutWidth - panelWidth) / 2);
 		panelTop = Math.max(10, (layoutHeight - panelHeight) / 2);
 
-		addTabButtons();
+		if (selectedRun == null) addTabButtons();
 
 		int buttonY = panelTop + panelHeight - 30;
-		if (tab == Tab.HISTORY) addHistoryControls(buttonY);
+		if (selectedRun != null || tab == Tab.PERSONAL_BESTS) addBestControls(buttonY);
+        else if (tab == Tab.HISTORY) addHistoryControls(buttonY);
 		else {
 			int buttonWidth = 80;
 			int buttonX = panelLeft + (panelWidth - buttonWidth) / 2;
+
 			controls.add(new Control("Close", buttonX, buttonY, buttonWidth, ACTION_HEIGHT,
 				ControlStyle.BUTTON, false, false, this::onClose));
 		}
 	}
+
+    private int navigationOffset() { return selectedRun == null ? NAV_CONTENT_OFFSET : 0; }
+
+    private void clearRunDetail() { selectedRun=null; detailSession=null; liveDetailTicks=0; detailPlayerCounts=null; }
+    private void openRunDetail(RunRecord record, SafariSession current) {
+        runDetailBack=tab; selectedRun=record; detailSession=current; liveDetailTicks=0;
+        detailBests=tab==Tab.PERSONAL_BESTS; detailPlayerCounts=record.displayPlayerBiomeUniques();
+        rebuildWidgets();
+    }
+    @Override public void tick() {
+        super.tick();
+        if(selectedRun==null || detailSession==null || ++liveDetailTicks<20) return;
+        liveDetailTicks=0;
+        int previousHeight=runDetailHeight();
+        selectedRun=RunRecord.of(detailSession);
+        detailPlayerCounts=selectedRun.displayPlayerBiomeUniques();
+        if(SessionManager.current()==detailSession) selectedRun.ended=detailSession.startedAtMillis()+detailSession.elapsedMillis(System.currentTimeMillis());
+        if(previousHeight!=runDetailHeight()) rebuildWidgets();
+    }
+    private void detailText(GuiGraphicsExtractor graphics,Font font,String line,int x,int y,int colour) {
+        text(graphics,font,Component.literal(font.plainSubstrByWidth(line,panelWidth-PANEL_PADDING*2)),x,y,colour);
+    }
+    private void detailSummary(GuiGraphicsExtractor graphics, Font font, String line, int x, int y) {
+        StatColours.summaryLine(graphics,font,line,STAT_SEPARATOR,x,y);
+    }
+
+    private static String runCatchSummary(RunRecord run, boolean fullLabels) {
+        int own=run.own.values().stream().mapToInt(Integer::intValue).sum();
+        int attempts=run.attempts.values().stream().mapToInt(Integer::intValue).sum();
+        return "Uniques "+run.partyUnique()+"/"+Critters.total()+STAT_SEPARATOR
+            +(fullLabels?"Your Uniques ":"Yours ")+run.own.size()+STAT_SEPARATOR
+            +"Catches "+run.partyTotal()+" ("+own+" Yours)"+STAT_SEPARATOR+"Catch Attempts "+attempts;
+    }
+
+    private static String runCritterCounts(RunRecord run, Critter critter) {
+        int caught=run.caught(critter), attempts=run.attempts.getOrDefault(critter.name(),0);
+        String count=caught>0?String.valueOf(caught):attempts>0?attempts+"t":"-";
+        return run.hasShardData()?count+" ("+run.shards(critter)+"x)":count;
+    }
+
+    private static String runRewardSummary(RunRecord run, boolean fullLabels) {
+        return run.totalShards+" Shards ("+run.ownShards+" Yours)"+STAT_SEPARATOR
+            +run.safariEssence+" Essence"+STAT_SEPARATOR
+            +(fullLabels?"Rainbow Feathers ":"Feathers ")+run.rainbowFeathers
+            +STAT_SEPARATOR+"Emerald Dyes "+run.emeraldDyes();
+    }
+
+    private void drawRunDetails(GuiGraphicsExtractor graphics,Font font,int y) {
+        RunRecord run=selectedRun;
+        y+=ACTION_HEIGHT+10;
+        int left=panelLeft+PANEL_PADDING, right=panelLeft+panelWidth-PANEL_PADDING;
+        boolean current=detailSession!=null&&detailSession==SessionManager.current();
+        String title=current?"Current Run":runNumber(run)>0?"Run "+runNumber(run):"Last Run";
+        var heading=Component.literal(title).withColor(tabBorderColour())
+            .append(Component.literal(STAT_SEPARATOR).withColor(WHITE))
+            .append(Component.literal(formatWhen(run.started)).withColor(StatColours.DATE))
+            .append(Component.literal(STAT_SEPARATOR).withColor(WHITE))
+            .append(Component.literal(ProgressHud.formatDuration(run.durationMillis())).withColor(StatColours.TIME));
+        if(run.interrupted) heading.append(Component.literal(STAT_SEPARATOR+"Interrupted").withColor(DIM));
+        text(graphics,font,heading,left,y,WHITE);y+=13;
+        if(detailBests) { drawRunCompletions(graphics,font,run,left,right,y); return; }
+        drawRunPlayers(graphics,font,run,left,y);y+=21;
+        String catches=runCatchSummary(run,true);
+        if(font.width(catches)>right-left) catches=runCatchSummary(run,false);
+        detailSummary(graphics,font,catches,left,y);y+=13;
+        String rewards=runRewardSummary(run,true);
+        if(font.width(rewards)>right-left) rewards=runRewardSummary(run,false);
+        detailSummary(graphics,font,rewards,left,y);y+=13;
+        if(showValue()) {
+            long value=detailSession!=null?BazaarPrices.valueOf(detailSession):BazaarPrices.valueOf(run);
+            String valueText=!BazaarPrices.known()?"Market prices not loaded":BazaarPrices.format(value)+" coins"
+                +(BazaarPrices.rareDropPricingIncomplete(run.rareDrops)?" + unpriced drops":"");
+            detailText(graphics,font,"Profit: "+valueText,left,y,COINS);y+=13;
+        }
+        y=drawRunSparklings(graphics,font,run,left,y);
+        y=runDetailDivider(graphics,font,left,right,y-13);
+        text(graphics,font,Component.literal("You Caught"),left,y,CAUGHT_BY_YOU);
+        text(graphics,font,Component.literal("Teammate Only"),left+font.width("You Caught")+18,y,CAUGHT_BY_PARTY);
+        text(graphics,font,Component.literal("Uncaught"),left+font.width("You CaughtTeammate Only")+36,y,UNCAUGHT);
+        String countsLegend=run.hasShardData()?"Catches (Shards)":"Catches (shards not saved)";
+        text(graphics,font,Component.literal(countsLegend),right-font.width(countsLegend),y,StatColours.UNIQUE);
+        y+=18;
+        int gridTop=y, gridBottom=y;
+        for(int column=0;column<BIOME_ORDER.length;column++) {
+            SafariBiome biome=BIOME_ORDER[column];int x=left+column*columnWidth,rowY=gridTop;
+            int uniques=(int)Critters.inBiome(biome).stream().filter(c -> run.caught(c)>0).count();
+            text(graphics,font,Component.literal(biome.displayName()+" ("+uniques+"/"+Critters.totalIn(biome)+")"),x,rowY,0xFF000000|biome.colour());rowY+=13;
+            for(Critter critter:Critters.inBiome(biome)) {
+                int caught=run.caught(critter), yours=run.own.getOrDefault(critter.name(),0);
+                int colour=yours>0?CAUGHT_BY_YOU:caught>0?CAUGHT_BY_PARTY:UNCAUGHT;
+                text(graphics,font,Component.literal(critter.name()),x,rowY,caught == 0 ? UNCAUGHT : 0xFF000000|critter.rarity().colour());
+                String count=runCritterCounts(run,critter);
+                text(graphics,font,Component.literal(count),x+columnWidth-COLUMN_PAD-font.width(count),rowY,colour);rowY+=LINE_HEIGHT;
+            }
+            gridBottom=Math.max(gridBottom,rowY);
+        }
+        y=runDetailDivider(graphics,font,left,right,gridBottom-LINE_HEIGHT);
+        int nameWidth=Math.max(115,(right-left)/3), cell=(right-left-nameWidth)/4;
+        text(graphics,font,Component.literal("Uniques Per Player"),left,y,StatColours.UNIQUE);
+        for(int i=0;i<4;i++) centeredCell(graphics,font,BIOME_ORDER[i].displayName(),left+nameWidth+i*cell,cell,y,0xFF000000|BIOME_ORDER[i].colour());
+        y+=13;
+        if(detailPlayerCounts==null || detailPlayerCounts.isEmpty()) {
+            detailText(graphics,font,detailPlayerCounts==null?"Other Players Not Saved":"No catches yet.",left,y,DIM);y+=LINE_HEIGHT;
+        } else for(var player:detailPlayerCounts.entrySet()) {
+            PlayerNameStyle.drawName(graphics,font,CanonicalPlayerNames.display(player.getKey()),left,y);
+            for(int i=0;i<4;i++) centeredCell(graphics,font,String.valueOf(player.getValue().getOrDefault(BIOME_ORDER[i].name(),0)),left+nameWidth+i*cell,cell,y,StatColours.value(0xFF000000|BIOME_ORDER[i].colour()));
+            y+=LINE_HEIGHT;
+        }
+        if(run.missingIndividualTeammateTotals())
+            detailText(graphics,font,"Other Players Not Saved",left,y,DIM);
+    }
+
+    private void drawRunCompletions(GuiGraphicsExtractor graphics, Font font, RunRecord run, int left, int right, int y) {
+        y=runDetailDivider(graphics,font,left,right,y-13);
+        text(graphics,font,Component.literal("Completion Times"),left,y,StatColours.PERSONAL_BEST);y+=13;
+        boolean any=false;
+        if(run.personalBestSplits!=null) for(var split:run.personalBestSplits) {
+            if(!dev.serko.safariutils.session.PersonalBestTracker.valid(split))continue;
+            any=true;
+            boolean eligible=dev.serko.safariutils.session.PersonalBestTracker.eligible(split);
+            var biome=dev.serko.safariutils.session.PersonalBestTracker.biome(split.target());
+            int titleColour=biome==null?StatColours.PERSONAL_BEST:0xFF000000|biome.colour();
+            String title=dev.serko.safariutils.session.PersonalBestTracker.title(split.target())+(dev.serko.safariutils.session.PersonalBestTracker.isMob(split.target())?"":" ("+split.group().label+")");
+            text(graphics,font,Component.literal(title),left,y,titleColour);
+            String time=dev.serko.safariutils.session.PersonalBestTracker.time(split.elapsedMillis());
+            text(graphics,font,Component.literal(time),right-font.width(time),y,StatColours.TIME);
+            y+=14;
+            if(split.previousBestMillis()>=0) {
+                String comparison=dev.serko.safariutils.session.PersonalBestTracker.comparison(split.elapsedMillis(),split.previousBestMillis(),eligible);
+                graphics.text(font,comparison,left,y,0xFF000000|
+                    dev.serko.safariutils.session.PersonalBestTracker.comparisonColour(split.elapsedMillis(),split.previousBestMillis(),eligible));
+                y+=14;
+            }
+            y+=8;
+        }
+        if(!any) text(graphics,font,Component.literal("No recorded completion times."),left,y,DIM);
+    }
+
+    /** Eight clear pixels on both sides of the same two-pixel section rule. */
+    private int runDetailDivider(GuiGraphicsExtractor graphics, Font font, int left, int right, int previousTextY) {
+        int lineY=previousTextY+font.lineHeight+8;
+        graphics.fill(left,lineY,right,lineY+2,PANEL_BORDER);
+        return lineY+2+8;
+    }
+
+    private void drawRunPlayers(GuiGraphicsExtractor graphics, Font font, RunRecord run, int left, int y) {
+        String label="Players: ";
+        graphics.text(font,label,left,y,StatColours.INFO);
+        int x=left+font.width(label);
+        List<String> players=run.players.isEmpty()?List.of(run.self==null?"":run.self):run.players;
+        for(int i=0;i<players.size();i++) {
+            if(i>0) { graphics.text(font,", ",x,y,WHITE);x+=font.width(", "); }
+            String name=CanonicalPlayerNames.display(players.get(i));
+            PlayerNameStyle.drawName(graphics,font,name,x,y);x+=font.width(name);
+        }
+    }
+
+    private int drawRunSparklings(GuiGraphicsExtractor graphics, Font font, RunRecord run, int left, int y) {
+        String heading="Sparklings: ";
+        rainbowText(graphics,font,heading,left,y);
+        if(run.sparklings.isEmpty()) {
+            graphics.text(font,"None",left+font.width(heading),y,WHITE);
+            return y+13;
+        }
+        for (var sparkling:run.sparklings) {
+            int x=left+font.width(heading);
+            Critter critter=Critters.byName(sparkling.species());
+            text(graphics,font,Component.literal(sparkling.species()),x,y,critter==null?WHITE:0xFF000000|critter.rarity().colour());
+            x+=font.width(sparkling.species());
+            graphics.text(font," (",x,y,WHITE);x+=font.width(" (");
+            String catcher=CanonicalPlayerNames.display(sparkling.catcher());
+            if(catcher.isEmpty()) catcher="Unknown";
+            PlayerNameStyle.drawName(graphics,font,catcher,x,y);x+=font.width(catcher);
+            graphics.text(font,")",x,y,WHITE);
+            y+=13;
+        }
+        return y;
+    }
+
+    private int bestPanelHeight() {
+        return PANEL_PADDING + 3 * BEST_CARD_HEIGHT + 2 * BEST_MOB_SECTION_HEIGHT + 3 * 8 + font.lineHeight + 12 + 30;
+    }
+    private int runDetailHeight() {
+        int players = detailPlayerCounts == null ? 1 : Math.max(1,detailPlayerCounts.size());
+        int splits = selectedRun.personalBestSplits == null ? 0 : (int)selectedRun.personalBestSplits.stream()
+            .filter(dev.serko.safariutils.session.PersonalBestTracker::valid).count();
+        int content = detailBests ? 13 + (font.lineHeight+18-13) + 13 + (splits==0?13:selectedRun.personalBestSplits.stream().filter(dev.serko.safariutils.session.PersonalBestTracker::valid).mapToInt(split -> split.previousBestMillis()>=0?36:22).sum())
+            : 13 + 21 + 3*13 + (showValue()?13:0) + Math.max(0,selectedRun.sparklings.size()-1)*13
+                + (font.lineHeight+18-13) + 18 + 13 + 10*LINE_HEIGHT
+                + (font.lineHeight+18-LINE_HEIGHT) + 13 + players*LINE_HEIGHT
+                + (selectedRun.missingIndividualTeammateTotals()?LINE_HEIGHT:0);
+        return PANEL_PADDING + ACTION_HEIGHT + 10 + content + 12 + 30;
+    }
+
+    private void addBestControls(int bottom) {
+        int x = panelLeft + PANEL_PADDING;
+        int y = panelTop + navigationOffset() + PANEL_PADDING;
+        if (selectedRun != null) {
+            controls.add(new Control(detailBests?"Completions":"Information",x,y,120,ACTION_HEIGHT,
+                ControlStyle.BUTTON,false,false,() -> { detailBests=!detailBests; rebuildWidgets(); }));
+        }
+        int buttonWidth=70, gap=8;
+        int start=panelLeft+(panelWidth-(selectedRun==null?buttonWidth:buttonWidth*2+gap))/2;
+        if(selectedRun!=null) {
+            controls.add(new Control("Back",start,bottom,buttonWidth,ACTION_HEIGHT,ControlStyle.BUTTON,false,false,() -> {
+                Tab destination=runDetailBack; clearRunDetail(); switchTo(destination);
+            }));
+            start+=buttonWidth+gap;
+        }
+        controls.add(new Control("Close",start,bottom,buttonWidth,ACTION_HEIGHT,ControlStyle.BUTTON,false,false,this::onClose));
+    }
+
+    private void drawPersonalBests(GuiGraphicsExtractor graphics, Font font, int y, int mouseX, int mouseY) {
+        int left = panelLeft+PANEL_PADDING, width = panelWidth-PANEL_PADDING*2;
+        drawBestCard(graphics,font,dev.serko.safariutils.session.PersonalBestTracker.ALL,
+            left,y,width,StatColours.PERSONAL_BEST,mouseX,mouseY);
+        y += BEST_CARD_HEIGHT + 8;
+        int column=(width-8)/2;
+        for (int i=0;i<BIOME_ORDER.length;i++) {
+            SafariBiome biome=BIOME_ORDER[i];
+            drawBestCard(graphics,font,biome.name(),left+(i%2)*(column+8),
+                y+(i/2)*(BEST_CARD_HEIGHT+BEST_MOB_SECTION_HEIGHT+8),column,0xFF000000|biome.colour(),mouseX,mouseY);
+        }
+        text(graphics,font,Component.literal("Times start at ticket use. Mob records require your own catch. Click a time for its run."),
+            left,y+2*(BEST_CARD_HEIGHT+BEST_MOB_SECTION_HEIGHT+8),DIM);
+    }
+
+    private void drawBestCard(GuiGraphicsExtractor graphics, Font font, String target,
+            int x,int y,int width,int colour,int mx,int my) {
+        var groups=dev.serko.safariutils.session.PersonalBestTracker.Group.values();
+        int clears=0;
+        for(var group:groups) {
+            var best=dev.serko.safariutils.session.PersonalBests.best(target,group);
+            if(best!=null) clears+=best.clears();
+        }
+        boolean all=dev.serko.safariutils.session.PersonalBestTracker.ALL.equals(target);
+        int cardHeight=BEST_CARD_HEIGHT+(all?0:BEST_MOB_SECTION_HEIGHT);
+        graphics.fill(x,y,x+width,y+cardHeight,PANEL_SURFACE);
+        themedOutline(graphics,x,y,width,cardHeight,PANEL_BORDER);
+        text(graphics,font,Component.literal(dev.serko.safariutils.session.PersonalBestTracker.title(target)
+            +" ("+clears+(clears==1?" Clear)":" Clears)")),x+8,y+7,colour);
+        for(int index=0;index<groups.length;index++) {
+            var group=groups[index];
+            var best=dev.serko.safariutils.session.PersonalBests.best(target,group);
+            drawBestRow(graphics,font,best,group.label,"No recorded clear",x,y+22+index*BEST_ROW_HEIGHT,width,colour,mx,my);
+        }
+        if(!all) {
+            int sectionY=y+22+groups.length*BEST_ROW_HEIGHT;
+            themedOutline(graphics,x+8,sectionY+1,width-16,1,PANEL_BORDER);
+            String mob=dev.serko.safariutils.session.PersonalBestTracker.mobTarget(
+                dev.serko.safariutils.session.PersonalBestTracker.biome(target));
+            var best=dev.serko.safariutils.session.PersonalBests.best(mob,
+                dev.serko.safariutils.session.PersonalBestTracker.Group.SOLO);
+            drawBestRow(graphics,font,best,dev.serko.safariutils.session.PersonalBestTracker.title(mob),
+                "No recorded catch",x,sectionY+BEST_MOB_GAP,width,colour,mx,my);
+        }
+    }
+
+    private void drawBestRow(GuiGraphicsExtractor graphics, Font font,
+            dev.serko.safariutils.session.PersonalBests.Best best, String label, String empty,
+            int x,int textY,int width,int colour,int mx,int my) {
+        int rowTop=textY-(BEST_ROW_HEIGHT-7)/2;
+        int rowLeft=x+4, rowWidth=width-8;
+        boolean hovered=best!=null && mx>=rowLeft && mx<rowLeft+rowWidth
+            && my>=rowTop && my<rowTop+BEST_ROW_HEIGHT;
+        if(hovered) graphics.fill(rowLeft,rowTop,rowLeft+rowWidth,rowTop+BEST_ROW_HEIGHT,0x24FFFFFF);
+        text(graphics,font,Component.literal(label),x+8,textY,StatColours.value(colour));
+        String value=best==null?empty:dev.serko.safariutils.session.PersonalBestTracker.time(best.split().elapsedMillis());
+        text(graphics,font,Component.literal(value),x+width-8-font.width(value),textY,best==null?DIM:StatColours.TIME);
+        if(best!=null) bestHits.add(new BestHit(rowLeft,rowTop,rowWidth,BEST_ROW_HEIGHT,best.run()));
+    }
 
 	private void addHistoryControls(int y) {
 		int filterWidth = Math.max(108, font.width("Sparkling Runs") + 30);
@@ -237,8 +516,17 @@ public final class SafariDashboardScreen extends Screen {
 		int sortWidth = Math.max(104, widestSort + 16);
 		int closeWidth = 60;
 		int spacing = 4;
-		int totalWidth = filterWidth + sortWidth + closeWidth + spacing * 2;
+		boolean hasCurrent = SessionManager.current() != null;
+        int currentWidth = hasCurrent ? font.width("Current Run")+16 : 0;
+        int totalWidth = filterWidth + sortWidth + closeWidth + spacing * 2 + (hasCurrent?currentWidth+spacing:0);
 		int x = panelLeft + (panelWidth - totalWidth) / 2;
+        if(hasCurrent) {
+            controls.add(new Control("Current Run",x,y,currentWidth,ACTION_HEIGHT,ControlStyle.BUTTON,false,false,() -> {
+                SafariSession current = SessionManager.current();
+                if(current!=null) openRunDetail(RunRecord.of(current),current);
+            }));
+            x+=currentWidth+spacing;
+        }
 		controls.add(new Control("Sparkling Runs", x, y, filterWidth, ACTION_HEIGHT,
 			ControlStyle.SPARKLING_TOGGLE, sparklingRunsOnly, true, () -> {
 			sparklingRunsOnly = !sparklingRunsOnly;
@@ -272,13 +560,21 @@ public final class SafariDashboardScreen extends Screen {
 			if (SparklingStats.count(critter) > 0) nameWidth += 2 + font.width("✦");
 			widestName = Math.max(widestName, nameWidth);
 			widestCount = Math.max(widestCount,
-				font.width(String.valueOf(RunHistory.statFor(critter).total())));
+				font.width(selectedRun==null?String.valueOf(RunHistory.statFor(critter).total()):runCritterCounts(selectedRun,critter)));
 		}
 		return COLUMN_PAD * 2 + widestName + font.width("   ") + widestCount;
 	}
 
 	/** Lets summary-heavy tabs grow equally left and right around their text. */
 	private int measureTabTextWidth() {
+        if (selectedRun != null) {
+            // Shared detail width must not depend on which main tab opened it.
+            int detailWidth=Math.max(font.width(runRewardSummary(selectedRun,true)),
+                font.width(runCatchSummary(selectedRun,true)));
+            for (var sparkling:selectedRun.sparklings)
+                detailWidth=Math.max(detailWidth,font.width("Sparklings: "+sparkling.species()+" ("+CanonicalPlayerNames.display(sparkling.catcher())+")"));
+            return Math.max(520,detailWidth);
+        }
 		int widest = 0;
 		if (tab == Tab.HISTORY) {
 			widest = Math.max(widest, font.width(historySummary()));
@@ -298,7 +594,8 @@ public final class SafariDashboardScreen extends Screen {
 		for (HistorySort value : HistorySort.values()) {
 			widestSort = Math.max(widestSort, font.width("Sort: " + value.label));
 		}
-		return filterWidth + Math.max(104, widestSort + 16) + 60 + 8;
+		return filterWidth + Math.max(104, widestSort + 16) + 60 + 8
+            + (SessionManager.current()!=null?font.width("Current Run")+20:0);
 	}
 
 	private int measureHistoryTableWidth() {
@@ -309,32 +606,34 @@ public final class SafariDashboardScreen extends Screen {
 	/** A single navigation rail inside the panel, with one active section. */
 	private void addTabButtons() {
 		Tab[] tabs = Tab.values();
-		int totalWidth = NAV_ITEM_WIDTH * tabs.length;
+		int totalWidth = java.util.Arrays.stream(tabs).mapToInt(t -> Math.max(NAV_ITEM_WIDTH,font.width(t.label)+20)).sum();
 		int x = panelLeft + (panelWidth - totalWidth) / 2;
 		int y = panelTop + 5;
 
 		for (Tab value : tabs) {
-			controls.add(new Control(value.label, x, y, NAV_ITEM_WIDTH, NAV_ITEM_HEIGHT, ControlStyle.TAB,
+			int itemWidth = Math.max(NAV_ITEM_WIDTH,font.width(value.label)+20);
+            controls.add(new Control(value.label, x, y, itemWidth, NAV_ITEM_HEIGHT, ControlStyle.TAB,
 				value == tab, false, () -> switchTo(value)));
-			x += NAV_ITEM_WIDTH;
+			x += itemWidth;
 		}
 	}
 
 	private void switchTo(Tab value) {
+        clearRunDetail();
 		tab = value;
 		// The panel is a different height per tab, so everything is laid out again.
 		rebuildWidgets();
 	}
 
 	private void drawControls(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-		drawNavigationRail(graphics);
+		if (selectedRun == null) drawNavigationRail(graphics);
 		for (Control control : controls) {
 			boolean hovered = control.contains(mouseX, mouseY);
 			int colour = SpecialTheme.rainbow() ? SpecialTheme.accent(control.x)
 				: control.sparkling
 				? UIDraw.rainbow(0, 12, 0.55f)
 				: control.style == ControlStyle.TAB
-					? tabColour(Tab.valueOf(control.label.toUpperCase(java.util.Locale.ROOT)))
+					? tabColour(Tab.valueOf(control.label.toUpperCase(java.util.Locale.ROOT).replace(' ','_')))
 					: tabBorderColour();
 
 			if (control.style == ControlStyle.SPARKLING_TOGGLE) {
@@ -449,23 +748,16 @@ public final class SafariDashboardScreen extends Screen {
 		UIDraw.outline(graphics, panelLeft + 2, panelTop + 2, panelWidth - 4,
 			panelHeight - 4, PANEL_KEYLINE);
 
-		Font font = this.font;
-		int y = panelTop + PANEL_PADDING + NAV_CONTENT_OFFSET;
+		bestHits.clear();
+        Font font = this.font;
+		int y = panelTop + PANEL_PADDING + navigationOffset();
 
-		switch (tab) {
-			case RUN -> {
-				if (session == null) {
-					text(graphics, font, Component.literal("Not Currently in a Safari Run"),
-						panelLeft + PANEL_PADDING, y, LABEL);
-				} else {
-					y = drawHeader(graphics, font, y);
-					y = drawBiomeColumns(graphics, font, y + 4);
-					drawPlayers(graphics, font, y + 6);
-				}
-			}
-			case HISTORY -> drawHistory(graphics, font, y, logicalMouseX, logicalMouseY);
-			case STATS -> drawStats(graphics, font, y);
-		}
+        if (selectedRun != null) drawRunDetails(graphics,font,y);
+        else switch (tab) {
+            case HISTORY -> drawHistory(graphics,font,y,logicalMouseX,logicalMouseY);
+            case STATS -> drawStats(graphics,font,y);
+            case PERSONAL_BESTS -> drawPersonalBests(graphics,font,y,logicalMouseX,logicalMouseY);
+        }
 
 		// Screen children first, then the themed controls above the panel.
 		super.extractRenderState(graphics, logicalMouseX, logicalMouseY, partialTick);
@@ -473,173 +765,21 @@ public final class SafariDashboardScreen extends Screen {
 		graphics.pose().popMatrix();
 	}
 
-	private int drawHeader(GuiGraphicsExtractor graphics, Font font, int y) {
-		int total = Critters.total();
-		int left = panelLeft + PANEL_PADDING;
-
-		String heading = live
-			? "Critter Safari  " + ProgressHud.formatDuration(session.elapsedMillis(System.currentTimeMillis()))
-			: "Critter Safari  (Last Run)";
-		text(graphics, font, Component.literal(heading), left, y, tabBorderColour());
-
-		String legend = "You" + STAT_SEPARATOR + "Party" + STAT_SEPARATOR + "Uncaught";
-		text(graphics, font, Component.literal(legend),
-			panelLeft + panelWidth - PANEL_PADDING - font.width(legend), y, DIM);
-		y += LINE_HEIGHT + 3;
-
-		y = drawSummaryBar(graphics, font, left, y, "Party", session.partyUnique(), total,
-			session.dexComplete() ? CAUGHT_BY_YOU : WHITE);
-		y = drawSummaryBar(graphics, font, left, y, "You", session.ownUnique(), total, CAUGHT_BY_PARTY);
-		if (showValue()) y = drawValue(graphics, font, left, y);
-		return y;
-	}
-
-	/**
-	 * What the shards this run has given you are worth.
-	 *
-	 * <p>Yours and loot-shared together, since both land in your inventory — and only
-	 * yours, because a partymate's own catches are never itemised to this client.
-	 */
-	private int drawValue(GuiGraphicsExtractor graphics, Font font, int x, int y) {
-		text(graphics, font, Component.literal("Value"), x, y, LABEL);
-
-		int shards = session.totalShards();
-		String text;
-		int colour = COINS;
-		if (!BazaarPrices.known()) {
-			text = shards == 0 ? "No Shards Yet" : "%d Shards%sBazaar Prices Not Loaded"
-				.formatted(shards, STAT_SEPARATOR);
-			colour = DIM;
-		} else {
-			long coins = BazaarPrices.valueOf(session);
-			text = "%s%s%d Shard%s%s%d Essence%s%d Feather%s".formatted(
-				BazaarPrices.coinsText(session), STAT_SEPARATOR, shards, shards == 1 ? "" : "s",
-				STAT_SEPARATOR, session.safariEssence(), STAT_SEPARATOR,
-				session.rainbowFeathers(), session.rainbowFeathers() == 1 ? "" : "s");
-			// Per hour only once there is enough of a run to divide by; a minute in, the
-			// rate says more about the last catch than about the run.
-			long elapsed = live ? session.elapsedMillis(System.currentTimeMillis())
-				: session.durationMillis();
-			if (elapsed >= 60_000 && coins > 0) {
-				text += STAT_SEPARATOR + "%s/h".formatted(BazaarPrices.format(coins * 3_600_000L / elapsed));
-			}
-		}
-		text(graphics, font, Component.literal(text), x + 40, y, colour);
-		return y + LINE_HEIGHT + 2;
-	}
-
-	private int drawSummaryBar(GuiGraphicsExtractor graphics, Font font, int x, int y,
-							   String label, int current, int max, int colour) {
-		text(graphics, font, Component.literal(label), x, y, LABEL);
-
-		int barLeft = x + 40;
-		int barWidth = 150;
-		int barY = y + 2;
-		graphics.fill(barLeft, barY, barLeft + barWidth, barY + 5, BAR_TRACK);
-		if (current > 0) {
-			int filled = Math.max(1, barWidth * current / max);
-			if (SpecialTheme.rainbow()) SpecialTheme.bar(graphics, barLeft, barY, filled, 5);
-			else graphics.fill(barLeft, barY, barLeft + filled, barY + 5, colour);
-		}
-		text(graphics, font, Component.literal(current + "/" + max), barLeft + barWidth + 8, y, colour);
-		return y + LINE_HEIGHT + 2;
-	}
-
-	private int drawBiomeColumns(GuiGraphicsExtractor graphics, Font font, int y) {
-		int bottom = y;
-		SafariBiome[] biomes = BIOME_ORDER;
-
-		for (int i = 0; i < biomes.length; i++) {
-			SafariBiome biome = biomes[i];
-			int x = panelLeft + PANEL_PADDING + i * columnWidth;
-			int rowY = y;
-
-			boolean complete = session.biomeComplete(biome);
-			int max = Critters.totalIn(biome);
-			text(graphics, font, Component.literal(biome.displayName()), x, rowY,
-				0xFF000000 | biome.colour());
-			String count = session.partyUnique(biome) + "/" + max;
-			text(graphics, font, Component.literal(count), x + columnWidth - COLUMN_PAD - font.width(count), rowY,
-				complete ? CAUGHT_BY_YOU : WHITE);
-			rowY += LINE_HEIGHT + 2;
-
-			for (Critter critter : Critters.inBiome(biome)) {
-				// Grey until the run is actually finished with it, so a quota species
-				// caught once still reads as outstanding.
-				int colour = session.isUnavailable(critter) ? UNCAUGHT
-					: !session.isComplete(critter) ? UNCAUGHT
-					: session.caughtByYou(critter) ? CAUGHT_BY_YOU : CAUGHT_BY_PARTY;
-				text(graphics, font, Component.literal(critter.name()), x, rowY, colour);
-
-				// Quota species show progress towards their total; the rest show repeat
-				// catches, or an attempt count meaning it is around and escaping.
-				int caught = session.partyCatches(critter);
-				int total = session.required(critter);
-				boolean known = total > 1 && !TrackingMode.uniqueOnly();
-				String note = session.isUnavailable(critter)
-					? ("Rockmite".equals(critter.name()) ? "" : "N/A")
-					: known ? caught + "/" + total
-					: caught > 1 ? "x" + caught
-					: caught == 0 && session.attempts(critter) > 0 ? session.attempts(critter) + "t" : "";
-				if (!note.isEmpty()) {
-					text(graphics, font, Component.literal(note),
-						x + columnWidth - COLUMN_PAD - font.width(note), rowY, DIM);
-				}
-				rowY += LINE_HEIGHT;
-			}
-			bottom = Math.max(bottom, rowY);
-		}
-		return bottom;
-	}
-
-	private void drawPlayers(GuiGraphicsExtractor graphics, Font font, int y) {
-		Map<String, Map<SafariBiome, Integer>> perPlayer = session.uniquePerPlayer();
-		int left = panelLeft + PANEL_PADDING;
-
-		graphics.fill(left, y, panelLeft + panelWidth - PANEL_PADDING, y + 1, PANEL_BORDER);
-		y += 5;
-
-		if (perPlayer.isEmpty()) {
-			text(graphics, font, Component.literal("Nobody has caught anything yet."), left, y, DIM);
-			return;
-		}
-
-		// Fixed columns, since the proportional font makes padded text impossible to align.
-		int nameWidth = Math.min(110,
-			Math.max(font.width("Unique Per Player") + 12, panelWidth / 3));
-		int cellWidth = Math.max(28, (panelWidth - PANEL_PADDING * 2 - nameWidth) / BIOME_ORDER.length);
-		SafariBiome[] biomes = BIOME_ORDER;
-
-		text(graphics, font, Component.literal("Unique Per Player"), left, y, LABEL);
-		for (int i = 0; i < biomes.length; i++) {
-			String header = biomes[i].displayName();
-			int cellLeft = left + nameWidth + i * cellWidth;
-			text(graphics, font, Component.literal(header),
-				cellLeft + (cellWidth - font.width(header)) / 2, y,
-				0xFF000000 | biomes[i].colour());
-		}
-		y += LINE_HEIGHT + 2;
-
-		for (Map.Entry<String, Map<SafariBiome, Integer>> entry : perPlayer.entrySet()) {
-			boolean self = entry.getKey().equals(session.selfName());
-			text(graphics, font, Component.literal(entry.getKey()), left, y, self ? CAUGHT_BY_YOU : WHITE);
-			for (int i = 0; i < biomes.length; i++) {
-				String value = String.valueOf(entry.getValue().getOrDefault(biomes[i], 0));
-				int cellLeft = left + nameWidth + i * cellWidth;
-				text(graphics, font, Component.literal(value),
-					cellLeft + (cellWidth - font.width(value)) / 2, y,
-					"0".equals(value) ? UNCAUGHT : LABEL);
-			}
-			y += LINE_HEIGHT;
-		}
-	}
-
 	/**
 	 * Filtered and sorted saved runs in a fixed scrollable viewport.
 	 *
-	 * <p>Runs are written when the next one starts, so the one you are in is not here
-	 * yet — that is what the Run tab is for.
+	 * <p>Finished runs are persisted by the session lifecycle. The current run is
+     * available through the History toolbar without inserting a fake saved record.
 	 */
+    /** Seven-pixel icon matches normal text ink, independent of Unicode font bearings. */
+    private static void historySparkle(GuiGraphicsExtractor graphics, int x, int y) {
+        int colour=RainbowColours.shared(x/96f,0.65f);
+        for(int row=0;row<7;row++) {
+            int half=row==3?3:Math.abs(row-3)==1?1:0;
+            graphics.fill(x+3-half,y+row,x+4+half,y+row+1,colour);
+        }
+    }
+
 	private void drawHistory(GuiGraphicsExtractor graphics, Font font, int y, int mouseX, int mouseY) {
 		int left = panelLeft + PANEL_PADDING;
 		int right = panelLeft + panelWidth - PANEL_PADDING;
@@ -664,7 +804,7 @@ public final class SafariDashboardScreen extends Screen {
 		}
 
 		boolean value = showValue();
-		centered(graphics, font, historySummary(runs), y, LABEL);
+		centeredSummary(graphics,font,historySummary(runs),y);
 		y += LINE_HEIGHT + 5;
 
 		// Fixed columns: the proportional font makes padded text impossible to align.
@@ -682,11 +822,11 @@ public final class SafariDashboardScreen extends Screen {
 		int lengthX = dateX + widths.date() + gap;
 		int uniquesX = lengthX + widths.length() + gap;
 		text(graphics, font, Component.literal("Run"), runX, y, LABEL);
-		centeredCell(graphics, font, "Date", dateX, widths.date(), y, LABEL);
-		centeredCell(graphics, font, "Length", lengthX, widths.length(), y, LABEL);
-		centeredCell(graphics, font, "Uniques", uniquesX, widths.uniques(), y, LABEL);
+		centeredCell(graphics, font, "Date", dateX, widths.date(), y, StatColours.DATE);
+		centeredCell(graphics, font, "Length", lengthX, widths.length(), y, StatColours.TIME);
+		centeredCell(graphics, font, "Uniques", uniquesX, widths.uniques(), y, StatColours.UNIQUE);
 		text(graphics, font, Component.literal("Catches"),
-			tableRight - font.width("Catches"), y, LABEL);
+			tableRight - font.width("Catches"), y, showValue()?COINS:StatColours.CATCHES);
 		y += LINE_HEIGHT + 2;
 		int rowsTop = y;
 
@@ -702,10 +842,12 @@ public final class SafariDashboardScreen extends Screen {
 			}
 			RunRecord run = displayRow.run();
 			HistoryRowView row = historyRow(run, value, total);
+            int rowTop=y-(LINE_HEIGHT-7)/2;
+            bestHits.add(new BestHit(left,rowTop,right-left,LINE_HEIGHT,run));
 			boolean sparkling = row.sparkling;
-			if (mouseX >= left && mouseX < right && mouseY >= y && mouseY < y + LINE_HEIGHT) {
+			if (mouseX >= left && mouseX < right && mouseY >= rowTop && mouseY < rowTop + LINE_HEIGHT) {
 				hovered = run;
-				graphics.fill(left, y - 1, right, y + LINE_HEIGHT - 1, 0x24FFFFFF);
+				graphics.fill(left, rowTop, right, rowTop + LINE_HEIGHT, 0x24FFFFFF);
 			}
 			if (sparkling) {
 				// Fixed outer anchors keep both stars and the table-wall spacing stable
@@ -713,22 +855,24 @@ public final class SafariDashboardScreen extends Screen {
 				rainbowText(graphics, font, "✦", left + 2, y);
 				rainbowText(graphics, font, "✦", right - 2 - font.width("✦"), y);
 			}
-			historyText(graphics, font, row.runLabel, runX, y, WHITE, sparkling);
+			historyText(graphics, font, row.runLabel, runX, y, StatColours.value(LABEL), sparkling);
 			historyCell(graphics, font, row.date,
-				dateX, widths.date(), y, WHITE, sparkling);
+				dateX, widths.date(), y, StatColours.value(StatColours.DATE), sparkling);
 			historyCell(graphics, font, row.length,
-				lengthX, widths.length(), y, DIM, sparkling);
+				lengthX, widths.length(), y, StatColours.value(StatColours.TIME), sparkling);
 			historyCell(graphics, font, row.uniques,
 				uniquesX, widths.uniques(), y,
-				row.perfect ? CAUGHT_BY_YOU : WHITE, sparkling);
+				row.perfect ? 0xFF35D9C4 : StatColours.value(StatColours.UNIQUE), sparkling);
 			historyText(graphics, font, row.catches,
 				tableRight - font.width(row.catches), y,
-				row.priced ? COINS : DIM, sparkling);
+				StatColours.value(row.priced ? COINS : StatColours.CATCHES), sparkling);
 			y += LINE_HEIGHT;
 		}
 
 		int detailsY = rowsTop + HISTORY_ROWS * LINE_HEIGHT + 3;
-		if (hovered != null && sparklingCount(hovered) > 0) {
+		if (hovered != null && hovered.emeraldDyes() > 0 && sparklingCount(hovered) == 0) {
+            centered(graphics, font, "Emerald Dye \u00d7" + hovered.emeraldDyes(), detailsY, 0xFF55FF88);
+        } else if (hovered != null && sparklingCount(hovered) > 0) {
 			rainbowCentered(graphics, font, sparklingSummary(hovered), detailsY);
 		} else if (runs.isEmpty()) {
 			centered(graphics, font, "No runs match this filter.", detailsY, DIM);
@@ -753,7 +897,7 @@ public final class SafariDashboardScreen extends Screen {
 
 		text(graphics, font, Component.literal("Total Run Stats"), left, y, tabBorderColour());
 		String legend = "Total Catches";
-		text(graphics, font, Component.literal(legend), right - font.width(legend), y, DIM);
+		text(graphics, font, Component.literal(legend), right - font.width(legend), y, StatColours.CATCHES);
 		y += LINE_HEIGHT + 3;
 
 		if (runs == 0) {
@@ -761,7 +905,7 @@ public final class SafariDashboardScreen extends Screen {
 			return;
 		}
 
-		centered(graphics, font, statsSummary(), y, LABEL);
+		centeredSummary(graphics,font,statsSummary(),y);
 		y += LINE_HEIGHT;
 
 		if (showValue()) {
@@ -800,7 +944,7 @@ public final class SafariDashboardScreen extends Screen {
 					rainbowText(graphics, font, "✦", nameX + font.width(critter.name()) + 2, rowY);
 				}
 				text(graphics, font, Component.literal(note), noteX, rowY,
-					stat.total() == 0 ? UNCAUGHT : WHITE);
+					stat.total() == 0 ? UNCAUGHT : StatColours.value(0xFF000000|critter.rarity().colour()));
 				rowY += LINE_HEIGHT;
 			}
 		}
@@ -823,7 +967,7 @@ public final class SafariDashboardScreen extends Screen {
 		}
 
 		if (priced > 0) {
-			centered(graphics, font, valueTotalsText(), y, COINS);
+			centeredSummary(graphics,font,valueTotalsText(),y);
 			y += LINE_HEIGHT;
 		}
 
@@ -831,15 +975,17 @@ public final class SafariDashboardScreen extends Screen {
 	}
 
 	private int tabBorderColour() {
+        if(selectedRun!=null && detailBests) return tabColour(Tab.PERSONAL_BESTS);
+        if(selectedRun!=null) return Colours.argb(ConfigManager.get().display.currentRunTabBorderColour,0xFF55FF55);
 		return tabColour(tab);
 	}
 
 	private static int tabColour(Tab target) {
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
 		return switch (target) {
-			case RUN -> Colours.argb(display.currentRunTabBorderColour, 0xFF55FF55);
-			case HISTORY -> Colours.argb(display.historyTabBorderColour, 0xFFFFAA00);
+			case HISTORY -> Colours.argb(display.historyTabBorderColour, 0xFF55FF55);
 			case STATS -> Colours.argb(display.statsTabBorderColour, 0xFF55FFFF);
+            case PERSONAL_BESTS -> StatColours.PERSONAL_BEST;
 		};
 	}
 
@@ -883,7 +1029,7 @@ public final class SafariDashboardScreen extends Screen {
 			boolean priced = value && current.hasShardData() && BazaarPrices.known();
 			String catches = String.valueOf(current.partyTotal());
 			if (value) catches += " (" + (priced
-				? BazaarPrices.format(BazaarPrices.valueOf(current)) : "—") + ")";
+				? BazaarPrices.format(BazaarPrices.valueOf(current)) + (BazaarPrices.rareDropPricingIncomplete(current.rareDrops) ? " + ?" : "") : "—") + ")";
 			return new HistoryRowView("#" + runNumber(current), formatWhen(current.started),
 				ProgressHud.formatDuration(current.durationMillis()), current.partyUnique() + "/" + totalCritters,
 				catches,
@@ -1123,6 +1269,10 @@ public final class SafariDashboardScreen extends Screen {
 		return cachedValueTotals;
 	}
 
+    private void centeredSummary(GuiGraphicsExtractor graphics, Font font, String value, int y) {
+        StatColours.summaryLine(graphics,font,value,STAT_SEPARATOR,panelLeft+(panelWidth-font.width(value))/2,y);
+    }
+
 	private void centered(GuiGraphicsExtractor graphics, Font font, String text, int y, int colour) {
 		text(graphics, font, Component.literal(text),
 			panelLeft + (panelWidth - font.width(text)) / 2, y, colour);
@@ -1159,18 +1309,23 @@ public final class SafariDashboardScreen extends Screen {
 		double mouseY = event.y() / responsiveScale;
 		for (Control control : controls) {
 			if (!control.contains(mouseX, mouseY)) continue;
-			if (control.style == ControlStyle.TAB && control.selected) return true;
+			if (control.style == ControlStyle.TAB && control.selected && selectedRun == null) return true;
 			control.action.run();
 			return true;
 		}
-		return super.mouseClicked(event, doubled);
+		for (BestHit hit : bestHits) {
+            if (mouseX >= hit.x && mouseX < hit.x+hit.width && mouseY >= hit.y && mouseY < hit.y+hit.height) {
+                openRunDetail(hit.run,null); return true;
+            }
+        }
+        return super.mouseClicked(event, doubled);
 	}
 
 	@Override
 	public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
 		mouseX /= responsiveScale;
 		mouseY /= responsiveScale;
-		if (tab != Tab.HISTORY || mouseX < panelLeft || mouseX >= panelLeft + panelWidth
+		if (selectedRun != null || tab != Tab.HISTORY || mouseX < panelLeft || mouseX >= panelLeft + panelWidth
 			|| mouseY < panelTop || mouseY >= panelTop + panelHeight) {
 			return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
 		}

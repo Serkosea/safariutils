@@ -99,6 +99,14 @@ public class SafariConfig {
 	public AdvancedConfig advanced = new AdvancedConfig();
 
 	public static class GameplayConfig {
+        @SettingInfo(name = "Unique Clear PBs", desc = "Shows biome and All Uniques clear times with colored PB comparisons, grouped by unique-catch contributors")
+        @SettingChoice(values = {"All Completions", "PBs Only", "Off"})
+        @Expose public int personalBestMessages = 0;
+
+        @SettingInfo(name = "Biome Mob PBs", desc = "Shows your first Gemzie, Doomspiral, Wumpa and Macaw catch times from ticket use, with PB comparisons")
+        @SettingChoice(values = {"All Catches", "PBs Only", "Off"})
+        @Expose public int biomeMobBestMessages = 0;
+
 		@SettingInfo(name = "Auto Accept Hideyho",
 			desc = "Automatically accepts Hideyho's Hide N' Seek game")
 		@SettingToggle
@@ -755,13 +763,13 @@ public class SafariConfig {
 		@SettingGroup(id = HUD_BORDER_COLOURS)
 		public boolean statsBordersAccordion = false;
 
-		@SettingInfo(name = "Current Run", desc = "")
+		@SettingInfo(name = "Run Details", desc = "Border color for selected run details")
 		@SettingColor @SettingGroup(id = HUD_BORDER_STATS) @Expose
 		public String currentRunTabBorderColour = colour(0x55, 0xFF, 0x55);
 
 		@SettingInfo(name = "History", desc = "")
 		@SettingColor @SettingGroup(id = HUD_BORDER_STATS) @Expose
-		public String historyTabBorderColour = colour(0xFF, 0xAA, 0x00);
+		public String historyTabBorderColour = colour(0x55, 0xFF, 0x55);
 
 		@SettingInfo(name = "Stats", desc = "")
 		@SettingColor @SettingGroup(id = HUD_BORDER_STATS) @Expose
@@ -914,6 +922,11 @@ public class SafariConfig {
 		@SettingToggle
 		@Expose
 		public boolean removeColdOverlay = true;
+
+        @SettingInfo(name = "Client Message Prefix", desc = "Choose the prefix shown on SafariUtils client messages")
+        // Stable stored IDs: keep the existing SU selection when adding Safari.
+        @SettingChoice(values = {"[SafariUtils]", "[SU]", "[Safari]"})
+        @Expose public int clientMessagePrefix = 0;
 
 		@SettingInfo(
 			name = "Remove Haunted Darkness",

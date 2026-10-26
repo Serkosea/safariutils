@@ -116,7 +116,19 @@ public final class SparklingStats {
 		save();
 	}
 
+    private static long revision;
+    public static long revision() { return revision; }
+
+    /** Client-thread only; imports never lower counters or fabricate catch timestamps. */
+    public static boolean syncApiCollection(java.util.Set<String> species, int duplicates, long fetchedAt) {
+        if (!apiComparisonAllowed(fetchedAt) || !apiCollectionAddsInformation(species, duplicates)) return false;
+        importApiCollection(species, duplicates);
+        OperationalLog.info("SPARKLING/SYNC", "additive=true unique=" + unique() + " duplicates=" + knownDuplicates());
+        return true;
+    }
+
 	public static void recordSparkling(Critter critter) {
+        revision++;
 		if (critter == null) return;
 		boolean duplicate = count(critter) > 0;
 		int previousDuplicates = knownDuplicates();
@@ -126,7 +138,7 @@ public final class SparklingStats {
 			if (data.importedSetDuplicates >= 0) data.importedSetDuplicates++;
 		}
 		// Hypixel's profile endpoint can trail a newly caught Sparkling. Require a
-		// genuinely newer API snapshot before offering to replace local collection data.
+		// genuinely newer API snapshot before merging additional API collection information.
 		data.apiComparisonNotBefore = Math.max(data.apiComparisonNotBefore,
 			System.currentTimeMillis() + API_PROPAGATION_MILLIS);
 		save();
@@ -190,22 +202,25 @@ public final class SparklingStats {
 	/** Imports ownership without assigning aggregate duplicates to arbitrary species. */
 	public static void importApiCollection(java.util.Set<String> species, int duplicates) {
 		int previousDuplicates = knownDuplicates();
-		for (Critter critter : Critters.all()) {
+        for (Critter critter : Critters.all()) {
 			String id = critter.name().trim().toUpperCase(java.util.Locale.ROOT).replace(' ', '_');
-			if (species.contains(id) && count(critter) == 0) data.species.put(critter.name(), 1);
+			if (species.contains(id) && count(critter) == 0) {
+                data.species.put(critter.name(), 1);
+            }
 		}
-		rebuildTotals();
-		data.importedDuplicates = Math.max(previousDuplicates, duplicates);
+        rebuildTotals();
+        data.importedDuplicates = Math.max(previousDuplicates, duplicates);
 		data.importedSetDuplicates = SparklingStats.duplicates();
 		data.apiComparisonNotBefore = 0L;
 		save();
 	}
 
-	public static int rainbowFeathers() {
+    public static int rainbowFeathers() {
 		return Math.max(0, data.rainbowFeathers);
 	}
 
 	public static boolean set(Critter critter, int count) {
+        revision++;
 		if (critter == null || count < 0) return false;
 		int previous = SparklingStats.count(critter);
 		if (count == 0) data.species.remove(critter.name());
@@ -256,6 +271,7 @@ public final class SparklingStats {
 	}
 
 	private static void rebuildTotals() {
+        revision++;
 		unique = 0;
 		total = 0;
 		for (Critter critter : Critters.all()) {
@@ -323,11 +339,11 @@ public final class SparklingStats {
 		safe.addProperty(SCHEMA_KEY, CURRENT_SCHEMA);
 		int rejected = 0;
 		for (String field : java.util.List.of("rainbowFeathers", "importedDuplicates",
-				"importedSetDuplicates", "apiComparisonNotBefore")) {
+				"importedSetDuplicates", "apiComparisonNotBefore", "undatedSparklingObservedAt", "undatedUniqueObservedAt")) {
 			if (!root.has(field)) continue;
 			try {
 				long minimum = field.startsWith("imported") ? -1 : 0;
-				long maximum = field.equals("apiComparisonNotBefore") ? Long.MAX_VALUE : Integer.MAX_VALUE;
+				long maximum = (field.equals("apiComparisonNotBefore") || field.endsWith("ObservedAt")) ? Long.MAX_VALUE : Integer.MAX_VALUE;
 				safe.addProperty(field, counter(root.get(field), minimum, maximum));
 			} catch (RuntimeException invalid) { rejected++; }
 		}
@@ -361,5 +377,7 @@ public final class SparklingStats {
 		int importedDuplicates = -1;
 		int importedSetDuplicates = -1;
 		long apiComparisonNotBefore;
+        // Retained only for saved-data compatibility; never used for history intervals.
+        long undatedSparklingObservedAt, undatedUniqueObservedAt;
 	}
 }

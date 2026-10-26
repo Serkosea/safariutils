@@ -97,11 +97,6 @@ public final class ParticleDiagnostics {
 			&& System.currentTimeMillis() - found.lastAt <= EVIDENCE_FRESH_MILLIS;
 	}
 
-	/** An authoritative catch invalidates every transient particle association for that species. */
-	static void onCaught(dev.serko.safariutils.data.Critter critter) {
-		evidence.entrySet().removeIf(entry -> entry.getValue().critter == critter);
-	}
-
 	static String source(CritterEntities.Sighting sighting) {
 		boolean named = sighting != null && sighting.sparkling();
 		boolean particles = confirms(sighting);

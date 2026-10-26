@@ -59,7 +59,21 @@ public final class RecatchSpots {
 	/** A post-breakout pin that outlives its resolved attempt until the body returns. */
 	private record Pin(Critter critter, AABB box, boolean sparkling, long pinnedAt) { }
 
-	public record ActivePin(Critter critter, AABB box, UUID entityId, boolean sparkling) { }
+	public record ActivePin(Critter critter, AABB box, UUID entityId, boolean sparkling, boolean followsBody) {
+        public ActivePin(Critter critter, AABB box, UUID entityId, boolean sparkling) {
+            this(critter, box, entityId, sparkling, false);
+        }
+        public AABB frameBox(float partialTick) {
+            return frameBox(partialTick, LIVE_PIN_FRAME);
+        }
+        AABB frameBox(float partialTick, PinProjection projection) {
+            return followsBody ? projection.project(this, partialTick) : box;
+        }
+    }
+    @FunctionalInterface interface PinProjection { AABB project(ActivePin pin, float partialTick); }
+    private static final PinProjection LIVE_PIN_FRAME = (pin, partialTick) ->
+        framePosition(pin.critter(), pin.box(), WorldEntities.find(pin.entityId()), partialTick, 1.0);
+
 	public record ActiveShrink(Critter critter, AABB box, UUID entityId, boolean sparkling) { }
 	public record ShrinkState(Critter critter, AABB box, UUID entityId, boolean sparkling,
 			LinearTimeline animation) { }
@@ -156,7 +170,7 @@ public final class RecatchSpots {
 			if (presentation.mode == PresentationMode.PIN) {
 				if (!showPins) continue;
 				activePins.add(new ActivePin(presentation.critter, presentation.box,
-					presentation.currentId, presentation.sparkling));
+					presentation.currentId, presentation.sparkling, true));
 				pinnedBodies.addAll(presentationByBody.bodies(presentation.attemptId));
 			} else {
 				activeShrinks.add(new ShrinkState(presentation.critter, presentation.box,

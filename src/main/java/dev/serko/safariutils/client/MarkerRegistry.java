@@ -123,16 +123,16 @@ public final class MarkerRegistry {
 			.sorted().toList();
 	}
 
-	private static List<Markers.Marker> deduplicate(List<Markers.Marker> markers) {
+	static List<Markers.Marker> deduplicate(List<Markers.Marker> markers) {
 		record Key(double minX, double minY, double minZ, double maxX, double maxY,
 				double maxZ, String label, int colour, Markers.Style style,
-				boolean seeThrough, boolean researchCandidate, boolean critterLabel) { }
+				boolean seeThrough, boolean researchCandidate, boolean critterLabel, UUID body) { }
 		LinkedHashMap<Key, Markers.Marker> unique = new LinkedHashMap<>();
 		for (Markers.Marker marker : markers) {
 			var box = marker.box();
 			unique.put(new Key(box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ,
 				marker.label(), marker.colour(), marker.style(), marker.seeThrough(),
-				marker.researchCandidate(), marker.critterLabel()), marker);
+				marker.researchCandidate(), marker.critterLabel(), marker.pin()==null?null:marker.pin().entityId()), marker);
 		}
 		return List.copyOf(unique.values());
 	}

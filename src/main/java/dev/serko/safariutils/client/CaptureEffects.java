@@ -23,6 +23,7 @@ interface CaptureEffects {
 		public void started(long attempt, Critter species) { RecatchSpots.onCaptureStarted(attempt, species); }
 		public void bodyReplaced(Critter species, UUID before, UUID after) {
 			RecatchSpots.onBodyReplaced(species, before, after);
+            SparklingWatch.onBodyReplaced(species,before,after);
 			StillCritters.onBodyReplaced(species, before);
 		}
 		public void reassign(long attempt, Critter species, UUID before, UUID after, AABB visual, AABB body, boolean sparkling, int pity) {
@@ -45,6 +46,7 @@ interface CaptureEffects {
 		}
 		public void resolved(long attempt, Critter species, UUID before, UUID after, AABB visual, AABB body, boolean sparkling, int pity, CritterState.Outcome outcome, boolean visible) {
 			RecatchSpots.onIdentityResolved(attempt, species, before, after, visual, sparkling, pity, outcome, visible);
+            SparklingWatch.onCaptureResolved(species,before,after,outcome);
 			StillCritters.onIdentityResolved(attempt, species, before, after, body, outcome);
 		}
 		public void completed(Critter species, int catches) {

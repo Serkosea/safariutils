@@ -41,6 +41,14 @@ public final class ChatParser {
 			+ "|^(?:From|To) .*"
 			+ "|^(?:\\[(?!NPC]|MOB])[^]]+]\\s*)?\\w{1,16}: .*");
 
+	private static final Pattern DYE_EMERALD = Pattern.compile(
+        "^WOW! (?:\\[[^\\]]+\\]\\s+)*([A-Za-z0-9_]{1,16}) found an Emerald Dye!$");
+
+    public static boolean ownEmeraldDye(String line, String self) {
+        Matcher match = DYE_EMERALD.matcher(clean(line));
+        return self != null && match.matches() && self.equalsIgnoreCase(match.group(1));
+    }
+
 	private ChatParser() {
 	}
 

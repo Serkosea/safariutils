@@ -270,21 +270,30 @@ public final class WaypointRenderer {
 		CritterEntities.Sighting sighting = CritterEntities.sightingFor(entity.getUUID());
 		if (ConfigManager.get().display.enableHitboxes
 			&& sighting != null && rendersLiveHitbox(sighting, markerSnapshot)) return true;
-		Critter bodyless = CritterEntities.bodylessLabelCritter(entity.getUUID());
-		if (bodyless != null && captureTransitionReplacesName(bodyless, presentation)) return true;
-		return sighting != null
-			&& captureTransitionReplacesName(sighting.critter(), presentation);
-	}
+        if (sighting == null) return false;
+        Entity body = sighting.mob();
+        boolean artifact = body != null && RecatchSpots.isCaptureArtifact(sighting.critter(), body,
+            presentation.captureInProgress(sighting.critter()));
+        return captureTransitionReplacesName(sighting.critter(), body == null ? null : body.getUUID(),
+            SparklingWatch.presentsAsSparkling(sighting), artifact, presentation);
+    }
 
-	/** Only dedicated waypoint species replace their vanilla name during a recatch pin. */
-	private static boolean captureTransitionReplacesName(Critter critter,
-			RecatchSpots.PresentationSnapshot presentation) {
-		SafariConfig.DisplayConfig display = ConfigManager.get().display;
-		return display.recatchHelper
-			&& EXCLUDED_FROM_HITBOXES.contains(critter.name())
-			&& trackedWaypointEnabled(critter.name(), display)
-			&& presentation.captureInProgress(critter);
-	}
+    /** Keep the selected name policy through live -> capsule -> outcome presentation. */
+    static boolean captureTransitionReplacesName(Critter critter, java.util.UUID bodyId,
+            boolean sparkling, boolean captureArtifact, RecatchSpots.PresentationSnapshot presentation) {
+        if (showsVanillaNametags()) return false;
+        SafariConfig.DisplayConfig display = ConfigManager.get().display;
+        // Retain the dedicated waypoint species' existing transition behavior.
+        if (display.recatchHelper && EXCLUDED_FROM_HITBOXES.contains(critter.name())
+                && trackedWaypointEnabled(critter.name(), display)
+                && presentation.captureInProgress(critter)) return true;
+        if (!display.enableHitboxes || (!sparkling && SparklingMode.hideOrdinaryHitbox(critter, false)))
+            return false;
+        // An ordinary live peer is not a capture simply because its species is active.
+        // Bodyless/capsule labels have no live marker; otherwise require exact ownership.
+        return bodyId == null || captureArtifact
+            ? presentation.captureInProgress(critter) : presentation.suppresses(bodyId);
+    }
 
 	/** Mirrors live-render eligibility without relying on render-pass ordering. */
 	private static boolean rendersLiveHitbox(CritterEntities.Sighting sighting,

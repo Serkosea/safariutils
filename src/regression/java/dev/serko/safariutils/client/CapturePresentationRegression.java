@@ -26,6 +26,45 @@ public final class CapturePresentationRegression {
 		config.set(null, settings);
 		int checks = 0;
 		try {
+            var solsnatcher = Critters.byName("Solsnatcher");
+            UUID captured = new UUID(28, 1), untouched = new UUID(28, 2);
+            for (int nameMode : new int[]{0, 1, 2, 3}) {
+                settings.display.displayNametags = nameMode;
+                settings.display.enableHitboxes = true;
+                boolean replace = nameMode == 0 || nameMode == 2;
+                for (int captureMode = 0; captureMode < 3; captureMode++) {
+                    var presentation = new RecatchSpots.PresentationSnapshot(List.of(), List.of(),
+                        captureMode == 0 ? Set.of(captured) : Set.of(),
+                        captureMode == 1 ? Set.of(captured) : Set.of(),
+                        captureMode == 2 ? Set.of(captured) : Set.of(), Set.of(solsnatcher));
+                    check(WaypointRenderer.captureTransitionReplacesName(solsnatcher, captured, false, false, presentation) == replace,
+                        "capture owner name setting lost"); checks++;
+                    check(WaypointRenderer.captureTransitionReplacesName(solsnatcher, null, false, false, presentation) == replace,
+                        "bodyless capsule label name setting lost"); checks++;
+                    check(WaypointRenderer.captureTransitionReplacesName(solsnatcher, untouched, false, true, presentation) == replace,
+                        "capsule scaffold label name setting lost"); checks++;
+                    check(!WaypointRenderer.captureTransitionReplacesName(solsnatcher, untouched, false, false, presentation),
+                        "untouched peer classified as capture"); checks++;
+                    settings.display.enableHitboxes = false;
+                    check(!WaypointRenderer.captureTransitionReplacesName(solsnatcher, captured, false, false, presentation),
+                        "disabled markers hid vanilla name"); checks++;
+                    settings.display.enableHitboxes = true;
+                }
+            }
+            settings.display.displayNametags = 2;
+            settings.sparkling.sparklingMode = true;
+            settings.sparkling.sparklingOnlyShowSparkling = true;
+            var hiddenOrdinary = new RecatchSpots.PresentationSnapshot(List.of(), List.of(), Set.of(),
+                Set.of(captured), Set.of(), Set.of(solsnatcher));
+            check(!WaypointRenderer.captureTransitionReplacesName(solsnatcher, captured, false, false, hiddenOrdinary),
+                "hidden ordinary marker replaced vanilla name"); checks++;
+            check(WaypointRenderer.captureTransitionReplacesName(solsnatcher, captured, true, false, hiddenOrdinary),
+                "sparkling capture lost name replacement"); checks++;
+            settings.sparkling.sparklingMode = false;
+            settings.sparkling.sparklingOnlyShowSparkling = false;
+            var idle = new RecatchSpots.PresentationSnapshot(List.of(), List.of(), Set.of(), Set.of(), Set.of(), Set.of());
+            check(!WaypointRenderer.captureTransitionReplacesName(solsnatcher, null, false, false, idle),
+                "capture name suppression survived outcome"); checks++;
 			var titleCritter = Critters.byName("Hideonwall");
 			settings.display.hitboxPityTitle = false;
 			settings.display.recatchPityTitle = true;

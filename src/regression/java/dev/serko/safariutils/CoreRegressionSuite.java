@@ -50,6 +50,7 @@ public final class CoreRegressionSuite {
 		checks += dev.serko.safariutils.client.SettingsMotionRegression.run();
 		checks += dev.serko.safariutils.client.SettingsColourStateRegression.run();
         checks += dev.serko.safariutils.client.StatColoursRegression.run();
+        checks += dev.serko.safariutils.client.CollectionProgressRegression.run();
 		checks += dev.serko.safariutils.client.ThemeSelectionRegression.run();
 		checks += SettingsFieldsRegression.run();
 		checks += GenerationDispatchRegression.run();

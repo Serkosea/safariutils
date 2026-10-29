@@ -113,6 +113,11 @@ public class SafariUtils implements ClientModInitializer {
 		ConfigManager.get();
 		OperationalLog.start();
 		StructuredDiagnostics.install();
+        dev.serko.safariutils.client.SafariGlowBackend.initialize();
+        dev.serko.safariutils.client.PerformanceDiagnostics.install();
+		if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)) {
+            dev.serko.safariutils.client.EntityResearchLog.install();
+        }
 		UpdateChecker.start();
 		ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> OperationalLog.run("SCREEN/INIT", () -> {
 			if (!HypixelConnection.active()) return;
@@ -287,6 +292,7 @@ public class SafariUtils implements ClientModInitializer {
 			return OperationalLog.get("INTERACTION/USE_ENTITY", () -> {
 				CritterState.onEntityInteraction(entity);
 				SafariPartyWatch.onEntityUse(entity);
+                dev.serko.safariutils.client.ScrappyFeeding.interact(entity, hand, player.getItemInHand(hand).getHoverName().getString());
 				BirdfeederWatch.onEntityUse(entity);
 				InteractionDebugLog.onEntityInteraction("use", entity, hand.toString());
 				return TicketProtection.blockManagerInteraction(entity)

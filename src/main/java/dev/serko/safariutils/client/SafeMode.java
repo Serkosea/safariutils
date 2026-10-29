@@ -19,25 +19,20 @@ public final class SafeMode {
 	/** Whether any visibility-based protection is active. */
 	public static boolean active() {
 		SafariConfig.AdvancedConfig config = config();
-		return !BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS)
-			|| config.safeVisibleCritterDetection
-			|| config.safeHideNearbyCounts || config.safeConservativeAvailability
-			|| config.safeConservativeCompletion || config.safeCritterHitboxes
-			|| config.safeSparklingCritters || config.safeHideyho || config.safeHideonwall
-			|| config.safeDuplico || config.safeBloodbat || config.safeHideonfloor
-			|| config.safeFloorDrops || config.safeBeeNests || config.safeRockmiteMounds
-			|| config.safeSnoozleWalls || config.safeTroodonWalls;
+        return !BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS)
+            || config.safeDetectionHud || config.safeCritterMarkers || config.safeSparklingCritters
+            || config.safeWorldObjectives || config.safePredictedInformation;
 	}
 
-	public static boolean critterDetection() { return option(config().safeVisibleCritterDetection); }
-	public static boolean nearbyCounts() { return option(config().safeHideNearbyCounts); }
-	public static boolean conservativeAvailability() { return option(config().safeConservativeAvailability); }
-	public static boolean conservativeCompletion() { return option(config().safeConservativeCompletion); }
+	public static boolean critterDetection() { return option(config().safeDetectionHud); }
+	public static boolean nearbyCounts() { return option(config().safeDetectionHud); }
+	public static boolean conservativeAvailability() { return option(config().safeDetectionHud); }
+	public static boolean conservativeCompletion() { return option(config().safeDetectionHud); }
 	public static boolean sparklingCritters() { return option(config().safeSparklingCritters); }
 
 	public static boolean critterHitboxes(boolean sparkling) {
 		if (!BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS)) return true;
-		return option(config().safeCritterHitboxes) && (!sparkling || config().safeSparklingCritters);
+		return option(config().safeCritterMarkers) && (!sparkling || config().safeSparklingCritters);
 	}
 
 	public static boolean hiddenCritter(Critter critter, boolean sparkling) {
@@ -54,25 +49,20 @@ public final class SafeMode {
 		};
 	}
 
-	private static boolean isHiddenSpeciesEnabled(Critter critter) {
-		return switch (critter.name()) {
-			case "Hideyho" -> config().safeHideyho;
-			case "Hideonwall" -> config().safeHideonwall;
-			case "Duplico" -> config().safeDuplico;
-			case "Bloodbat" -> config().safeBloodbat;
-			case "Hideonfloor" -> config().safeHideonfloor;
-			default -> false;
-		};
-	}
+    private static boolean isHiddenSpeciesEnabled(Critter critter) {
+        return hiddenSpecies(critter) && config().safeCritterMarkers;
+    }
 
 	public static boolean hiddenCritterCandidates(Critter critter) {
 		return hiddenCritter(critter, false);
 	}
 
-	public static boolean hideyho() { return option(config().safeHideyho); }
-	public static boolean floorDrops() { return option(config().safeFloorDrops); }
-	public static boolean nests() { return option(config().safeBeeNests); }
-	public static boolean mounds() { return option(config().safeRockmiteMounds); }
-	public static boolean snoozleWalls() { return option(config().safeSnoozleWalls); }
-	public static boolean troodonWalls() { return option(config().safeTroodonWalls); }
+	public static boolean hideyho() { return option(config().safeCritterMarkers); }
+	public static boolean floorDropContents() { return option(config().safePredictedInformation); }
+	public static boolean scrappyFood() { return option(config().safePredictedInformation); }
+	public static boolean floorDrops() { return option(config().safeWorldObjectives); }
+	public static boolean nests() { return option(config().safeWorldObjectives); }
+	public static boolean mounds() { return option(config().safeWorldObjectives); }
+	public static boolean snoozleWalls() { return option(config().safeWorldObjectives); }
+	public static boolean troodonWalls() { return option(config().safeWorldObjectives); }
 }

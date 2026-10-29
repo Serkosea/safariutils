@@ -34,6 +34,8 @@ public final class CoreRegressionSuite {
 		timeline();
 		lifecycle();
 		profiles();
+		checks += dev.serko.safariutils.client.ContestScheduleRegression.run();
+        checks += dev.serko.safariutils.client.SafariGlowRegression.run();
 		checks += SparklingImportRegression.run();
         checks += dev.serko.safariutils.client.ShiningCoinRegression.run();
         checks += dev.serko.safariutils.session.EmeraldDyeRegression.run();
@@ -46,6 +48,8 @@ public final class CoreRegressionSuite {
 		checks += ImportBackupRegression.run();
 		checks += dev.serko.safariutils.client.SettingsTransferRegression.run();
 		checks += dev.serko.safariutils.client.LoggingOptInRegression.run();
+        checks += dev.serko.safariutils.client.EntityResearchRegression.run();
+        checks += dev.serko.safariutils.client.PerformanceRegression.run();
 		checks += dev.serko.safariutils.client.SavedRunLogRegression.run();
 		checks += dev.serko.safariutils.client.SettingsMotionRegression.run();
 		checks += dev.serko.safariutils.client.SettingsColourStateRegression.run();
@@ -66,6 +70,11 @@ public final class CoreRegressionSuite {
 		checks += dev.serko.safariutils.backend.AuctionMarketRegression.run();
 		checks += dev.serko.safariutils.client.ChatQueueRegression.run();
 		checks += dev.serko.safariutils.client.ChatMessageFilterRegression.run();
+		checks += dev.serko.safariutils.client.GemPedestalRegression.run();
+        checks += dev.serko.safariutils.client.FloorDropPatternRegression.run();
+        checks += dev.serko.safariutils.client.FloorDropVisibilityRegression.run();
+        checks += dev.serko.safariutils.client.ScrappyFeedingRegression.run();
+		checks += dev.serko.safariutils.client.SafeModeEvidenceRegression.run();
 		checks += dev.serko.safariutils.client.TicketInvitePolicyRegression.run();
 		checks += dev.serko.safariutils.client.TicketGuestPolicyRegression.run();
 		checks += dev.serko.safariutils.client.PartySparklingRegression.run();

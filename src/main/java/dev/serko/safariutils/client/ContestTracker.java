@@ -14,9 +14,6 @@ import java.util.regex.Pattern;
 public final class ContestTracker implements HudElement {
 	private final TickCache<HudPanel> panelCache = new TickCache<>();
 
-	private static final long CYCLE_MILLIS = 20 * 60_000L;
-	private static final long ACTIVE_MILLIS = 19 * 60_000L + 29_000L;
-	private static final long START_OFFSET_MILLIS = 15 * 60_000L + 4_000L;
 	private static final long FIVE_MINUTES_MILLIS = 5 * 60_000L;
 	private static final long ONE_MINUTE_MILLIS = 60_000L;
 	/** Lets the previous contest's tab-list result clear before accepting a new one. */
@@ -51,6 +48,9 @@ public final class ContestTracker implements HudElement {
 	private static boolean persistenceDirty;
 	private static long lastPersistenceSave;
 	private static List<String> lastParsedTabList = List.of();
+    private static List<String> lastDiagnosticTabList = List.of();
+    private static String lastDiagnosticScore = "";
+    private static long lastDiagnosticCycle = Long.MIN_VALUE;
 
 	public enum Alert {START, FIVE_MINUTES, ONE_MINUTE, ENDED, TICKET_EARNED}
 
@@ -69,7 +69,7 @@ public final class ContestTracker implements HudElement {
 		if (Minecraft.getInstance().player == null) return;
 
 		long now = System.currentTimeMillis();
-		long currentCycle = Math.floorDiv(now - START_OFFSET_MILLIS, CYCLE_MILLIS);
+		long currentCycle = ContestSchedule.cycle(now);
 		long remaining = remainingMillis(now);
 
 		if (!initialized) {
@@ -89,8 +89,10 @@ public final class ContestTracker implements HudElement {
 			previousRemaining = remaining;
 		}
 		firePendingStartAlert();
+        if (readServerResult && "Torrhus Canyon".equals(SafariLocation.tabListArea())) logObservedContest(now);
 
-		boolean resultGuardElapsed = remaining <= ACTIVE_MILLIS - RESULT_START_GUARD_MILLIS;
+
+		boolean resultGuardElapsed = now >= ContestSchedule.startsAt(now) + RESULT_START_GUARD_MILLIS;
 		if (readServerResult && remaining >= 0 && resultGuardElapsed
 			&& "Torrhus Canyon".equals(SafariLocation.tabListArea())) {
 			List<String> entries = SafariLocation.tabListEntries();
@@ -153,7 +155,7 @@ public final class ContestTracker implements HudElement {
 					}
 				}
 				if (bracketImproved) borderPulseUntil = System.currentTimeMillis() + 1_800L;
-				if (changed) persist(false);
+				if (changed) { logScore(); persist(false); }
 				return;
 			}
 
@@ -166,11 +168,43 @@ public final class ContestTracker implements HudElement {
 				boolean changed = bracket != null || score != foundScore;
 				bracket = null;
 				score = foundScore;
-				if (changed) persist(false);
+				if (changed) { logScore(); persist(false); }
 			}
 		}
 		if (!foundResult) staleResultCleared = true;
 	}
+
+    // Observe the server even during the estimated New Year wait, so a changed server
+    // schedule can be diagnosed without treating stale results as current HUD state.
+    private static void logObservedContest(long now) {
+        if (!ConfigManager.automaticLoggingEnabled()) {
+            lastDiagnosticTabList = List.of(); lastDiagnosticScore = ""; lastDiagnosticCycle = Long.MIN_VALUE;
+            return;
+        }
+        List<String> entries = SafariLocation.tabListEntries();
+        if (lastDiagnosticCycle == cycle && entries.equals(lastDiagnosticTabList)) return;
+        lastDiagnosticTabList = List.copyOf(entries);
+        String observed = "unavailable";
+        if (entries.contains("Miria's Contest:")) {
+            for (String entry : entries) {
+                if (RESULT.matcher(entry).matches() || UNRANKED_SCORE.matcher(entry).matches()) {
+                    observed = entry; break;
+                }
+            }
+        }
+        if (lastDiagnosticCycle == cycle && observed.equals(lastDiagnosticScore)) return;
+        lastDiagnosticCycle = cycle; lastDiagnosticScore = observed;
+        StructuredDiagnostics.decision("CONTEST", "server-result", "cycle=" + cycle
+            + " result=" + observed + " elapsedMs=" + (now - ContestSchedule.cycleStart(now))
+            + " estimatedStartDelayMs=" + ContestSchedule.startDelay(ContestSchedule.cycleStart(now)));
+    }
+
+    private static void logScore() {
+        if (!ConfigManager.automaticLoggingEnabled()) return;
+        StructuredDiagnostics.decision("CONTEST", "score", "cycle=" + cycle + " score=" + score
+            + " bracket=" + bracket + " ticket=" + ticket
+            + " remainingMs=" + remainingMillis(System.currentTimeMillis()));
+    }
 
 	private static int parseScore(String text) {
 		try {
@@ -218,13 +252,14 @@ public final class ContestTracker implements HudElement {
 			staleResultCleared = false;
 		}
 		resetResult();
-		startAlertPlayed = remaining < 0;
-		pendingStartAlert = remaining >= 0;
+		startAlertPlayed = remaining < 0 && System.currentTimeMillis() >= ContestSchedule.startsAt(System.currentTimeMillis());
+		pendingStartAlert = !startAlertPlayed;
 		persist(true);
 	}
 
 	private static void firePendingStartAlert() {
-		if (!pendingStartAlert || SafariLocation.tabListArea() == null) return;
+		if (!pendingStartAlert || SafariLocation.tabListArea() == null
+            || remainingMillis(System.currentTimeMillis()) < 0) return;
 		pendingStartAlert = false;
 		startAlertPlayed = true;
 		EncounterAlerts.fireContestAlert(Alert.START);
@@ -257,8 +292,7 @@ public final class ContestTracker implements HudElement {
 
 	/** Remaining active contest time, or {@code -1} during the inactive window. */
 	static long remainingMillis(long now) {
-		long phase = Math.floorMod(now - START_OFFSET_MILLIS, CYCLE_MILLIS);
-		return phase < ACTIVE_MILLIS ? ACTIVE_MILLIS - phase : -1;
+		return ContestSchedule.remaining(now);
 	}
 
 	@Override
@@ -319,10 +353,9 @@ public final class ContestTracker implements HudElement {
 		return (float) (0.35 + 0.35 * Math.sin(left / 85.0));
 	}
 
-	/** Time until the next fixed 20-minute contest cycle begins. */
+	/** Time until the next scoring window, including the estimated New Year delay. */
 	private static long untilNextContestMillis(long now) {
-		long phase = Math.floorMod(now - START_OFFSET_MILLIS, CYCLE_MILLIS);
-		return CYCLE_MILLIS - phase;
+		return ContestSchedule.untilNext(now);
 	}
 
 	private static String formatTime(long millis) {

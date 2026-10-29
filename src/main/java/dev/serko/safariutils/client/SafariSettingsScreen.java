@@ -127,9 +127,7 @@ public final class SafariSettingsScreen extends Screen {
 	private boolean editingNumber;
 	private boolean editingInlineText;
 	private final SettingsColourState editingColourState = new SettingsColourState(1);
-	private int colourFieldLeft, colourFieldTop, colourFieldWidth, colourFieldHeight;
-	private int hueSliderLeft, hueSliderTop, hueSliderWidth;
-	private int alphaSliderLeft, alphaSliderTop, alphaSliderWidth;
+	private final SettingsColourControls colourControls = new SettingsColourControls(editingColourState);
 	private boolean updatingColourControls;
 	private Number editingNumberOriginal;
 	private int inlineEditorLeft, inlineEditorTop, inlineEditorRight, inlineEditorBottom;
@@ -561,17 +559,8 @@ public final class SafariSettingsScreen extends Screen {
 			.filter(java.util.Objects::nonNull).findFirst().orElse(null);
 		if (owner == null) return;
 		area.pages.clear();
-		area.pages.add(navigationPage(owner, "advanced.safe-mode.sparklings", "Sparklings",
-			"Safe Mode  ›  Sparklings", 0, "safeSparklingCritters"));
-		area.pages.add(navigationPage(owner, "advanced.safe-mode.detection", "Detection And HUD",
-			"Safe Mode  ›  Detection And HUD", 0, "safeVisibleCritterDetection",
-			"safeHideNearbyCounts", "safeConservativeAvailability", "safeConservativeCompletion"));
-		area.pages.add(navigationPage(owner, "advanced.safe-mode.overlays", "Critter Overlays",
-			"Safe Mode  ›  Critter Overlays", 0, "safeCritterHitboxes", "safeHideyho",
-			"safeHideonwall", "safeDuplico", "safeBloodbat", "safeHideonfloor"));
-		area.pages.add(navigationPage(owner, "advanced.safe-mode.objectives", "Static Objectives",
-			"Safe Mode  ›  Static Objectives", 0, "safeFloorDrops", "safeBeeNests",
-			"safeRockmiteMounds", "safeSnoozleWalls", "safeTroodonWalls"));
+        area.pages.add(navigationPage(owner, "advanced.safe-mode.controls", "Safe Mode", "Safe Mode", 0,
+            "safeDetectionHud", "safeCritterMarkers", "safeSparklingCritters", "safeWorldObjectives", "safePredictedInformation"));
 	}
 
 	private static void flattenDeveloperSettings(SettingsArea area) {
@@ -625,7 +614,7 @@ public final class SafariSettingsScreen extends Screen {
 			settingsPage(source.value, "display.marker-settings", "General", 0,
 				"waypointDistance", "displayNametags", "hidePossibleWaypoints"),
 			settingsPage(source.value, "display.marker-settings.objectives", "Objectives", 0,
-				"floorDrops", "floorDropColour", "floorDropFaceColour",
+				"floorDropLoot", "floorDropQuestItems", "floorDropColour", "floorDropItemColours",
 				"highlightMounds", "moundColour", "highlightSnooperWalls", "snooperWallColour",
 				"highlightTroodonWalls", "troodonWallColour", "highlightNests", "nestColour"),
 			settingsPage(source.value, "display.marker-settings.overlays", "Critters", 0,
@@ -1431,8 +1420,7 @@ public final class SafariSettingsScreen extends Screen {
 
 	private boolean isDirectSettingsPage(SettingsPage page, boolean hasChildren) {
 		if (page.key.endsWith(".diagnosticHitboxesAccordion")) return true;
-		if (page.key.equals("advanced.safe-mode.sparklings")) return true;
-		if (page.key.startsWith("advanced.safe-mode.")) return false;
+		if (page.key.startsWith("advanced.safe-mode.")) return true;
 		if (page.key.startsWith("display.marker-settings")) return false;
 		if (!page.key.startsWith("dev.")) return true;
 		if (!hasChildren && page.fields.size() == 1) return true;
@@ -1520,6 +1508,15 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private List<List<Field>> settingCards(SettingsPage page) {
+        if (page.key.startsWith("advanced.safe-mode.")) return page.fields.stream().map(List::of).toList();
+        if (page.key.equals("display.marker-settings.objectives")) {
+            int floorEnd = 0;
+            while (floorEnd < page.fields.size() && page.fields.get(floorEnd).getName().startsWith("floorDrop")) floorEnd++;
+            List<List<Field>> cards = new ArrayList<>();
+            if (floorEnd > 0) cards.add(List.copyOf(page.fields.subList(0, floorEnd)));
+            cards.addAll(featureColourCards(page.fields.subList(floorEnd, page.fields.size())));
+            return cards;
+        }
 		if (page.key.equals("display.marker-settings")) {
 			return List.of(page.fields.subList(0, 2), page.fields.subList(2, 3));
 		}
@@ -1715,6 +1712,8 @@ public final class SafariSettingsScreen extends Screen {
 
 	/** Applies build-level availability for Safe Mode, private, and Developer settings. */
 	private static boolean visibleInThisBuild(Class<?> owner, Field field) {
+		if (field.getName().equals("floorDropItemColours")
+                && !BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS)) return false;
 		if (field.getName().startsWith("private")
 				&& !BuildVersion.has(BuildVersion.Capability.AUTHENTICATED_API)) return false;
 		if (owner != SafariConfig.AdvancedConfig.class
@@ -3419,23 +3418,12 @@ public final class SafariSettingsScreen extends Screen {
 			this::closeCustomThemePanel));
 	}
 
-	private void drawSlider(GuiGraphicsExtractor graphics, int x, int y, int width,
-			float value, SettingRange slider) {
-		float progress = (value - slider.minValue()) / (slider.maxValue() - slider.minValue());
-		graphics.fill(x, y + 15, x + width, y + 18, BORDER);
-		graphics.fill(x, y + 15, x + Math.round(width * Math.clamp(progress, 0f, 1f)), y + 18, BLUE);
-		String label = formatNumber(value) + "  ✎";
-		drawText(graphics, label, x + width - font.width(label), y + 2, TEXT);
-	}
-
-	private void drawColour(GuiGraphicsExtractor graphics, int x, int y, int width, int colour) {
-		SettingsUiKit.control(graphics, x, y, width, 22, SettingsUiKit.hovered(x, y, width, 22),
-			CARD, CARD_HOVER, BORDER, CYAN);
-		graphics.fill(x + 5, y + 4, x + 35, y + 18, colour);
-		outline(graphics, x + 5, y + 4, 30, 14, BORDER);
-		String hex = "#%06X".formatted(colour & 0xFFFFFF);
-		drawText(graphics, hex, x + 44, y + 7, TEXT);
-	}
+	private void drawSlider(GuiGraphicsExtractor graphics,int x,int y,int width,float value,SettingRange slider) {
+        SettingsUiKit.slider(graphics,font,x,y,width,(value-slider.minValue())/(slider.maxValue()-slider.minValue()),formatNumber(value),BORDER,BLUE,TEXT);
+    }
+    private void drawColour(GuiGraphicsExtractor graphics,int x,int y,int width,int colour) {
+        SettingsUiKit.colour(graphics,font,x,y,width,colour,CARD,CARD_HOVER,BORDER,CYAN,TEXT);
+    }
 
 	private void drawTextValue(GuiGraphicsExtractor graphics, int x, int y, int width, String value) {
 		SettingsUiKit.control(graphics, x, y, width, 22, SettingsUiKit.hovered(x, y, width, 22),
@@ -3763,79 +3751,8 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private void drawColourControls(GuiGraphicsExtractor graphics, int x, int y, int w) {
-		int selected = colourFromState();
-		drawChecker(graphics, x + 14, y + 54, 72, 40);
-		graphics.fill(x + 14, y + 54, x + 86, y + 94, selected);
-		outline(graphics, x + 14, y + 54, 72, 40, BORDER);
-		String previewLabel = "PREVIEW";
-		drawText(graphics, previewLabel,
-			x + 14 + (72 - font.width(previewLabel)) / 2, y + 99, MUTED);
-
-		colourFieldLeft = x + 100;
-		colourFieldTop = y + 52;
-		colourFieldWidth = w - 114;
-		colourFieldHeight = 96;
-		// One vertical gradient per saturation slice replaces the old grid of over a
-		// thousand rectangles while preserving a smooth two-dimensional field.
-		int columns = 32;
-		for (int column = 0; column < columns; column++) {
-			float saturation = column / (float) (columns - 1);
-			int x1 = colourFieldLeft + colourFieldWidth * column / columns;
-			int x2 = colourFieldLeft + colourFieldWidth * (column + 1) / columns;
-			graphics.fillGradient(x1, colourFieldTop, x2, colourFieldTop + colourFieldHeight,
-				hsb(255, editingColourState.hue(), saturation, 1f), 0xFF000000);
-		}
-		outline(graphics, colourFieldLeft, colourFieldTop,
-			colourFieldWidth, colourFieldHeight, BORDER);
-		int selectorX = colourFieldLeft + Math.round(editingColourState.saturation() * colourFieldWidth);
-		int selectorY = colourFieldTop + Math.round((1f - editingColourState.brightness()) * colourFieldHeight);
-		graphics.fill(selectorX - 5, selectorY - 5, selectorX + 6, selectorY + 6, BORDER);
-		graphics.fill(selectorX - 4, selectorY - 4, selectorX + 5, selectorY + 5, TEXT);
-		graphics.fill(selectorX - 2, selectorY - 2, selectorX + 3, selectorY + 3,
-			hsb(255, editingColourState.hue(), editingColourState.saturation(), editingColourState.brightness()));
-
-		drawText(graphics, "Hue", x + 14, y + 156, MUTED);
-		hueSliderLeft = x + 54;
-		hueSliderTop = y + 154;
-		hueSliderWidth = w - 68;
-		// Two-pixel samples look continuous while keeping the modal inexpensive.
-		int hueSegments = Math.max(1, hueSliderWidth / 2);
-		for (int i = 0; i < hueSegments; i++) {
-			int x1 = hueSliderLeft + hueSliderWidth * i / hueSegments;
-			int x2 = hueSliderLeft + hueSliderWidth * (i + 1) / hueSegments;
-			graphics.fill(x1, hueSliderTop, x2, hueSliderTop + 12,
-				hsb(255, i / (float) hueSegments, 1f, 1f));
-		}
-		outline(graphics, hueSliderLeft, hueSliderTop, hueSliderWidth, 12, BORDER);
-		drawSliderMarker(graphics, hueSliderLeft + Math.round(editingColourState.hue() * hueSliderWidth),
-			hueSliderTop, 12);
-		if (!editingAllowsAlpha()) {
-			alphaSliderWidth = 0;
-			drawText(graphics, "Drag the gradients or enter #RRGGBB", x + 14, y + 184, DIM);
-			return;
-		}
-
-		drawText(graphics, "Opacity", x + 14, y + 184, MUTED);
-		alphaSliderLeft = x + 62;
-		alphaSliderTop = y + 182;
-		alphaSliderWidth = w - 76;
-		drawChecker(graphics, alphaSliderLeft, alphaSliderTop, alphaSliderWidth, 12);
-		int rgb = selected & 0xFFFFFF;
-		for (int i = 0; i < 36; i++) {
-			int x1 = alphaSliderLeft + alphaSliderWidth * i / 36;
-			int x2 = alphaSliderLeft + alphaSliderWidth * (i + 1) / 36;
-			int alpha = 1 + Math.round(254f * i / 35f);
-			graphics.fill(x1, alphaSliderTop, x2, alphaSliderTop + 12, alpha << 24 | rgb);
-		}
-		outline(graphics, alphaSliderLeft, alphaSliderTop, alphaSliderWidth, 12, BORDER);
-		int alphaX = alphaSliderLeft
-			+ Math.round((editingColourState.alpha() - 1) / 254f * alphaSliderWidth);
-		drawSliderMarker(graphics, alphaX, alphaSliderTop, 12);
-		drawText(graphics, Math.round(editingColourState.alpha() / 255f * 100f) + "%",
-			x + w - 42, y + 199, TEXT);
-		drawText(graphics, "Drag the gradients or enter #RRGGBB / #AARRGGBB",
-			x + 14, y + 214, DIM);
-	}
+        colourControls.draw(graphics,font,x,y,w,editingAllowsAlpha(),BORDER,TEXT,MUTED,DIM);
+    }
 
 	private int colourModalHeight() {
 		return editingColour ? editingAllowsAlpha() ? 270 : 238 : 92;
@@ -3848,23 +3765,6 @@ public final class SafariSettingsScreen extends Screen {
 				|| editingField.getName().equals("bannerBackgroundColour"));
 	}
 
-	private static void drawChecker(GuiGraphicsExtractor graphics, int x, int y, int w, int h) {
-		int size = 8;
-		for (int row = 0; row * size < h; row++) {
-			for (int column = 0; column * size < w; column++) {
-				int colour = (row + column & 1) == 0 ? 0xFFB8B8B8 : 0xFF666666;
-				graphics.fill(x + column * size, y + row * size,
-					Math.min(x + w, x + (column + 1) * size),
-					Math.min(y + h, y + (row + 1) * size), colour);
-			}
-		}
-	}
-
-	private void drawSliderMarker(GuiGraphicsExtractor graphics,
-			int x, int y, int height) {
-		graphics.fill(x - 2, y - 2, x + 3, y + height + 2, BORDER);
-		graphics.fill(x - 1, y - 1, x + 2, y + height + 1, TEXT);
-	}
 
 	private static int hsb(int alpha, float hue, float saturation, float brightness) {
 		return SettingsColourState.argb(alpha, hue, saturation, brightness);
@@ -3879,32 +3779,9 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private boolean updateColourControl(double mouseX, double mouseY) {
-		if (!editingColour || editor == null) return false;
-		if (inside(mouseX, mouseY, colourFieldLeft, colourFieldTop,
-			colourFieldLeft + colourFieldWidth, colourFieldTop + colourFieldHeight)) {
-			editingColourState.saturation(Math.clamp((float) ((mouseX - colourFieldLeft) / colourFieldWidth), 0f, 1f));
-			editingColourState.brightness(1f - Math.clamp(
-				(float) ((mouseY - colourFieldTop) / colourFieldHeight), 0f, 1f));
-			commitColourControls();
-			return true;
-		}
-		if (inside(mouseX, mouseY, hueSliderLeft, hueSliderTop,
-			hueSliderLeft + hueSliderWidth, hueSliderTop + 12)) {
-			editingColourState.hue(Math.clamp((float) ((mouseX - hueSliderLeft) / hueSliderWidth),
-				0f, Math.nextDown(1f)));
-			commitColourControls();
-			return true;
-		}
-		if (editingAllowsAlpha() && alphaSliderWidth > 0
-			&& inside(mouseX, mouseY, alphaSliderLeft, alphaSliderTop,
-			alphaSliderLeft + alphaSliderWidth, alphaSliderTop + 12)) {
-			float progress = Math.clamp((float) ((mouseX - alphaSliderLeft) / alphaSliderWidth), 0f, 1f);
-			editingColourState.alpha(1 + Math.round(progress * 254f));
-			commitColourControls();
-			return true;
-		}
-		return false;
-	}
+        if (!editingColour || editor == null || !colourControls.update(mouseX, mouseY)) return false;
+        commitColourControls();return true;
+    }
 
 	private void commitColourControls() {
 		int colour = colourFromState();

@@ -394,3 +394,149 @@ The animated collection progress overlay uses CollectionProgressGeometry and the
 
 ### Capture name visibility follow-up
 Vanilla-name suppression follows ordinary marker captures as well as dedicated waypoint species. WaypointRenderer.captureTransitionReplacesName uses exact presentation ownership for paired live bodies and active species transitions only for bodyless/capsule-scaffold labels; it respects explicit vanilla-name modes and ordinary Sparkling-mode filtering. This is render-only: no entity names, ownership, pity or capture timing are changed. Regression coverage includes pin/shrink/native capture, untouched neighbors, missing bodies, scaffold labels, name modes, disabled markers and Sparkling filtering.
+
+
+## Entity research diagnostics (2026-10-28)
+
+`EntityResearchLog` is developer-only, opt-in evidence collection, not a prediction/ownership
+service. Its bounded network-ID/UUID index, client load/unload events, sampled metadata,
+floor component groups/rewards and Scrappy interactions join the existing capture replay.
+Client observation order and single-click reward candidates are not server truth. Preserve
+world/visit scope, explicit gaps and partial baselines. See DIAGNOSTICS.md for commands,
+bounds and test procedure; tools/entity_research.py is an offline summary only.
+No floor/Scrappy prediction or live pairing rule is established by this change. Future
+floor prediction must be Extra-only; validated non-revealing pairing improvements are shared.
+General structured decisions encode on the writer while retaining enqueue-time context.
+
+Shared opt-in PerformanceDiagnostics profiles runtime frame intervals and fixed operation
+boundaries for standalone and integrated components without a Safari-presence requirement.
+Reuse begin/end (finally), OperationalLog wrappers or endEvent for fixed event types. Do not
+create parallel timing writers, log per frame, use user data as stage names, or sum nested
+inclusive scopes as CPU usage. See DIAGNOSTICS.md for coverage and interpretation limits.
+
+Standing user preference (2026-10-28): when future work exposes a diagnostic/profiling gap,
+add useful bounded evidence through the shared services without requiring a separate feature
+request. Preserve opt-in behavior, privacy, standalone compatibility and observation-only
+semantics. Do not add parallel writers or per-frame dumps; measure real gameplay before
+claiming overhead is negligible. Partial frame windows report unavailable FPS, not zero.
+
+## October 28 label and research validation
+
+CritterScan.parseLabel is the exact shared label grammar for scanning and pre-scan
+vanilla-name replacement. Sleeping `Wumpa zZz` is Wumpa, including Sparkling labels.
+The renderer may evaluate a temporary bodyless sighting before the next shared scan;
+this uses existing visibility/settings gates and never publishes identity or pairs bodies.
+Keep spawn-time suppression independent of scan cadence rather than forcing world scans.
+SavedRunLog normalizes trailing CR before writing platform newlines; report tools tolerate
+blank lines in older exports. Floor XP chat uses `Hunting Experience`.
+First entity-research run (October 28, 01H-59M segments) has 53 single-candidate floor
+rewards and all three successful Scrappy foods. Quest items have ordered three-ID groups;
+Scrappy bodies sorted by ID map to wheat/fish/lily. These are provisional observations,
+not validated prediction rules. Require another independent run before enabling predictions.
+
+Second October 28 research run confirms the quest-item grouping and Scrappy food ordering,
+but coin/icebreaker group lengths vary. Do not assign every item by fixed global offsets.
+Ordinary body/label numeric IDs often differ by +1; transformed Hideons differ and no
+universal replacement rule is established. Capsule Duplico labels borrowed the original
+interaction body's silverfish carrier (+403/+407/+427 label offsets in this run). Compound
+reservation now compares label identity, not species, so same-species capsule labels cannot
+claim a better-owned carrier. The real carrier fallback and closer independent peers remain.
+Gem Pedestals use the shared marker registry and Gemzie's ordinary-hitbox visibility policy.
+Their Always Active selection is persisted bit 8, displayed in Cavern via explicit bit mapping;
+never shift the existing eight saved objective bits. Non-critter marker titles ignore the
+critter Display Nametags setting by design.
+
+User-supplied floor-only quest-item ranges and starting-inventory distinction are recorded
+in docs/development/DIAGNOSTICS.md under Floor quest-item bounds. Use them as research
+constraints, not proven ID mappings or inventory caps. Both initial runs fit these ranges.
+
+Gem pedestal completion combines mode-eligible local evidence with the active party-sync placement mask. Held inventory is not completion. Completed pedestals stay hidden even with Always Active selected; normal visit reset restores the next run's markers.
+
+## Safe Mode evidence audit (October 28)
+
+Known fixed objective positions (including Gem Pedestals) may be shown through terrain;
+location knowledge is separate from evidence of this run's occupancy/completion. Pedestal
+completion uses placement messages, confirmed Gemzie-door/catch state, and active party-sync
+placements and visibly confirmed gem blocks, never held inventory or unseen block scans.
+The verified block signature and separate Extra observation path are described below.
+Party-confirmed walls, nests, and mounds are known in Safe Mode as required by EvidencePolicy;
+do not restore legacy local-sight-only restrictions on received completion. Remote completion
+must not be echoed as local wall/mound evidence. All state remains scoped to the current visit.
+Candidate inspection requires an actual unobstructed ray or a ray hitting the target block
+itself. Near distance and view direction alone do not prove an area was inspected. Paintings
+remain occluders, including the decorated-entity surface fallback. A catalog candidate must
+also have a detected floor drop/present nest before it can become visually confirmed.
+
+### Verified pedestal observation (third Oct 28 research run)
+Placed gems are PLAYER_HEAD blocks one block above their matching froglight base. GemPedestals owns geometry, colors and signature. SafariObjectives samples only these three loaded positions on its existing five-tick cadence. Safe completion accepts visible, server or party evidence; unseen loaded observations affect Extra only and are excluded from locally published party completion. Evidence resets per visit. This replaces the earlier note that visual detection was pending. Debug command reports are now also recorded through opt-in DebugLog (16 KiB cap), including block snapshots.
+
+Third run: 59 attributed floor rewards (29 quest items, 12 essence, 10 Hunting XP, 8 shards), no research gaps. Quest-ID order repeats the earlier two runs: Lime/Purple/Orange twice; three worms, three berries, three seeds; five incense; four coins; five icebreakers. Scrappy bodies 297/300/303 accepted wheat/fish/lily respectively. XP/essence/shard order remains mixed; no speculative prediction or ID-only pairing is enabled.
+
+Shared settings controls (2026-10-28): SettingsUiKit.slider/colour and SettingsColourControls own the canonical slider, swatch and HSV/opacity editor visuals and interactions. SafariSettingsScreen and integrated component adapters reuse these; new settings surfaces should reuse them rather than copying a picker implementation. These classes must stay standalone-safe, with no SerkoAddons dependencies.
+
+Standing maintenance direction (2026-10-28): reuse central state/services and shared settings
+controls on every entry path, including settings opened outside a hub. Preserve functionality,
+use bounded caches and inexpensive render paths, and include concise opt-in diagnostics and
+meaningful tests for new behavior. These are ongoing requirements without repeated reminders.
+
+Capture ownership corrections must update Attempt.anchor to the confirmed body together
+with logical/entity ownership. Otherwise an offset capsule label plus stale provisional
+anchor can reject a real breakout and leave an orphan pin (Gemzie October 29 trace).
+Research evidence and approved future floor palette: docs/development/ENTITY_RESEARCH_FINDINGS.md.
+
+
+Floor/Scrappy inference (2026-10-29): see docs/development/ENTITY_RESEARCH_FINDINGS.md.
+FloorDropPattern is the only floor-ID classifier; FloorDrops supplies scan observations.
+SafeMode.floorDropContents gates labels/colors/visibility before any renderer consumes
+them. ScrappyFeeding keeps initial-food inference separate from confirmed feeding and
+capture identities. Never publish either prediction as confirmed party objective data.
+Schema 7 migrates biome-wide always-active floors to Loot + relevant quest categories.
+
+## New Year contest clock (2026-10-29)
+ContestSchedule owns the shared HUD/alert cycle. The first contest on Early Spring 1
+starts scoring at an estimated 8:40 remaining, based on user observation; its original
+end time and 20-minute cycle ID do not shift. Countdown includes this delay even from
+the preceding inactive gap and when launching during the wait. SkyblockCalendar owns
+the fixed epoch/calendar used here and by private calendar tooltips (no IQ dependency).
+Opt-in CONTEST server-result records observe changed score rows even during the wait;
+accepted score records include ticket state. No per-frame logging or network calls.
+The exact annual scoring boundary still needs future live validation.
+
+## Model glow projection (2026-10-29)
+SafariGlows consumes MarkerRegistry and WaypointRenderer.modelGlowEligible without
+publishing detections, capture identity or pity. It outlines Hideonwall, Hideonfloor,
+Duplico and Bloodbat bodies plus exact-texture live Rockmite mound displays. Duplicate
+or ambiguous model associations are rejected; capsule/player-head and cross-Hideon
+models are excluded. Colors reuse critterHitboxColour/moundColour. Capture/recatch
+ownership suppresses a live model glow. World changes clear bounded caches.
+Render Chest 1.0.3+26.2 supplies depth-tested model outlines; no server entity flags
+are changed. Existing vanilla/server glow is untouched. Normal and Extra editions
+share this renderer and their existing marker eligibility/evidence rules. The 26.1.2
+backend deliberately retains existing boxes only because upstream has no compatible
+library; do not bundle the 26.2 renderer or alter its Minecraft dependency declaration.
+
+
+## October 29 marker presentation checkpoint
+
+Floor-drop schema 9 separates Loot/Quest toggles, preserving the old toggle on migration.
+Five Icebreakers is preferred with evidence-driven four-drop fallback. Relevance stays
+in SparklingMode.hideFloorDrop; marker outlines, faces and Missing HUD use the exposed
+SafeMode-gated kind. Scrappy food presentation and server-acknowledged mound hit stages
+are visit-local, never capture-identity evidence. See ENTITY_RESEARCH_FINDINGS.md for
+seven-run fixtures and render ordering. Live tests must check model/glow occlusion,
+labels, Safe Mode, and per-item objective hiding before the next release.
+
+
+## Rendering follow-up (October 29, 14:57 test)
+
+Do not restore early-solid marker rendering: it hides front edges. Normal feature
+submission and late labels are restored. Depth-tested pipelines must inherit
+DepthStencilState.DEFAULT.depthTest(), not hard-code LESS_THAN_OR_EQUAL: 26.2 is
+reversed-Z, unlike 26.1.2. Extra floor faces explicitly use ALWAYS_PASS; Safe Mode
+uses native depth. Faces derive their colors and submit one double-sided quad.
+Visible Extra boxes use scene depth and hidden centers retain through-wall rendering,
+with one cached terrain test per tick/cell. See research findings for the partially
+concealed-box limitation. Missing HUD has an independent separate-type toggle.
+
+## v3.3.0 release review
+Latest Oct 29 16:49 launch: 59 recorded floor rewards matched predictions, no research gaps or warning/error records, focused biome averages about 240 FPS. Continue treating inference as presentation-only, never capture identity. New Year scoring boundary remains estimated. Skyblocker 6.11.0 for 26.1.2 was inspected from the user-provided ZIP: custom glow needs a depth texture and hooks across eight render mixin classes; no untested port is included. Its standard markers remain supported.

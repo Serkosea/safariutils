@@ -278,4 +278,19 @@ public final class SettingsUiKit {
 		}
 		return top + totalHeight;
 	}
+
+    /** Same slider and color swatch geometry on SafariUtils and component settings. */
+    public static void slider(GuiGraphicsExtractor g, net.minecraft.client.gui.Font font, int x,int y,int width,
+            float progress,String label,int border,int accent,int text) {
+        g.fill(x,y+15,x+width,y+18,border);
+        g.fill(x,y+15,x+Math.round(width*Math.clamp(progress,0f,1f)),y+18,accent);
+        String shown=label+"  ✎";
+        SpecialTheme.text(g,font,net.minecraft.network.chat.Component.literal(shown),x+width-font.width(shown),y+2,text);
+    }
+    public static void colour(GuiGraphicsExtractor g,net.minecraft.client.gui.Font font,int x,int y,int width,int colour,
+            int card,int hover,int border,int accent,int text) {
+        control(g,x,y,width,22,hovered(x,y,width,22),card,hover,border,accent);
+        g.fill(x+5,y+4,x+35,y+18,colour);g.outline(x+5,y+4,30,14,border);
+        SpecialTheme.text(g,font,net.minecraft.network.chat.Component.literal("#%06X".formatted(colour&0xffffff)),x+44,y+7,text);
+    }
 }

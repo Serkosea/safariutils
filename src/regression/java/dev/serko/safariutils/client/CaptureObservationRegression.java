@@ -347,6 +347,25 @@ public final class CaptureObservationRegression {
 			check(logical(a).pity() == 0 && logical(b).pity() == 1, "disappearance repairs provisional target"); checks++;
 			check(RecatchSpots.snapshot(true, java.util.Set.of()).isPinned(b)
 				&& !RecatchSpots.snapshot(true, java.util.Set.of()).suppresses(a), "repair releases provisional pin"); checks++;
+
+			// A corrected target can break out beyond four blocks of the stale provisional
+			// anchor and capsule label, yet next to the actual body's last position.
+			CritterState.onVisitStarted(); RecatchSpots.clear();
+			CritterState.observeBodies(List.of(body(species, la, a, box), body(species, lb, b, box.move(6,0,0))), 4000);
+			long correctedLogical = logical(b).id();
+			CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT, species), false, 4001, inferredAim);
+			CritterState.observeBodies(List.of(body(species, la, a, box)), 4010);
+			CritterState.advanceCaptureEvidence(List.of(), List.of(new CritterState.CaptureLabelObservation(
+				species, new UUID(8,2), box.move(2,0,0).getCenter())), 4010);
+			check(logical(b).pity() == 1, "offset impact corrected to disappeared peer"); checks++;
+			CritterState.applyEvent(event(CritterEvent.Type.FAILED, species), false, 6000, inferredAim);
+			UUID returned = new UUID(5,3);
+			CritterState.observeBodies(List.of(body(species, la, a, box), body(species, new UUID(6,3), returned, box.move(6.2,0,0))), 6200);
+			check(logical(returned).id() == correctedLogical && logical(returned).pity() == 1,
+				"corrected anchor preserves breakout identity and pity"); checks++;
+			check(CritterState.logicalCritters().size() == 2, "corrected breakout cannot create third ghost critter"); checks++;
+			check(!RecatchSpots.snapshot(true, java.util.Set.of()).isPinned(b), "corrected breakout retires old pin"); checks++;
+
 		} finally { CritterState.onVisitStarted(); RecatchSpots.clear(); }
 		return checks;
 	}

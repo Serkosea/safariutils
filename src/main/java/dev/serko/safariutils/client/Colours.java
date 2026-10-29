@@ -5,9 +5,22 @@ package dev.serko.safariutils.client;
  * representation so existing settings migrate without visible changes.
  */
 public final class Colours {
+    /** Shared readable mint for general results and informational numeric text. */
+    public static final int MINT_TEXT = 0x55FFAA;
+    public static final int MINT_TEXT_ARGB = 0xFF000000 | MINT_TEXT;
 
 	private Colours() {
 	}
+
+    /** Lightens an outline slightly for a related, saturated floor-face tint. */
+    public static int softFaceRgb(int rgb) {
+        int result = 0;
+        for (int shift = 0; shift <= 16; shift += 8) {
+            int channel = rgb >>> shift & 255;
+            result |= (channel + ((255 - channel) * 20 + 50) / 100) << shift;
+        }
+        return result;
+    }
 
 	/**
 	 * The packed ARGB for a stored colour, or {@code fallback} if it cannot be read.

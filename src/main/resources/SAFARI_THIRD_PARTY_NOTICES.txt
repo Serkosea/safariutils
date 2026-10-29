@@ -1,0 +1,7 @@
+Render Chest 1.0.3+26.2 by AzureAaron (Minecraft 26.2 distributions only)
+https://github.com/AzureAaron/RenderChest
+Apache License 2.0. Bundled as its original nested library JAR. License text: licenses/RenderChest-Apache-2.0.txt.
+Provides depth-tested model outlines. Safari eligibility and coloring are independently
+integrated with the existing marker state; no Skyblocker runtime is included.
+The Rockmite mound texture identifier was verified against Skyblocker SafariGlowAdder
+and HeadTextures (ca1163e2b7309113cc4dd3c084829d4417606235).

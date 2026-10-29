@@ -92,7 +92,7 @@ public final class WallTracker {
 		for (int[] coords : positions) {
 			BlockPos pos = new BlockPos(coords[0], coords[1], coords[2]);
 			State state;
-			if (completed.contains(pos) || !safeMode && partyCompleted.contains(pos)) {
+			if (completed.contains(pos) || partyCompleted.contains(pos)) {
 				state = State.BROKEN;
 			} else if (!client.level.isLoaded(pos)) {
 				state = State.UNKNOWN;
@@ -208,7 +208,7 @@ public final class WallTracker {
 		return mask;
 	}
 
-	/** Applies only valid canonical bits; Safe Mode presentation intentionally ignores them. */
+	/** Applies valid canonical party knowledge in both modes without echoing it as local evidence. */
 	public boolean mergePartyCompletionMask(int mask) {
 		int validMask = (1 << positions.length) - 1;
 		if (mask < 0 || (mask & ~validMask) != 0) return false;

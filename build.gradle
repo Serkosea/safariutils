@@ -69,10 +69,12 @@ if (developerBuild) {
 }
 
 repositories {
+    maven { url = "https://maven.azureaaron.net/releases"; content { includeModule "net.azureaaron", "render-chest" } }
 	maven { name = 'TerraformersMC'; url = 'https://maven.terraformersmc.com/' }
 }
 
 dependencies {
+    if (minecraftProfile == "26.2") { include implementation("net.azureaaron:render-chest:1.0.3+26.2") }
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
@@ -86,6 +88,7 @@ processResources {
 		version: project.version,
 		component_version: selectedReleaseVersion,
 		minecraft_depends: project.minecraft_depends,
+        loader_depends: minecraftProfile == "26.2" ? ">=0.19.3" : ">=0.19.0",
 		safe_build: safeBuild,
 		api_build: true,
 		developer_build: developerBuild

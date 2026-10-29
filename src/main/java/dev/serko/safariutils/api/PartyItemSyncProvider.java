@@ -62,6 +62,9 @@ public interface PartyItemSyncProvider {
 		return biome == SafariBiome.FOREST && forestDropsComplete();
 	}
 
+	/** Confirmed placements only; held gems do not complete pedestals. */
+	default int confirmedGemPlacements() { return 0; }
+
 	/** Identifier-free state used by automatic change-only diagnostics. */
 	default String diagnosticSnapshot() {
 		return "inactive";

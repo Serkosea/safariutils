@@ -1,5 +1,32 @@
 # Changelog
 
+## [3.3.0] - 2026-10-29
+
+### New
+
+- Identify floor-drop quest items with their exact names and optional item colors in Extra, while keeping other rewards labeled Loot
+- Show Scrappy food types and feeding progress, with distinct food colors and normal markers once awake
+- Added colored Gem Pedestal markers that clear when placement or the open door is confirmed
+- Added model glow for Rockmite mounds, Hideons, Duplicos and Bloodbats on Minecraft 26.2
+- Added confirmed Rockmite mound hit progress
+
+### Changes & Improvements
+
+- Separate Floor Drop Loot and Floor Drop Quest Items controls, with per-item Always Active choices
+- Hide surplus quest items once enough are held or their objective is complete, including outside Sparkling Mode
+- Optionally list remaining floor-drop types separately in the Missing HUD
+- Consolidated Safe Mode settings and preserved existing settings through migration; new Extra prediction features are enabled by default, while Regular builds always enforce Safe Mode
+- Improved marker depth, floor-face colors, and shared settings controls
+- Expanded opt-in developer diagnostics, entity research and performance profiling
+
+### Fixes
+
+- Fixed capture-marker ownership issues affecting nearby Gemzies and Duplicos
+- Fixed sleeping Wumpa detection and brief unwanted vanilla critter nametags
+- Added missing Wumpa, Scrappy feeding and Hunter dialogue filters
+- Corrected shared Sparkling check colors and objective count colors
+- Adjusted the New Year contest countdown for the observed delayed scoring window
+
 ## [3.2.0] - 2026-10-26
 
 ## Changes & Additions

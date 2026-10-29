@@ -134,6 +134,21 @@ public final class SafariCommands {
 				}));
 
 				debugRoot.then(ClientCommands.literal("save").executes(ctx -> saveRunLog(ctx.getSource())));
+                debugRoot.then(ClientCommands.literal("performance").executes(ctx -> {
+                    ctx.getSource().sendFeedback(ClientMessages.prefixed(PerformanceDiagnostics.status(), ClientMessages.Tone.INFO));
+                    return 1;
+                }));
+                debugRoot.then(ClientCommands.literal("status").executes(ctx -> {
+                    ctx.getSource().sendFeedback(ClientMessages.prefixed(EntityResearchLog.status(), ClientMessages.Tone.INFO));
+                    return 1;
+                }));
+                debugRoot.then(ClientCommands.literal("mark").then(ClientCommands.argument("note",
+                    com.mojang.brigadier.arguments.StringArgumentType.greedyString()).executes(ctx -> {
+                        ctx.getSource().sendFeedback(ClientMessages.prefixed(EntityResearchLog.mark(
+                            com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "note")), ClientMessages.Tone.INFO));
+                        return 1;
+                    })));
+
 				settingsRoot.then(debugRoot);
 			}
 
@@ -182,7 +197,7 @@ public final class SafariCommands {
 			config.display.highlightBloodbat ? "bloodbat " : "",
 			config.display.highlightHideonfloor ? "hideonfloor " : "",
 			config.display.recatchHelper ? "recatch " : "",
-			config.display.floorDrops ? "drops " : "",
+			(config.display.floorDropLoot || config.display.floorDropQuestItems) ? "drops " : "",
 			config.display.highlightMounds ? "mounds" : ""), ChatFormatting.GREEN);
 		// Most markers are gated on the biome, so the biome is half the
 		// answer to "why is nothing showing".
@@ -634,7 +649,7 @@ public final class SafariCommands {
 					"  pairing %s%s  label=%s  body=%s".formatted(sighting.critter().name(),
 						SparklingWatch.isSparkling(sighting)
 							? " [SPARKLING:" + ParticleDiagnostics.source(sighting) + "]" : "",
-						sighting.mob() == null ? "unpaired" : shortId(sighting.mob())),
+						shortId(sighting.label()), sighting.mob() == null ? "unpaired" : shortId(sighting.mob())),
 					ChatFormatting.YELLOW));
 
 			// A mound may well be a head on an armor stand, and they come in different
@@ -705,7 +720,9 @@ public final class SafariCommands {
 
 	/** Copies the finished report and confirms it, ending a debug command's output. */
 	private static void finishReport(FabricClientCommandSource source, StringBuilder record) {
-		copyResult(source, record.toString());
+		String text = record.toString();
+		DebugLog.line("DEBUG/REPORT", text.length() <= 16384 ? text : text.substring(0, 16384) + "\n[truncated]");
+		copyResult(source, text);
 	}
 
 	/** Copies even short or failed diagnostics, keeping every debug command shareable. */

@@ -94,31 +94,36 @@ public final class VisibilityCheck {
 			|| canSee(new Vec3(x, y, z - 0.8));
 	}
 
-	/** Nearby foliage should not preserve a fixed waypoint after its area was inspected. */
+	/** Inspect visible space or a visible target surface; proximity alone is not evidence. */
 	public static boolean canInspectCandidate(BlockPos pos) {
-		Minecraft client = Minecraft.getInstance();
-		if (client.player == null || client.level == null) return false;
-		if (canInspect(pos)) return true;
-		Vec3 eye = client.player.getEyePosition();
-		Vec3 target = Vec3.atCenterOf(pos);
-		return eye.distanceToSqr(target) <= 36.0
-			&& inFieldOfView(eye, client.player.getViewVector(1.0f), target);
+		return canInspect(pos) || canSeeBlockSurface(pos);
 	}
 
-	/** Paintings conceal Hideonwalls, so only the actual perch area counts as inspected. */
+	/** Paintings remain occluders for every candidate-inspection ray. */
 	public static boolean canInspectPaintingCandidate(BlockPos pos) {
-		if (canInspect(pos)) return true;
+		return canInspectCandidate(pos);
+	}
+
+	static boolean canSeeBlockSurface(BlockPos pos) {
 		Minecraft client = Minecraft.getInstance();
 		if (client.player == null || client.level == null) return false;
 		Vec3 eye = client.player.getEyePosition();
 		Vec3 target = Vec3.atCenterOf(pos);
-		return eye.distanceToSqr(target) <= 36.0
-			&& inFieldOfView(eye, client.player.getViewVector(1.0f), target)
-			&& !paintingBlocks(eye, target);
+		if (!inFieldOfView(eye, client.player.getViewVector(1.0f), target)) return false;
+		HitResult hit = client.level.clip(new ClipContext(eye, target,
+			ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, client.player));
+		return reachesBlockSurface(hit, pos) && !paintingBlocks(eye, hit.getLocation());
+	}
+
+	static boolean reachesBlockSurface(HitResult hit, BlockPos pos) {
+		return hit.getType() == HitResult.Type.MISS
+			|| hit instanceof net.minecraft.world.phys.BlockHitResult block
+				&& block.getBlockPos().equals(pos);
 	}
 
 	/** Same as {@link #canSee(Vec3)}, for wherever an entity currently is. */
 	public static boolean canSee(Entity entity) {
+		if (entity == null) return false;
 		Minecraft client = Minecraft.getInstance();
 		// Minecraft successfully targeting the entity is stronger evidence than our
 		// centre-point ray, which can clip the decorative block surrounding Duplico's
@@ -143,7 +148,8 @@ public final class VisibilityCheck {
 		HitResult hit = client.level.clip(new ClipContext(eye, target,
 			ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, client.player));
 		return hit.getType() == HitResult.Type.BLOCK
-			&& hit.getLocation().distanceToSqr(target) <= 0.81;
+			&& hit.getLocation().distanceToSqr(target) <= 0.81
+			&& !paintingBlocks(eye, hit.getLocation());
 	}
 
 	private static boolean inFieldOfView(Vec3 eye, Vec3 lookDirection, Vec3 target) {

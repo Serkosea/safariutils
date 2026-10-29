@@ -23,6 +23,8 @@ public final class StructuredDiagnostics {
 					&& before.phase() != SafariEpoch.Phase.TRANSFERRING) {
 				diagnostic("INVARIANT", "run closed from " + before.phase());
 			}
+			EntityResearchLog.flush();
+            PerformanceDiagnostics.boundary();
 			transition(reason, before, after);
 			OperationalLog.visitChanged(before.visit(), after.visit());
 		});
@@ -57,12 +59,21 @@ public final class StructuredDiagnostics {
 	/** Compact decision record for new coordinators; callers must not include secrets. */
 	public static void decision(String subsystem, String action, String detail) {
 		if (!enabled()) return;
-		JsonObject json = base("x", SafariRuntimeState.current());
-		json.addProperty("g", subsystem == null ? "unknown" : subsystem);
-		json.addProperty("a", action == null ? "unknown" : action);
-		if (detail != null && !detail.isBlank()) json.addProperty("d", detail);
-		OperationalLog.structured(json.toString());
+		OperationalLog.structuredDeferred(decisionRecord(SafariRuntimeState.current(),
+            System.currentTimeMillis(), System.nanoTime(), subsystem, action, detail));
 	}
+
+    /** Freeze context/time at observation, not when the background writer gets to it. */
+    static java.util.function.Supplier<String> decisionRecord(SafariEpoch epoch, long wall, long nano,
+            String subsystem, String action, String detail) {
+        return () -> {
+            JsonObject json = base("x", epoch, wall, nano);
+            json.addProperty("g", subsystem == null ? "unknown" : subsystem);
+            json.addProperty("a", action == null ? "unknown" : action);
+            if (detail != null && !detail.isBlank()) json.addProperty("d", detail);
+            return json.toString();
+        };
+    }
 
 	private static void diagnostic(String category, String message) {
 		if (!enabled()) return;
@@ -73,10 +84,14 @@ public final class StructuredDiagnostics {
 	}
 
 	private static JsonObject base(String kind, SafariEpoch epoch) {
+        return base(kind, epoch, System.currentTimeMillis(), System.nanoTime());
+    }
+
+    private static JsonObject base(String kind, SafariEpoch epoch, long wall, long nano) {
 		JsonObject json = new JsonObject();
 		json.addProperty("k", kind);
-		json.addProperty("t", System.currentTimeMillis());
-		json.addProperty("n", System.nanoTime());
+		json.addProperty("t", wall);
+		json.addProperty("n", nano);
 		json.addProperty("c", epoch.connection());
 		json.addProperty("v", epoch.visit());
 		json.addProperty("r", epoch.run());

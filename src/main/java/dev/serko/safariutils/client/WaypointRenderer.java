@@ -19,9 +19,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.blockentity.BeaconRenderer;
 import net.minecraft.client.renderer.rendertype.LayeringTransform;
-import net.minecraft.client.renderer.rendertype.OutputTarget;
 import net.minecraft.client.renderer.rendertype.RenderSetup;
-import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
@@ -115,7 +113,6 @@ public final class WaypointRenderer {
 		SafariUtils.MOD_ID + ":lines_through_walls",
 		RenderSetup.builder(LINES_THROUGH_WALLS)
 			.setLayeringTransform(LayeringTransform.VIEW_OFFSET_Z_LAYERING)
-			.setOutputTarget(OutputTarget.ITEM_ENTITY_TARGET)
 			.createRenderSetup());
 
 	/** Textured translucent beacon pipeline that remains visible through terrain. */
@@ -139,6 +136,7 @@ public final class WaypointRenderer {
 		RenderPipeline.builder(RenderPipelines.BEACON_BEAM_SNIPPET)
 			.withLocation(Identifier.fromNamespaceAndPath(SafariUtils.MOD_ID,
 				"pipeline/beacon_depth_tested"))
+            .withDepthStencilState(new DepthStencilState(DepthStencilState.DEFAULT.depthTest(), false))
 			.withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
 			.build());
 
@@ -149,12 +147,32 @@ public final class WaypointRenderer {
 			.sortOnUpload()
 			.createRenderSetup());
 
+    /** Never write marker depth: real models must remain able to cover early geometry. */
+    private static final RenderPipeline DEPTH_LINES_PIPELINE = RenderPipelines.register(
+        RenderPipeline.builder(RenderPipelines.LINES_SNIPPET)
+            .withLocation(Identifier.fromNamespaceAndPath(SafariUtils.MOD_ID, "pipeline/marker_depth_lines"))
+            .withDepthStencilState(new DepthStencilState(DepthStencilState.DEFAULT.depthTest(), false)).build());
+    private static final RenderType DEPTH_LINES = RenderType.create(SafariUtils.MOD_ID + ":marker_depth_lines",
+        RenderSetup.builder(DEPTH_LINES_PIPELINE).createRenderSetup());
+    private static final RenderPipeline FACE_PIPELINE = RenderPipelines.register(
+        RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET)
+            .withCull(false)
+            .withLocation(Identifier.fromNamespaceAndPath(SafariUtils.MOD_ID, "pipeline/marker_face"))
+            .withDepthStencilState(new DepthStencilState(DepthStencilState.DEFAULT.depthTest(), false)).build());
+
+    private static final RenderPipeline FACE_THROUGH_PIPELINE = RenderPipelines.register(
+        RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET)
+            .withCull(false)
+            .withLocation(Identifier.fromNamespaceAndPath(SafariUtils.MOD_ID, "pipeline/marker_face_through"))
+            .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false)).build());
+    private static final RenderType FACE_THROUGH = RenderType.create(SafariUtils.MOD_ID + ":face_through",
+        RenderSetup.builder(FACE_THROUGH_PIPELINE).createRenderSetup());
+
 	/** Depth-tested fill used for the visible top face of a floor drop. */
 	private static final RenderType FILLED_FACE = RenderType.create(
 		SafariUtils.MOD_ID + ":filled_face",
-		RenderSetup.builder(RenderPipelines.DEBUG_FILLED_BOX)
+		RenderSetup.builder(FACE_PIPELINE)
 			.setLayeringTransform(LayeringTransform.VIEW_OFFSET_Z_LAYERING)
-			.setOutputTarget(OutputTarget.ITEM_ENTITY_TARGET)
 			.createRenderSetup());
 
 	private WaypointRenderer() {
@@ -167,6 +185,8 @@ public final class WaypointRenderer {
 
 	/** Drops bounded render-derived state when the world identity changes. */
 	public static void onWorldChange() {
+        terrainVisibility.clear(); terrainVisibilityLevel = null; terrainVisibilityTick = Long.MIN_VALUE;
+        SafariGlows.clear();
 		LABEL_CACHE.clear();
 		PROVISIONAL_SHAPES.clear();
 		BOUNDS_TRANSITIONS.clear();
@@ -215,7 +235,7 @@ public final class WaypointRenderer {
 				visibleMarkers.add(new VisibleMarker(marker,
 					marker.style() == Markers.Style.WAYPOINT ? Math.sqrt(distanceSq) : 0.0,
 					seeThrough));
-				RenderType lineType = seeThrough ? LINES : RenderTypes.LINES;
+				RenderType lineType = seeThrough ? LINES : DEPTH_LINES;
 
 				AABB box = marker.box();
 				if (marker.label().startsWith("SPARKLING ")) {
@@ -232,7 +252,7 @@ public final class WaypointRenderer {
 			// Flushed here rather than left to the end of the frame, so every box is
 			// drawn before the first label and a waypoint reads as one thing.
 			backend.flush(LINES);
-			backend.flush(RenderTypes.LINES);
+			backend.flush(DEPTH_LINES);
 
 			for (VisibleMarker visible : visibleMarkers) {
 				Markers.Marker marker = visible.marker();
@@ -250,6 +270,8 @@ public final class WaypointRenderer {
 		renderCaptureShrinks(context, backend, camera, snapshot);
 		renderFloorDropFaces(context, backend, camera);
 		renderDiagnosticHitboxes(context, backend, camera);
+        backend.flush(DEPTH_LINES);
+        backend.flush(LINES);
 		// Publish only after the complete pass. Vanilla entity names may be extracted
 		// before or after this callback, so they use one stable frame snapshot.
 		Set<java.util.UUID> previous = replacedVanillaNames;
@@ -268,6 +290,12 @@ public final class WaypointRenderer {
 		// Evaluate the shared hitbox conditions directly instead of depending only on
 		// the previous published render snapshot.
 		CritterEntities.Sighting sighting = CritterEntities.sightingFor(entity.getUUID());
+		// Metadata can arrive between shared scans. Recognize only exact live labels;
+		// this temporary view never publishes identity or claims a nearby body.
+		if (sighting == null && entity.getCustomName() != null) {
+			var label = CritterScan.parseLabel(SafariLocation.strip(entity.getCustomName().getString()));
+			if (label != null) sighting = new CritterEntities.Sighting(label.critter(), entity, null, label.sparkling());
+		}
 		if (ConfigManager.get().display.enableHitboxes
 			&& sighting != null && rendersLiveHitbox(sighting, markerSnapshot)) return true;
         if (sighting == null) return false;
@@ -293,6 +321,12 @@ public final class WaypointRenderer {
         // Bodyless/capsule labels have no live marker; otherwise require exact ownership.
         return bodyId == null || captureArtifact
             ? presentation.captureInProgress(critter) : presentation.suppresses(bodyId);
+    }
+
+    /** Shared model-glow projection: only a paired live body whose marker is eligible. */
+    static boolean modelGlowEligible(CritterEntities.Sighting sighting, MarkerRegistry.Snapshot snapshot) {
+        return ConfigManager.get().display.enableHitboxes && sighting.mob() != null
+            && rendersLiveHitbox(sighting, snapshot);
     }
 
 	/** Mirrors live-render eligibility without relying on render-pass ordering. */
@@ -418,7 +452,7 @@ public final class WaypointRenderer {
 		if (client.level == null) return;
 
 		PoseStack poses = context.poseStack();
-		// Not RenderTypes.LINES: a debug hitbox exists specifically to find something
+		// Not DEPTH_LINES: a debug hitbox exists specifically to find something
 		// unidentified, which is exactly the situation where it might be behind
 		// something — Safe Mode's whole point is withholding information the player
 		// would not otherwise have, and a diagnostic tool the player deliberately
@@ -460,28 +494,34 @@ public final class WaypointRenderer {
 	private static void renderFloorDropFaces(LevelRenderContext context,
 			WaypointRenderBackend backend, Vec3 camera) {
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
-		if (!display.floorDrops || SessionManager.current() == null) return;
+		if (!(display.floorDropLoot || display.floorDropQuestItems) || SessionManager.current() == null) return;
 		SafariBiome biome = SafariLocation.biome();
 		if (biome == null) return;
 		if (SparklingMode.hideFloorDrops(biome, SessionManager.current())) return;
 
 		PoseStack poses = context.poseStack();
-		int colour = Colours.argb(display.floorDropFaceColour, 0xFFA0FFD3);
+		int baseColour = 0x7F000000 | Colours.softFaceRgb(Colours.argb(display.floorDropColour, 0xFF55FFAA) & 0xFFFFFF);
+        RenderType faceType = SafeMode.floorDrops() ? FILLED_FACE : FACE_THROUGH;
 		boolean anyDrawn = false;
 
 		for (BlockPos pos : FloorDrops.positions(biome)) {
+            boolean possible = SafeMode.floorDrops() && !FloorDrops.isConfirmedVisible(pos);
+            if (possible && display.hidePossibleWaypoints) continue;
+            FloorDropPattern.Kind kind = possible ? FloorDropPattern.Kind.UNKNOWN : FloorDrops.content(pos);
+            if (!FloorDrops.markerEnabled(kind) || SparklingMode.hideFloorDrop(biome, SessionManager.current(), kind)) continue;
+            int colour = display.floorDropItemColours && kind.colour != 0 ? (baseColour & 0xFF000000) | kind.faceColour : baseColour;
 			AABB visibleFace = new AABB(pos).inflate(0.02);
 			if (!visible(visibleFace)) continue;
 			poses.pushPose();
 			poses.translate(pos.getX() - camera.x - 0.005, pos.getY() - camera.y,
 				pos.getZ() - camera.z - 0.005);
-			backend.geometry(FILLED_FACE,
+			backend.geometry(faceType,
 				(pose, quad) -> topFace(pose, quad, 1.01f, 1.01f, 1.006f, colour));
 			poses.popPose();
 			anyDrawn = true;
 		}
 
-		if (anyDrawn) backend.flush(FILLED_FACE);
+		if (anyDrawn) backend.flush(faceType);
 	}
 
 	/** Draws live, depth-tested critter hitboxes and pity labels. */
@@ -534,8 +574,8 @@ public final class WaypointRenderer {
 						: drawBox(poses, backend, LINES, box, camera, colour))) continue;
 					anyThroughWalls = true;
 				} else {
-					if (!(sparkling ? drawRainbowBox(poses, backend, RenderTypes.LINES, box, camera)
-						: drawBox(poses, backend, RenderTypes.LINES, box, camera, colour))) continue;
+					if (!(sparkling ? drawRainbowBox(poses, backend, DEPTH_LINES, box, camera)
+						: drawBox(poses, backend, DEPTH_LINES, box, camera, colour))) continue;
 					anyDrawn = true;
 				}
 				drawn.add(new Found(new Markers.Marker(box,
@@ -562,6 +602,8 @@ public final class WaypointRenderer {
 				: uniqueColour != 0 ? uniqueColour
 				: display.hitboxRarityColour ? 0xFF000000 | sighting.critter().rarity().colour() : fixedColour;
 
+            var feeding = "Scrappy".equals(sighting.critter().name()) ? ScrappyFeeding.presentation(entity) : null;
+            if (!diagnostic && !sparkling && feeding != null) colour = feeding.colour();
 			AABB box = presentedHitbox(sighting.critter(), entity);
 			// Diagnostics override Safe Mode depth testing; ordinary hitboxes do not.
 			boolean seeThrough = !SafeMode.critterHitboxes(sparkling) || diagnostic;
@@ -570,13 +612,14 @@ public final class WaypointRenderer {
 					: drawBox(poses, backend, LINES, box, camera, colour))) continue;
 				anyThroughWalls = true;
 			} else {
-				if (!(sparkling ? drawRainbowBox(poses, backend, RenderTypes.LINES, box, camera)
-					: drawBox(poses, backend, RenderTypes.LINES, box, camera, colour))) continue;
+				if (!(sparkling ? drawRainbowBox(poses, backend, DEPTH_LINES, box, camera)
+					: drawBox(poses, backend, DEPTH_LINES, box, camera, colour))) continue;
 				anyDrawn = true;
 			}
 
-			String label = (sparkling ? "SPARKLING " : "") + sighting.critter().name()
-				+ Markers.pityLabel(sighting.critter(), entity.getUUID());
+			String feedingTitle = feeding == null ? null : feeding.title();
+            String label = (sparkling ? "SPARKLING " : "") + (feedingTitle != null ? feedingTitle
+                : sighting.critter().name() + Markers.pityLabel(sighting.critter(), entity.getUUID()));
 			drawn.add(new Found(new Markers.Marker(box, label, colour, Markers.Style.HIGHLIGHT),
 				Math.sqrt(distanceSquared(box, camera)), seeThrough));
 			markVanillaNameReplaced(sighting);
@@ -598,13 +641,13 @@ public final class WaypointRenderer {
 				double height = wrapper.getBbHeight();
 				AABB box = new AABB(pos.x - halfWidth, pos.y, pos.z - halfWidth,
 					pos.x + halfWidth, pos.y + height, pos.z + halfWidth);
-				if (drawBox(poses, backend, RenderTypes.LINES, box, camera, fixedColour)) {
+				if (drawBox(poses, backend, DEPTH_LINES, box, camera, fixedColour)) {
 					anyDrawn = true;
 				}
 			}
 		}
 
-		if (anyDrawn) backend.flush(RenderTypes.LINES);
+		if (anyDrawn) backend.flush(DEPTH_LINES);
 		if (anyThroughWalls) backend.flush(LINES);
 		if (!anyDrawn && !anyThroughWalls) return;
 
@@ -679,7 +722,7 @@ public final class WaypointRenderer {
 				&& (body == null || !capturePresentationSuppresses(sighting.critter(), body,
 					presentation))) {
 				boolean seeThrough = !SafeMode.critterHitboxes(true);
-				if (drawRainbowBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
+				if (drawRainbowBox(poses, backend, seeThrough ? LINES : DEPTH_LINES,
 						box, camera)) {
 					if (seeThrough) throughBoxesDrawn = true;
 					else depthBoxesDrawn = true;
@@ -711,7 +754,7 @@ public final class WaypointRenderer {
 		}
 
 		if (throughBoxesDrawn) backend.flush(LINES);
-		if (depthBoxesDrawn) backend.flush(RenderTypes.LINES);
+		if (depthBoxesDrawn) backend.flush(DEPTH_LINES);
 		if (beamsDrawn) {
 			backend.flush(beamCore);
 			if (beamGlow != beamCore) backend.flush(beamGlow);
@@ -987,9 +1030,9 @@ public final class WaypointRenderer {
 						: trackedState.persistentThroughWalls(entity.getUUID())
 							|| !SafeMode.hiddenCritter(critter, sparkling);
 					if (!(sparkling
-						? drawRainbowBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
+						? drawRainbowBox(poses, backend, seeThrough ? LINES : DEPTH_LINES,
 							box, camera)
-						: drawBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
+						: drawBox(poses, backend, seeThrough ? LINES : DEPTH_LINES,
 							box, camera, colour))) continue;
 					anyDrawn = true;
 					if (seeThrough) anyThroughWalls = true;
@@ -1029,9 +1072,9 @@ public final class WaypointRenderer {
 						: remembered.persistentThroughWalls()
 							|| !SafeMode.hiddenCritter(critter, remembered.sparkling());
 					if (!(remembered.sparkling()
-						? drawRainbowBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
+						? drawRainbowBox(poses, backend, seeThrough ? LINES : DEPTH_LINES,
 							box, camera)
-						: drawBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
+						: drawBox(poses, backend, seeThrough ? LINES : DEPTH_LINES,
 							box, camera, colour))) continue;
 					anyDrawn = true;
 					if (seeThrough) anyThroughWalls = true;
@@ -1085,9 +1128,9 @@ public final class WaypointRenderer {
 				int liveColour = HideyhoSolver.sparkling() ? sparklingColour()
 					: uniqueColour != 0 ? uniqueColour : colour;
 				boolean boxDrawn = HideyhoSolver.sparkling()
-					? drawRainbowBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
+					? drawRainbowBox(poses, backend, seeThrough ? LINES : DEPTH_LINES,
 						box, camera)
-					: drawBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
+					: drawBox(poses, backend, seeThrough ? LINES : DEPTH_LINES,
 						box, camera, liveColour);
 				if (boxDrawn) {
 					anyDrawn = true;
@@ -1109,7 +1152,7 @@ public final class WaypointRenderer {
 		}
 
 		if (!anyDrawn) return;
-		if (anyDepthTested) backend.flush(RenderTypes.LINES);
+		if (anyDepthTested) backend.flush(DEPTH_LINES);
 		if (anyThroughWalls) backend.flush(LINES);
 
 		if (showsWaypointNametags()) {
@@ -1144,9 +1187,9 @@ public final class WaypointRenderer {
 			int colour = critterHitboxColour(shrink.critter(), shrink.sparkling());
 			boolean seeThrough = !SafeMode.critterHitboxes(shrink.sparkling()) || diagnostic;
 			boolean drawn = shrink.sparkling()
-				? drawRainbowBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
+				? drawRainbowBox(poses, backend, seeThrough ? LINES : DEPTH_LINES,
 					shrink.box(), camera)
-				: drawBox(poses, backend, seeThrough ? LINES : RenderTypes.LINES,
+				: drawBox(poses, backend, seeThrough ? LINES : DEPTH_LINES,
 					shrink.box(), camera, colour);
 			if (!drawn) continue;
 			if (seeThrough) through = true;
@@ -1159,7 +1202,7 @@ public final class WaypointRenderer {
 				seeThrough));
 		}
 		if (through) backend.flush(LINES);
-		if (depth) backend.flush(RenderTypes.LINES);
+		if (depth) backend.flush(DEPTH_LINES);
 		if (showsWaypointNametags()) {
 			for (Found found : labels) {
 				label(poses, backend, found.marker(), camera, found.distance(), found.seeThrough());
@@ -1175,10 +1218,31 @@ public final class WaypointRenderer {
 			centreX + 0.5, upperBlock.getY(), centreZ + 0.5);
 	}
 
+    private static final java.util.Map<BlockPos, Boolean> terrainVisibility = new java.util.HashMap<>();
+    private static Object terrainVisibilityLevel;
+    private static long terrainVisibilityTick = Long.MIN_VALUE;
+
+    /** Visible critters use actual scene depth; hidden Extra markers retain terrain visibility.
+     * A partly concealed box uses depth testing when its center is visible, avoiding a
+     * bounding-box mask that would incorrectly erase front-facing edges. */
+    private static RenderType boxLineType(RenderType requested, AABB box) {
+        if (requested != LINES) return requested;
+        var client = Minecraft.getInstance();
+        if (client.level == null) return requested;
+        long tick = client.level.getGameTime();
+        if (terrainVisibilityLevel != client.level || terrainVisibilityTick != tick) {
+            terrainVisibility.clear(); terrainVisibilityLevel = client.level; terrainVisibilityTick = tick;
+        }
+        BlockPos cell = BlockPos.containing(box.getCenter());
+        boolean visible = terrainVisibility.computeIfAbsent(cell, ignored -> VisibilityCheck.canSee(box.getCenter()));
+        return visible ? DEPTH_LINES : requested;
+    }
+
 	/** Draws one box already positioned in world space, relative to the camera. */
 	private static boolean drawBox(PoseStack poses, WaypointRenderBackend backend, RenderType lineType,
 							AABB box, Vec3 camera, int colour) {
 		if (!visible(box)) return false;
+        lineType = boxLineType(lineType, box);
 		poses.pushPose();
 		poses.translate(box.minX - camera.x, box.minY - camera.y, box.minZ - camera.z);
 		backend.geometry(lineType, (pose, lines) -> box(pose, lines, (float) box.getXsize(),
@@ -1191,6 +1255,7 @@ public final class WaypointRenderer {
 	private static boolean drawRainbowBox(PoseStack poses, WaypointRenderBackend backend,
 			RenderType lineType, AABB box, Vec3 camera) {
 		if (!visible(box)) return false;
+        lineType = boxLineType(lineType, box);
 		float phase = RainbowColours.phase(RainbowColours.frameId());
 		poses.pushPose();
 		poses.translate(box.minX - camera.x, box.minY - camera.y, box.minZ - camera.z);
@@ -1234,13 +1299,6 @@ public final class WaypointRenderer {
 		quad.addVertex(pose, xSize, y, 0).setColor(red, green, blue, alpha);
 		quad.addVertex(pose, 0, y, 0).setColor(red, green, blue, alpha);
 
-		// Submit the reverse winding too. The floor-drop position can put this plane
-		// above or below the camera as the player jumps, and the filled pipeline culls
-		// whichever side faces away from the camera.
-		quad.addVertex(pose, 0, y, 0).setColor(red, green, blue, alpha);
-		quad.addVertex(pose, xSize, y, 0).setColor(red, green, blue, alpha);
-		quad.addVertex(pose, xSize, y, zSize).setColor(red, green, blue, alpha);
-		quad.addVertex(pose, 0, y, zSize).setColor(red, green, blue, alpha);
 	}
 
 	/** Four segmented faces let the beacon interpolate smoothly through several hues. */

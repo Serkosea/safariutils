@@ -1,0 +1,591 @@
+[
+  [
+    {
+      "id": 30910,
+      "biome": "HAUNTED",
+      "truth": "COIN"
+    },
+    {
+      "id": 30949,
+      "biome": "CAVERN",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30856,
+      "biome": "CAVERN",
+      "truth": "PURPLE"
+    },
+    {
+      "id": 30925,
+      "biome": "ICY",
+      "truth": "ICE"
+    },
+    {
+      "id": 30931,
+      "biome": "CAVERN",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30850,
+      "biome": "CAVERN",
+      "truth": "ORANGE"
+    },
+    {
+      "id": 30955,
+      "biome": "FOREST",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30976,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30844,
+      "biome": "CAVERN",
+      "truth": "LIME"
+    },
+    {
+      "id": 30982,
+      "biome": "CAVERN",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30985,
+      "biome": "CAVERN",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30868,
+      "biome": "FOREST",
+      "truth": "WORM"
+    },
+    {
+      "id": 30874,
+      "biome": "FOREST",
+      "truth": "BERRY"
+    },
+    {
+      "id": 30964,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30865,
+      "biome": "FOREST",
+      "truth": "WORM"
+    },
+    {
+      "id": 30886,
+      "biome": "FOREST",
+      "truth": "SEEDS"
+    },
+    {
+      "id": 30967,
+      "biome": "CAVERN",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30859,
+      "biome": "CAVERN",
+      "truth": "ORANGE"
+    },
+    {
+      "id": 30934,
+      "biome": "CAVERN",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30928,
+      "biome": "ICY",
+      "truth": "ICE"
+    },
+    {
+      "id": 30952,
+      "biome": "FOREST",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30871,
+      "biome": "FOREST",
+      "truth": "BERRY"
+    },
+    {
+      "id": 30892,
+      "biome": "HAUNTED",
+      "truth": "INCENSE"
+    },
+    {
+      "id": 30937,
+      "biome": "FOREST",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30847,
+      "biome": "CAVERN",
+      "truth": "PURPLE"
+    },
+    {
+      "id": 30862,
+      "biome": "FOREST",
+      "truth": "WORM"
+    },
+    {
+      "id": 30919,
+      "biome": "ICY",
+      "truth": "ICE"
+    },
+    {
+      "id": 30880,
+      "biome": "FOREST",
+      "truth": "SEEDS"
+    },
+    {
+      "id": 30940,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30877,
+      "biome": "FOREST",
+      "truth": "BERRY"
+    },
+    {
+      "id": 30853,
+      "biome": "CAVERN",
+      "truth": "LIME"
+    },
+    {
+      "id": 30988,
+      "biome": "ICY",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30922,
+      "biome": "ICY",
+      "truth": "ICE"
+    },
+    {
+      "id": 30883,
+      "biome": "FOREST",
+      "truth": "SEEDS"
+    },
+    {
+      "id": 30901,
+      "biome": "HAUNTED",
+      "truth": "INCENSE"
+    },
+    {
+      "id": 30970,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30958,
+      "biome": "ICY",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30895,
+      "biome": "HAUNTED",
+      "truth": "INCENSE"
+    },
+    {
+      "id": 30913,
+      "biome": "HAUNTED",
+      "truth": "COIN"
+    },
+    {
+      "id": 30946,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 31005,
+      "biome": "FOREST",
+      "truth": "LOOT"
+    },
+    {
+      "id": 31008,
+      "biome": "ICY",
+      "truth": "LOOT"
+    },
+    {
+      "id": 31011,
+      "biome": "CAVERN",
+      "truth": "LOOT"
+    },
+    {
+      "id": 31002,
+      "biome": "ICY",
+      "truth": "LOOT"
+    },
+    {
+      "id": 31014,
+      "biome": "ICY",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30898,
+      "biome": "HAUNTED",
+      "truth": "INCENSE"
+    },
+    {
+      "id": 30889,
+      "biome": "HAUNTED",
+      "truth": "INCENSE"
+    },
+    {
+      "id": 30916,
+      "biome": "ICY",
+      "truth": "ICE"
+    },
+    {
+      "id": 30979,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30907,
+      "biome": "HAUNTED",
+      "truth": "COIN"
+    },
+    {
+      "id": 30904,
+      "biome": "HAUNTED",
+      "truth": "COIN"
+    },
+    {
+      "id": 30991,
+      "biome": "ICY",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30943,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30973,
+      "biome": "ICY",
+      "truth": "LOOT"
+    },
+    {
+      "id": 30961,
+      "biome": "ICY",
+      "truth": "LOOT"
+    }
+  ],
+  [
+    {
+      "id": 48536,
+      "biome": "CAVERN",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48503,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48557,
+      "biome": "CAVERN",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48470,
+      "biome": "ICY",
+      "truth": "ICE"
+    },
+    {
+      "id": 48542,
+      "biome": "CAVERN",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48515,
+      "biome": "FOREST",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48506,
+      "biome": "FOREST",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48539,
+      "biome": "FOREST",
+      "truth": "UNKNOWN"
+    },
+    {
+      "id": 48407,
+      "biome": "FOREST",
+      "truth": "WORM"
+    },
+    {
+      "id": 48530,
+      "biome": "FOREST",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48389,
+      "biome": "CAVERN",
+      "truth": "LIME"
+    },
+    {
+      "id": 48401,
+      "biome": "CAVERN",
+      "truth": "PURPLE"
+    },
+    {
+      "id": 48509,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48410,
+      "biome": "FOREST",
+      "truth": "WORM"
+    },
+    {
+      "id": 48416,
+      "biome": "FOREST",
+      "truth": "BERRY"
+    },
+    {
+      "id": 48422,
+      "biome": "FOREST",
+      "truth": "BERRY"
+    },
+    {
+      "id": 48497,
+      "biome": "ICY",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48488,
+      "biome": "CAVERN",
+      "truth": "UNKNOWN"
+    },
+    {
+      "id": 48473,
+      "biome": "FOREST",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48395,
+      "biome": "CAVERN",
+      "truth": "ORANGE"
+    },
+    {
+      "id": 48461,
+      "biome": "ICY",
+      "truth": "ICE"
+    },
+    {
+      "id": 48398,
+      "biome": "CAVERN",
+      "truth": "LIME"
+    },
+    {
+      "id": 48494,
+      "biome": "CAVERN",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48392,
+      "biome": "CAVERN",
+      "truth": "PURPLE"
+    },
+    {
+      "id": 48482,
+      "biome": "CAVERN",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48485,
+      "biome": "CAVERN",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48425,
+      "biome": "FOREST",
+      "truth": "SEEDS"
+    },
+    {
+      "id": 48428,
+      "biome": "FOREST",
+      "truth": "SEEDS"
+    },
+    {
+      "id": 48479,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48548,
+      "biome": "FOREST",
+      "truth": "UNKNOWN"
+    },
+    {
+      "id": 48545,
+      "biome": "FOREST",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48500,
+      "biome": "ICY",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48431,
+      "biome": "FOREST",
+      "truth": "SEEDS"
+    },
+    {
+      "id": 48413,
+      "biome": "FOREST",
+      "truth": "WORM"
+    },
+    {
+      "id": 48527,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48551,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48554,
+      "biome": "FOREST",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48491,
+      "biome": "ICY",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48419,
+      "biome": "FOREST",
+      "truth": "BERRY"
+    },
+    {
+      "id": 48434,
+      "biome": "HAUNTED",
+      "truth": "INCENSE"
+    },
+    {
+      "id": 48446,
+      "biome": "HAUNTED",
+      "truth": "INCENSE"
+    },
+    {
+      "id": 48512,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48467,
+      "biome": "ICY",
+      "truth": "ICE"
+    },
+    {
+      "id": 48437,
+      "biome": "HAUNTED",
+      "truth": "INCENSE"
+    },
+    {
+      "id": 48443,
+      "biome": "HAUNTED",
+      "truth": "INCENSE"
+    },
+    {
+      "id": 48458,
+      "biome": "ICY",
+      "truth": "ICE"
+    },
+    {
+      "id": 48476,
+      "biome": "ICY",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48404,
+      "biome": "CAVERN",
+      "truth": "ORANGE"
+    },
+    {
+      "id": 48464,
+      "biome": "ICY",
+      "truth": "ICE"
+    },
+    {
+      "id": 48452,
+      "biome": "HAUNTED",
+      "truth": "COIN"
+    },
+    {
+      "id": 48521,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48455,
+      "biome": "HAUNTED",
+      "truth": "COIN"
+    },
+    {
+      "id": 48533,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48440,
+      "biome": "HAUNTED",
+      "truth": "INCENSE"
+    },
+    {
+      "id": 48524,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48518,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48581,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48578,
+      "biome": "ICY",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48575,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48584,
+      "biome": "HAUNTED",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48587,
+      "biome": "CAVERN",
+      "truth": "LOOT"
+    },
+    {
+      "id": 48449,
+      "biome": "HAUNTED",
+      "truth": "COIN"
+    }
+  ]
+]

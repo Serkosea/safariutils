@@ -16,6 +16,8 @@ public final class SafariObjectives {
 	private static long gemzieDoorOpenedAt;
 	private static boolean gemzieCaught;
 	private static int placedGemMask;
+	private static int observedGemMask;
+	private static int visibleGemMask;
 	private static int incenseUsed;
 	private static boolean doomspiralSpawned;
 	private static boolean doomspiralCaught;
@@ -36,6 +38,7 @@ public final class SafariObjectives {
 		scanTicks = 0;
 		Minecraft client = Minecraft.getInstance();
 		if (client.player == null) return;
+		observeGemPedestals(client);
 		Inventory inventory = client.player.getInventory();
 		java.util.Arrays.fill(currentInventory, 0);
 		for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
@@ -115,7 +118,39 @@ public final class SafariObjectives {
 
 	/** Confirmed podium placements, or all three once the chamber door opens. */
 	public static int placedGemMask() {
-		return gemzieDoorOpened ? 7 : placedGemMask;
+		return gemzieDoorOpened ? 7 : placedGemMask | visibleGemMask
+			| (SafeMode.conservativeCompletion() ? 0 : observedGemMask);
+	}
+
+	/** Only direct/server evidence is published as local party completion. */
+	public static int confirmedGemMask() {
+		return gemzieDoorOpened ? 7 : placedGemMask | visibleGemMask;
+	}
+
+	private static void observeGemPedestals(Minecraft client) {
+		if (client.level == null || SafariLocation.biome() != dev.serko.safariutils.data.SafariBiome.CAVERN
+			|| confirmedGemMask() == 7) return;
+		int present = 0, visible = 0;
+		for (var pedestal : GemPedestals.ALL) {
+			if ((confirmedGemMask() & pedestal.bit()) != 0) continue;
+			if (!client.level.isLoaded(pedestal.base()) || !client.level.isLoaded(pedestal.gem())) continue;
+			if (!pedestal.matches(client.level.getBlockState(pedestal.base()).getBlock(),
+				client.level.getBlockState(pedestal.gem()).getBlock())) continue;
+			present |= pedestal.bit();
+			if (VisibilityCheck.canSeeBlockSurface(pedestal.gem())) visible |= pedestal.bit();
+		}
+		observeGemPlacements(present, visible);
+	}
+
+	static void observeGemPlacements(int present, int visible) {
+		int beforeObserved = observedGemMask, beforeVisible = visibleGemMask;
+		observedGemMask |= present & 7;
+		visibleGemMask |= present & visible & 7;
+		if (beforeObserved != observedGemMask || beforeVisible != visibleGemMask) {
+			MarkerRegistry.invalidate();
+			StructuredDiagnostics.decision("objective/gems", "observed",
+				"loadedMask=" + observedGemMask + " visibleMask=" + visibleGemMask);
+		}
 	}
 
 	public static boolean canPersonallyOpenGemzieDoor(int placedMask) {
@@ -215,6 +250,8 @@ public final class SafariObjectives {
 		gemzieDoorOpenedAt = 0L;
 		gemzieCaught = false;
 		placedGemMask = 0;
+		observedGemMask = 0;
+		visibleGemMask = 0;
 		incenseUsed = 0;
 		doomspiralSpawned = false;
 		doomspiralCaught = false;

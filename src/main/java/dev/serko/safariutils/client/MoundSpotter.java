@@ -66,6 +66,8 @@ public final class MoundSpotter {
 	}
 
 	/** Exact body coordinates from the latest scan, keyed by the displayed mound block. */
+	private static final Map<BlockPos, Long> pendingHits = new java.util.HashMap<>();
+    private static final Map<BlockPos, Integer> confirmedHits = new java.util.HashMap<>();
 	private static final Map<BlockPos, Vec3> exactMounds = new java.util.HashMap<>();
 
 	/** Loads the Cavern bounds once; a failed load is not retried every call. */
@@ -143,6 +145,19 @@ public final class MoundSpotter {
 		lastConfigRevision = configRevision;
 		refresh();
 	}
+    /** Read-only model association: require a currently detected, still-displayed mound. */
+    static BlockPos liveMoundAt(Vec3 position) {
+        BlockPos match = null;
+        for (BlockPos pos : cached) {
+            Vec3 exact = exactMounds.get(pos);
+            if (exact == null || Math.abs(position.x - exact.x) > .5
+                || Math.abs(position.z - exact.z) > .5 || Math.abs(position.y - exact.y) > 1) continue;
+            if (match != null) return null;
+            match = pos;
+        }
+        return match;
+    }
+
 	/** Every currently known, unbroken mound position. */
 	public static List<BlockPos> mounds() {
 		return cached;
@@ -248,7 +263,7 @@ public final class MoundSpotter {
 		// A live scan or newly remembered mound proves this run contained one.
 		if (!liveNow.isEmpty() || everSeen.size() > beforeSize) everDetectedAny = true;
 
-		if (!safeMode && !partyCompleted.isEmpty()) everSeen.removeAll(partyCompleted);
+		if (!partyCompleted.isEmpty()) everSeen.removeAll(partyCompleted);
 		cached = everSeen.stream()
 			.filter(pos -> safeMode || detectedLive.contains(pos))
 			.toList();
@@ -264,6 +279,8 @@ public final class MoundSpotter {
 	}
 
 	public static void reset() {
+        confirmedHits.clear();
+        pendingHits.clear();
 		exactMounds.clear();
 		everSeen.clear();
 		everSeen.addAll(StaticWaypointCatalog.mounds());
@@ -277,6 +294,7 @@ public final class MoundSpotter {
 		absentSince.clear();
 		pendingLocalBreak = null;
 		pendingLocalBreakAt = 0;
+        pendingHits.clear();
 		everDetectedAny = false;
 		cached = List.of();
 		ticks = 0;
@@ -291,12 +309,44 @@ public final class MoundSpotter {
 		BlockPos attacked = nearestCatalog(entity.blockPosition(), StaticWaypointCatalog.mounds());
 		if (attacked == null || completed.contains(attacked)
 			|| !everSeen.contains(attacked) && !detectedLive.contains(attacked)) return;
+        long now = System.currentTimeMillis();
+        pendingHits.entrySet().removeIf(entry -> now - entry.getValue() > 2_000L);
+        pendingHits.put(attacked, now);
 		pendingLocalBreak = attacked;
 		pendingLocalBreakAt = System.currentTimeMillis();
 	}
 
-	/** Uses the local break message as an immediate confirmation when available. */
-	public static void onChatMessage(String line) {
+    public static int hits(BlockPos position) { return confirmedHits.getOrDefault(position, 0); }
+
+    static int hitStage(String line) {
+        return switch (line) {
+            case "Small cracks begin to form in the mound..." -> 1;
+            case "The cracks seem to be getting larger, keep hitting it!" -> 2;
+            case "Chunks of the mound begin falling away..." -> 3;
+            case "The mound is about to fall to pieces! Keep going!" -> 4;
+            case "The mound falls apart, but nothing is inside...",
+                 "The mound fell apart, revealing a Rockmite hidden inside!" -> 5;
+            default -> 0;
+        };
+    }
+
+    /** Server stage text sets progress; repeated clicks and repeated text cannot inflate it. */
+    public static void onChatMessage(String line) {
+        int stage = hitStage(line);
+        if (stage == 0) return;
+        long now = System.currentTimeMillis();
+        pendingHits.entrySet().removeIf(entry -> now - entry.getValue() > 2_000L);
+        if (pendingHits.size() != 1) {
+            if (DebugLog.isEnabled()) DebugLog.line("MOUND", "unattributed stage=" + stage + " candidates=" + pendingHits.size());
+            return;
+        }
+        pendingLocalBreak = pendingHits.keySet().iterator().next();
+        pendingLocalBreakAt = pendingHits.get(pendingLocalBreak);
+        if (stage > 0 && pendingLocalBreak != null && System.currentTimeMillis() - pendingLocalBreakAt <= 2_000L) {
+            int previous = confirmedHits.getOrDefault(pendingLocalBreak, 0);
+            confirmedHits.put(pendingLocalBreak, Math.max(previous, stage));
+            if (previous != stage && DebugLog.isEnabled()) DebugLog.line("MOUND", "confirmed hit pos=" + pendingLocalBreak.toShortString() + " stage=" + stage);
+        }
 		String lower = line.toLowerCase(java.util.Locale.ROOT);
 		boolean broke = lower.contains("mound falls apart") || lower.contains("mound fell apart");
 		if (!broke) return;
@@ -314,6 +364,7 @@ public final class MoundSpotter {
 		}
 		pendingLocalBreak = null;
 		pendingLocalBreakAt = 0;
+        pendingHits.clear();
 		// If no recent local hit was available, the disappearance scan still resolves
 		// party-member breaks without guessing among nearby mounds.
 		// The next scheduled refresh resolves party-member breaks.
@@ -343,10 +394,8 @@ public final class MoundSpotter {
 			if ((word & bit) != 0) changed |= partyCompleted.add(order.get(index));
 		}
 		if (changed) {
-			if (!SafeMode.mounds()) {
-				everSeen.removeAll(partyCompleted);
-				cached = cached.stream().filter(pos -> !partyCompleted.contains(pos)).toList();
-			}
+			everSeen.removeAll(partyCompleted);
+			cached = cached.stream().filter(pos -> !partyCompleted.contains(pos)).toList();
 			DebugLog.line("MOUND", "party completion words=" + low + "," + high);
 			StructuredDiagnostics.decision("party-sync", "mounds",
 				"resolved=" + partyCompleted.size());

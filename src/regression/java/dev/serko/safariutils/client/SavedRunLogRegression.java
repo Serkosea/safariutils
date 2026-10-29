@@ -29,6 +29,7 @@ public final class SavedRunLogRegression {
                 {"k":"ci","op":"next-run"}
                 """);
             String result = read(SavedRunLog.export(List.of(first, second), 2, root.resolve("saved"), false));
+            require(result.lines().noneMatch(String::isBlank), "export duplicated Windows line separators");
             require(result.contains("before save command"), "lost retrospective evidence");
             require(result.contains("\"op\":\"reset\"") && result.contains("\"op\":\"catch\""), "lost contextless replay input");
             require(result.contains("after run timer"), "ended before leaving Safari");
@@ -44,7 +45,7 @@ public final class SavedRunLogRegression {
             try { SavedRunLog.export(List.of(first), 99, root.resolve("saved"), false); }
             catch (IOException expected) { rejected = true; }
             require(rejected, "absent visit silently exported");
-            return 9;
+            return 10;
         } finally {
             try (var files = Files.walk(root)) {
                 for (Path path : files.sorted(java.util.Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
@@ -53,7 +54,7 @@ public final class SavedRunLogRegression {
     }
     private static Path segment(Path root, String name, String content) throws IOException {
         Path path = root.resolve(name);
-        try (var out = new GZIPOutputStream(Files.newOutputStream(path))) { out.write(content.getBytes(StandardCharsets.UTF_8)); }
+        try (var out = new GZIPOutputStream(Files.newOutputStream(path))) { out.write(content.replace("\n", "\r\n").getBytes(StandardCharsets.UTF_8)); }
         return path;
     }
     private static String read(Path path) throws IOException {

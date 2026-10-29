@@ -12,6 +12,20 @@ import java.util.concurrent.TimeUnit;
 /** Loopback-only transport smoke test; never contacts Minecraft, Hypixel or production services. */
 public final class NetworkRuntimeRegression {
 	public static int run() throws Exception {
+        var provider = new dev.serko.safariutils.backend.RemotePartySyncProvider();
+        var aborted = new java.util.concurrent.atomic.AtomicBoolean();
+        var socketField = provider.getClass().getDeclaredField("socket");
+        socketField.setAccessible(true);
+        socketField.set(provider, java.lang.reflect.Proxy.newProxyInstance(
+            NetworkRuntimeRegression.class.getClassLoader(), new Class<?>[] {java.net.http.WebSocket.class},
+            (proxy, method, arguments) -> {
+                if (method.getName().equals("abort")) { aborted.set(true); return null; }
+                if (method.getName().equals("sendClose")) throw new IllegalStateException("simulated closing transport");
+                throw new AssertionError("Unexpected socket call " + method.getName());
+            }));
+        try { provider.disconnect(); } catch (IllegalStateException expected) { }
+        check(aborted.get() && socketField.get(provider) == null, "failed close still aborts and releases socket");
+        provider.shutdown(); // Repeated shutdown must be harmless.
 		var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		CountDownLatch release = new CountDownLatch(1);
 		CountDownLatch bodyStarted = new CountDownLatch(1);
@@ -70,7 +84,7 @@ public final class NetworkRuntimeRegression {
 			server.stop(0);
 			NetworkRuntime.shutdown();
 		}
-		return 4;
+		return 6;
 	}
 	private static void check(boolean valid, String message) {
 		if (!valid) throw new AssertionError(message);

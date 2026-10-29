@@ -15,10 +15,10 @@ import java.util.HashMap;
 
 /** Public/manual shared-Sparkling state and the decisions derived from it. */
 public final class SparklingMode {
-	/** Ordinals match the grouped Always Active Waypoints setting picker. */
+	/** Ordinals match the grouped Always Active Markers setting picker. */
 	private enum WaypointKind {
 		CAVERN_FLOOR, MOUNDS, SNOOZLE_WALLS, ICY_FLOOR, TROODON_WALLS,
-		HAUNTED_FLOOR, FOREST_FLOOR, BEE_NESTS
+		HAUNTED_FLOOR, FOREST_FLOOR, BEE_NESTS, GEM_PEDESTALS
 	}
 
 	private static final Set<Critter> shared = new LinkedHashSet<>();
@@ -142,30 +142,47 @@ public final class SparklingMode {
 				|| session != null && session.caughtByParty(critter)));
 	}
 
-	public static boolean hideFloorDrops(SafariBiome biome, SafariSession session) {
-		if (!enabled() || session == null) return false;
-		WaypointKind floorKind = switch (biome) {
-			case CAVERN -> WaypointKind.CAVERN_FLOOR;
-			case ICY -> WaypointKind.ICY_FLOOR;
-			case HAUNTED -> WaypointKind.HAUNTED_FLOOR;
-			case FOREST -> WaypointKind.FOREST_FLOOR;
-		};
-		if (alwaysActiveWaypoint(floorKind)) return false;
-		return switch (biome) {
-			case FOREST -> forestFloorDropsExhausted()
-				|| allSharedFinished(session, "Bluebird", "Parakeet", "Macaw");
-			case CAVERN -> sharedFinished(session, "Gemzie")
-				|| dev.serko.safariutils.api.PartyItemSyncProviders.objectiveAllowsFloorDropHide(biome)
-				|| SafariObjectives.canPersonallyOpenGemzieDoor(SafariObjectives.placedGemMask());
-			case ICY -> icyFloorDropsExhausted(session);
-			case HAUNTED -> (sharedFinished(session, "Doomspiral")
-					|| dev.serko.safariutils.api.PartyItemSyncProviders.objectiveAllowsFloorDropHide(biome)
-					|| SafariObjectives.canPersonallyFinishDoomspiral(SafariObjectives.incenseUsed()))
-				&& (sharedFinished(session, "Gimmiegold")
-					|| isShared(Critters.byName("Gimmiegold"))
-						&& SafariObjectives.shiningCoinsHeld() >= 1);
-		};
-	}
+    /** Aggregate alert policy: any retained category prevents an early 'done' alert. */
+    public static boolean hideFloorDrops(SafariBiome biome, SafariSession session) {
+        return hideFloorDrop(biome, session, FloorDropPattern.Kind.UNKNOWN);
+    }
+
+    static boolean hideFloorDrop(SafariBiome biome, SafariSession session, FloorDropPattern.Kind kind) {
+        if (biome == null) return false;
+        int lootBit = switch (biome) { case CAVERN -> 0; case ICY -> 3; case HAUNTED -> 5; case FOREST -> 6; };
+        int selected = enabled() ? ConfigManager.get().sparkling.sparklingAlwaysActiveWaypoints : 0;
+        if (kind == FloorDropPattern.Kind.UNKNOWN) {
+            // Unknown contents stay visible if any possible category is still useful.
+            if (!hideFloorDrop(biome, session, FloorDropPattern.Kind.LOOT)) return false;
+            for (var possible : FloorDropPattern.Kind.values())
+                if (possible.biome == biome && !hideFloorDrop(biome, session, possible)) return false;
+            return true;
+        }
+        int bit = kind == FloorDropPattern.Kind.LOOT ? lootBit : kind.alwaysBit;
+        if ((selected & (1 << bit)) != 0) return false;
+        if (kind == FloorDropPattern.Kind.LOOT) return enabled();
+        return switch (kind) {
+            case LIME, PURPLE, ORANGE -> {
+                int gemBit = kind == FloorDropPattern.Kind.LIME ? 1 : kind == FloorDropPattern.Kind.ORANGE ? 2 : 4;
+                int held = kind == FloorDropPattern.Kind.LIME ? SafariObjectives.limeGemsHeld()
+                    : kind == FloorDropPattern.Kind.ORANGE ? SafariObjectives.orangeGemsHeld() : SafariObjectives.purpleGemsHeld();
+                yield sharedFinished(session, "Gemzie") || held > 0
+                    || (SafariObjectives.placedGemMask() & gemBit) != 0
+                    || dev.serko.safariutils.api.PartyItemSyncProviders.objectiveAllowsFloorDropHide(biome);
+            }
+            case INCENSE -> sharedFinished(session, "Doomspiral")
+                || dev.serko.safariutils.api.PartyItemSyncProviders.objectiveAllowsFloorDropHide(biome)
+                || SafariObjectives.canPersonallyFinishDoomspiral(SafariObjectives.incenseUsed());
+            // Each coin and feed can spawn another critter. A held item alone cannot
+            // prove that all outstanding spawns (including Sparklings) are unnecessary.
+            case COIN -> sharedFinished(session, "Gimmiegold")
+                || enabled() && isShared(Critters.byName("Gimmiegold")) && SafariObjectives.shiningCoinsHeld() >= 1;
+            case WORM, BERRY, SEEDS -> forestFloorDropsExhausted()
+                || allSharedFinished(session, "Bluebird", "Parakeet", "Macaw");
+            case ICE -> icyFloorDropsExhausted(session);
+            default -> false;
+        };
+    }
 
 	public static boolean forestFloorDropsExhausted() {
 		return BirdfeederWatch.floorFeedFound() >= 9;
@@ -177,17 +194,28 @@ public final class SparklingMode {
 			.getOrDefault(troodon, 0);
 		if (sparklingNeeded > 0) return SafariObjectives.icebreakersHeld() >= sparklingNeeded;
 		if (sharedFinished(session, "Troodon")) return true;
-		int required = troodon != null && isShared(troodon) ? 1 : 3;
-		return brokenTroodonWalls() + SafariObjectives.icebreakersHeld() >= required;
-	}
+        var walls = WallTracker.TROODON.walls();
+        if (walls.isEmpty()) return false;
+        // Empty catalog slots are not completed critters. Count the actual remaining
+        // walls, including unknown ones, instead of subtracting all absent locations.
+        int remaining = (int) walls.stream().filter(wall -> wall.state() != WallTracker.State.BROKEN).count();
+        return icebreakersSufficient(SafariObjectives.icebreakersHeld(), remaining,
+            enabled() && troodon != null && isShared(troodon));
+    }
 
-	private static long brokenTroodonWalls() {
-		return WallTracker.TROODON.walls().stream()
-			.filter(wall -> wall.state() == WallTracker.State.BROKEN).count();
-	}
+    static boolean icebreakersSufficient(int held, int remainingWalls, boolean onlyOneNeeded) {
+        return held >= (onlyOneNeeded ? Math.min(1, remainingWalls) : remainingWalls);
+    }
 
 	public static boolean hideBirdFeed(SafariSession session) {
 		return enabled() && allSharedFinished(session, "Bluebird", "Parakeet", "Macaw");
+	}
+
+	/** Fixed, publicly visible objective locations use Gemzie's ordinary marker policy. */
+	public static boolean showGemPedestals() {
+		return ConfigManager.get().display.enableHitboxes
+			&& (alwaysActiveWaypoint(WaypointKind.GEM_PEDESTALS)
+				|| !hideOrdinaryHitbox(Critters.byName("Gemzie"), false));
 	}
 
 	public static boolean hideNests(SafariSession session) {

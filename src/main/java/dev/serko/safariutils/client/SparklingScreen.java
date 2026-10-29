@@ -421,7 +421,7 @@ public final class SparklingScreen extends Screen {
 				int statusWidth = Math.max(18, font.width(status) + 10);
 				int statusX = x + columnWidth - statusWidth - 8;
 				boldCentered(graphics, status, statusX, statusWidth, rowY,
-					shownSelected ? GREEN : StatColours.MISSING);
+					shownSelected ? StatColours.value(colour) : StatColours.MISSING);
 				if (!apiManaged) hits.add(new Hit(x + 4, rowY - 2, rowWidth, 12,
 					critter.name(), () -> toggleParty(critter)));
 			}

@@ -280,7 +280,7 @@ public final class MissingHud implements HudElement {
 
 		if (needsLeadingBlank) panel.blank();
 		int colour = Colours.argb(ConfigManager.get().display.moundColour, 0xFFFF5E2C);
-		panel.pair("Rockmite Mounds Left", String.valueOf(nearby), colour, DIM);
+		panel.pair("Rockmite Mounds Left", String.valueOf(nearby), colour, colour);
 		return true;
 	}
 
@@ -323,7 +323,7 @@ public final class MissingHud implements HudElement {
 		// Just the count: the waypoints know where they are, and a list of coordinates
 		// was only ever a way of getting there without them.
 		int colour = Colours.argb(ConfigManager.get().display.nestColour, 0xFFFFE840);
-		panel.pair("Bee Nests Left", String.valueOf(unpunched), colour, DIM);
+		panel.pair("Bee Nests Left", String.valueOf(unpunched), colour, colour);
 		return true;
 	}
 
@@ -344,7 +344,7 @@ public final class MissingHud implements HudElement {
 		// Same colour as floor drops, for now — its own colour setting can follow if
 		// that turns out to want distinguishing from an actual floor drop at a glance.
 		int colour = Colours.argb(ConfigManager.get().display.floorDropColour, 0xFF55FFAA);
-		panel.pair("Bird Feed Left", String.valueOf(remaining), colour, DIM);
+		panel.pair("Bird Feed Left", String.valueOf(remaining), colour, colour);
 		return true;
 	}
 
@@ -362,16 +362,28 @@ public final class MissingHud implements HudElement {
 		// confirmed-drop counter which otherwise only knows about this client's pickups.
 		if (biome == SafariBiome.FOREST
 			&& dev.serko.safariutils.api.PartyItemSyncProviders.forestDropsComplete()) return false;
-		// Hide a completed countdown. Safe Mode uses confirmed drops so background
-		// scanning cannot reveal how many unseen drops exist.
-		int remaining = SafeMode.floorDrops()
-			? FloorDrops.positions(biome).size() : FloorDrops.remainingConfirmed(biome);
-		if (remaining == 0) return false;
-
-		if (needsLeadingBlank) panel.blank();
-		int labelColour = Colours.argb(ConfigManager.get().display.floorDropColour, 0xFF55FFAA);
-		panel.pair("Floor Drops Left", String.valueOf(remaining), labelColour, DIM);
-		return true;
+        var remaining = FloorDrops.remainingByKind(biome);
+        if (remaining.isEmpty()) return false;
+        if (needsLeadingBlank) panel.blank();
+        int general = Colours.argb(ConfigManager.get().display.floorDropColour, 0xFF55FFAA);
+        if (!ConfigManager.get().display.separateFloorDropCounts) {
+            int total = remaining.values().stream().mapToInt(Integer::intValue).sum();
+            panel.pair("Floor Drops Left", Integer.toString(total), general, general);
+            return true;
+        }
+        for (var entry : remaining.entrySet()) {
+            var kind = entry.getKey();
+            String name = switch (kind) {
+                case UNKNOWN -> "Floor Drops"; case LOOT -> "Floor Loot";
+                case COIN -> "Shining Coins"; case ICE -> "Icebreakers";
+                case LIME -> "Lime Gems"; case PURPLE -> "Purple Gems"; case ORANGE -> "Orange Gems";
+                case WORM -> "Wriggleworms"; case BERRY -> "Yogi Berries"; case SEEDS -> "Bags of Seeds";
+                case INCENSE -> "Soothing Incense";
+            };
+            int colour = kind.colour == 0 ? general : 0xFF000000 | kind.colour;
+            panel.pair(name + " Left", Integer.toString(entry.getValue()), colour, colour);
+        }
+        return true;
 	}
 
 	private static boolean appendWalls(HudPanel panel, SafariBiome biome, WallTracker tracker,
@@ -397,7 +409,7 @@ public final class MissingHud implements HudElement {
 		if (needsLeadingBlank) panel.blank();
 		panel.pair(tracker.name() + " Walls Left", String.valueOf(
 			safeMode ? intact + unknown : intact) + (!safeMode && unknown > 0
-			? " (+" + unknown + "?)" : ""), colour, DIM);
+			? " (+" + unknown + "?)" : ""), colour, colour);
 		return true;
 	}
 }

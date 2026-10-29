@@ -12,6 +12,7 @@ def regressionRoot = project.findProperty('safariRegressionRoot') ?: project.pro
 sourceSets {
 	regression {
 		java.srcDir(new File(regressionRoot as File, 'src/regression/java'))
+		resources.setSrcDirs((resources.srcDirs + new File(regressionRoot as File, 'src/regression/resources')).unique { it.canonicalPath })
 		compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
 		runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
 	}

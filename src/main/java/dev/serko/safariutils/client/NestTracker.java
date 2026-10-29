@@ -147,11 +147,11 @@ public final class NestTracker {
 		if (share) PartyItemSyncProviders.onNestConfirmed(immutable);
 	}
 
-	/** Applies a confirmed nest interaction received from an approved private party member. */
+	/** Applies a confirmed nest interaction received through the current party-sync context. */
 	public static void onPartyConfirmed(BlockPos pos) {
 		BlockPos immutable = pos.immutable();
-		if (punched.contains(immutable)) return;
-		resolve(immutable, false, false, "party sync");
+		if (safePunched.contains(immutable)) return;
+		resolve(immutable, false, true, "party sync");
 	}
 
 	/** Incrementally scans only the nearby loaded volume. */
@@ -231,7 +231,7 @@ public final class NestTracker {
 			boolean unpunched = !(SafeMode.nests() ? safePunched : punched).contains(pos);
 			// Grown here, once per call, rather than a separate pass of its own —
 			// every caller already walks this same list.
-			if (!confirmedVisible.contains(pos) && VisibilityCheck.canSeeBeeNest(pos)) {
+			if (nestPresent && !confirmedVisible.contains(pos) && VisibilityCheck.canSeeBeeNest(pos)) {
 				confirmedVisible.add(pos);
 			}
 			double distance = Math.sqrt(client.player.position()

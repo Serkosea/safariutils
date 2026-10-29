@@ -49,11 +49,12 @@ public final class InteractionDebugLog {
 	/** Records client-side uses before Hypixel responds or opens a menu. */
 	public static void onEntityInteraction(String action, Entity entity, String hand) {
 		if (!active() || entity == null) return;
+		EntityResearchLog.interaction(action, entity, hand);
 		DebugLog.line("INTERACT", "entity " + action + " hand=" + hand + " type="
 			+ EntityTypeIds.key(entity)
 			+ " name=\"" + entity.getName().getString() + "\" custom=\""
 			+ (entity.getCustomName() == null ? "" : entity.getCustomName().getString())
-			+ "\" customVisible=" + entity.isCustomNameVisible() + " uuid=" + entity.getUUID()
+			+ "\" networkId=" + entity.getId() + " customVisible=" + entity.isCustomNameVisible() + " uuid=" + entity.getUUID()
 			+ " exact=" + decimal(entity.getX()) + "," + decimal(entity.getY()) + ","
 			+ decimal(entity.getZ()) + " box=" + decimal(entity.getBbWidth()) + "x"
 			+ decimal(entity.getBbHeight()));

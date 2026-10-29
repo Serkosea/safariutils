@@ -77,6 +77,10 @@ public final class PartyItemSyncProviders {
 		return PROVIDER.read("floor-drop-hide", provider -> provider.objectiveAllowsFloorDropHide(biome), false);
 	}
 
+	public static int confirmedGemPlacements() {
+		return PROVIDER.read("gem-placements", PartyItemSyncProvider::confirmedGemPlacements, 0) & 7;
+	}
+
 	public static String diagnosticSnapshot() {
 		return PROVIDER.read("diagnosticSnapshot", PartyItemSyncProvider::diagnosticSnapshot, "unavailable");
 	}

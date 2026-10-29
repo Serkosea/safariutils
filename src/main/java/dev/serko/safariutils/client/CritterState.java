@@ -145,7 +145,7 @@ public final class CritterState {
 		private long logicalId;
 		private final Critter critter;
 		private UUID targetEntityId;
-		private final Vec3 anchor;
+		private Vec3 anchor;
 		private final long startedAt;
 		private final boolean exactTarget;
 		private final boolean masterful;
@@ -1412,6 +1412,9 @@ public final class CritterState {
 		replacement.evidence = EvidenceLevel.INTERACTION;
 		attempt.logicalId = replacement.id;
 		attempt.targetEntityId = replacement.entityId;
+		// Ownership correction must move spatial evidence with the confirmed body.
+		// Keeping the provisional peer's anchor can orphan a nearby breakout.
+		attempt.anchor = replacement.box.getCenter();
 		attempt.targetAbsent = targetAbsent;
 		// Both correction paths use an already observed body (native shrink or
 		// disappearance). Its next appearance is not an initial observation.

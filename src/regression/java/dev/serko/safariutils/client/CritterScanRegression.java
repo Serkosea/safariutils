@@ -12,6 +12,16 @@ import java.util.UUID;
 public final class CritterScanRegression {
 	public static int run() {
 		int checks = 0;
+		for (String label : List.of("Wumpa zZz", "Sparkling Wumpa zZz", "Wumpa", "Sparkling Wumpa")) {
+			var sleeping = CritterScan.scan(List.of(sample(900, "armor_stand", label, 0),
+				sample(901, "ravager", null, 0)), Map.of(), null).getFirst();
+			check(sleeping.body() != null && sleeping.critter().name().equals("Wumpa")
+				&& sleeping.sparkling() == label.startsWith("Sparkling "), "Wumpa sleeping/waking label lost"); checks++;
+		}
+		for (String label : List.of("Wumpa reward", "Doomspiral spawned!", "SparklingWumpa", "Player: Wumpa zZz")) {
+			check(CritterScan.parseLabel(label) == null, "Unrelated label recognized"); checks++;
+		}
+		check(CritterScan.parseLabel("Doomspiral").critter().name().equals("Doomspiral"), "Spawn label missing"); checks++;
 		var gazer = sample(1, "armor_stand", "Sparkling Gazer", 0);
 		var wrong = sample(2, "bat", null, 0);
 		var named = sample(3, "armor_stand", "Unrelated label", 0.1);
@@ -89,6 +99,24 @@ public final class CritterScanRegression {
 				.filter(m -> m.label().equals(capsuleLabel)).allMatch(m -> m.body() == null),
 				"moving compound body became a false Hideon breakout"); checks++;
 		}
+
+		// October 28: a capsule's Duplico label borrowed the original body's
+		// silverfish carrier while its interaction was already shrinking.
+		var originalLabel = new CritterScan.Sample(new UUID(28, 1), "armor_stand", "Duplico", -12.4375, 71.25, -83.375);
+		var originalBody = new CritterScan.Sample(new UUID(28, 2), "interaction", null, -12.4375, 70, -83.375);
+		var originalCarrier = new CritterScan.Sample(new UUID(28, 3), "silverfish", null, -12.4375, 70, -83.375);
+		var captureLabel = new CritterScan.Sample(new UUID(28, 4), "armor_stand", "Duplico", -9.625, 69.40625, -84);
+		for (int seed = 0; seed < 24; seed++) {
+			var batch = new ArrayList<>(List.of(originalLabel, originalBody, originalCarrier, captureLabel));
+			java.util.Collections.shuffle(batch, new Random(seed));
+			var result = CritterScan.scan(batch, Map.of(originalLabel.id(), originalBody.id(), captureLabel.id(), originalCarrier.id()), null);
+			check(result.stream().anyMatch(m -> m.label().equals(captureLabel) && m.body() == null),
+				"same-species capsule acquired compound carrier"); checks++;
+			check(result.stream().anyMatch(m -> m.label().equals(originalLabel) && originalBody.equals(m.body())),
+				"original Duplico lost interaction"); checks++;
+		}
+		check(CritterScan.scan(List.of(originalLabel, originalCarrier), Map.of(originalLabel.id(), originalBody.id()), null)
+			.getFirst().body().equals(originalCarrier), "real Duplico carrier fallback lost"); checks++;
 
 		// Dense same-species groups: every prior pair stays exclusive even after bodies cross.
 		for (String name : List.of("Hideonfloor", "Hideonwall")) {

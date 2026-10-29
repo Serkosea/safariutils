@@ -51,9 +51,9 @@ final class WaypointRenderBackend {
 		if (geometry == null || geometry.isEmpty()) return;
 		// One render-state submission per type replaces one submission per box while
 		// retaining every box's own copied transform.
-		nodes.submitCustomGeometry(poses, type, (ignored, vertices) -> {
-			for (Geometry item : geometry) item.draw().accept(item.pose(), vertices);
-		});
+        nodes.submitCustomGeometry(poses, type, (ignored, vertices) -> {
+            for (Geometry item : geometry) item.draw().accept(item.pose(), vertices);
+        });
 	}
 
 	Vec3 cameraPosition() {
@@ -66,6 +66,6 @@ final class WaypointRenderBackend {
 
 	void text(PoseStack poses, FormattedCharSequence text, float x, Font.DisplayMode mode,
 				  int colour, int background, int light) {
-		nodes.submitText(poses, x, 0, text, false, mode, light, colour, background, 0);
+		nodes.order(100).submitText(poses, x, 0, text, false, mode, light, colour, background, 0);
 	}
 }

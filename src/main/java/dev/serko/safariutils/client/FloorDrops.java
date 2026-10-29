@@ -50,6 +50,15 @@ public final class FloorDrops {
 	/** How long a click is still trusted as "waiting on the pickup line" before giving up. */
 	private static final long PENDING_MILLIS = 3_000;
 	private static int ticks;
+    private static final FloorDropPattern pattern = new FloorDropPattern();
+    private static final Map<BlockPos, Integer> patternIds = new HashMap<>();
+    private static int loggedCandidates = -1;
+
+    static FloorDropPattern.Kind content(BlockPos pos) {
+        if (SafeMode.floorDropContents()) return FloorDropPattern.Kind.UNKNOWN;
+        Integer id = patternIds.get(pos);
+        return id == null ? FloorDropPattern.Kind.UNKNOWN : pattern.kind(id);
+    }
 	private static String preparedLobby;
 
 	/** Every distinct drop seen this run, grouped by its own biome. */
@@ -77,6 +86,7 @@ public final class FloorDrops {
 		if (++ticks >= SCAN_INTERVAL_TICKS) {
 			ticks = 0;
 			scan();
+            ScrappyFeeding.scan();
 		}
 		checkDoneAlert();
 	}
@@ -127,11 +137,15 @@ public final class FloorDrops {
 		if (client.level == null) return;
 
 		Map<BlockPos, Integer> strings = new HashMap<>();
+		Map<BlockPos, List<Integer>> research = new HashMap<>();
 		for (Entity entity : WorldEntities.current()) {
 			if (!(entity instanceof Display.ItemDisplay display)) continue;
 			if (!isString(display)) continue;
 			strings.merge(entity.blockPosition(), 1, Integer::sum);
+			research.computeIfAbsent(entity.blockPosition(), ignored -> new ArrayList<>()).add(entity.getId());
 		}
+
+		if (StructuredDiagnostics.enabled()) EntityResearchLog.floors(research);
 
 		long now = System.currentTimeMillis();
 		suppressed.values().removeIf(until -> now > until);
@@ -167,10 +181,21 @@ public final class FloorDrops {
 			}
 			dev.serko.safariutils.data.SafariBiome resolved = confirmedBiome.get(pos);
 			if (resolved != null) {
+                List<Integer> ids = research.get(pos);
+                ids.sort(Integer::compare);
+                if (ids.get(1) == ids.getFirst() + 1 && ids.get(2) == ids.getFirst() + 2) {
+                    patternIds.put(pos, ids.getFirst());
+                    pattern.observe(ids.getFirst(), resolved);
+                }
 				everSeenByBiome.computeIfAbsent(resolved, b -> new java.util.HashSet<>()).add(pos);
 			}
 		}
-		// In Safe Mode, a missing drop is only cleared once its empty spot can be seen.
+		int candidateCount = pattern.candidateCount();
+        if (StructuredDiagnostics.enabled() && candidateCount != loggedCandidates) {
+            loggedCandidates = candidateCount;
+            DebugLog.line("FLOOR_PATTERN", "candidates=" + candidateCount + " observed=" + patternIds.size());
+        }
+        // In Safe Mode, a missing drop is only cleared once its empty spot can be seen.
 		if (SafeMode.floorDrops()) {
 			List<BlockPos> visiblyGone = confirmed.entrySet().stream()
 				.map(Map.Entry::getKey)
@@ -194,6 +219,7 @@ public final class FloorDrops {
 			.filter(candidate -> candidate.distSqr(pos) <= 9.0)
 			.orElse(null);
 		if (tracked == null) return;
+		if (StructuredDiagnostics.enabled()) EntityResearchLog.floorClick(pos, tracked);
 		DebugLog.line("FLOOR", "CLICK pos=" + posOf(tracked));
 		pending.put(tracked, System.currentTimeMillis());
 	}
@@ -205,6 +231,7 @@ public final class FloorDrops {
 	 */
 	public static void onChatMessage(String line) {
 		if (!line.startsWith(PICKUP_CONFIRMED)) return;
+		if (StructuredDiagnostics.enabled()) EntityResearchLog.pickup(line, pending);
 
 		// Counted toward the run's shard income whether or not this pickup could be
 		// tied back to a specific click — a Gimmiegold's own floor drop is a Shining
@@ -221,6 +248,16 @@ public final class FloorDrops {
 		Iterator<Map.Entry<BlockPos, Long>> it = pending.entrySet().iterator();
 		if (!it.hasNext()) return;
 		BlockPos confirmedPos = it.next().getKey();
+        Integer patternId = patternIds.get(confirmedPos);
+        if (patternId != null && pending.size() == 1
+                && System.currentTimeMillis() - pending.get(confirmedPos) <= PENDING_MILLIS) {
+            FloorDropPattern.Kind expected = pattern.kind(patternId);
+            FloorDropPattern.Kind actual = FloorDropPattern.Kind.reward(line);
+            // Only a single fresh interaction can constrain the model; ambiguous replies remain research-only.
+            pattern.reward(patternId, actual);
+            if (StructuredDiagnostics.enabled()) DebugLog.line("FLOOR_PATTERN", "pickup id=" + patternId
+                + " predicted=" + expected + " actual=" + actual + " candidates=" + pattern.candidateCount());
+        }
 		it.remove();
 
 		DebugLog.line("FLOOR", "CONFIRMED pos=" + posOf(confirmedPos) + " raw=\"" + line + "\"");
@@ -268,13 +305,37 @@ public final class FloorDrops {
 			// Grown here, once per call, rather than gated behind an extra pass of
 			// its own — every caller already walks this same list, so there is no
 			// separate opportunity this would need instead.
-			if (checkVisibility && !confirmedVisible.contains(pos) && VisibilityCheck.canSeeSolidBlock(pos)) {
+			if (checkVisibility && detectedActual.contains(pos) && !confirmedVisible.contains(pos)
+				&& VisibilityCheck.canSeeSolidBlock(pos)) {
 				confirmedVisible.add(pos);
 			}
 			result.add(pos);
 		}
 		return result;
 	}
+
+    /** Unknown contents cannot be filtered without revealing information. */
+    static boolean markerEnabled(FloorDropPattern.Kind kind) {
+        var display = ConfigManager.get().display;
+        return switch (kind) {
+            case UNKNOWN -> display.floorDropLoot || display.floorDropQuestItems;
+            case LOOT -> display.floorDropLoot;
+            default -> display.floorDropQuestItems;
+        };
+    }
+
+    /** Counts only this visit's known remaining drops; never synthesizes unseen spawns. */
+    static java.util.Map<FloorDropPattern.Kind, Integer> remainingByKind(dev.serko.safariutils.data.SafariBiome biome) {
+        var counts = new java.util.EnumMap<FloorDropPattern.Kind, Integer>(FloorDropPattern.Kind.class);
+        for (BlockPos pos : confirmed.keySet()) {
+            if (confirmedBiome.get(pos) != biome) continue;
+            var kind = SafeMode.floorDrops() && !confirmedVisible.contains(pos)
+                ? FloorDropPattern.Kind.UNKNOWN : content(pos);
+            if (!SparklingMode.hideFloorDrop(biome, dev.serko.safariutils.session.SessionManager.current(), kind))
+                counts.merge(kind, 1, Integer::sum);
+        }
+        return counts;
+    }
 
 	/** Removes catalog positions that the player has visibly checked and found empty. */
 	private static void pruneVisibleCandidates() {
@@ -330,6 +391,8 @@ public final class FloorDrops {
 	}
 
 	public static void reset() {
+        pattern.reset(); patternIds.clear(); loggedCandidates = -1;
+        ScrappyFeeding.reset();
 		confirmed.clear();
 		detectedActual.clear();
 		confirmedBiome.clear();

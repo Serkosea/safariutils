@@ -107,9 +107,11 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		WebSocket current = socket;
 		socket = null;
 		if (current != null) {
-			current.sendClose(WebSocket.NORMAL_CLOSURE, "leaving Safari");
-			// Do not leave a transport thread waiting on a remote close acknowledgement.
-			current.abort();
+			try { current.sendClose(WebSocket.NORMAL_CLOSURE, "leaving Safari"); }
+			finally {
+				// Also abort if initiating the graceful close fails; shutdown never waits on a peer.
+				current.abort();
+			}
 		}
 	}
 

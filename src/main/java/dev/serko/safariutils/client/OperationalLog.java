@@ -46,9 +46,6 @@ public final class OperationalLog {
 	private static final long DEBUG_REPEAT_MILLIS = 2_000L;
 	private static final DiagnosticQueue<Queued> QUEUE = new DiagnosticQueue<>(MAX_QUEUED_LINES);
 	private static final Map<String, Long> LAST_ERROR = new ConcurrentHashMap<>();
-	private static final Map<String, Long> LAST_SLOW_OPERATION = new ConcurrentHashMap<>();
-	private static final long SLOW_OPERATION_NANOS = 5_000_000L;
-	private static final long SLOW_OPERATION_INTERVAL_NANOS = 10_000_000_000L;
 	private static final DiagnosticRepeats REPEATS = new DiagnosticRepeats(512, DEBUG_REPEAT_MILLIS);
 	private static ScheduledExecutorService writerExecutor;
 	private static volatile BufferedWriter writer;
@@ -212,32 +209,19 @@ public final class OperationalLog {
 	}
 
 	public static void run(String category, Runnable action) {
-		boolean measure = DebugLog.isEnabled();
-		long started = measure ? System.nanoTime() : 0L;
+		long started = PerformanceDiagnostics.begin();
 		try { action.run(); }
 		catch (RuntimeException | LinkageError error) { error(category, error); }
-		finally {
-			if (measure) {
-				long ended = System.nanoTime(), elapsed = ended - started;
-				if (elapsed >= SLOW_OPERATION_NANOS) {
-					Long previous = LAST_SLOW_OPERATION.get(category);
-					if (previous == null || ended - previous >= SLOW_OPERATION_INTERVAL_NANOS) {
-						if (LAST_SLOW_OPERATION.size() >= 128) LAST_SLOW_OPERATION.clear();
-						LAST_SLOW_OPERATION.put(category, ended);
-						debug("PERF", "operation=" + category + " micros=" + elapsed / 1_000L
-							+ " biome=" + SafariLocation.biome());
-					}
-				}
-			}
-		}
+		finally { PerformanceDiagnostics.end(category, started); }
 	}
 
 	public static <T> T get(String category, Supplier<T> action, T fallback) {
+        long started = PerformanceDiagnostics.begin();
 		try { return action.get(); }
 		catch (RuntimeException | LinkageError error) {
 			error(category, error);
 			return fallback;
-		}
+		} finally { PerformanceDiagnostics.end(category, started); }
 	}
 
 	/** Wraps a registered HUD once without allocating a per-frame callback. */
@@ -245,8 +229,10 @@ public final class OperationalLog {
 		String category = "RENDER/" + name;
 		return (graphics, delta) -> {
 			if (!HypixelConnection.active()) return;
+			long started = PerformanceDiagnostics.begin();
 			try { delegate.extractRenderState(graphics, delta); }
 			catch (RuntimeException | LinkageError error) { error(category, error); }
+            finally { PerformanceDiagnostics.end(category, started); }
 		};
 	}
 
@@ -254,8 +240,10 @@ public final class OperationalLog {
 	public static HudElement hudEverywhere(String name, HudElement delegate) {
 		String category = "RENDER/" + name;
 		return (graphics, delta) -> {
+			long started = PerformanceDiagnostics.begin();
 			try { delegate.extractRenderState(graphics, delta); }
 			catch (RuntimeException | LinkageError error) { error(category, error); }
+            finally { PerformanceDiagnostics.end(category, started); }
 		};
 	}
 
@@ -270,6 +258,8 @@ public final class OperationalLog {
 	}
 
 	public static synchronized void flush() {
+        long performanceStarted = dev.serko.safariutils.client.PerformanceDiagnostics.begin();
+        try {
 		if (disabled()) {
 			pause();
 			return;
@@ -303,7 +293,9 @@ public final class OperationalLog {
 			writer = null;
 			SafariUtils.LOGGER.warn("Could not write SafariUtils log", error);
 		}
-	}
+
+        } finally { dev.serko.safariutils.client.PerformanceDiagnostics.end("diagnostics/writer-flush", performanceStarted); }
+    }
 
 	/** Caller holds the writer monitor; bounded even if producers are still active. */
 	private static void drainQueued() throws Exception {
@@ -332,6 +324,7 @@ public final class OperationalLog {
 
 	public static synchronized void shutdown() {
 		if (stopping) return;
+        PerformanceDiagnostics.boundary();
 		info("LIFECYCLE", "SafariUtils stopping");
 		writeRepeatSummaries(REPEATS.drain(), System.currentTimeMillis());
 		QUEUE.close();
@@ -359,7 +352,7 @@ public final class OperationalLog {
 		}
 		QUEUE.clear();
 		REPEATS.clear();
-		LAST_SLOW_OPERATION.clear();
+		PerformanceDiagnostics.reset();
 		if (writer != null) {
 			try { writer.close(); } catch (IOException ignored) { }
 			writer = null;

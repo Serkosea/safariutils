@@ -327,11 +327,15 @@ public class SafariConfig {
 
 		@SettingInfo(
 			name = "Floor Drops",
-			desc = "Lists the floor drops you haven't collected yet per biome")
+			desc = "Lists remaining relevant floor drops per biome; surplus quest items are excluded")
 		@SettingToggle
 		@SettingGroup(id = MISSING_HUD_OBJECTIVES)
 		@Expose
 		public boolean showFloorDropCount = true;
+
+        @SettingInfo(name = "Separate Floor Drop Types", desc = "Lists each known quest item and Loot separately instead of one total")
+        @SettingToggle @SettingGroup(id = MISSING_HUD_OBJECTIVES) @Expose
+        public boolean separateFloorDropCounts = true;
 
 		@SettingInfo(
 			name = "Rockmite Mounds",
@@ -500,7 +504,7 @@ public class SafariConfig {
 		public boolean hidePossibleWaypoints = false;
 
 		@SettingInfo(name = "Display Nametags",
-			desc = "Chooses which names appear for critters with rendered markers or markers")
+			desc = "Chooses vanilla names and marker titles for critters with displayed markers. Non-critter marker titles always remain visible.")
 		@SettingChoice(values = {"None", "Vanilla", "Marker", "Both"})
 		@SettingGroup(id = HIGHLIGHTS)
 		@Expose
@@ -522,12 +526,20 @@ public class SafariConfig {
 		public boolean markersAccordion = false;
 
 		@SettingInfo(
-			name = "Floor Drops",
-			desc = "Marks floor drops of the biome you are in")
+			name = "Floor Drop Loot",
+			desc = "Marks floor rewards such as Hunting EXP, Safari Essence and shards; unidentified drops remain generic")
 		@SettingToggle
 		@SettingGroup(id = MARKERS)
 		@Expose
-		public boolean floorDrops = true;
+		public boolean floorDropLoot = true;
+
+        @SettingInfo(name = "Floor Drop Quest Items", desc = "Marks needed quest items and hides surplus items, even outside Sparkling Mode; Sparkling Mode respects Always Active")
+        @SettingToggle @SettingGroup(id = MARKERS) @Expose
+        public boolean floorDropQuestItems = true;
+
+        @SettingInfo(name = "Item Colors", desc = "Uses quest-item colors for identified floor drops; unknown drops and Loot keep the general color")
+        @SettingToggle @SettingGroup(id = MARKERS) @Expose
+        public boolean floorDropItemColours = true;
 
 		/** Accordion id for the Recatch-specific settings, nested inside Critters. */
 		private static final int RECATCH = 11;
@@ -655,22 +667,12 @@ public class SafariConfig {
 		@SettingGroup(id = MARKERS_COLOUR)
 		public boolean floorDropsColourAccordion = false;
 
-		@SettingInfo(name = "Block Outline", desc = "")
+		@SettingInfo(name = "Color", desc = "Sets the general floor-drop color; block faces use a matching lighter tint")
 		@SettingColor
 		@SettingGroup(id = FLOOR_DROPS_COLOUR)
 		@Expose
 		public String floorDropColour = colour(0x55, 0xFF, 0xAA);
 
-		@SettingInfo(name = "Block Face", desc = "")
-		@SettingColor
-		@SettingGroup(id = FLOOR_DROPS_COLOUR)
-		@Expose
-		// Alpha 128, not the usual 255 the colour() helper below always uses — the
-		// face sits directly on the ground, and a face this size at full opacity
-		// read as too strong; ~50% is closer to a highlight than a solid overlay.
-		// If "100 to 50" meant a direct 0-255 value of 50 rather than a percentage,
-		// this is the wrong number and should be corrected.
-		public String floorDropFaceColour = "0:127:160:255:211";
 
 		@SettingInfo(name = "Recatch Spot", desc = "")
 		@SettingColor
@@ -1027,10 +1029,6 @@ public class SafariConfig {
 		private static final int TESTING = 24;
 		private static final int SAFE_MODE = 18;
 		private static final int SAFE_MODE_OPTIONS = 19;
-		private static final int SAFE_DETECTION_HUD = 20;
-		private static final int SAFE_CRITTER_OVERLAYS = 21;
-		private static final int SAFE_HIDDEN_CRITTERS = 22;
-		private static final int SAFE_STATIC_OBJECTIVES = 23;
 
 		@SettingInfo(name = "Special Themes",
 			desc = "Applies a special theme to settings and all HUDs")
@@ -1054,107 +1052,25 @@ public class SafariConfig {
 		@SettingGroup(id = SAFE_MODE)
 		public boolean safeModeOptionsAccordion = false;
 
-		@SettingInfo(name = "Detection And HUD", desc = "Controls when critters and completion information become known")
-		@SettingSection(id = SAFE_DETECTION_HUD)
-		@SettingGroup(id = SAFE_MODE_OPTIONS)
-		public boolean safeDetectionHudAccordion = false;
+        @SettingInfo(name = "Detection & HUD", desc = "Only use visible or logically known critters for detection, counts, availability, and completion")
+        @SettingToggle @SettingGroup(id = SAFE_MODE_OPTIONS) @Expose
+        public boolean safeDetectionHud = false;
 
-		@SettingInfo(name = "Visible Critter Detection",
-			desc = "§6Safe: Detects a critter after its body or visible name tag is seen\n§7Normal: Detects every loaded critter")
-		@SettingToggle
-		@SettingGroup(id = SAFE_DETECTION_HUD)
-		@Expose
-		public boolean safeVisibleCritterDetection = true;
+        @SettingInfo(name = "Critter Markers", desc = "Require visible evidence for hidden critters and depth-test ordinary critter markers")
+        @SettingToggle @SettingGroup(id = SAFE_MODE_OPTIONS) @Expose
+        public boolean safeCritterMarkers = false;
 
-		@SettingInfo(name = "Nearby Counts",
-			desc = "§6Safe: Counts only critters whose body or visible name tag is seen\n§7Normal: Counts every loaded critter")
-		@SettingToggle
-		@SettingGroup(id = SAFE_DETECTION_HUD)
-		@Expose
-		public boolean safeHideNearbyCounts = true;
+        @SettingInfo(name = "Sparkling Markers", desc = "Apply visibility restrictions to Sparkling critters too; off allows their loaded markers through walls")
+        @SettingToggle @SettingGroup(id = SAFE_MODE_OPTIONS) @Expose
+        public boolean safeSparklingCritters = false;
 
-		@SettingInfo(name = "Species Availability",
-			desc = "§6Safe: Keeps an unseen species listed until its absence is visibly confirmed\n§7Normal: Uses every detected objective state")
-		@SettingToggle
-		@SettingGroup(id = SAFE_DETECTION_HUD)
-		@Expose
-		public boolean safeConservativeAvailability = true;
+        @SettingInfo(name = "World Objectives", desc = "Verify floor drops, nests, mounds, and walls visually; remembered fixed locations remain available")
+        @SettingToggle @SettingGroup(id = SAFE_MODE_OPTIONS) @Expose
+        public boolean safeWorldObjectives = false;
 
-		@SettingInfo(name = "Completion Checks",
-			desc = "§6Safe: Completes objectives only from catches and visible evidence\n§7Normal: Uses every detected objective state")
-		@SettingToggle
-		@SettingGroup(id = SAFE_DETECTION_HUD)
-		@Expose
-		public boolean safeConservativeCompletion = true;
-
-		@SettingInfo(name = "Critter Overlays", desc = "Controls when critter markers and markers are shown")
-		@SettingSection(id = SAFE_CRITTER_OVERLAYS)
-		@SettingGroup(id = SAFE_MODE_OPTIONS)
-		public boolean safeCritterOverlaysAccordion = false;
-
-		@SettingInfo(name = "Critter Markers",
-			desc = "§6Safe: Shows a marker only while its critter or visible name tag is seen\n§7Normal: Shows loaded markers through terrain")
-		@SettingToggle
-		@SettingGroup(id = SAFE_CRITTER_OVERLAYS)
-		@Expose
-		public boolean safeCritterHitboxes = true;
-
-		@SettingInfo(name = "Sparkling Critters",
-			desc = "§6Safe: Reveals a Sparkling after its body or visible name tag is seen\n§7Normal: Reveals loaded Sparkling information immediately")
-		@SettingToggle
-		@SettingGroup(id = SAFE_CRITTER_OVERLAYS)
-		@Expose
-		public boolean safeSparklingCritters = true;
-
-		@SettingInfo(name = "Initially Hidden Critters", desc = "Controls possible locations for critters hidden at spawn")
-		@SettingSection(id = SAFE_HIDDEN_CRITTERS)
-		@SettingGroup(id = SAFE_CRITTER_OVERLAYS)
-		public boolean safeHiddenCrittersAccordion = false;
-
-		@SettingInfo(name = "Hideyho", desc = "§6Safe: Shows learned locations until each is checked\n§7Normal: Reveals its detected location immediately")
-		@SettingToggle @SettingGroup(id = SAFE_HIDDEN_CRITTERS) @Expose
-		public boolean safeHideyho = true;
-
-		@SettingInfo(name = "Hideonwall", desc = "§6Safe: Shows learned locations until each is checked\n§7Normal: Reveals its detected location immediately")
-		@SettingToggle @SettingGroup(id = SAFE_HIDDEN_CRITTERS) @Expose
-		public boolean safeHideonwall = true;
-
-		@SettingInfo(name = "Duplico", desc = "§6Safe: Shows learned locations until each is checked\n§7Normal: Reveals its detected location immediately")
-		@SettingToggle @SettingGroup(id = SAFE_HIDDEN_CRITTERS) @Expose
-		public boolean safeDuplico = true;
-
-		@SettingInfo(name = "Bloodbat", desc = "§6Safe: Shows learned locations until each is checked\n§7Normal: Reveals its detected location immediately")
-		@SettingToggle @SettingGroup(id = SAFE_HIDDEN_CRITTERS) @Expose
-		public boolean safeBloodbat = true;
-
-		@SettingInfo(name = "Hideonfloor", desc = "§6Safe: Shows learned locations until each is checked\n§7Normal: Reveals its detected location immediately")
-		@SettingToggle @SettingGroup(id = SAFE_HIDDEN_CRITTERS) @Expose
-		public boolean safeHideonfloor = true;
-
-		@SettingInfo(name = "Static Objectives", desc = "Controls learned locations for fixed Safari objectives")
-		@SettingSection(id = SAFE_STATIC_OBJECTIVES)
-		@SettingGroup(id = SAFE_MODE_OPTIONS)
-		public boolean safeStaticObjectivesAccordion = false;
-
-		@SettingInfo(name = "Floor Drops", desc = "§6Safe: Shows learned locations until checked\n§7Normal: Shows detected active drops")
-		@SettingToggle @SettingGroup(id = SAFE_STATIC_OBJECTIVES) @Expose
-		public boolean safeFloorDrops = true;
-
-		@SettingInfo(name = "Bee Nests", desc = "§6Safe: Shows learned locations until checked\n§7Normal: Shows detected active nests")
-		@SettingToggle @SettingGroup(id = SAFE_STATIC_OBJECTIVES) @Expose
-		public boolean safeBeeNests = true;
-
-		@SettingInfo(name = "Rockmite Mounds", desc = "§6Safe: Shows learned locations until checked\n§7Normal: Shows detected active mounds")
-		@SettingToggle @SettingGroup(id = SAFE_STATIC_OBJECTIVES) @Expose
-		public boolean safeRockmiteMounds = true;
-
-		@SettingInfo(name = "Snoozle Walls", desc = "§6Safe: Changes a wall only after it is visibly checked\n§7Normal: Reads every loaded wall state")
-		@SettingToggle @SettingGroup(id = SAFE_STATIC_OBJECTIVES) @Expose
-		public boolean safeSnoozleWalls = true;
-
-		@SettingInfo(name = "Troodon Walls", desc = "§6Safe: Changes a wall only after it is visibly checked\n§7Normal: Reads every loaded wall state")
-		@SettingToggle @SettingGroup(id = SAFE_STATIC_OBJECTIVES) @Expose
-		public boolean safeTroodonWalls = true;
+        @SettingInfo(name = "Predicted Information", desc = "Hide entity-ID predictions for floor-drop contents and Scrappy food; successful feeding can still reveal food")
+        @SettingToggle @SettingGroup(id = SAFE_MODE_OPTIONS) @Expose
+        public boolean safePredictedInformation = false;
 
 		@SettingInfo(name = "Testing", desc = "Temporary logging and visualization tools")
 		@SettingSection(id = TESTING)
@@ -1203,16 +1119,14 @@ public class SafariConfig {
 		public boolean diagnosticHitboxesAccordion = false;
 
 		@SettingInfo(name = "Critters",
-			desc = "Every critter's own marker too, all in this diagnostic colour instead of rarity — " +
-				"there was previously no way to see them alongside the other diagnostic types below")
+			desc = "Shows critter wireframes in the diagnostic color instead of their usual marker colors")
 		@SettingToggle
 		@SettingGroup(id = DIAGNOSTIC_HITBOXES)
 		@Expose
 		public boolean showAllCritterHitboxes = false;
 
 		@SettingInfo(name = "Armor Stands",
-			desc = "Every armor stand nearby, named or not — this is how Gazer's real body, an unnamed " +
-				"one otherwise excluded from normal pairing entirely, was actually found")
+			desc = "Shows nearby armor-stand wireframes, including unnamed stands")
 		@SettingToggle
 		@SettingGroup(id = DIAGNOSTIC_HITBOXES)
 		@Expose
@@ -3444,10 +3358,12 @@ public class SafariConfig {
 		@SettingInfo(name = "Always Active Markers",
 			desc = "Keep selected objective and possible-location markers visible when Sparkling Mode would normally hide them")
 		@SettingMultiChoice(
-			values = {"Floor Drops", "Mounds", "Snoozle Walls", "Floor Drops", "Troodon Walls",
-				"Floor Drops", "Floor Drops", "Bee Nests"},
-			groups = {"Cavern", "Icy", "Haunted", "Forest"},
-			groupStarts = {0, 3, 5, 6}, biomeColumns = true)
+            values = {"Floor Loot", "Lime Gem", "Purple Gem", "Orange Gem", "Rockmite Mounds", "Snoozle Walls", "Gem Pedestals",
+                "Floor Loot", "Icebreakers", "Troodon Walls", "Floor Loot", "Soothing Incense", "Shining Coin",
+                "Floor Loot", "Wriggleworm", "Yogi Berry", "Bag of Seeds", "Bee Nests"},
+            bits = {0, 9, 14, 15, 1, 2, 8, 3, 10, 4, 5, 12, 13, 6, 11, 16, 17, 7},
+            groups = {"Cavern", "Icy", "Haunted", "Forest"},
+            groupStarts = {0, 7, 10, 13}, biomeColumns = true)
 		@SettingGroup(id = SPARKLING_MODE_OPTIONS) @Expose
 		public int sparklingAlwaysActiveWaypoints = 0;
 

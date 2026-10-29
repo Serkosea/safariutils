@@ -66,6 +66,16 @@ public final class ChatMessageFilter {
 		"The Chuckwalla is cornered! Catch it!"
 	);
 	private static final Set<String> SCRAPPY_MESSAGES = Set.of(
+		"The Scrappy happily eats the Wholesale Wheat.",
+		"The Scrappy happily eats the Flavor-packed Fish.",
+		"The Scrappy happily eats the Lush Lily Pad.",
+		"[NPC] Hunter Jasper: Hmm that \"Hunter\" Tobias guy was right... Nice Catch!",
+		"[NPC] Hunter Jasper: There might be more Scrappy around - I wonder if my brothers have found them yet.",
+		"[NPC] Hunter Luigi: That really worked, you caught the Scrappy! Nice going!",
+		"[NPC] Hunter Luigi: My brothers might be around here, maybe they found more Scrappy...",
+		"[NPC] Hunter Reeves: You really managed to catch that Scrappy? Nice going!",
+		"[NPC] Hunter Reeves: Keep an eye out for my brothers - they might have found more Scrappy around...",
+
 		"This particular Scrappy doesn't seem to care for this type of food...",
 		"The Scrappy cautiously started eating the Wholesale Wheat.",
 		"The Scrappy reaches out its paw for more Wholesale Wheat.",
@@ -318,6 +328,7 @@ public final class ChatMessageFilter {
 	private static boolean wumpaMessage(String line) {
 		return line.startsWith("You hear the sound of massive footsteps")
 			|| line.startsWith("The Wumpa has awoken")
+			|| line.equals("The Wumpa is enraged and can't be caught right now!")
 			|| line.startsWith("The cave is collapsing")
 			|| line.startsWith("The cave opens up again")
 			|| line.contains("fainted by a Wumpa") && line.endsWith("lost some of your items!");

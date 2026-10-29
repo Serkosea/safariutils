@@ -887,7 +887,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		int orange = SafariObjectives.orangeGemsHeld();
 		int purple = SafariObjectives.purpleGemsHeld();
 		int incense = SafariObjectives.incenseHeld();
-		int placed = SafariObjectives.placedGemMask();
+		int placed = SafariObjectives.confirmedGemMask();
 		boolean open = localGemzieOpen || SafariObjectives.gemzieDoorOpened();
 		boolean gemzieDone = localGemzieCaught || SafariObjectives.gemzieCaught();
 		boolean spawned = localDoomspiralSpawned || SafariObjectives.doomspiralSpawned();
@@ -931,6 +931,11 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		localMoundHigh = mounds[1];
 		updateLocal();
 		if (SafariLocation.inside()) scheduleState();
+	}
+
+	@Override
+	public int confirmedGemPlacements() {
+		return active() ? (gemzieOpen() ? 7 : placedGemMask()) : 0;
 	}
 
 	private int placedGemMask() {

@@ -37,6 +37,10 @@ public final class LoggingOptInRegression {
 			for (SafariConfig config : new SafariConfig[] {null, new SafariConfig()}) {
 				configField.set(null, config);
 				if (ConfigManager.automaticLoggingEnabled()) throw new AssertionError("Logging must fail closed");
+				if (EntityResearchLog.ready()) throw new AssertionError("Disabled research accessed game state");
+				EntityResearchLog.onChatMessage("The Scrappy ate the Wholesale Wheat and came out of its shell!");
+				PerformanceDiagnostics.frame();
+                if (PerformanceDiagnostics.begin() != 0) throw new AssertionError("Disabled profiling active");
 				OperationalLog.start();
 				OperationalLog.info("TEST", "must not create a file");
 				OperationalLog.structuredDeferred(() -> { throw new AssertionError("Disabled encoder executed"); });

@@ -303,7 +303,7 @@ public final class CritterEntities {
 				: "closest generic candidate is " + failure.closest().type() + " at "
 					+ String.format("%.2f", Math.sqrt(failure.distanceSq())) + " blocks")
 			+ " (radius is " + failure.radius() + ")"
-			+ (failure.companionBlocked() ? " rejected=other-species-compound-body" : ""));
+			+ (failure.companionBlocked() ? " rejected=other-label-compound-body" : ""));
 	}
 
 	/** Whether this entity is a positively identified body rather than a proximity guess. */

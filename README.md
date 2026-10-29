@@ -8,8 +8,11 @@ SafariUtils is a Fabric mod made for Hypixel SkyBlock's Critter Safari. It keeps
 - Confirmed Gemzie, Icy Wumpa, Haunted Doomspiral, and Forest Birdfeeder progress with selectable biome-completion marks in the Party Objective HUD.
 - Run history, per-player catch breakdowns, lifetime totals, Safari Essence, Rainbow Feathers, Emerald Dyes, and market-based profit estimates.
 - Personal Bests for biome and All Uniques clears, plus personal Gemzie, Doomspiral, Wumpa and Macaw catch times.
-- A dedicated Sparkling menu with editable collection totals, party-shared lists, Sparkling Mode, selectable always-active critters and waypoints, and special catch effects.
-- Helpful markers for Safari objectives and encounters.
+- A dedicated Sparkling menu with editable collection totals, party-shared lists, Sparkling Mode, selectable always-active critters and markers, and special catch effects.
+- Helpful markers for Safari objectives and encounters, colored Gem Pedestals, and confirmed Rockmite mound hit progress.
+- Extra floor-drop item identification, matching item colors, and Scrappy food/feeding markers, controlled by Safe Mode.
+- Separate loot/quest-item controls and relevant remaining-item counts; surplus quest items hide once no longer needed.
+- Model glow for selected critters and Rockmite mounds on Minecraft 26.2; 26.1.2 retains standard markers.
 - Party-ready alerts and ticket protection while waiting for everyone to arrive.
 - Optional Ticket Trading with draggable invite queues, per-player guest controls, Sparkling filters, and timed party automation.
 - Player lookups for tickets and Sparkling collections, cached rank colors, and party-shared collections with no API key setup.
@@ -29,8 +32,8 @@ Choose the jar that matches your Minecraft version.
 
 | Minecraft | Safe Mode | Extra |
 |---|---|---|
-| 26.1.2 | `safariutils-3.2.0+mc26.1.2.jar` | `safariutils-3.2.0-extra+mc26.1.2.jar` |
-| 26.2 | `safariutils-3.2.0+mc26.2.jar` | `safariutils-3.2.0-extra+mc26.2.jar` |
+| 26.1.2 | `safariutils-3.3.0+mc26.1.2.jar` | `safariutils-3.3.0-extra+mc26.1.2.jar` |
+| 26.2 | `safariutils-3.3.0+mc26.2.jar` | `safariutils-3.3.0-extra+mc26.2.jar` |
 
 The Safe Mode edition is the recommended download. Extra includes features that may provide information the player cannot directly see and may not be safe to use.
 

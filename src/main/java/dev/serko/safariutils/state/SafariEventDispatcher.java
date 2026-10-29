@@ -36,6 +36,7 @@ public final class SafariEventDispatcher {
 		TicketTrading.onChatMessage(line);
 		if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)) {
 			JoinWindowDiagnostics.onChatMessage(line);
+			dev.serko.safariutils.client.EntityResearchLog.onChatMessage(line);
 		}
 		EncounterAlerts.onChatMessage(line);
 		NestTracker.onChatMessage(line);
@@ -46,6 +47,7 @@ public final class SafariEventDispatcher {
 		HideyhoSolver.onChatMessage(line);
 		StillCritters.onChatMessage(line, event.critterEvent());
 		FloorDrops.onChatMessage(line);
+        dev.serko.safariutils.client.ScrappyFeeding.onChatMessage(line);
 		MoundSpotter.onChatMessage(line);
 	}
 }

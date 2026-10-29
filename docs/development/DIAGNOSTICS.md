@@ -152,3 +152,155 @@ An operation taking at least 5 ms emits a `PERF` record with its category, elaps
 and biome, throttled to one record per category per 10 seconds. The category map is bounded.
 This helps localize CPU stalls without per-frame log spam. It is not a frame-time or GPU profiler;
 a missing record does not establish that the client maintained a particular FPS.
+
+
+## Entity-ID research (developer, 2026-10-28)
+
+With Automatic Logging enabled, `er` schema 1 batches record observations at the Safari
+entrance and inside Safari. This is research instrumentation, **not a prediction feature**.
+Public Normal and Extra editions do not register these listeners. Future floor-loot
+prediction belongs only in Extra; validated identity/pairing improvements can be shared.
+
+Each batch carries connection `c`, visit `v`, run `r`, and a client-world generation `world`.
+Each event has sequence, wall time and monotonic nano time. Body records explicitly separate
+integer `networkId` from entity `uuid`. Join UUIDs to the existing capture replay's body,
+label and capsule UUIDs; logical critter IDs and attempt IDs in capture decisions are different
+identifiers. Numeric IDs can be reused and must never be compared across world scopes.
+
+- `load` / `unload` are client lifecycle observations, **not server creation/destruction**.
+- `baseline` covers entities already present when scope/logging starts. Its iteration order
+  is not spawn order. `observed` may also mean a missed load before scope recognition.
+- `metadata` records changed custom name or item registry ID/count; late metadata is normal.
+  Metadata is sampled every five ticks using the existing shared world snapshot. Movement
+  and capture timing continue to use the existing capture journal, not this sampled stream.
+- `id-reused` records a new UUID on an already observed network ID.
+- `floor-components` records string-display IDs grouped by block position, including partial
+  groups; the normal detector still requires its existing exact component count.
+- `floor-click` records clicked and matched positions. `floor-reward` retains the server
+  message and pending positions/ages. A single candidate is still only correlation; multiple
+  candidates are explicitly ambiguous. `floor-not-observed` does not prove collection.
+- `interaction` records target identity/position and held item registry ID, display name,
+  count and hand. `scrappy-reply` records food response text with no invented target identity.
+- `note` is a bounded manual annotation; `gap` marks exceeded research bounds. Existing writer
+  queue overflow warnings also mean evidence is incomplete.
+
+Limits: 4,096 identities and floor positions, 50,000 events per world/visit/logging scope,
+64 events per batch, 256 characters per recorded name/message/note. Stable observations do
+not emit rows. Encoding and gzip run on the existing bounded writer; only immutable records
+cross threads. No additional per-frame traversal or movement dump is added. Disabled logging
+performs no research scan, serialization or file work. The existing replay remains intact.
+This reduces the cost of collecting the new evidence; it is not a guarantee that the complete
+pre-existing debug stream has negligible cost. Compare live frame times with logging on/off.
+
+Commands (standard aliases also apply):
+- `/safari debug status`: recording scope, identity/event counts, omitted events and save hint.
+- `/safari debug mark <note>`: annotate an experiment locally; never sends server chat.
+- `/safari debug save`: export this visit, including earlier logged events, ending on exit.
+  Logging enabled midvisit cannot recover earlier evidence; capture replay needs logging
+  enabled before the visit boundary. Use the full launch log when investigating spawn order
+  spanning entry because a saved-visit export excludes previsit observations.
+
+Efficient first tests:
+1. Enable logging **before entering**. On two or three runs, collect 8–12 floor drops one at
+   a time, waiting for each server reward before the next click. Vary biome/route order on
+   the next run; include any visually identical drops that give different rewards.
+2. Interact with each Scrappy using one food at a time, waiting for the reply before another
+   target/food. Test all three foods where practical; wrong-food responses are useful too.
+3. Separately test nearby same-species breakouts and distant Hideons. Let one attempt resolve
+   at a time for a clean baseline, then do a short spam/instant-recatch sequence.
+4. Mark unusual moments and save the visit. Send the full launch log as well for the first
+   pattern tests. No need to manually copy IDs. Keep some later runs untouched as validation.
+
+Offline report: `python tools/entity_research.py <ordered-log.jsonl.gz> [...]` prints category
+candidates, component offsets, Scrappy interactions/replies and gaps. It does not promote
+correlations into rules, and must not treat filtered/sampled ordering as server truth.
+
+General structured decision (`k: x`) JSON encoding also runs on the existing writer now.
+Observation timestamps and lifecycle context are frozen at enqueue time, so a later warp
+cannot relabel queued decisions. This avoids JSON tree/string construction on the game
+thread for these existing decisions without dropping replay evidence.
+
+
+## Shared frame and hot-path profiling (2026-10-28)
+
+Automatic Logging also enables `PerformanceDiagnostics` in developer builds. It is not
+restricted to Safari or Hypixel: menus, chat/Bridge, IQ and other integrated components use
+one bounded collector and the existing writer. No additional executor, file, network upload
+or per-frame JSON record is created. Public Normal/Extra remain logging-disabled.
+
+`perf` schema 1 summaries are emitted every five seconds and at context/lifecycle boundaries:
+- FPS derived from frame-start intervals, with mean, maximum and approximate p95 upper-bound
+  frame time, plus counts over 16.67 ms and 50 ms. Histogram bins are 1 ms through 128 ms;
+  the overflow bin uses the observed maximum as its conservative upper bound.
+- Each instrumented stage reports call count, mean/max/p95 elapsed time and slow-call counts.
+  Fixed names distinguish `client/` from `worker/`. At most 192 distinct names exist per
+  window, with explicit overflow accounting. No input text, usernames, links or IDs are keys.
+- Context includes screen class, world/menu, focus, and Safari biome only when applicable.
+  World/visit changes split windows. Memory usage and cumulative JVM GC count/time help
+  identify allocation/collection pressure; they are not proof that this mod caused a GC.
+- Scope timing includes nested scopes; **never sum all stages as total mod CPU cost**.
+  Frame intervals and frame-loop wall time include VSync/frame limiting/GPU waits. Worker
+  media/DNS time can include network waits. This is not a GPU profiler or CPU stack sampler.
+
+Coverage: Minecraft frame loop and tick, all initialized screen extraction callbacks,
+existing OperationalLog run/get/HUD boundaries (Safari trackers and marker rendering),
+entity research and log-writer flush. SerkoAddons adds chat preparation/ticks, Bridge preview
+rendering/media requests/video decode, crosshair/calculator drawing, address resolution,
+pack reload decisions/completion and the central IQ event bus. IQ's old separate timing
+counters are removed. Missing stage instrumentation is not reported as zero work; broad
+frame/tick/screen timings let us spot remaining unattributed costs for follow-up profiling.
+
+Off means no timer sampling, histograms or reports (only cheap hook guards). Context strings
+are rebuilt only on transitions, stage prefixes and percentiles at publication. Mutable game
+objects never reach the writer. Component wrappers use finally without changing returns or
+exception behavior; the Minecraft frame/tick hooks record completed calls at return. Epoch/time are captured before serialization. Disabled/re-enabled
+sessions discard old aggregates and ignore work started before the new enabled interval.
+
+Use `/safari debug performance` for the latest summary; integrated builds also expose
+`/serko debug performance`. For a useful test, leave logging on while playing normally;
+spend 15–30 seconds on the collection/settings/history screens, scroll chat and hover media
+previews, then enter a Safari run. Alt-tab once so the focus split can be verified. Send the
+full SerkoAddons log for non-Safari work; saved-run logs intentionally cover only that visit.
+No need to send Discord messages or run Kuudra to exercise normal menus.
+
+`python tools/performance_report.py <log.jsonl.gz> [...]` produces an offline overview.
+Real FPS/overhead validation still requires gameplay; passing headless/loader tests does
+not establish a numerical performance improvement.
+
+Final review: windows without a frame-interval sample use `fps: null` rather than a false
+zero-FPS stall. Entity research flushes pending observations on the client stopping event
+before the shared writer closes; abrupt process termination can still lose unflushed data.
+A research note rejected by the scope's event cap reports that limit instead of success.
+Future additions should reuse these bounded, opt-in services and extend regression coverage.
+
+### Floor quest-item bounds (user supplied, October 28, 2026)
+
+These are expected floor-drop populations per run, not inventory limits and not yet
+server-verified prediction rules:
+
+| Reward | Minimum | Maximum |
+| --- | ---: | ---: |
+| Wriggleworm | 3 | 3 |
+| Yogi Berry | 3 | 3 |
+| Bag of Seeds | 3 | 3 |
+| Lime Gem | 2 | 2 |
+| Purple Gem | 2 | 2 |
+| Orange Gem | 2 | 2 |
+| Soothing Incense | 5 | 5 |
+| Shining Coin | 3 | 6 |
+| Icebreaker | 4 | 5 |
+
+Total floor quest items: 27�31. Each player may additionally start with up to two
+random quest items; these must never be counted as floor-drop observations. Use the
+explicit FLOOR DROP reward journal for this analysis, not inventory totals or changes.
+A partial route, missed reward, or logging gap can yield fewer observations than the
+minimum; it is not evidence that the server violated the range. Do not infer exact
+coin/icebreaker boundaries from these bounds alone.
+
+Both October 28 research runs observed three of each feed, two of each gem, and five
+incense. The first observed five coins/four icebreakers; the second four coins/five
+icebreakers. Both fit these bounds (29 quest-item reward observations each).
+
+Debug block/entity reports are included as DEBUG/REPORT records when automatic Safari logging is enabled (16 KiB per report). They retain block IDs/states and pairing IDs, so pedestal before/after samples no longer depend on latest.log or clipboard recovery.
+
+Contest diagnostics: opt-in CONTEST/server-result records changed tab score rows in Torrhus Canyon even during the estimated New Year scoring delay. CONTEST/score records accepted score, bracket, ticket state and remaining time. These belong to the launch log, not a saved Safari run. The first annual scoring boundary is currently estimated from an observed 8:40 remaining; diagnostics can validate it on a future rollover.

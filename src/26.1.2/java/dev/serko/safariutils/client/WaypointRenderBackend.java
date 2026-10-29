@@ -20,6 +20,9 @@ import java.util.function.Consumer;
 final class WaypointRenderBackend {
 	private final MultiBufferSource.BufferSource buffers;
 	private final PoseStack poses;
+    private static final java.util.List<TextDraw> labels = new java.util.ArrayList<>();
+    private record TextDraw(Matrix4f pose, FormattedCharSequence text, float x, Font.DisplayMode mode,
+                            int colour, int background, int light) { }
 
 	WaypointRenderBackend(LevelRenderContext context) {
 		poses = context.poseStack();
@@ -27,7 +30,15 @@ final class WaypointRenderBackend {
 	}
 
 	static void register(Consumer<LevelRenderContext> renderer) {
-		LevelRenderEvents.AFTER_TRANSLUCENT_FEATURES.register(renderer::accept);
+		LevelRenderEvents.AFTER_TRANSLUCENT_FEATURES.register(context -> {
+            labels.clear();
+            renderer.accept(context);
+        });
+        LevelRenderEvents.AFTER_TRANSLUCENT_FEATURES.register(context -> {
+            for (TextDraw text : labels) Minecraft.getInstance().font.drawInBatch(text.text(), text.x(), 0,
+                text.colour(), false, text.pose(), context.bufferSource(), text.mode(), text.background(), text.light());
+            labels.clear();
+        });
 	}
 
 	void geometry(RenderType type, BiConsumer<PoseStack.Pose, VertexConsumer> draw) {
@@ -50,7 +61,6 @@ final class WaypointRenderBackend {
 
 	void text(PoseStack poses, FormattedCharSequence text, float x, Font.DisplayMode mode,
 				  int colour, int background, int light) {
-		Minecraft.getInstance().font.drawInBatch(text, x, 0, colour, false,
-			new Matrix4f(poses.last().pose()), buffers, mode, background, light);
+        labels.add(new TextDraw(new Matrix4f(poses.last().pose()), text, x, mode, colour, background, light));
 	}
 }

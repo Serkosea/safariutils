@@ -21,7 +21,7 @@ import java.nio.file.Path;
 /** Owns the dependency-free settings model, migration, persistence, and screen. */
 public final class ConfigManager {
 	/** Append one migration step whenever persisted setting structure changes. */
-	public static final int CURRENT_SETTINGS_SCHEMA = 6;
+	public static final int CURRENT_SETTINGS_SCHEMA = 9;
 	private static final Gson GSON = new GsonBuilder()
 		.excludeFieldsWithoutExposeAnnotation().setPrettyPrinting().create();
 	private static SafariConfig config;
@@ -175,12 +175,73 @@ public final class ConfigManager {
 				case 3 -> migrateTicketTradingGuestMembership(root);
 				case 4 -> migrateAutomaticLogging(root);
                 case 5 -> migrateHistoryColour(root);
+                case 6 -> migrateFloorCategories(root);
+                case 7 -> migrateGroupedSafeMode(root);
+                case 8 -> migrateFloorToggles(root);
 				default -> throw new IllegalStateException("Missing settings migration from schema " + version);
 			}
 			version++;
 			root.addProperty("settingsSchemaVersion", version);
 		}
 	}
+
+    private static void migrateFloorToggles(JsonObject root) {
+        if (!root.has("display") || !root.get("display").isJsonObject()) return;
+        JsonObject display = root.getAsJsonObject("display");
+        if (!display.has("floorDrops")) return;
+        var old = display.remove("floorDrops");
+        if (!display.has("floorDropLoot")) display.add("floorDropLoot", old.deepCopy());
+        if (!display.has("floorDropQuestItems")) display.add("floorDropQuestItems", old.deepCopy());
+    }
+
+    private static void migrateGroupedSafeMode(JsonObject root) {
+        if (root.has("advanced") && root.get("advanced").isJsonObject()) {
+            JsonObject advanced = root.getAsJsonObject("advanced");
+            mergeSafeControls(advanced, "safeDetectionHud", "safeVisibleCritterDetection", "safeHideNearbyCounts",
+                "safeConservativeAvailability", "safeConservativeCompletion");
+            mergeSafeControls(advanced, "safeCritterMarkers", "safeCritterHitboxes", "safeHideyho", "safeHideonwall",
+                "safeDuplico", "safeBloodbat", "safeHideonfloor");
+            mergeSafeControls(advanced, "safeWorldObjectives", "safeFloorDrops", "safeBeeNests", "safeRockmiteMounds",
+                "safeSnoozleWalls", "safeTroodonWalls");
+            // These were new, unreleased controls. The requested Extra default is prediction enabled.
+            advanced.remove("safeFloorDropContents");
+            advanced.remove("safeScrappyFood");
+        }
+        if (root.has("sparkling") && root.get("sparkling").isJsonObject()) {
+            JsonObject sparkling = root.getAsJsonObject("sparkling");
+            var stored = sparkling.get("sparklingAlwaysActiveWaypoints");
+            if (stored != null && stored.isJsonPrimitive() && stored.getAsJsonPrimitive().isNumber()) {
+                int mask = stored.getAsInt();
+                if ((mask & (1 << 9)) != 0) mask |= (1 << 14) | (1 << 15);
+                if ((mask & (1 << 11)) != 0) mask |= (1 << 16) | (1 << 17);
+                sparkling.addProperty("sparklingAlwaysActiveWaypoints", mask);
+            }
+        }
+    }
+
+    private static void mergeSafeControls(JsonObject advanced, String target, String... previous) {
+        boolean enabled = false, present = false;
+        for (String key : previous) {
+            var value = advanced.remove(key);
+            if (value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isBoolean()) {
+                enabled |= value.getAsBoolean(); present = true;
+            }
+        }
+        if (!advanced.has(target) && present) advanced.addProperty(target, enabled);
+    }
+
+    private static void migrateFloorCategories(JsonObject root) {
+        if (!root.has("sparkling") || !root.get("sparkling").isJsonObject()) return;
+        JsonObject sparkling = root.getAsJsonObject("sparkling");
+        var stored = sparkling.get("sparklingAlwaysActiveWaypoints");
+        if (stored == null || !stored.isJsonPrimitive() || !stored.getAsJsonPrimitive().isNumber()) return;
+        int mask = stored.getAsInt();
+        if ((mask & 1) != 0) mask |= 1 << 9;
+        if ((mask & (1 << 3)) != 0) mask |= 1 << 10;
+        if ((mask & (1 << 6)) != 0) mask |= 1 << 11;
+        if ((mask & (1 << 5)) != 0) mask |= (1 << 12) | (1 << 13);
+        sparkling.addProperty("sparklingAlwaysActiveWaypoints", mask);
+    }
 
     private static void migrateHistoryColour(JsonObject root) {
         if (!root.has("display") || !root.get("display").isJsonObject()) return;
@@ -308,7 +369,10 @@ public final class ConfigManager {
 		legacy.getAsJsonObject("display").addProperty("futureDisplaySetting", 73);
 		SafariConfig migrated = parseSettings(legacy);
 		JsonObject migratedKnown = GSON.toJsonTree(migrated).getAsJsonObject();
-		if (!expected.equals(migratedKnown)) {
+		JsonObject expectedLegacy = expected.deepCopy();
+        migrateFloorCategories(expectedLegacy);
+        migrateGroupedSafeMode(expectedLegacy);
+		if (!expectedLegacy.equals(migratedKnown)) {
 			throw new IllegalStateException("Legacy settings migration changed a value at "
 				+ firstDifference(expected, migratedKnown, "settings"));
 		}

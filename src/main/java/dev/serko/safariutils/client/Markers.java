@@ -48,6 +48,17 @@ public final class Markers {
 		}
 	}
 
+	private record GemPedestal(int placedBit, Marker marker) { }
+	private static final List<GemPedestal> GEM_PEDESTALS = GemPedestals.ALL.stream()
+		.map(pedestal -> new GemPedestal(pedestal.bit(), new Marker(new AABB(pedestal.base()),
+			pedestal.label(), pedestal.colour(), Style.WAYPOINT))).toList();
+
+	static void addGemPedestals(List<Marker> markers, int placedMask) {
+		for (GemPedestal pedestal : GEM_PEDESTALS) {
+			if ((placedMask & pedestal.placedBit()) == 0) markers.add(pedestal.marker());
+		}
+	}
+
 	private Markers() {
 	}
 
@@ -62,6 +73,11 @@ public final class Markers {
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
 		SafariBiome biome = SafariLocation.biome();
 		SafariSession session = SessionManager.current();
+
+		if (biome == SafariBiome.CAVERN && SparklingMode.showGemPedestals()) {
+			addGemPedestals(markers, SafariObjectives.placedGemMask()
+				| dev.serko.safariutils.api.PartyItemSyncProviders.confirmedGemPlacements());
+		}
 
 		// Each objective is only marked in its own biome.
 		if (display.highlightSnooperWalls) {
@@ -99,7 +115,7 @@ public final class Markers {
 				boolean possible = SafeMode.mounds() && !MoundSpotter.isConfirmedVisible(pos);
 				if (possible && display.hidePossibleWaypoints) continue;
 				String label = possible
-					? "Mound (Possible)" : "Mound";
+					? "Mound (Possible)" : "Mound (" + MoundSpotter.hits(pos) + "/5)";
 				markers.add(block(moundDisplayPos(client, pos), label,
 					Colours.argb(display.moundColour, 0xFFCC7744)));
 			}
@@ -127,7 +143,7 @@ public final class Markers {
 		// per-position SafariAreaMap lookup that disagreed with the player's own
 		// resolved biome often enough that drops stopped rendering even when
 		// freshly confirmed and directly on screen.
-		if (display.floorDrops && biome != null && !SparklingMode.hideFloorDrops(biome, session)) {
+		if ((display.floorDropLoot || display.floorDropQuestItems) && biome != null) {
 			List<BlockPos> drops = FloorDrops.positions(biome);
 			int shown = 0;
 			for (BlockPos pos : drops) {
@@ -136,10 +152,13 @@ public final class Markers {
 				boolean possible = SafeMode.floorDrops() && !FloorDrops.isConfirmedVisible(pos);
 				if (possible && display.hidePossibleWaypoints) continue;
 				boolean seeThrough = true;
-				String label = possible
-					? "Floor Drop (Possible)" : "Floor Drop";
+				FloorDropPattern.Kind kind = possible ? FloorDropPattern.Kind.UNKNOWN : FloorDrops.content(pos);
+                if (!FloorDrops.markerEnabled(kind) || SparklingMode.hideFloorDrop(biome, session, kind)) continue;
+                String label = possible ? "Floor Drop (Possible)" : kind.title;
+                int colour = display.floorDropItemColours && kind.colour != 0
+                    ? 0xFF000000 | kind.colour : Colours.argb(display.floorDropColour, 0xFF55FFAA);
 				markers.add(new Marker(new AABB(pos), label,
-					Colours.argb(display.floorDropColour, 0xFF55FFAA), Style.WAYPOINT, seeThrough));
+					colour, Style.WAYPOINT, seeThrough));
 				if (seeThrough) shown++;
 			}
 			logRenderDiagnostic("FLOOR", drops.size(), shown, biome, SafeMode.floorDrops());

@@ -19,19 +19,24 @@ final class CritterScan {
 	record Failure(Sample label, Sample closest, double distanceSq, double radius, boolean companionBlocked) { }
 	private record Label(Critter critter, Sample sample, boolean sparkling) { }
 
+	/** Shared exact label grammar for discovery and pre-scan name presentation. */
+	record ParsedLabel(Critter critter, boolean sparkling) { }
+	static ParsedLabel parseLabel(String name) {
+		if (name == null) return null;
+		boolean sparkling = name.regionMatches(true, 0, SPARKLING + " ", 0, SPARKLING.length() + 1);
+		String species = sparkling ? name.substring(SPARKLING.length()).trim() : name;
+		if (species.equalsIgnoreCase("Wumpa zZz")) species = "Wumpa";
+		Critter critter = Critters.byName(species);
+		return critter == null ? null : new ParsedLabel(critter, sparkling);
+	}
+
 	static List<Match> scan(List<Sample> samples, Map<UUID, UUID> previous, Consumer<Failure> failures) {
 		List<Label> labels = new ArrayList<>();
 		List<Sample> bodies = new ArrayList<>(), interactions = new ArrayList<>(), stands = new ArrayList<>();
 		for (Sample sample : samples) {
 			String name = sample.name();
-			Critter critter = name == null ? null : Critters.byName(name);
-			boolean sparkling = false;
-			if (critter == null && name != null && name.length() > SPARKLING.length()
-				&& name.regionMatches(true, 0, SPARKLING, 0, SPARKLING.length())) {
-				critter = Critters.byName(name.substring(SPARKLING.length()).trim());
-				sparkling = critter != null;
-			}
-			if (critter != null) labels.add(new Label(critter, sample, sparkling));
+			ParsedLabel parsed = parseLabel(name);
+			if (parsed != null) labels.add(new Label(parsed.critter(), sample, parsed.sparkling()));
 			else if (sample.type().equals("interaction")) interactions.add(sample);
 			else if (CritterBodyTypes.generic(sample.type())) bodies.add(sample);
 			else if (sample.type().equals("armor_stand") && name == null) stands.add(sample);
@@ -208,8 +213,8 @@ final class CritterScan {
 			if (owners == null) return true;
 			for (Label owner : owners) {
 				// A closer independently labelled critter stays independent. Equal
-				// evidence is ambiguous and must not fabricate a cross-species body.
-				if (!owner.critter().equals(label.critter())
+				// evidence is ambiguous and must not assign one compound body to a second label.
+				if (!owner.sample().id().equals(label.sample().id())
 					&& distance(body, owner.sample()) <= distance(body, label.sample())) return false;
 			}
 			return true;

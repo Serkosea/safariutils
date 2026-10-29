@@ -48,6 +48,9 @@ final class SavedRunLog {
                     while ((line = DiagnosticReplay.readRecord(in)) != null) {
                         if (line.length() > DiagnosticReplay.MAX_RECORD_CHARACTERS)
                             throw new IOException("Diagnostic record exceeds export limit; original logs retained");
+                        // readRecord preserves CR from Windows CRLF; emit exactly one newline.
+                        line = line.stripTrailing();
+                        if (line.isBlank()) continue;
                         JsonObject json;
                         try { json = JsonParser.parseString(line).getAsJsonObject(); }
                         catch (RuntimeException malformed) { throw new IOException("Malformed diagnostic record", malformed); }

@@ -4,6 +4,7 @@
   "compatibilityLevel": "JAVA_25",
   "client": [
     "ArmorStandRendererMixin",
+    "PerformanceMixin",
     "GuiGraphicsExtractorAccessor",
     "GuiMixin",
     "EntityRendererMixin",

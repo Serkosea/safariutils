@@ -255,7 +255,7 @@ final class DataToolsScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
-		if (event.key() == 256) {
+		if (event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) {
 			onClose();
 			return true;
 		}

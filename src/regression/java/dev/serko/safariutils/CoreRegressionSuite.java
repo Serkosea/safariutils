@@ -52,6 +52,9 @@ public final class CoreRegressionSuite {
         checks += dev.serko.safariutils.client.PerformanceRegression.run();
 		checks += dev.serko.safariutils.client.SavedRunLogRegression.run();
 		checks += dev.serko.safariutils.client.SettingsMotionRegression.run();
+		checks += dev.serko.safariutils.client.SettingsNavigationRegression.run();
+		checks += dev.serko.safariutils.client.DashboardRegression.run();
+        checks += dev.serko.safariutils.client.HoneyhiveRegression.run();
 		checks += dev.serko.safariutils.client.SettingsColourStateRegression.run();
         checks += dev.serko.safariutils.client.StatColoursRegression.run();
         checks += dev.serko.safariutils.client.CollectionProgressRegression.run();
@@ -59,6 +62,7 @@ public final class CoreRegressionSuite {
 		checks += SettingsFieldsRegression.run();
 		checks += GenerationDispatchRegression.run();
 		checks += MonotonicCooldownsRegression.run();
+		checks += PartyWarpCooldownRegression.run();
 		checks += MonotonicTimeRegression.run();
 		checks += RecentCacheRegression.run();
 		checks += ServiceAccessRegression.run();
@@ -66,6 +70,10 @@ public final class CoreRegressionSuite {
 		checks += dev.serko.safariutils.client.ReleaseMetadataRegression.run();
 		checks += DeadlineStreamRegression.run();
 		checks += dev.serko.safariutils.client.BazaarPricesRegression.run();
+		checks += dev.serko.safariutils.client.ProfitRelevanceRegression.run();
+		checks += dev.serko.safariutils.client.RunModeRegression.run();
+		checks += dev.serko.safariutils.client.AlertTextRegression.run();
+        checks += dev.serko.safariutils.client.CoordinationRegression.run();
 		checks += dev.serko.safariutils.client.BazaarMarketRegression.run();
 		checks += dev.serko.safariutils.backend.AuctionMarketRegression.run();
 		checks += dev.serko.safariutils.client.ChatQueueRegression.run();

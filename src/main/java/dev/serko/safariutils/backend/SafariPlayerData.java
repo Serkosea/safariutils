@@ -12,14 +12,14 @@ import java.util.Map;
 import java.util.Set;
 
 /** Validated Worker collection data; never synthesizes or exposes raw Hypixel profiles. */
-record SafariPlayerData(Set<String> species, int duplicates, Map<String, Long> tickets, long fetchedAt) {
+record SafariPlayerData(Set<String> species, int duplicates, Map<String, Long> tickets, long fetchedAt, Double huntingLevel) {
 	SafariPlayerData {
 		species = Set.copyOf(species);
 		tickets = Collections.unmodifiableMap(new LinkedHashMap<>(tickets));
 	}
 
 	SparklingPlayerLookup lookup(String name) {
-		return new SparklingPlayerLookup(name, species, duplicates, tickets, fetchedAt);
+		return new SparklingPlayerLookup(name, species, duplicates, tickets, fetchedAt, huntingLevel);
 	}
 
 	static SafariPlayerData decode(JsonObject player) throws IOException {
@@ -46,7 +46,10 @@ record SafariPlayerData(Set<String> species, int duplicates, Map<String, Long> t
 			tickets.put("First Class", count(source, "firstClass"));
 			long fetchedAt = BackendValues.integer(player, "fetchedAt");
 			if (fetchedAt < 0) throw new IllegalArgumentException("Invalid collection timestamp");
-			return new SafariPlayerData(species, duplicates, tickets, fetchedAt);
+			JsonElement levelValue=player.get("huntingLevel");
+            Double huntingLevel=levelValue!=null&&levelValue.isJsonPrimitive()&&levelValue.getAsJsonPrimitive().isNumber()?levelValue.getAsDouble():null;
+            if(huntingLevel!=null&&(!Double.isFinite(huntingLevel)||huntingLevel<0))huntingLevel=null;
+            return new SafariPlayerData(species, duplicates, tickets, fetchedAt, huntingLevel);
 		} catch (RuntimeException malformed) {
 			throw new IOException("SafariUtils API returned malformed collection data", malformed);
 		}

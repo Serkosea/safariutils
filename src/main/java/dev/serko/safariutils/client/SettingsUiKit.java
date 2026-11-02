@@ -59,7 +59,7 @@ public final class SettingsUiKit {
 	public static boolean hovered(int x, int y, int width, int height) {
 		return pointerX >= x && pointerX < x + width && pointerY >= y && pointerY < y + height;
 	}
-	public static boolean enter(int key) { return key == 257 || key == 335; }
+	public static boolean enter(int key) { return key == com.mojang.blaze3d.platform.InputConstants.KEY_RETURN || key == com.mojang.blaze3d.platform.InputConstants.KEY_NUMPADENTER; }
 
 	/** Same optical baseline and side padding as a 22px picker shell. */
 	public static void inlineBounds(EditBox editor, int x, int y, int width, int height) {

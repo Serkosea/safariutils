@@ -1,5 +1,29 @@
 # Changelog
 
+## [3.4.0] - 2026-11-01
+
+### Additions & Improvements
+
+- Added `Minecraft 26.3` builds alongside `26.2` and `26.1.2`
+- Unified Full Clear, Unique and Sparkling run modes, with mode commands and `/safari help`
+- Added profitable-critter targeting, `/safari profit`, and optional green `$` indicators in the Missing HUD
+- Combined collections, player lookups, session profit, history and personal bests in `/safari stats`; `/sparkling` remains a collection shortcut
+- Added `/safari lookup`, `/safari tickets`, `/safari missing` and `/safari shared`, with styled summaries and hover details
+- Added mode-specific automatic ticket selection, hotspot assignment and optional Sparkling Mutuals message compatibility
+- Expanded relevant chat-template options and reorganized ticket, HUD and screen-border settings
+- Added persistent Honeyhive cooldown tracking and configurable beacons
+- Added capsule trajectory previews with terrain-aligned landing indicators and near-camera fading
+- Added configurable water opacity and full-block candle targeting (`Extra` only)
+
+### Fixes
+
+- Improved Sparkling cleanup when another player catches a detected critter
+- Refined ticket-trading invite, warp cooldown and optional party-disband behavior
+- Corrected profit estimates for quest-item and chance-based critter spawns
+- Prevented hidden critters behind paintings from changing Safe Mode trajectory colors
+- Disabled expanded candle targeting and its outline once the candle is lit
+- Improved settings focus recovery and lookup-message formatting
+
 ## [3.3.0] - 2026-10-29
 
 ### New

@@ -117,6 +117,7 @@ public class SafariUtils implements ClientModInitializer {
         dev.serko.safariutils.client.PerformanceDiagnostics.install();
 		if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)) {
             dev.serko.safariutils.client.EntityResearchLog.install();
+        dev.serko.safariutils.client.CapsuleFlightDiagnostics.install();
         }
 		UpdateChecker.start();
 		ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> OperationalLog.run("SCREEN/INIT", () -> {
@@ -133,7 +134,7 @@ public class SafariUtils implements ClientModInitializer {
 					&& PartyErrorSuppressor.allow(message, overlay)
 					&& HideyhoAutoAccept.allow(message, overlay);
 				if (!allowed) return false;
-				if (!ChatMessageFilter.shouldHide(message, overlay)) return true;
+				if (!ChatMessageFilter.shouldHide(message, overlay) && (overlay || !dev.serko.safariutils.client.Honeyhives.hideProfileReply(ChatParser.clean(message.getString())))) return true;
 				// Fabric does not emit GAME after ALLOW_GAME rejects a line. Process the
 				// selected server message here first so hiding remains display-only.
 				handleGameMessage(message, overlay);
@@ -154,6 +155,7 @@ public class SafariUtils implements ClientModInitializer {
 			// Local playback also serves settings previews and the optional everywhere
 			// contest HUD. Server-derived queues are cleared by the connection lifecycle.
 			tickSafely("alerts", AlertSounds::tick);
+            tickSafely("clear-water", dev.serko.safariutils.client.ClearWater::tick);
 			if (!hypixel) {
 				PartyRosterWatch.resetConnectionState();
 				ChatQueue.clear();
@@ -164,6 +166,7 @@ public class SafariUtils implements ClientModInitializer {
 			}
 			// Next, and only here: everything below asks it where the player is.
 			tickSafely("location", SafariLocation::tick);
+            tickSafely("honeyhives", dev.serko.safariutils.client.Honeyhives::tick);
 			if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)) {
 				tickSafely("join-window", () -> JoinWindowDiagnostics.tick(client));
 			}
@@ -184,6 +187,7 @@ public class SafariUtils implements ClientModInitializer {
 			tickSafely("contest", ContestTracker::tick);
 			// One sweep of the world's critters, for everything below that wants them.
 			tickSafely("critter-entities", CritterEntities::tick);
+            tickSafely("capsule-prediction", dev.serko.safariutils.client.CapsulePrediction::tick);
 			tickSafely("critter-state", CritterState::tick);
 			tickSafely("particle-diagnostics", ParticleDiagnostics::tick);
 			if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)) {
@@ -194,6 +198,8 @@ public class SafariUtils implements ClientModInitializer {
 			tickSafely("detected-critters", DetectedCritters::tick);
 			tickSafely("session", SessionManager::tick);
 			tickSafely("ticket-trading", TicketTrading::tick);
+            tickSafely("hotspot-assignment", HotspotWatch::tick);
+            tickSafely("ticket-selection", dev.serko.safariutils.client.TicketSelection::tick);
 			tickSafely("critter-spotter", CritterSpotter::tick);
 			tickSafely("nests", NestTracker::tick);
 			tickSafely("sparkling-watch", SparklingWatch::tick);
@@ -217,6 +223,7 @@ public class SafariUtils implements ClientModInitializer {
 			// subsystem must never skip settings, run history, or another owned worker.
 			shutdownSafely("session", SessionManager::onClientStopping);
 			shutdownSafely("settings", ConfigManager::save);
+            shutdownSafely("honeyhives", dev.serko.safariutils.client.Honeyhives::shutdown);
 			shutdownSafely("player-identities", PlayerIdentityStore::shutdown);
 			shutdownSafely("bazaar", BazaarPrices::shutdown);
 			shutdownSafely("shared-sparklings", SharedSparklingProviders::shutdown);
@@ -263,6 +270,7 @@ public class SafariUtils implements ClientModInitializer {
 			if (!HypixelConnection.active()) return InteractionResult.PASS;
 			return OperationalLog.get("INTERACTION/ATTACK_BLOCK", () -> {
 				NestTracker.onInteract(pos);
+                dev.serko.safariutils.client.Honeyhives.clicked(pos);
 				// A drop being picked up would clear itself a few seconds later anyway;
 				// dropping it on the interaction just makes the mark go when you expect.
 				FloorDrops.onInteract(pos);
@@ -283,6 +291,7 @@ public class SafariUtils implements ClientModInitializer {
 			if (!HypixelConnection.active()) return InteractionResult.PASS;
 			return OperationalLog.get("INTERACTION/USE_BLOCK", () -> {
 				NestTracker.onInteract(hit.getBlockPos());
+                dev.serko.safariutils.client.Honeyhives.clicked(hit.getBlockPos());
 				FloorDrops.onInteract(hit.getBlockPos());
 				return InteractionResult.PASS;
 			}, InteractionResult.PASS);

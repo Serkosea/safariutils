@@ -31,15 +31,16 @@ public final class SparklingMode {
 	}
 
 	public static boolean enabled() {
-		return ConfigManager.get().sparkling.sparklingMode;
+		return RunMode.current().focused();
 	}
 
 	public static boolean ignoreUniques() {
-		return enabled() && ConfigManager.get().sparkling.sparklingIgnoreUniques;
+		return RunMode.current() == RunMode.SPARKLING;
 	}
 
-	public static boolean onlyShowSparkling() {
-		return enabled() && ConfigManager.get().sparkling.sparklingOnlyShowSparkling;
+	/** Presentation names share the same effective mode gates as marker filtering. */
+	public static String displayName() {
+		return RunMode.current().hudTitle();
 	}
 
 	/** Optional ordinary-hitbox color for whether this run has its unique catch. */
@@ -100,7 +101,7 @@ public final class SparklingMode {
 		return shared.contains(critter);
 	}
 
-	/** A user-selected species bypasses Sparkling Mode's ordinary-species suppression. */
+	/** A user-selected species bypasses Unique Mode's ordinary-species suppression. */
 	public static boolean alwaysActive(Critter critter) {
 		Integer bit = ALWAYS_ACTIVE_BITS.get(critter);
 		return enabled() && bit != null
@@ -119,27 +120,20 @@ public final class SparklingMode {
 			& (1 << kind.ordinal())) != 0;
 	}
 
-	public static boolean showHideyhoLocations() {
-		return !onlyShowSparkling() || alwaysActive(Critters.byName("Hideyho"));
-	}
-
-	/** Ignore Uniques hides ordinary shared critters, never a Sparkling duplicate. */
+	/** Sparkling Mode hides ordinary shared critters, never a Sparkling duplicate. */
 	public static boolean hideOrdinaryHitbox(Critter critter, boolean sparkling) {
-		return !sparkling && !alwaysActive(critter)
-			&& (onlyShowSparkling() || ignoreUniques() && isShared(critter));
+		return !sparkling && enabled() && RunRelevance.reasons(critter,
+			dev.serko.safariutils.session.SessionManager.current()) == 0;
 	}
 
-	/** Ordinary recatch markers disappear after the run unique; live hitboxes remain. */
+	/** Recatch and live markers consume the same run-goal and optional-target policy. */
 	public static boolean hideOrdinarySpecies(Critter critter, SafariSession session) {
-		return !alwaysActive(critter) && (onlyShowSparkling() || enabled() && isShared(critter)
-			&& (ignoreUniques() || session != null && session.caughtByParty(critter)));
+		return enabled() && RunRelevance.reasons(critter, session) == 0;
 	}
 
 	/** Tracked ordinary waypoints stop helping after the run unique is secured. */
 	public static boolean hideOrdinaryWaypoint(Critter critter, SafariSession session) {
-		return !alwaysActive(critter) && (onlyShowSparkling() || enabled()
-			&& (ignoreUniques() && isShared(critter)
-				|| session != null && session.caughtByParty(critter)));
+		return enabled() && RunRelevance.reasons(critter, session) == 0;
 	}
 
     /** Aggregate alert policy: any retained category prevents an early 'done' alert. */
@@ -176,7 +170,8 @@ public final class SparklingMode {
             // Each coin and feed can spawn another critter. A held item alone cannot
             // prove that all outstanding spawns (including Sparklings) are unnecessary.
             case COIN -> sharedFinished(session, "Gimmiegold")
-                || enabled() && isShared(Critters.byName("Gimmiegold")) && SafariObjectives.shiningCoinsHeld() >= 1;
+                || enabled() && isShared(Critters.byName("Gimmiegold"))
+                    && !RunRelevance.retainOverride(Critters.byName("Gimmiegold"), session) && SafariObjectives.shiningCoinsHeld() >= 1;
             case WORM, BERRY, SEEDS -> forestFloorDropsExhausted()
                 || allSharedFinished(session, "Bluebird", "Parakeet", "Macaw");
             case ICE -> icyFloorDropsExhausted(session);
@@ -190,9 +185,10 @@ public final class SparklingMode {
 
 	private static boolean icyFloorDropsExhausted(SafariSession session) {
 		Critter troodon = Critters.byName("Troodon");
-		int sparklingNeeded = SparklingWatch.outstandingCounts(SafariBiome.ICY)
-			.getOrDefault(troodon, 0);
-		if (sparklingNeeded > 0) return SafariObjectives.icebreakersHeld() >= sparklingNeeded;
+		int sparklingNeeded = SparklingWatch.outstandingCount(troodon);
+		if (sparklingNeeded > 0 && !RunRelevance.profitable(troodon) && !alwaysActive(troodon)
+			&& !RunRelevance.prerequisite(troodon, session))
+			return SafariObjectives.icebreakersHeld() >= sparklingNeeded;
 		if (sharedFinished(session, "Troodon")) return true;
         var walls = WallTracker.TROODON.walls();
         if (walls.isEmpty()) return false;
@@ -200,7 +196,7 @@ public final class SparklingMode {
         // walls, including unknown ones, instead of subtracting all absent locations.
         int remaining = (int) walls.stream().filter(wall -> wall.state() != WallTracker.State.BROKEN).count();
         return icebreakersSufficient(SafariObjectives.icebreakersHeld(), remaining,
-            enabled() && troodon != null && isShared(troodon));
+            enabled() && troodon != null && isShared(troodon) && !RunRelevance.retainOverride(troodon, session));
     }
 
     static boolean icebreakersSufficient(int held, int remainingWalls, boolean onlyOneNeeded) {
@@ -236,7 +232,7 @@ public final class SparklingMode {
 
 	private static boolean sharedFinished(SafariSession session, String name) {
 		Critter critter = Critters.byName(name);
-		return enabled() && critter != null && isShared(critter)
+		return enabled() && critter != null && !RunRelevance.retainOverride(critter, session) && isShared(critter)
 			&& (ignoreUniques() || session != null && session.caughtByParty(critter));
 	}
 

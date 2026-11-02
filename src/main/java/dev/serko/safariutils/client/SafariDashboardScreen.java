@@ -99,7 +99,7 @@ public final class SafariDashboardScreen extends Screen {
 		HISTORY("History"),
 		/** Totals per species across every saved run. */
 		STATS("Stats"),
-        PERSONAL_BESTS("Personal Bests");
+        PERSONAL_BESTS("Personal Bests"), PROFIT("Profit");
 
 		final String label;
 
@@ -178,6 +178,16 @@ public final class SafariDashboardScreen extends Screen {
 		this.historyScroll = 0;
 	}
 
+    SafariDashboardScreen(DashboardNavigation.Tab target) {
+        this(); tab=Tab.valueOf(target.name());
+    }
+    private List<DashboardNavigation.Item> navigation = List.of();
+    private boolean savedProfit;
+    private int profitScroll;
+    private static final int PROFIT_ROWS=8;
+    private final SavedProfitSummary savedProfitSummary=new SavedProfitSummary();
+    private final SessionProfitSummary profitSummary = new SessionProfitSummary();
+
 	/** Whether the money columns and lines are wanted at all. */
 	private static boolean showValue() {
 		return ConfigManager.get().profit.enabled;
@@ -194,6 +204,7 @@ public final class SafariDashboardScreen extends Screen {
 			case HISTORY -> 46 + (HISTORY_ROWS + 2) * LINE_HEIGHT + 46;
 			case STATS -> 46 + (4 + valueRows + 10) * LINE_HEIGHT;
             case PERSONAL_BESTS -> bestPanelHeight();
+            case PROFIT -> 250;
 		});
 		// Use native-size adaptive columns whenever they fit. Dense history tables or
 		// unusually short canvases alone fall back to proportional scaling.
@@ -218,6 +229,7 @@ public final class SafariDashboardScreen extends Screen {
 			// A summary block, then the species columns.
 			case STATS -> 46 + (4 + statsValueRows + 10) * LINE_HEIGHT;
             case PERSONAL_BESTS -> bestPanelHeight();
+            case PROFIT -> 250;
 		});
 		panelLeft = Math.max(4, (layoutWidth - panelWidth) / 2);
 		panelTop = Math.max(10, (layoutHeight - panelHeight) / 2);
@@ -225,6 +237,16 @@ public final class SafariDashboardScreen extends Screen {
 		if (selectedRun == null) addTabButtons();
 
 		int buttonY = panelTop + panelHeight - 30;
+        if(selectedRun==null&&tab==Tab.PROFIT) {
+            controls.add(new Control(savedProfit?"Saved Sessions":"Current Session",panelLeft+panelWidth-122,panelTop+33,110,ACTION_HEIGHT,
+                ControlStyle.BUTTON,false,false,()->{savedProfit=!savedProfit;profitScroll=0;rebuildWidgets();}));
+            if(savedProfit) {
+                controls.add(new Control("Previous",panelLeft+12,buttonY,70,ACTION_HEIGHT,ControlStyle.BUTTON,false,false,
+                    ()->profitScroll=Math.max(0,profitScroll-PROFIT_ROWS)));
+                controls.add(new Control("Next",panelLeft+panelWidth-82,buttonY,70,ACTION_HEIGHT,ControlStyle.BUTTON,false,false,
+                    ()->profitScroll=Math.min(Math.max(0,savedProfitSummary.days().size()-PROFIT_ROWS),profitScroll+PROFIT_ROWS)));
+            }
+        }
 		if (selectedRun != null || tab == Tab.PERSONAL_BESTS) addBestControls(buttonY);
         else if (tab == Tab.HISTORY) addHistoryControls(buttonY);
 		else {
@@ -575,7 +597,7 @@ public final class SafariDashboardScreen extends Screen {
                 detailWidth=Math.max(detailWidth,font.width("Sparklings: "+sparkling.species()+" ("+CanonicalPlayerNames.display(sparkling.catcher())+")"));
             return Math.max(520,detailWidth);
         }
-		int widest = 0;
+		int widest = DashboardNavigation.width(font);
 		if (tab == Tab.HISTORY) {
 			widest = Math.max(widest, font.width(historySummary()));
 			widest = Math.max(widest, font.width("A run is saved when the next one starts."));
@@ -605,17 +627,13 @@ public final class SafariDashboardScreen extends Screen {
 
 	/** A single navigation rail inside the panel, with one active section. */
 	private void addTabButtons() {
-		Tab[] tabs = Tab.values();
-		int totalWidth = java.util.Arrays.stream(tabs).mapToInt(t -> Math.max(NAV_ITEM_WIDTH,font.width(t.label)+20)).sum();
-		int x = panelLeft + (panelWidth - totalWidth) / 2;
-		int y = panelTop + 5;
-
-		for (Tab value : tabs) {
-			int itemWidth = Math.max(NAV_ITEM_WIDTH,font.width(value.label)+20);
-            controls.add(new Control(value.label, x, y, itemWidth, NAV_ITEM_HEIGHT, ControlStyle.TAB,
-				value == tab, false, () -> switchTo(value)));
-			x += itemWidth;
-		}
+        navigation = DashboardNavigation.layout(font,panelLeft,panelWidth,panelTop+5);
+        for(var item:navigation) controls.add(new Control(item.tab().label,item.x(),item.y(),item.width(),21,
+            ControlStyle.TAB,item.tab().name().equals(tab.name()),false,()->{
+                if(item.tab().name().equals(tab.name()))return;
+                if(item.tab()==DashboardNavigation.Tab.SPARKLINGS||item.tab()==DashboardNavigation.Tab.LOOKUP)item.tab().open();
+                else switchTo(Tab.valueOf(item.tab().name()));
+            }));
 	}
 
 	private void switchTo(Tab value) {
@@ -626,15 +644,14 @@ public final class SafariDashboardScreen extends Screen {
 	}
 
 	private void drawControls(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-		if (selectedRun == null) drawNavigationRail(graphics);
+		if (selectedRun == null) DashboardNavigation.draw(graphics,font,navigation,DashboardNavigation.Tab.valueOf(tab.name()),mouseX,mouseY);
 		for (Control control : controls) {
+            if(control.style == ControlStyle.TAB) continue;
 			boolean hovered = control.contains(mouseX, mouseY);
 			int colour = SpecialTheme.rainbow() ? SpecialTheme.accent(control.x)
 				: control.sparkling
 				? UIDraw.rainbow(0, 12, 0.55f)
-				: control.style == ControlStyle.TAB
-					? tabColour(Tab.valueOf(control.label.toUpperCase(java.util.Locale.ROOT).replace(' ','_')))
-					: tabBorderColour();
+                : tabBorderColour();
 
 			if (control.style == ControlStyle.SPARKLING_TOGGLE) {
 				graphics.fill(control.x, control.y, control.x + control.width,
@@ -657,31 +674,7 @@ public final class SafariDashboardScreen extends Screen {
 				continue;
 			}
 
-			if (control.style == ControlStyle.TAB) {
-				// The rail is one control. Only the current section receives a surface,
-				// which keeps the labels from reading as four unrelated buttons.
-				if (control.selected) {
-					int highlightLeft = control.x + NAV_HIGHLIGHT_INSET;
-					int highlightRight = control.x + control.width - NAV_HIGHLIGHT_INSET;
-					int highlightBottom = control.y + control.height - NAV_HIGHLIGHT_INSET;
-					graphics.fill(highlightLeft, control.y + NAV_HIGHLIGHT_INSET,
-						highlightRight, highlightBottom,
-						0xB025303D);
-					if (SpecialTheme.rainbow()) {
-						SpecialTheme.bar(graphics, highlightLeft, highlightBottom - 2,
-							highlightRight - highlightLeft, 2);
-					} else {
-						graphics.fill(highlightLeft, highlightBottom - 2,
-							highlightRight, highlightBottom, colour);
-					}
-				} else if (hovered) {
-					graphics.fill(control.x + NAV_HIGHLIGHT_INSET,
-						control.y + NAV_HIGHLIGHT_INSET,
-						control.x + control.width - NAV_HIGHLIGHT_INSET,
-						control.y + control.height - NAV_HIGHLIGHT_INSET,
-						0x5825303D);
-				}
-			} else {
+			{
 				graphics.fill(control.x, control.y, control.x + control.width,
 					control.y + control.height, hovered ? PANEL_SURFACE_HOVER : PANEL_SURFACE);
 				themedOutline(graphics, control.x, control.y,
@@ -704,32 +697,6 @@ public final class SafariDashboardScreen extends Screen {
 		}
 	}
 
-	/** Draws one quiet backdrop behind all four section labels. */
-	private void drawNavigationRail(GuiGraphicsExtractor graphics) {
-		Control first = null;
-		Control last = null;
-		for (Control control : controls) {
-			if (control.style != ControlStyle.TAB) continue;
-			if (first == null) first = control;
-			last = control;
-		}
-		if (first == null) return;
-		int left = first.x;
-		int right = last.x + last.width;
-		graphics.fillGradient(left, first.y, right, first.y + first.height,
-			0x9A18212C, 0x9A111820);
-		themedOutline(graphics, left, first.y, right - left, first.height, PANEL_BORDER);
-		Control previous = null;
-		for (Control control : controls) {
-			if (control.style != ControlStyle.TAB) continue;
-			if (previous != null) {
-				int dividerX = control.x;
-				graphics.fill(dividerX, control.y + 5, dividerX + 1,
-					control.y + control.height - 5, PANEL_BORDER);
-			}
-			previous = control;
-		}
-	}
 
 	@Override
 	public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
@@ -757,6 +724,7 @@ public final class SafariDashboardScreen extends Screen {
             case HISTORY -> drawHistory(graphics,font,y,logicalMouseX,logicalMouseY);
             case STATS -> drawStats(graphics,font,y);
             case PERSONAL_BESTS -> drawPersonalBests(graphics,font,y,logicalMouseX,logicalMouseY);
+            case PROFIT -> drawProfit(graphics,font,y);
         }
 
 		// Screen children first, then the themed controls above the panel.
@@ -974,6 +942,41 @@ public final class SafariDashboardScreen extends Screen {
 		return y;
 	}
 
+    private void drawProfit(GuiGraphicsExtractor graphics,Font font,int y) {
+        if(savedProfit) { drawSavedProfit(graphics,font,y); return; }
+        var summary=profitSummary.snapshot();
+        int left=panelLeft+PANEL_PADDING,right=panelLeft+panelWidth-PANEL_PADDING;
+        text(graphics,font,Component.literal("Session Profit"),left,y,tabBorderColour()); y+=25;
+        detailText(graphics,font,"Runs started this launch • Includes the active run",left,y,StatColours.INFO); y+=22;
+        for(var line:summary.lines()) { SpecialTheme.text(graphics,font,StatColours.collection(line.text(),STAT_SEPARATOR),left,y,line.colour()); y+=19; }
+        graphics.fill(left,y,right,y+2,PANEL_BORDER); y+=12;
+        detailText(graphics,font,"Estimated loot value • Ticket costs are not deducted",left,y,StatColours.INFO);
+    }
+
+    private void drawSavedProfit(GuiGraphicsExtractor graphics,Font font,int y) {
+        var days=savedProfitSummary.days();
+        int left=panelLeft+PANEL_PADDING,available=panelWidth-PANEL_PADDING*2;
+        detailText(graphics,font,"Saved Sessions",left,y,tabBorderColour()); y+=26;
+        detailText(graphics,font,"Grouped by local day • Estimated loot value before ticket costs",left,y,StatColours.INFO); y+=20;
+        String[] headers={"Date","Runs","Time","Profit","Per Hour","Best Run"};
+        int[] colors={StatColours.DATE,StatColours.INFO,StatColours.TIME,StatColours.COINS,StatColours.COINS,StatColours.COINS};
+        int[] widths={available*20/100,available*9/100,available*17/100,available*18/100,available*18/100,available*18/100};
+        int x=left;
+        for(int column=0;column<headers.length;column++) {centeredCell(graphics,font,headers[column],x,widths[column],y,colors[column]);x+=widths[column];}
+        y+=17;
+        profitScroll=Math.clamp(profitScroll,0,Math.max(0,days.size()-PROFIT_ROWS));
+        for(int row=profitScroll;row<Math.min(days.size(),profitScroll+PROFIT_ROWS);row++) {
+            var day=days.get(row);String suffix=day.incomplete()?" + ?":"";
+            String[] cells={day.date().format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy")),String.valueOf(day.runs()),
+                ProgressHud.formatDuration(day.millis()),BazaarPrices.known()?BazaarPrices.format(day.value())+suffix:"—",
+                BazaarPrices.known()?BazaarPrices.format(day.perHour())+suffix:"—",BazaarPrices.known()?BazaarPrices.format(day.best())+suffix:"—"};
+            x=left;
+            for(int column=0;column<cells.length;column++) {centeredCell(graphics,font,cells[column],x,widths[column],y,StatColours.value(colors[column]));x+=widths[column];}
+            y+=17;
+        }
+        if(days.isEmpty())detailText(graphics,font,"No saved sessions yet",left,y,StatColours.INFO);
+    }
+
 	private int tabBorderColour() {
         if(selectedRun!=null && detailBests) return tabColour(Tab.PERSONAL_BESTS);
         if(selectedRun!=null) return Colours.argb(ConfigManager.get().display.currentRunTabBorderColour,0xFF55FF55);
@@ -985,7 +988,8 @@ public final class SafariDashboardScreen extends Screen {
 		return switch (target) {
 			case HISTORY -> Colours.argb(display.historyTabBorderColour, 0xFF55FF55);
 			case STATS -> Colours.argb(display.statsTabBorderColour, 0xFF55FFFF);
-            case PERSONAL_BESTS -> StatColours.PERSONAL_BEST;
+            case PERSONAL_BESTS -> Colours.argb(display.personalBestsTabBorderColour, StatColours.PERSONAL_BEST);
+            case PROFIT -> Colours.argb(display.profitTabBorderColour, StatColours.COINS);
 		};
 	}
 
@@ -1325,6 +1329,10 @@ public final class SafariDashboardScreen extends Screen {
 	public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
 		mouseX /= responsiveScale;
 		mouseY /= responsiveScale;
+        if(selectedRun==null&&tab==Tab.PROFIT&&savedProfit&&mouseX>=panelLeft&&mouseX<panelLeft+panelWidth&&mouseY>=panelTop&&mouseY<panelTop+panelHeight) {
+            int direction=scrollY>0?-1:scrollY<0?1:0;
+            profitScroll=Math.clamp(profitScroll+direction,0,Math.max(0,savedProfitSummary.days().size()-PROFIT_ROWS));return direction!=0;
+        }
 		if (selectedRun != null || tab != Tab.HISTORY || mouseX < panelLeft || mouseX >= panelLeft + panelWidth
 			|| mouseY < panelTop || mouseY >= panelTop + panelHeight) {
 			return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);

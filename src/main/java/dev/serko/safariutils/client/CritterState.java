@@ -11,7 +11,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -1111,7 +1110,7 @@ public final class CritterState {
 	private static List<CapsuleObservation> sampleCapsules() {
 		List<CapsuleObservation> result = new ArrayList<>();
 		for (Entity entity : WorldEntities.current()) {
-			if (!(entity instanceof Display.ItemDisplay display) || !isCritterCapsule(display)) continue;
+			if (!(entity instanceof Display.ItemDisplay display) || !CritterCapsules.matches(display)) continue;
 			result.add(new CapsuleObservation(entity.getUUID(), entity.position()));
 		}
 		return result;
@@ -1831,13 +1830,6 @@ public final class CritterState {
 
 	private static void invariant(String key, String message) {
 		if (loggedInvariantKeys.add(key)) DebugLog.line("INVARIANT", message);
-	}
-
-	private static boolean isCritterCapsule(Display.ItemDisplay display) {
-		Display.ItemDisplay.ItemRenderState state = display.itemRenderState();
-		if (state == null) return false;
-		ItemStack stack = state.itemStack();
-		return !stack.isEmpty() && stack.getHoverName().getString().endsWith("Critter Capsule");
 	}
 
 	private static void resetForVisit(long newVisitEpoch) {

@@ -2,8 +2,6 @@ package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.api.SharedSparklingProviders;
 import dev.serko.safariutils.api.SparklingPlayerLookup;
-import dev.serko.safariutils.api.PartyRefreshStatus;
-import dev.serko.safariutils.api.PartySparklingSnapshot;
 import dev.serko.safariutils.data.Critter;
 import dev.serko.safariutils.data.Critters;
 import dev.serko.safariutils.data.SafariBiome;
@@ -21,16 +19,12 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.regex.Pattern;
 
-/** Standalone editor, party collection, and private player lookup for Sparklings. */
+/** Collection and lookup views of the shared Safari dashboard. */
 public final class SparklingScreen extends Screen {
-	private static final Pattern FORMATTED_LIST = Pattern.compile(
-		"(?i)(shared|missing)\\s+sparklings?(?:\\s+critters?)?\\s*(?:\\(\\d+\\s*/\\s*\\d+\\))?\\s*:\\s*(.*)$");
 	private static final List<SafariBiome> BIOMES = List.of(
 		SafariBiome.CAVERN, SafariBiome.ICY, SafariBiome.HAUNTED, SafariBiome.FOREST);
 	private static final int BACKGROUND = 0xE0121922;
@@ -54,7 +48,7 @@ public final class SparklingScreen extends Screen {
 	private static final String LOOKUP_HINT = "Minecraft username";
 	private static final Component LOOKUP_HINT_COMPONENT = Component.literal(LOOKUP_HINT);
 
-	private enum Tab { COLLECTION, PARTY, LOOKUP }
+	private enum Tab { COLLECTION, LOOKUP }
 	private record Hit(int x, int y, int width, int height, String label, Runnable action) {
 		boolean contains(double mouseX, double mouseY) {
 			return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
@@ -81,7 +75,7 @@ public final class SparklingScreen extends Screen {
 	private int panelWidth;
 	private int panelHeight;
 	private int biomeColumns = 4;
-	private String status = "Click any critter count number or rainbow feathers number to change it";
+	private String status = "";
 	private int statusColour = DIM;
 	private long statusUntil;
 	private EditBox editor;
@@ -95,18 +89,23 @@ public final class SparklingScreen extends Screen {
 	private long lookupRevision;
 	private static SparklingPlayerLookup lastLookup;
 	private static String lastLookupName = "";
-	private static final LookupHistory recentLookups = new LookupHistory(10);
+	private static final LookupHistory recentLookups = PlayerLookupCoordinator.history();
 	private boolean recentLookupsOpen;
-	private PartySparklingSnapshot cachedPartySnapshot;
-	private PartyRefreshStatus cachedPartyRefresh;
-	private long partyCacheUntil;
 
 	public SparklingScreen() {
 		super(Component.literal("Sparkling Collection"));
 	}
 
+    SparklingScreen(boolean lookup) {
+        this(); tab=lookup?Tab.LOOKUP:Tab.COLLECTION; status=defaultStatus(tab);
+        if(lookup&&!recentLookups.entries().isEmpty()) {
+            lastLookup=recentLookups.entries().getFirst(); lastLookupName="";
+        }
+    }
+    private List<DashboardNavigation.Item> navigation=List.of();
+
 	public static void open() {
-		Minecraft.getInstance().execute(() -> ClientCompat.setScreen(new SparklingScreen()));
+		DashboardNavigation.Tab.SPARKLINGS.open();
 	}
 
 	@Override
@@ -124,13 +123,16 @@ public final class SparklingScreen extends Screen {
 	}
 
 	private void updatePanelBounds() {
-		float twoColumnScale = Math.min(1f, Math.min(width / 320f, height / 472f));
-		float fourColumnScale = Math.min(1f, Math.min(width / 560f, height / 330f));
+        navigation=List.of();
+        int twoColumnHeight=tab==Tab.LOOKUP?530:450;
+        int fourColumnHeight=tab==Tab.LOOKUP?340:308;
+		float twoColumnScale = Math.min(1f, Math.min(width / (float)Math.max(320,DashboardNavigation.width(font)+24), height / (float)twoColumnHeight));
+		float fourColumnScale = Math.min(1f, Math.min(width / (float)Math.max(560,DashboardNavigation.width(font)+24), height / (float)fourColumnHeight));
 		// Pick the reflow that produces the largest readable result for the complete
 		// canvas. Short 16:9 windows often fit four columns better than two tall ones.
 		biomeColumns = fourColumnScale >= twoColumnScale ? 4 : 2;
-		int preferredHeight = biomeColumns == 2 ? 472 : 330;
-		int minimumWidth = biomeColumns == 2 ? 320 : 560;
+		int preferredHeight = biomeColumns == 2 ? twoColumnHeight : fourColumnHeight;
+		int minimumWidth = Math.max(biomeColumns == 2 ? 320 : 560,DashboardNavigation.width(font)+24);
 		// Reflow biome columns before scaling; scaling is reserved for canvases that
 		// cannot fit even the compact two-column layout or its vertical content.
 		scale = biomeColumns == 2 ? twoColumnScale : fourColumnScale;
@@ -146,7 +148,7 @@ public final class SparklingScreen extends Screen {
 
 	private void addLookupField() {
 		int x = panelLeft + 18;
-		int y = panelTop + 54;
+		int y = panelTop + 34;
 		if (lookupName != null) {
 			lookupName.setX(x);
 			lookupName.setY(y);
@@ -189,10 +191,9 @@ public final class SparklingScreen extends Screen {
 		drawTabs(graphics, mx, my);
 		switch (tab) {
 			case COLLECTION -> drawCollection(graphics, mx, my);
-			case PARTY -> drawParty(graphics, mx, my);
 			case LOOKUP -> drawLookup(graphics, mx, my);
 		}
-		drawStatus(graphics);
+		if (tab == Tab.LOOKUP) drawStatus(graphics);
 		if (tab == Tab.LOOKUP) drawRecentLookups(graphics, mx, my);
 		if (editor != null && editingBounds != null) {
 			graphics.fill(editingBounds.x(), editingBounds.y(),
@@ -217,6 +218,11 @@ public final class SparklingScreen extends Screen {
     @Override public void tick() {
         super.tick();
         checkCachedLocalCollection();
+        if(lastLookup!=null) for(var recent:recentLookups.entries()) {
+            if(recent.username().equalsIgnoreCase(lastLookup.username())&&recent.fetchedAt()>lastLookup.fetchedAt()) {
+                lastLookup=recent;break;
+            }
+        }
     }
 
 	private void updateLookupHint() {
@@ -225,47 +231,21 @@ public final class SparklingScreen extends Screen {
 			LOOKUP_HINT_COMPONENT, lookupHintPhase);
 	}
 
-	private void drawTitle(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-		rainbowText(graphics, "Sparkling Collection", panelLeft + 12, panelTop + 10);
-		button(graphics, panelLeft + panelWidth - 55, panelTop + 7, 43, 18, "Done", false,
-			mouseX, mouseY, this::onClose);
-	}
+    private void drawTitle(GuiGraphicsExtractor graphics,int mouseX,int mouseY) {
+        button(graphics,panelLeft+(panelWidth-80)/2,panelTop+panelHeight-25,80,18,"Close",false,mouseX,mouseY,this::onClose);
+    }
+    private void drawTabs(GuiGraphicsExtractor graphics,int mouseX,int mouseY) {
+        if(navigation.isEmpty()) navigation=DashboardNavigation.layout(font,panelLeft,panelWidth,panelTop+5);
+        DashboardNavigation.draw(graphics,font,navigation,tab==Tab.LOOKUP?DashboardNavigation.Tab.LOOKUP:DashboardNavigation.Tab.SPARKLINGS,mouseX,mouseY);
+        for(var item:navigation)hits.add(new Hit(item.x(),item.y(),item.width(),21,item.tab().label,()->{
+            if(item.tab()==(tab==Tab.LOOKUP?DashboardNavigation.Tab.LOOKUP:DashboardNavigation.Tab.SPARKLINGS))return;
+            commitEditor(); item.tab().open();
+        }));
+    }
 
-	private void drawTabs(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-		int width = 92;
-		int total = SharedSparklingProviders.available() ? width * 3 : width * 2;
-		int x = panelLeft + (panelWidth - total) / 2;
-		tabButton(graphics, x, panelTop + 27, width, "My Collection", Tab.COLLECTION, mouseX, mouseY);
-		tabButton(graphics, x + width, panelTop + 27, width, "Party", Tab.PARTY, mouseX, mouseY);
-		if (SharedSparklingProviders.available()) {
-			tabButton(graphics, x + width * 2, panelTop + 27, width, "Player Lookup", Tab.LOOKUP,
-				mouseX, mouseY);
-		}
-	}
-
-	private void tabButton(GuiGraphicsExtractor graphics, int x, int y, int width, String label,
-			Tab target, int mouseX, int mouseY) {
-		boolean selected = tab == target;
-		boolean hovered = contains(x, y, width, 18, mouseX, mouseY);
-		graphics.fill(x, y, x + width, y + 18, selected ? 0xB025303D : hovered ? HOVER : SURFACE);
-		themedOutline(graphics, x, y, width, 18, BORDER);
-		if (selected) drawRainbowLine(graphics, x + 3, y + 15, width - 6, 1);
-		centered(graphics, label, x, width, centeredTextY(y, 18), selected || hovered ? WHITE : LABEL);
-		hits.add(new Hit(x, y, width, 18, label, () -> switchTab(target)));
-	}
-
-	private void switchTab(Tab target) {
-		if (tab != target) lookupRevision++;
-		commitEditor();
-		tab = target;
-		status = defaultStatus(target);
-		statusColour = DIM;
-		statusUntil = 0L;
-		rebuildWidgets();
-	}
 
 	private void drawCollection(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-		int top = panelTop + 55;
+		int top = panelTop + 35;
 		int totalSpecies = Critters.total();
 		CollectionSummary summary = collectionSummary();
 		String prefix = summary.prefix();
@@ -325,14 +305,14 @@ public final class SparklingScreen extends Screen {
 			int sectionY = y + column / biomeColumns * rowHeight;
 			List<Critter> species = Critters.inBiome(biome);
 			boolean complete = species.stream().allMatch(critter -> remoteSpecies == null
-				? SparklingStats.count(critter) > 0 : remoteSpecies.contains(speciesId(critter.name())));
+				? SparklingStats.count(critter) > 0 : remoteSpecies.contains(SparklingPlayerLookup.speciesId(critter.name())));
 			drawBiomeTitle(graphics, biome, x + 8, columnWidth - 16, sectionY, complete);
 			for (int row = 0; row < species.size(); row++) {
 				Critter critter = species.get(row);
 				int rowY = sectionY + 17 + row * LINE;
 				int count = SparklingStats.count(critter);
 				boolean remoteOwned = remoteSpecies != null
-					&& remoteSpecies.contains(speciesId(critter.name()));
+					&& remoteSpecies.contains(SparklingPlayerLookup.speciesId(critter.name()));
 				int nameColour = remoteSpecies == null
 					? count == 0 ? StatColours.MISSING : 0xFF000000 | critter.rarity().colour()
 					: remoteOwned ? 0xFF000000 | critter.rarity().colour() : StatColours.MISSING;
@@ -343,7 +323,7 @@ public final class SparklingScreen extends Screen {
 					value = count == 0 ? "—" : String.valueOf(count);
 					colour = count > 0 ? StatColours.value(nameColour) : StatColours.MISSING;
 				} else {
-					boolean owned = remoteSpecies.contains(speciesId(critter.name()));
+					boolean owned = remoteSpecies.contains(SparklingPlayerLookup.speciesId(critter.name()));
 					value = owned ? "✓" : "—";
 					colour = owned ? StatColours.value(nameColour) : StatColours.MISSING;
 				}
@@ -362,148 +342,15 @@ public final class SparklingScreen extends Screen {
 		}
 	}
 
-	private void drawParty(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-		int x = panelLeft + 12;
-		int y = panelTop + 54;
-		boolean privateProvider = SharedSparklingProviders.available();
-		PartySparklingSnapshot snapshot = privateProvider ? partySnapshot() : null;
-		PartyRefreshStatus refresh = privateProvider ? partyRefreshStatus() : null;
-		boolean automatic = snapshot != null && snapshot.apiManaged();
-		boolean fallback = refresh != null && refresh.manualFallback();
-		boolean editable = !privateProvider || fallback;
-		if (editable) {
-			button(graphics, x, y, 108, 18, "Import Clipboard", false, mouseX, mouseY,
-				this::importPartyClipboard);
-			button(graphics, x + 112, y, 52, 18, "Clear", false, mouseX, mouseY, () -> {
-				SparklingMode.clearShared();
-				setStatus("Party collection cleared", GOLD);
-			});
-		} else {
-			String description = refresh != null && refresh.error() != null ? refresh.error()
-				: "Automatically loads shared Sparklings when entering the Safari";
-			if (!automatic) centered(graphics, description, panelLeft, panelWidth,
-				centeredTextY(y, 18), refresh != null && refresh.error() != null ? RED : DIM);
-		}
-		Set<Critter> shared = SparklingMode.shared();
-		int summaryY = automatic ? y : y + 28;
-		if (snapshot != null && !snapshot.members().isEmpty()) {
-			drawPartyMembers(graphics, snapshot.members(), summaryY);
-			summaryY += 12;
-		}
-		centered(graphics, "Shared Sparklings   ✦   " + shared.size() + "/" + Critters.total(),
-			panelLeft, panelWidth, summaryY, AQUA);
-		drawPartyColumns(graphics, summaryY + 15, mouseX, mouseY, shared, !editable);
-	}
-
-	private void drawPartyColumns(GuiGraphicsExtractor graphics, int y, int mouseX, int mouseY,
-			Set<Critter> shared, boolean apiManaged) {
-		int left = panelLeft + 12;
-		int columnWidth = (panelWidth - 24) / biomeColumns;
-		int rowHeight = 17 + MAX_BIOME_ROWS * LINE + 8;
-		for (int column = 0; column < BIOMES.size(); column++) {
-			SafariBiome biome = BIOMES.get(column);
-			int x = left + column % biomeColumns * columnWidth;
-			int sectionY = y + column / biomeColumns * rowHeight;
-			List<Critter> species = Critters.inBiome(biome);
-			drawBiomeTitle(graphics, biome, x + 8, columnWidth - 16, sectionY,
-				species.stream().allMatch(shared::contains));
-			for (int row = 0; row < species.size(); row++) {
-				Critter critter = species.get(row);
-				int rowY = sectionY + 17 + row * LINE;
-				boolean shownSelected = shared.contains(critter);
-				int rowWidth = columnWidth - 12;
-				boolean hovered = !apiManaged
-					&& contains(x + 4, rowY - 2, rowWidth, 12, mouseX, mouseY);
-				if (hovered) graphics.fill(x + 4, rowY - 2, x + 4 + rowWidth, rowY + 10, HOVER);
-				int colour = shownSelected ? 0xFF000000 | critter.rarity().colour() : StatColours.MISSING;
-				text(graphics, critter.name(), x + 8, rowY, colour);
-				String status = shownSelected ? "✓" : "—";
-				int statusWidth = Math.max(18, font.width(status) + 10);
-				int statusX = x + columnWidth - statusWidth - 8;
-				boldCentered(graphics, status, statusX, statusWidth, rowY,
-					shownSelected ? StatColours.value(colour) : StatColours.MISSING);
-				if (!apiManaged) hits.add(new Hit(x + 4, rowY - 2, rowWidth, 12,
-					critter.name(), () -> toggleParty(critter)));
-			}
-		}
-	}
-
-	private void toggleParty(Critter critter) {
-		if (SharedSparklingProviders.available()
-				&& partySnapshot().apiManaged()) {
-			setStatus("API-cached party collections cannot be changed manually", GOLD);
-			return;
-		}
-		Set<Critter> updated = new LinkedHashSet<>(SparklingMode.shared());
-		boolean shouldShare = !updated.contains(critter);
-		if (shouldShare) updated.add(critter); else updated.remove(critter);
-		SparklingMode.replaceShared(updated);
-		setStatus("Party collection updated", AQUA);
-	}
-
-	private void importPartyClipboard() {
-		String clipboard = Minecraft.getInstance().keyboardHandler.getClipboard()
-			.replaceAll("§.", "").trim();
-		if (clipboard.isEmpty()) {
-			setStatus("Clipboard is empty", RED);
-			return;
-		}
-		boolean missing = false;
-		var matcher = FORMATTED_LIST.matcher(clipboard);
-		String list = clipboard;
-		if (matcher.find()) {
-			missing = matcher.group(1).equalsIgnoreCase("missing");
-			list = matcher.group(2).trim();
-		}
-		Set<Critter> parsed = new LinkedHashSet<>();
-		List<String> unknown = new ArrayList<>();
-		if (!list.equalsIgnoreCase("none") && !list.isBlank()) {
-			for (String part : list.split(",", -1)) {
-				String name = part.trim();
-				Critter critter = Critters.all().stream()
-					.filter(candidate -> candidate.name().equalsIgnoreCase(name)).findFirst().orElse(null);
-				if (critter == null) unknown.add(name.isEmpty() ? "(empty entry)" : name);
-				else parsed.add(critter);
-			}
-		}
-		if (!unknown.isEmpty()) {
-			setStatus("Clipboard format not recognized — copy a ‘Shared Sparklings:’ or "
-				+ "‘Missing Sparklings:’ message, or a comma-separated shared species list", RED);
-			return;
-		}
-		if (missing) {
-			Set<Critter> shared = new LinkedHashSet<>(Critters.all());
-			shared.removeAll(parsed);
-			SparklingMode.replaceShared(shared);
-		} else SparklingMode.replaceShared(parsed);
-		setStatus("Imported " + (missing ? "missing" : "shared") + " Sparkling list", GREEN);
-	}
-
-	private PartySparklingSnapshot partySnapshot() {
-		refreshPartyUiCache();
-		return cachedPartySnapshot;
-	}
-
-	private PartyRefreshStatus partyRefreshStatus() {
-		refreshPartyUiCache();
-		return cachedPartyRefresh;
-	}
-
-	private void refreshPartyUiCache() {
-		long now = System.currentTimeMillis();
-		if (cachedPartySnapshot != null && cachedPartyRefresh != null && now < partyCacheUntil) return;
-		cachedPartySnapshot = SharedSparklingProviders.partySnapshot();
-		cachedPartyRefresh = SharedSparklingProviders.partyRefreshStatus();
-		partyCacheUntil = now + 250L;
-	}
-
     private void checkCachedLocalCollection() {
         SharedSparklingProviders.cachedLocalCollection().ifPresent(this::syncIfLocal);
     }
 
 	private void drawLookup(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-		if (!SharedSparklingProviders.available()) return;
-		int y = panelTop + 54;
+		if (!SharedSparklingProviders.available()) {
+            centered(graphics,"Player lookups are unavailable",panelLeft,panelWidth,panelTop+50,RED);return;
+        }
+		int y = panelTop + 34;
 		drawLookupButton(graphics, panelLeft + 214, y, mouseX, mouseY);
 		if (lastLookup == null) {
 			return;
@@ -529,27 +376,23 @@ public final class SparklingScreen extends Screen {
 		int nameX = biomeColumns == 2
 			? panelLeft + (panelWidth - font.width(displayedName)) / 2 : x;
 		PlayerNameStyle.drawName(graphics, font, displayedName, nameX, y);
-		String[] keys = {"Basic", "Economy", "Premium", "First Class"};
-		String[] labels = {"Basic", "Economy", "Premium", "First-Class"};
-		int[] colours = {0xFF55FF55, 0xFF5599FF, 0xFFAA55FF, 0xFFFFAA00};
+		String[] keys = LookupPresentation.TICKET_NAMES;
 		long ticketTotal = 0L;
 		for (String key : keys) ticketTotal += lastLookup.tickets().getOrDefault(key, 0L);
 		if (biomeColumns == 2) {
 			centered(graphics, "Total  " + ticketTotal, panelLeft, panelWidth, y + 12, COLLECTION_GOLD);
 			for (int row = 0; row < 2; row++) {
-				String leftTicket = labels[row * 2] + "  "
-					+ lastLookup.tickets().getOrDefault(keys[row * 2], 0L);
-				String rightTicket = labels[row * 2 + 1] + "  "
-					+ lastLookup.tickets().getOrDefault(keys[row * 2 + 1], 0L);
+				String leftTicket = LookupPresentation.ticket(lastLookup,row*2).getString();
+				String rightTicket = LookupPresentation.ticket(lastLookup,row*2+1).getString();
 				int totalWidth = font.width(leftTicket) + font.width("   │   ") + font.width(rightTicket);
 				int cursor = panelLeft + (panelWidth - totalWidth) / 2;
-				text(graphics, leftTicket, cursor, y + 23 + row * 11, colours[row * 2]);
+				SpecialTheme.text(graphics,font,LookupPresentation.ticket(lastLookup,row*2),cursor,y+23+row*11,WHITE);
 				cursor += font.width(leftTicket);
 				text(graphics, "   │   ", cursor, y + 23 + row * 11, DIM);
 				cursor += font.width("   │   ");
-				text(graphics, rightTicket, cursor, y + 23 + row * 11, colours[row * 2 + 1]);
+				SpecialTheme.text(graphics,font,LookupPresentation.ticket(lastLookup,row*2+1),cursor,y+23+row*11,WHITE);
 			}
-			return y + 45;
+            return y + 46;
 		}
 		int cursor = x + font.width(displayedName) + font.width("  ");
 		text(graphics, "(  ", cursor, y, WHITE);
@@ -560,12 +403,12 @@ public final class SparklingScreen extends Screen {
 		for (int i = 0; i < keys.length; i++) {
 			text(graphics, "  │   ", cursor, y, WHITE);
 			cursor += font.width("  │   ");
-			String value = labels[i] + "  " + lastLookup.tickets().getOrDefault(keys[i], 0L);
-			text(graphics, value, cursor, y, colours[i]);
+			String value = LookupPresentation.ticket(lastLookup,i).getString();
+			SpecialTheme.text(graphics,font,LookupPresentation.ticket(lastLookup,i),cursor,y,WHITE);
 			cursor += font.width(value);
 		}
 		text(graphics, "  )", cursor, y, WHITE);
-		return y + 11;
+        return y + 13;
 	}
 
 	private void drawLookupButton(GuiGraphicsExtractor graphics, int x, int y,
@@ -615,10 +458,10 @@ public final class SparklingScreen extends Screen {
 		lookupLoading = true;
 		long revision = ++lookupRevision;
 		setStatus("Looking up " + username + "…", DIM);
-		SharedSparklingProviders.lookupPlayer(username)
+		PlayerLookupCoordinator.lookup(username)
 			.whenComplete((result, error) -> Minecraft.getInstance().execute(() -> {
 				lookupLoading = false;
-				SparklingPlayerLookup accepted = error == null ? rememberLookup(result, true) : null;
+				SparklingPlayerLookup accepted = error == null ? result : null;
 				if (revision != lookupRevision || ClientCompat.screen() != this) {
 					DebugLog.line("PLAYER_LOOKUP", "superseded presentation skipped success=" + (error == null));
 					return;
@@ -653,10 +496,8 @@ public final class SparklingScreen extends Screen {
 		return rememberLookup(result, false);
 	}
 
-	private static SparklingPlayerLookup rememberLookup(SparklingPlayerLookup result, boolean manual) {
-		SparklingPlayerLookup accepted = manual
-			? recentLookups.rememberChecked(result, MonotonicTime.nowMillis()) : recentLookups.remember(result);
-		CanonicalPlayerNames.remember(accepted.username());
+	static SparklingPlayerLookup rememberLookup(SparklingPlayerLookup result, boolean manual) {
+        SparklingPlayerLookup accepted = PlayerLookupCoordinator.remember(result, manual);
 		if (lastLookup != null && lastLookup.username().equalsIgnoreCase(accepted.username())
 				&& accepted.fetchedAt() >= lastLookup.fetchedAt()) lastLookup = accepted;
 		return accepted;
@@ -678,7 +519,7 @@ public final class SparklingScreen extends Screen {
 		int width = 142;
 		int height = 18;
 		int x = panelLeft + panelWidth - width - 12;
-		int y = panelTop + 54;
+		int y = panelTop + 34;
 		String selected = lastLookup == null ? "Recent Lookups"
 			: "Recent: " + lastLookup.username();
 		boolean hovered = contains(x, y, width, height, mouseX, mouseY);
@@ -742,12 +583,12 @@ public final class SparklingScreen extends Screen {
 			statusColour = DIM;
 			statusUntil = 0L;
 		}
-		graphics.fill(panelLeft + 8, panelTop + panelHeight - 34,
-			panelLeft + panelWidth - 8, panelTop + panelHeight - 7, SURFACE);
+		graphics.fill(panelLeft + 8, panelTop + panelHeight - 64,
+			panelLeft + panelWidth - 8, panelTop + panelHeight - 37, SURFACE);
 		List<String> lines = wrap(status, panelWidth - 28, 2);
 		for (int i = 0; i < lines.size(); i++) {
 			text(graphics, lines.get(i), panelLeft + 14,
-				panelTop + panelHeight - 29 + i * 11, statusColour);
+				panelTop + panelHeight - 59 + i * 11, statusColour);
 		}
 	}
 
@@ -791,8 +632,7 @@ public final class SparklingScreen extends Screen {
 						if (editingFeathers) SparklingStats.setRainbowFeathers(count);
 						else SparklingStats.set(editingCritter, count);
 						updatePanelBounds();
-						setStatus((editingFeathers ? "Rainbow Feathers" : editingCritter.name())
-							+ " set to " + count, GREEN);
+
 					}
 				}
 			} catch (NumberFormatException error) {
@@ -890,13 +730,13 @@ public final class SparklingScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(KeyEvent event) {
-		if (event.key() == 258) return true;
-		if (editor != null && (event.key() == 257 || event.key() == 335)) {
+		if (event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_TAB) return true;
+		if (editor != null && (event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_RETURN || event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_NUMPADENTER)) {
 			commitEditor();
 			return true;
 		}
 		if (tab == Tab.LOOKUP && lookupName != null && lookupName.isFocused()
-				&& (event.key() == 257 || event.key() == 335)) {
+				&& (event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_RETURN || event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_NUMPADENTER)) {
 			if (lookupPlayer()) {
 				SettingsUiKit.blurToStart(lookupName);
 				setFocused(null);
@@ -976,23 +816,6 @@ public final class SparklingScreen extends Screen {
 		text(graphics, suffix, cursor, y, colour);
 	}
 
-	private void drawPartyMembers(GuiGraphicsExtractor graphics, List<String> members, int y) {
-		String prefix = "Party   ✦   ";
-		List<String> displayed = members.stream().map(CanonicalPlayerNames::display).toList();
-		String joined = String.join(", ", displayed);
-		int cursor = panelLeft + (panelWidth - font.width(prefix + joined)) / 2;
-		text(graphics, prefix, cursor, y, WHITE);
-		cursor += font.width(prefix);
-		for (int i = 0; i < displayed.size(); i++) {
-			if (i > 0) {
-				text(graphics, ", ", cursor, y, WHITE);
-				cursor += font.width(", ");
-			}
-			String name = displayed.get(i);
-			PlayerNameStyle.drawName(graphics, font, name, cursor, y);
-			cursor += font.width(name);
-		}
-	}
 
 	private void boldCentered(GuiGraphicsExtractor graphics, String value, int x, int width,
 			int y, int colour) {
@@ -1033,6 +856,7 @@ public final class SparklingScreen extends Screen {
 	}
 
 	private void setStatus(String value, int colour) {
+        if (tab != Tab.LOOKUP) return;
 		status = value.stripTrailing();
 		while (status.endsWith(".")) status = status.substring(0, status.length() - 1);
 		statusColour = colour;
@@ -1041,8 +865,7 @@ public final class SparklingScreen extends Screen {
 
 	private static String defaultStatus(Tab target) {
 		return switch (target) {
-			case COLLECTION -> "Click any critter count number or rainbow feathers number to change it";
-			case PARTY -> "This shared list controls the Missing HUD while Sparkling Mode is enabled";
+			case COLLECTION -> "";
 			case LOOKUP -> "Loads unique sparklings, duplicates, and ticket amounts";
 		};
 	}
@@ -1055,10 +878,6 @@ public final class SparklingScreen extends Screen {
 	private static String biomeLabel(SafariBiome biome) {
 		String value = biome.name().toLowerCase(Locale.ROOT);
 		return Character.toUpperCase(value.charAt(0)) + value.substring(1);
-	}
-
-	private static String speciesId(String name) {
-		return name.trim().toUpperCase(Locale.ROOT).replace(' ', '_');
 	}
 
 	@Override

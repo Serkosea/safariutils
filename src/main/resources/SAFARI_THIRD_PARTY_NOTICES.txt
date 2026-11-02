@@ -5,3 +5,16 @@ Provides depth-tested model outlines. Safari eligibility and coloring are indepe
 integrated with the existing marker state; no Skyblocker runtime is included.
 The Rockmite mound texture identifier was verified against Skyblocker SafariGlowAdder
 and HeadTextures (ca1163e2b7309113cc4dd3c084829d4417606235).
+
+Sparkling Mutuals 3.6.4 reference behavior
+https://github.com/johnceoskyblock/sparkling-mutuals/releases/tag/v3.6.4
+Honeyhive coordinates in assets/safariutils/honeyhives.txt: survey credited by
+Mutuals to Shiny Hunter. CandleTarget and HoneyhiveState are independently
+implemented Java adapters/state logic based on reviewed candle selection,
+HIVE!/QUEEN BEE! ordering, and hive hologram behavior; no Mutuals runtime is bundled.
+Reference files: SafariCandleMixin, SafariCandleRules, HoneyHiveTracker,
+HoneyHiveLabels, HoneyHiveRules and assets/sparkling-mutuals/honeyhives.txt.
+ClearWater and water mixin integration were informed by Mutuals ClearWater and
+its vanilla/Sodium water hooks. CapsulePath uses the measured ordinary-capsule
+curve from its prediction implementation; collision, state, settings and rendering
+are integrated into SafariUtils systems. No Mutuals runtime is bundled.

@@ -9,10 +9,13 @@ public final class FloorDropVisibilityRegression {
         var config = new SafariConfig(); field.set(null, config);
         int checks = 0;
         for (String pipelineName : new String[] {"DEPTH_LINES_PIPELINE", "FACE_PIPELINE", "BEACON_DEPTH_TESTED_PIPELINE"}) {
-            var pipelineField = WaypointRenderer.class.getDeclaredField(pipelineName); pipelineField.setAccessible(true);
-            var pipeline = (com.mojang.blaze3d.pipeline.RenderPipeline) pipelineField.get(null);
-            check(pipeline.getDepthStencilState().depthTest() == com.mojang.blaze3d.pipeline.DepthStencilState.DEFAULT.depthTest()); checks++;
-            check(!pipeline.getDepthStencilState().writeDepth()); checks++;
+            var pipelineField = MarkerPipelines.class.getDeclaredField(pipelineName); pipelineField.setAccessible(true);
+            var pipeline = pipelineField.get(null);
+            var depth = pipeline.getClass().getMethod("getDepthStencilState").invoke(pipeline);
+            var defaults = depth.getClass().getField("DEFAULT").get(null);
+            var test = depth.getClass().getMethod("depthTest");
+            check(test.invoke(depth).equals(test.invoke(defaults))); checks++;
+            check(!(boolean)depth.getClass().getMethod("writeDepth").invoke(depth)); checks++;
         }
         check(new SafariConfig().display.separateFloorDropCounts); checks++;
         check(!SparklingMode.icebreakersSufficient(1, 3, false)); checks++;

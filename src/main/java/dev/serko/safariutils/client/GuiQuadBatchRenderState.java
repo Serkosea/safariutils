@@ -1,6 +1,5 @@
 package dev.serko.safariutils.client;
 
-import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.serko.safariutils.mixin.GuiGraphicsExtractorAccessor;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -12,7 +11,7 @@ import org.joml.Matrix3x2f;
 import org.joml.Matrix3x2fc;
 
 /** One GUI render state containing any number of solid coloured rectangles. */
-final class GuiQuadBatchRenderState implements GuiElementRenderState {
+final class GuiQuadBatchRenderState extends GuiPipelineState {
 	private static final TextureSetup NO_TEXTURE = TextureSetup.noTexture();
 
 	private final Matrix3x2fc pose;
@@ -76,10 +75,6 @@ final class GuiQuadBatchRenderState implements GuiElementRenderState {
 		}
 	}
 
-	@Override
-	public RenderPipeline pipeline() {
-		return RenderPipelines.GUI;
-	}
 
 	@Override
 	public TextureSetup textureSetup() {

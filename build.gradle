@@ -37,8 +37,13 @@ if (!profileFile.isFile()) {
 def profile = new Properties()
 profileFile.withInputStream { profile.load(it) }
 profile.each { key, value -> project.ext.set(key.toString(), value.toString()) }
+// SDL-era profiles need a newer loader; explicit test overrides still win.
+if (minecraftProfile == '26.3' && !gradle.startParameter.projectProperties.containsKey('loader_version')) {
+	project.ext.set('loader_version', '0.20.1')
+}
 
 sourceSets.main.java.srcDir("src/${minecraftProfile}/java")
+if(minecraftProfile != "26.3") sourceSets.main.java.srcDir("src/compat-pre26.3/java")
 
 // Keep variant outputs physically separate. Besides preserving all release jars,
 // this prevents stale private classes or service registrations from surviving into
@@ -59,7 +64,7 @@ base {
 }
 
 loom {
-	accessWidenerPath = file("src/main/resources/safariutils.accesswidener")
+	accessWidenerPath = file(minecraftProfile == "26.3" ? "src/26.3/resources/safariutils.accesswidener" : "src/main/resources/safariutils.accesswidener")
 }
 
 // Key-free API and party networking are shared. Developer testing stays isolated.
@@ -74,7 +79,7 @@ repositories {
 }
 
 dependencies {
-    if (minecraftProfile == "26.2") { include implementation("net.azureaaron:render-chest:1.0.3+26.2") }
+    if (profile.getProperty("render_chest_version")) { include implementation("net.azureaaron:render-chest:${profile.render_chest_version}") }
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
@@ -84,11 +89,12 @@ dependencies {
 }
 
 processResources {
+    if(minecraftProfile == "26.3") filesMatching("safariutils.accesswidener") { filter { line -> line.replace("com/mojang/blaze3d/pipeline/RenderPipeline", "com/mojang/renderpearl/api/pipeline/RenderPipeline") } }
 	def expandProps = [
 		version: project.version,
 		component_version: selectedReleaseVersion,
 		minecraft_depends: project.minecraft_depends,
-        loader_depends: minecraftProfile == "26.2" ? ">=0.19.3" : ">=0.19.0",
+        loader_depends: minecraftProfile == "26.3" ? ">=0.19.5" : minecraftProfile == "26.2" ? ">=0.19.3" : ">=0.19.0",
 		safe_build: safeBuild,
 		api_build: true,
 		developer_build: developerBuild

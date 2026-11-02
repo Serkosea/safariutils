@@ -47,8 +47,8 @@ All automatic command categories share a one-second minimum gap, including after
 manual commands. Manual sends are never intercepted or delayed. Guest invite actions remain
 pending across cooldowns with a bounded expiry; leave/accept keeps its existing settle delay.
 Co-host cleanup accepts roster changes caused by its own kicks, but cancels on other changes.
-Sparkling parties may warp before 27 seconds only when invited guests have joined or
-become unavailable and no remaining eligible queue entry fits; normal scouting keeps 27 seconds.
+Sparkling parties may warp before 26 seconds only when invited guests have joined or
+become unavailable and no remaining eligible queue entry fits; normal scouting keeps 26 seconds. Every Run invites begin at 5 seconds from the same connection-window clock. Host ticket qualification retains its separate 20-second cutoff. Invite waves stop at 22.9 seconds to reserve the existing 3.1-second command cooldown before warp; the 30-second ticket connection window is unchanged. The Invite Players header persists Disband On/Off (default On). Off suppresses both disband and guest-kick cleanup and includes eligible configured baseline members in warp scheduling without reinviting or double-counting capacity. CommandCoordinator owns a monotonic 5.1-second party-warp cooldown shared with observed manual warps and preserved across world transfers; server cooldown feedback extends it, and rejected automated warps retry only before the existing 29.5-second deadline.
 
 Current overhaul progress and outstanding validation gates: [v3 implementation ledger](IMPLEMENTATION_V3.md).
 Settings imports preserve both `original.json` (unaltered disk bytes, when present) and
@@ -540,3 +540,231 @@ concealed-box limitation. Missing HUD has an independent separate-type toggle.
 
 ## v3.3.0 release review
 Latest Oct 29 16:49 launch: 59 recorded floor rewards matched predictions, no research gaps or warning/error records, focused biome averages about 240 FPS. Continue treating inference as presentation-only, never capture identity. New Year scoring boundary remains estimated. Skyblocker 6.11.0 for 26.1.2 was inspected from the user-provided ZIP: custom glow needs a depth texture and hooks across eight render mixin classes; no untested port is included. Its standard markers remain supported.
+
+## Hunting mode terminology (2026-10-31)
+
+The Unique Mode tab and toggle retain the persisted `sparklingMode` key. Its first
+Unique Mode Options control is Sparkling Mode, retaining `sparklingIgnoreUniques`:
+it only applies while Unique Mode is enabled. Missing HUD uses the effective mode's
+name. Always Active selections remain explicit overrides. The retired
+Only Show Sparkling field and filtering branch are removed; old JSON values are
+ignored. Do not reintroduce that restriction through migration or legacy reads.
+
+## Profit relevance (2026-11-01)
+
+`RunRelevance` derives ordinary species visibility from existing run catches,
+party collections, user overrides and `ProfitableCritters`; it owns no catch or
+PB state. Live, tracked and recatch markers use the same decisions. Wumpa goals
+retain uncaught Icy prerequisites. Existing Safe Mode evidence gates remain at
+the detector/render boundaries. A sighting is not a complete population survey:
+never turn one seen/caught body into a completed Sparkling check for the species.
+
+`alwaysShowProfitableCritters` defaults off and only applies in Unique/Sparkling
+Mode. It retains top-10 estimated earners except Rockmite, without backfilling
+the excluded slot. The main Missing HUD list shows a green `$` on every retained profitable species,
+including species also needed for unique or Sparkling goals. Exact finished quotas retire optional rows unless a
+live remainder is known. The unique-only HUD option remains respected for normal
+entries. PB/completion totals still come only from the existing session tracker.
+
+`/safari profit` (also `/su` and `/safariutils`) shares BazaarPrices/BazaarMarket's
+single-flight and refresh budget. Ranking caches by Bazaar revision, selected
+price side and estimate ticket; it expires after 30 minutes and rejects products
+omitted from the latest snapshot. It is estimated revenue, not coins/minute or
+net capsule profit. Uses CritterCatchEstimates (ordinary range midpoints, mechanic-specific RNG expectations), a 1.5025 shard
+assumption and rarity essence with Basic/Economy/Premium/First Class multipliers.
+`Profit Estimate Ticket` affects estimates only, never saved rewards. No new
+auction endpoint, third-party pricing service, or per-frame sorting was added.
+
+Feature provenance: ranking/marker idea and shard/essence assumptions reviewed
+from Sparkling Mutuals 3.6.4 (`ProfitableCritters`, `SafariEspRules`, `SparklingChecks`),
+user-provided CC0 jars. Implementation is native to our shared services; no
+upstream runtime, networking, configuration dependency or population table copied.
+
+## Sparkling captures by other players (2026-11-01)
+
+CritterCapsules owns positive item-display capsule recognition, shared by identity,
+stationary-body tracking, and the published entity scan. Bodyless labels directly above
+confirmed capsules are scaffolding even when there is no local throw. SparklingWatch
+remembers those labels for the visit; they cannot create a find after the capsule vanishes,
+but a real paired body remains eligible after a breakout. New bodyless discoveries wait
+500ms for packet/metadata ordering; real bodies have no added delay. Particle matching
+must reject the nearest capsule label rather than redirect particles onto a nearby peer.
+Sparkling label-to-individual aliases are exact; never transfer outstanding ownership to
+the nearest same-species individual. Shared catch announcements remain conservative when
+multiple genuine same-species individuals are outstanding. All transient watch deadlines
+use monotonic time. Live remote-catch verification remains necessary (reported without logs).
+
+## Central run mode (2026-11-01)
+
+RunMode is the sole effective mode decoder: FULL_CLEAR, UNIQUE,
+and SPARKLING. The existing sparklingMode/sparklingIgnoreUniques saved fields and settings
+toggles are a compatibility adapter; do not add a second stored/cached mode. Runtime readers
+use RunMode or SparklingMode's delegating facade. Commands select explicitly and idempotently,
+save once when changed, and invalidate marker presentation; they never reset run identity,
+catch evidence, PBs, collection/party state, or personal HUD/marker/profit preferences.
+/safari (and /su, /safariutils) fc/fullclear, unique/uniques, and sparkling select modes;
+mode reports the current selection and also accepts the same subcommands. /sparkling still
+opens the existing collection UI. Screen consolidation and ticket preferences are separate work.
+The design comparison used local Mutuals 3.6.4 SafariFullClear/SafariHelperRules: explicit mode
+selection is useful, but its mode-switch overwrites of display preferences and PB type are
+intentionally not adopted. Our catch-based completions remain independent of visibility mode.
+
+/safari standard (including /safari mode standard) was removed at the user's request;
+Full Clear is the only name. /safari help lists public commands and aliases with safe
+suggest-command clicks. Developer builds link /safari help debug for their diagnostic
+commands; public help has no developer entries. Help mode aliases come from RunMode.
+
+## Message templates (2026-11-01)
+
+See docs/development/MESSAGE_TEMPLATES.md. AlertText owns single-pass event-time tag
+expansion for banner/chat settings, with explicit event context only (no player/mode/time fallback).
+Do not format again at queue-send time or per render frame; inserted values are literal.
+ChatTemplateFormats owns the reversible opt-in Mutuals compatibility overrides;
+only individually verified Mutuals formats belong there. Preserve send-channel choices,
+custom settings, lifecycle/command cooldowns, Safe Mode gates and catch-based completions.
+
+Profit catch estimates are separate from population bounds/quotas. Snoozle=5*50%;
+Rockmite=4.125 provisionally from Mutuals 3.6.4 spreadsheet data (mound range unverified).
+One-player starting inventory assumes two uniform rolls over nine quest items: coins
+4.5+2/9; each bird feed 3+2/9. User-supplied feed probabilities determine bird expectations,
+including two Macaws per successful roll. Mutuals coin values match that model exactly;
+its bird spreadsheet uses different assumptions and is not copied. These are estimates,
+not learned catch totals. Profit hover shows shard and essence run values separately.
+Only the report heading receives the client prefix. No price poller or quota changed.
+
+## Hotspot coordination and mode tickets (2026-11-01)
+
+Safari Runs navigation is General, Tickets, Party, Visual, Profit. Tickets owns protection,
+then the three per-mode choices in one shared card, then Ticket Trading. Party owns
+hotspot assignment and Mutuals compatibility. Keep future ticket/coordination controls
+in these tabs using the existing card/navigation model; persistent config keys stay unchanged.
+
+
+HotspotAllocation is the pure bounded allocation policy; HotspotWatch integrates it with
+current PartyState, monotonic visit timing and ChatQueue. Do not overwrite the actual
+hotspot with assigned biome. Mixed-mod ordering comes from server party-chat echoes;
+no backend, HTTP request or additional roster cache is introduced. See MESSAGE_TEMPLATES.
+
+TicketSelection is opt-in independently for each RunMode (Manual by default). It checks
+only the exact Critter Safari Entry menu, four recognized ticket tiers, positive lore,
+current player/menu/world, carried-stack emptiness and shared TicketProtection. It waits
+150ms for initial menu data, retries only reads every100ms up to5s, submits once, and
+leaves manual control available. Manual input cancels automation; no higher-tier fallback.
+Capsule allocation still activates runs. ClientCompat caches the verified cross-version
+container input method; headless tests assert that API exists for each built profile.
+Logging records decisions, not credentials. Validate actual server menu lore, party
+assignment and mixed-mod ordering in-game before treating interoperability as proven.
+
+
+## Unified stats navigation and lookup commands (2026-11-01)
+
+DashboardNavigation owns the ordered Stats, History, Profit, Sparklings, Lookup,
+and Personal Bests rail and its renderer. SafariDashboardScreen owns run/history/profit views;
+SparklingScreen retains collection editing and lookup widgets as dashboard views, using
+that same rail. /sparkling opens Sparklings; no Party tab or manual party-list editor remains.
+/safari shared reports current known shared species without initiating a refresh; incomplete
+or changed-party API state returns a not-loaded notice instead of an unverified list. Keep history detail Back routing and collection edits intact.
+
+PlayerLookupCoordinator owns bounded recent results and shared in-flight admission for
+screen and /safari lookup, tickets, refresh commands. All use SharedSparklingProviders;
+no alternate HTTP path. Successful results populate full profiles even for ticket-only
+reports. Completion is published on the client thread only for the originating account;
+same-account warps retain recent results, while command output stays tied to its originating
+connection. Shared reports reject mismatched current/provider rosters. Source timestamps and successful refresh times retain LookupHistory's
+separate semantics. Refresh remains subject to provider cache and cooldown, not a bypass.
+
+SessionProfitSummary is a read-only projection of runs started since JVM launch, plus the
+active run. The active copy replaces any saved copy at the same start boundary. Only an
+open Profit view rebuilds its snapshot, at most once a second; market work stays in BazaarPrices
+and AuctionMarketClient. Values are estimated loot proceeds, not realized sales or net ticket
+profit. No secondary reward store or automatic price-fetch loop is introduced. Tests cover
+command reachability, navigation and border ordering, and active/archive overlap.
+
+
+Dashboard refinements: Saved Sessions is a local-day grouping over existing RunHistory
+(Mutuals' model), not invented old launch boundaries. SavedProfitSummary caches by history,
+market revision and timezone; it includes partial-price flags and never stores duplicate runs.
+Current Session remains launch-scoped. The profile record owns species-ID normalization;
+never compare API IDs directly to display names. LookupPresentation owns ticket colors and
+collection summary formatting for UI and commands. Hunting level is optional in the compact
+backend response, calculated from selected-profile SKILL_HUNTING experience with the
+Mutuals 3.6.4 progression. Old cached responses show Unknown until refreshed, not zero.
+Backend hypixel/cache fields and tests were updated and deployed to the existing Worker.
+
+Dashboard command presentation: lookup places Hunting on the profile heading only, splits Unique Sparklings (hover contains biome ownership) from totals/duplicates, and shares a total-first numeric ticket row with /safari tickets using white separators and tier-colored counts. Successful manual cached lookups move the freshest retained profile to the front of LookupHistory; newly opened Lookup views select that entry without a request. Profit switch text describes the active view. Collection/Lookup content and responsive canvas heights reclaim the removed heading row together.
+
+Lookup formatting refinement: Hunting is command-only and uses decimal points. Dashboard ticket labels and amounts both retain tier colors. /safari lookup shows a gold Tickets total with named tier details on hover; /safari tickets keeps the full numeric breakdown inline. Command dividers share LookupPresentation.DIVIDER (two spaces on each side, white).
+
+## Canyon Honeyhives and candle targeting (2026-11-01)
+Honeyhives owns a bounded HoneyhiveState and publishes immutable catalog-marker
+snapshots every 500 ms in Torrhus Canyon/Springs. Unchecked and ready hives use
+one configurable color with distinct labels; cooling hives are hidden until expiry
+or Queen Bee. HIVE! requires a recent interaction; clicks alone never start timers.
+Queen Bee may precede/follow loot, and confirmation guards stale holograms for two
+seconds. World changes discard pending click ownership, not cooldowns.
+HoneyhiveStore atomically persists collection/refill wall-clock times by account UUID
+and SkyBlock profile ID in safariutils-honeyhives.json. Runtime deadlines are monotonic.
+Profile discovery uses at most two /profileid requests through CommandCoordinator;
+initial discovery preserves pending harvest attribution. Profile changes isolate data.
+Invalid/newer ledgers are preserved without writes. No external requests are used.
+WaypointRenderer draws user-colored vanilla-textured hive beams (full-alpha core, softer halo) without a distance cutoff,
+extending beyond the visible sky. WorldOverlayProjection preserves their perspective
+while avoiding the vanilla far plane. Fixed catalog geometry needs no distant chunks;
+only loaded nearby holograms are scanned, never during rendering.
+CandleTargetMixin changes getShape only (not collision/reach), only client red
+candles in Haunted while either hand holds Soothing Incense and toggle is on.
+The full-candle target also draws a bright red depth-tested block outline only for
+vanilla's current in-range block pick while holding incense. CandleTarget owns both
+shape and outline eligibility; the shared renderer adds no second raycast or entity scan.
+Both settings use Safari Runs > General. Cross-version blocks are identified by
+registry path to avoid the 26.2 DYED_CANDLE vs 26.1.2 RED_CANDLE API difference.
+PlayerNameStyle.component applies the existing UUID-backed rainbow name rule
+to command lookups/tickets, sharing identity evidence with screen/HUD names.
+In-game validation: right-click edges of candle block with incense in each hand;
+verify normal targeting without incense/outside Haunted; loot Canyon hive and
+verify disappearance, Queen Bee instant reappearance, nearby Refills holograms,
+and later cooldown expiry. Enable Automatic Logging for HONEYHIVE attribution.
+
+Clear Water and Capsule Prediction (2026-11-01): Safari Runs > Visual owns both.
+ClearWater publishes volatile rendering flags, adjusts water-only opacity/fog/overlay,
+and coalesces geometry rebuilds on setting/area changes. Versioned overlay mixins and
+optional SodiumWaterMixin cover vanilla/Sodium; no status effects are removed.
+CapsulePrediction caches paired target boxes per tick and solves from current render-frame
+aim/eye, reusing the result when both aim and scene revision are unchanged. The short
+Mutuals curve is extrapolated to a bounded long-range horizon or world boundary; terrain
+checks stop at unloaded chunks, but the visual continuation remains. All trajectories
+remain estimates until validated against server flight samples. The old estimate gate,
+tick-lag interpolation and contact text are removed. The whole path uses the configured
+contact color when a known critter is the first predicted hit; normal color otherwise.
+No catch guarantee or additional actions. CAPSULE_THROW/CAPSULE_FLIGHT record bounded
+nearby visual flights only with automatic diagnostics on (64 traces/visit, 4 concurrent,
+80 samples each). Candidate ownership is explicitly unverified. Profile render time under
+render/capsule-prediction before adjusting budgets. Compare ordinary stationary throws,
+steep/long throws, moving throws and Masterful separately; do not fit one universal
+model from ambiguous samples.
+Settings pointer capture resets on reinitialization, focus changes and new presses,
+preventing a missed mouse release from leaving slider drag state behind. Modal flags
+remain authoritative; stale hit-index barriers cannot block a non-modal screen.
+/safari missing <name> uses PlayerLookupCoordinator and populates the same recents.
+Missing and collected hover lists share the canonical species complement; full lookup
+shows both counts with the standard white divider, missing-only omits Hunting/tickets.
+Queen Bee prefers a pending harvest over the previous confirmed harvest, so consecutive
+loots keep the correctly refilled hive ready without waiting for a hologram update.
+Regression coverage includes persisted clocks, profile-discovery harvest races, curve
+fixtures, projection and settings grouping. Fabric smoke covers water/candle targets
+with and without Sodium. In-game checks: restart/profile switching after hive harvest,
+Queen Bee refill, distant textured beacons, water slider transitions, and capsule contact
+alignment at calibrated and estimated angles. Do not claim runtime visual validation
+from the smoke tests alone.
+
+## 3.4.0 release invariants
+
+Public releases ship Normal and Extra for 26.1.2, 26.2 and 26.3; Developer artifacts remain private.
+Full candle targeting is Extra-only and requires an unlit candle; outline and interaction share
+that predicate. Capsule predictions require direct, painting-aware visibility for hidden species
+in Safe Mode. Painting occlusion uses the shared tick cache, avoiding a stale one-second window.
+Missing HUD profit indicators are independently controlled by `display.indicateProfitableCritters`
+(default true). Retention still belongs to `sparkling.alwaysShowProfitableCritters`; full-clear
+indicators never turn on retention. HUD label measurements include the dollar suffix.
+Capsule contact radius is an estimate, not measured server physics. Landing indicators use
+cached frame geometry; no additional render-time entity scans are introduced.

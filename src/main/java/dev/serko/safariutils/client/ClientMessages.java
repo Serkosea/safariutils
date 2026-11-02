@@ -37,6 +37,45 @@ public final class ClientMessages {
         }
     }
 
+    /** Bordered API report; semantic colors and hover events are retained on each body row. */
+    static java.util.List<Component> reportLines(java.util.List<Component> lines) {
+        if(lines.isEmpty())return java.util.List.of();
+        var result=new java.util.ArrayList<Component>();
+        // Strikethrough joins the glyph spacing into a continuous, compact rule.
+        Component rule=Component.literal("-".repeat(28)).withColor(BRACKET)
+            .withStyle(ChatFormatting.STRIKETHROUGH);
+        result.add(rule);result.add(lines.getFirst());
+        for(int i=1;i<lines.size();i++) result.add(Component.literal("•  ").withColor(BRACKET).append(lines.get(i)));
+        result.add(rule.copy());return java.util.List.copyOf(result);
+    }
+    static void sendReport(java.util.List<Component> lines) {
+        if (!lines.isEmpty()) ClientCompat.addSystemMessage(reportMessage(lines));
+    }
+
+    /** Preserve the complete frame as one history/compaction unit, including hover styles. */
+    static Component reportMessage(java.util.List<Component> lines) {
+        MutableComponent message = Component.empty();
+        boolean first = true;
+        for (Component line : reportLines(lines)) {
+            if (!first) message.append(Component.literal("\n"));
+            message.append(line);
+            first = false;
+        }
+        return message;
+    }
+
+    /** A single report: only the first line gets the selected prefix. */
+    public static void sendBlock(java.util.List<Component> lines) {
+        for (int index = 0; index < lines.size(); index++) {
+            Component line = lines.get(index);
+            if (index == 0) {
+                MutableComponent start = SpecialTheme.rainbow() ? themedMessage("", false).copy() : prefix();
+                line = start.append(line);
+            }
+            ClientCompat.addSystemMessage(line);
+        }
+    }
+
 	public static void sendUpdate(String available, URI release, String linkLabel) {
 		String body = "SafariUtils v" + available + " is available ";
 		String linkText = "[" + linkLabel + "]";

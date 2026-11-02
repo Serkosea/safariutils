@@ -4,6 +4,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.network.chat.Component;
 
 import java.util.List;
 import java.util.Locale;
@@ -329,20 +330,24 @@ public final class ContestTracker implements HudElement {
 		String time = formatTime(inactive ? untilNextContestMillis(now) : remaining);
 		int timeColour = inactive ? YES : timeColour(remaining);
 
-		HudPanel panel = new HudPanel();
+		HudPanel panel = new HudPanel().pairGap(18).fitContentWidth();
 		panel.title("Miria's Contest", HudBorderStyle.contestTitle(bracket, ticket, inactive));
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
 		if (display.contestTimeRemaining) {
-			panel.pair(inactive ? "Contest Starting" : "Contest Time", time, LABEL, timeColour);
-		}
-		if (!inactive && display.contestCurrentStanding) {
-			if (bracket == null) panel.pair("Bracket", INACTIVE_VALUE, LABEL, DIM);
-			else panel.boldPair("Bracket", bracket.name(), LABEL, bracket.colour());
-			panel.pair("Score", score < 0 ? INACTIVE_VALUE : "%,d".formatted(score),
-				LABEL, score < 0 ? DIM : SCORE);
+			panel.pair(inactive ? "Contest Starting" : "Time Left", time, LABEL, timeColour);
 		}
 		if (!inactive && display.contestTicketEarned) {
 			panel.pair("Safari Ticket", ticket ? "✔" : "✘", LABEL, ticket ? YES : NO);
+		}
+		if (!inactive && display.contestCurrentStanding) {
+			int bracketColour = bracket == null ? DIM : bracket.colour();
+			panel.pair("Bracket", Component.empty()
+				.append(Component.literal(bracket == null ? INACTIVE_VALUE : bracket.name())
+					.withStyle(style -> style.withColor(bracketColour).withBold(bracket != null)))
+				.append(Component.literal(" (").withColor(bracketColour))
+				.append(Component.literal(score < 0 ? INACTIVE_VALUE : "%,d".formatted(score))
+					.withColor(score < 0 ? DIM : SCORE))
+				.append(Component.literal(")").withColor(bracketColour)), LABEL);
 		}
 		return panel;
 	}

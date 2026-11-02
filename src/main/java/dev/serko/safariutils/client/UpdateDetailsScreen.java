@@ -103,7 +103,7 @@ final class UpdateDetailsScreen extends Screen {
 		}
 		button(graphics, x + w - 132, y + 12, 120, 22,
 			UpdateChecker.releaseLinkLabel(), mouseX, mouseY,
-			() -> Util.getPlatform().openUri(UpdateChecker.releasePage()));
+			() -> ClientVersionCompat.openUri(UpdateChecker.releasePage()));
 
 		int notesY = y + versionHeight + 8;
 		int doneY = top + panelHeight - 31;
@@ -315,7 +315,7 @@ final class UpdateDetailsScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
-		if (event.key() == 256) {
+		if (event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) {
 			onClose();
 			return true;
 		}

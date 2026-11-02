@@ -1,7 +1,7 @@
 // --- Explicit deployment to the configured Prism test instances ------------
 // Keep both supported Developer tasks available and deploy both compatibility profiles.
-def supportedDeveloperProfiles = ['26.1.2', '26.2']
-def deployProfiles = supportedDeveloperProfiles
+def supportedDeveloperProfiles = ['26.1.2', '26.2', '26.3']
+def deployProfiles = ['26.1.2', '26.2']
 def developerBuildTasks = [:]
 // Incremental verification is the normal path. An explicit clean build remains available.
 def verificationTasks = project.findProperty('cleanArtifacts')?.toString()?.toBoolean()
@@ -91,7 +91,7 @@ tasks.register('DeployBuilds') {
 // --- Complete release artifact set -----------------------------------------
 // Nested builds keep every profile/variant in its isolated output directory.
 // Run them sequentially to avoid competing Loom/Gradle workers, then sync only
-// the six verified jars into one flat release-artifacts folder.
+// the nine verified jars into one flat release-artifacts folder.
 def releaseVariants = [
 	[key: 'safe', label: 'Safe', arguments: [], suffix: ''],
 	[key: 'extra', label: 'Extra', arguments: ['-PextraBuild=true'], suffix: '-extra'],
@@ -136,13 +136,13 @@ for (int index = 1; index < releaseBuildTasks.size(); index++) {
 }
 
 def verifyBuilds = tasks.register('VerifyBuilds') {
-	description = 'Verify all six profile/edition jars without collecting or deploying artifacts.'
+	description = 'Verify all nine profile/edition jars without collecting or deploying artifacts.'
 	group = 'verification'
 	dependsOn releaseBuildTasks
 }
 
 tasks.register('BuildArtifacts') {
-	description = 'Build six jars: Normal, Extra and Developer for both Minecraft profiles.'
+	description = 'Build nine jars: Normal, Extra and Developer for three Minecraft profiles.'
 	group = 'fabric'
 	dependsOn verifyBuilds
 	doLast {

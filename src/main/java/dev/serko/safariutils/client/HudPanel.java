@@ -76,7 +76,23 @@ public final class HudPanel {
 
 	private final List<Row> rows = new ArrayList<>();
 	private int minimumWidth;
+	private int pairGap = GUTTER;
+	private boolean fitContentWidth;
 	private Layout layout;
+
+	/** Minimum spacing between label and value columns, in unscaled pixels. */
+	public HudPanel pairGap(int pixels) {
+		pairGap = Math.max(0, pixels);
+		layout = null;
+		return this;
+	}
+
+	/** Size aligned pairs by the widest complete row instead of independent column maxima. */
+	public HudPanel fitContentWidth() {
+		fitContentWidth = true;
+		layout = null;
+		return this;
+	}
 
 	/** Sets a floor for the total panel width while still allowing wider content. */
 	public HudPanel minimumWidth(int pixels) {
@@ -116,8 +132,20 @@ public final class HudPanel {
 		return this;
 	}
 
+	/** A full-width text row preserving individual text styles. */
+	public HudPanel line(Component text) {
+		add(new Row(Kind.TEXT, text.getString(), null, 0xFFFFFFFF, 0, 0, 0, text.copy()));
+		return this;
+	}
+
 	public HudPanel pair(String label, String value, int labelColour, int valueColour) {
 		add(new Row(Kind.PAIR, label, value, labelColour, valueColour, 0, 0));
+		return this;
+	}
+
+	/** A standard aligned pair with independently styled value segments. */
+	public HudPanel pair(String label, Component value, int labelColour) {
+		add(new Row(Kind.PAIR, label, value.getString(), labelColour, 0xFFFFFFFF, 0, 0, value.copy()));
 		return this;
 	}
 
@@ -157,8 +185,16 @@ public final class HudPanel {
 		return this;
 	}
 
+	/** Profit is a display reason, never a completion mark. */
+	public HudPanel statusPair(boolean caught, String label, String value,
+			int labelColour, int valueColour, boolean profitable) {
+		add(new Row(Kind.STATUS_PAIR, (caught ? "✔ " : "✘ ") + label + (profitable ? " $" : ""), value,
+			labelColour, valueColour, caught ? 1 : 0, profitable ? 1 : 0));
+		return this;
+	}
+
 	public HudPanel sparklingModeTitle(String biome, int colour) {
-		add(new Row(Kind.SPARKLING_MODE_TITLE, biome + " ", "(SPARKLING Mode)",
+		add(new Row(Kind.SPARKLING_MODE_TITLE, biome + " ", "(" + SparklingMode.displayName() + ")",
 			colour, 0, 0, 0));
 		return this;
 	}
@@ -212,6 +248,8 @@ public final class HudPanel {
 		int barLabelWidth = 0;
 		int barValueWidth = 0;
 		for (Row row : rows) {
+			// Styled full-width lines are measured below, not as label columns.
+			if (row.kind() == Kind.TEXT && row.styledValue() != null) continue;
 			if (row.kind() == Kind.TITLE_SUFFIX || row.kind() == Kind.SPARKLING_MODE_TITLE
 				|| row.kind() == Kind.OBJECTIVE_TITLE) continue;
 			if (row.kind() == Kind.BAR || row.kind() == Kind.CHECKED_BAR) {
@@ -225,7 +263,18 @@ public final class HudPanel {
 					pairValueWidth = Math.max(pairValueWidth, valueWidth(font, row));
 			}
 		}
-		int contentWidth = pairLabelWidth + (pairValueWidth > 0 ? GUTTER + pairValueWidth : 0);
+		int contentWidth = pairLabelWidth + (pairValueWidth > 0 ? pairGap + pairValueWidth : 0);
+		if (fitContentWidth) {
+			contentWidth = 0;
+			for (Row row : rows) {
+				if (row.kind() == Kind.PAIR || row.kind() == Kind.BOLD_PAIR
+						|| row.kind() == Kind.RAINBOW_PAIR || row.kind() == Kind.STATUS_PAIR) {
+					contentWidth = Math.max(contentWidth, labelWidth(font, row) + pairGap + valueWidth(font, row));
+				} else if (row.kind() == Kind.ICON_PAIR || row.kind() == Kind.RAINBOW_ICON_PAIR) {
+					contentWidth = Math.max(contentWidth, labelWidth(font, row) + pairGap + iconValueWidth(font, row.icons()));
+				}
+			}
+		}
 		if (barLabelWidth > 0) {
 			contentWidth = Math.max(contentWidth,
 				barLabelWidth + GUTTER + BAR_WIDTH + GUTTER + barValueWidth);
@@ -233,7 +282,8 @@ public final class HudPanel {
 		// A title spans the whole panel, so it can widen it on its own.
 		for (Row row : rows) {
 			if (row.kind() == Kind.TITLE || row.kind() == Kind.TEXT) {
-				contentWidth = Math.max(contentWidth, font.width(row.label()));
+				contentWidth = Math.max(contentWidth, row.styledValue() == null
+					? font.width(row.label()) : font.width(row.styledValue()));
 			} else if (row.kind() == Kind.OBJECTIVE_TITLE) {
 				contentWidth = Math.max(contentWidth,
 					font.width(row.label()) + objectiveStatusWidth(font, row.max()));
@@ -402,8 +452,9 @@ public final class HudPanel {
 						row.current(), row.max(), row.valueColour(), left + panelWidth);
 				}
 				case TEXT -> {
-					if (rainbowAll) rainbowText(graphics, font, row.label(), textLeft, rowY, theme);
-					else drawText(graphics, font, Component.literal(row.label()),
+					Component text = row.styledValue() == null ? Component.literal(row.label()) : row.styledValue();
+					if (rainbowAll) rainbowText(graphics, font, text, textLeft, rowY, theme);
+					else drawText(graphics, font, text,
 						textLeft, rowY, row.labelColour());
 				}
 				case TITLE_SUFFIX -> {
@@ -428,10 +479,11 @@ public final class HudPanel {
 					if (rainbowAll) rainbowText(graphics, font, row.label(), textLeft, rowY, theme);
 					else drawText(graphics, font, Component.literal(row.label()), textLeft, rowY, row.labelColour());
 					Component value = value(row);
+					int valueX = valueRight - font.width(value);
 					if (rainbowAll) rainbowText(graphics, font, value,
-						valueRight - font.width(value), rowY, theme);
+						valueX, rowY, theme);
 					else drawText(graphics, font, value,
-						valueRight - font.width(value), rowY, row.valueColour());
+						valueX, rowY, row.valueColour());
 				}
 				case ICON_PAIR, RAINBOW_ICON_PAIR -> {
 					if (rainbowAll || row.kind() == Kind.RAINBOW_ICON_PAIR)
@@ -450,9 +502,10 @@ public final class HudPanel {
 				}
 				case STATUS_PAIR -> {
 					String mark = row.label().substring(0, 1);
-					String name = row.label().substring(1);
+					String label = row.max() == 1 ? row.label().substring(0, row.label().length() - 2) : row.label();
+					String name = label.substring(1);
 					if (rainbowAll) {
-						rainbowText(graphics, font, row.label(), textLeft, rowY, theme);
+						rainbowText(graphics, font, label, textLeft, rowY, theme);
 						rainbowText(graphics, font, row.value(),
 							valueRight - font.width(row.value()), rowY, theme);
 					} else {
@@ -463,6 +516,8 @@ public final class HudPanel {
 						drawText(graphics, font, Component.literal(row.value()),
 							valueRight - font.width(row.value()), rowY, row.valueColour());
 					}
+					if (row.max() == 1) drawText(graphics, font, Component.literal(" $"),
+						textLeft + font.width(label), rowY, 0xFF55FF55);
 				}
 				case BAR, CHECKED_BAR -> {
 					String label = row.kind() == Kind.CHECKED_BAR ? row.label() + " ✔" : row.label();

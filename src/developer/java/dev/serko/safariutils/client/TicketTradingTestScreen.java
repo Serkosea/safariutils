@@ -357,11 +357,9 @@ public final class TicketTradingTestScreen extends Screen {
 			nextInviteAt = elapsedMillis;
 		}
 		boolean ready = commandReady();
-		boolean early = elapsedMillis < TicketTrading.SPARKLING_BATCH_FROM_MILLIS;
-		boolean normal = elapsedMillis >= TicketTrading.INVITE_AT_MILLIS;
+		boolean early = elapsedMillis < TicketTrading.INVITE_AT_MILLIS;
 		if (!warpSent && ready && pendingWave.isEmpty() && elapsedMillis >= nextInviteAt
-				&& elapsedMillis <= TicketTrading.SPARKLING_INVITE_DEADLINE_MILLIS
-				&& (early || normal)) {
+				&& elapsedMillis <= TicketTrading.SPARKLING_INVITE_DEADLINE_MILLIS) {
 			List<Player> pending = pendingQueue(early);
 			if (!pending.isEmpty()) invite(pending);
 		}
@@ -529,7 +527,7 @@ public final class TicketTradingTestScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
-		if (event.key() == 256) {
+		if (event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) {
 			onClose();
 			return true;
 		}

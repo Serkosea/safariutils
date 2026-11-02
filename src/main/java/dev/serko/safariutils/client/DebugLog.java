@@ -24,7 +24,7 @@ public final class DebugLog {
 	private static boolean alwaysUseful(String category) {
 		return switch (category) {
 			case "LOG", "RUN", "ACTIVATE", "JOINTIME", "LOCATION",
-				"PARTY", "PARTYTIME", "SYNC", "PARTYAPI", "BAZAAR", "UPDATES", "PLAYER_LOOKUP" -> true;
+				"PARTY", "PARTYTIME", "SYNC", "PARTYAPI", "BAZAAR", "UPDATES", "PLAYER_LOOKUP", "HONEYHIVE" -> true;
 			default -> false;
 		};
 	}

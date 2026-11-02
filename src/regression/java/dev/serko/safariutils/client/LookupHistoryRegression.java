@@ -38,7 +38,12 @@ public final class LookupHistoryRegression {
 		refreshes.remember(value("Bob", 201));
 		refreshes.remember(value("Carol", 202));
 		check(!refreshes.recentlyChecked(updated, 1_201, 100), "eviction also bounds refresh acknowledgements");
-		return 19;
+		var ordered = new LookupHistory(3);
+        ordered.remember(first);
+        ordered.remember(value("Bob", 201));
+        ordered.rememberChecked(value("ALICE", 99), 2000);
+        check(ordered.entries().getFirst()==first, "cached manual lookup is newest selection without replacing fresher data");
+        return 20;
 	}
 	private static SparklingPlayerLookup value(String name, long time) {
 		return new SparklingPlayerLookup(name, Set.of(), 0, Map.of(), time);

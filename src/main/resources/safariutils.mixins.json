@@ -4,6 +4,11 @@
   "compatibilityLevel": "JAVA_25",
   "client": [
     "ArmorStandRendererMixin",
+    "CandleTargetMixin",
+    "WaterFogMixin",
+    "WaterSurfaceMixin",
+    "SodiumWaterMixin",
+    "WaterOverlayMixin",
     "PerformanceMixin",
     "GuiGraphicsExtractorAccessor",
     "GuiMixin",

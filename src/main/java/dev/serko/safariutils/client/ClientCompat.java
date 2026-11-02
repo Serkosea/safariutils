@@ -13,6 +13,35 @@ final class ClientCompat {
 	private ClientCompat() {
 	}
 
+    /** Cached cross-version container click entry point; fail closed when the API shape changes. */
+    private record ContainerClick(Method method, Object pickup) { }
+    private static final ClassValue<ContainerClick> CONTAINER_CLICK = new ClassValue<>() {
+        @Override protected ContainerClick computeValue(Class<?> type) {
+            for (Method method : type.getMethods()) {
+                if (!method.getName().equals("handleContainerInput") && !method.getName().equals("handleInventoryMouseClick")) continue;
+                Class<?>[] args = method.getParameterTypes();
+                if (args.length != 5 || args[0] != int.class || args[1] != int.class || args[2] != int.class || !args[3].isEnum()
+                    || !args[4].isAssignableFrom(net.minecraft.client.player.LocalPlayer.class)) continue;
+                for (Object constant : args[3].getEnumConstants())
+                    if (((Enum<?>) constant).name().equals("PICKUP")) return new ContainerClick(method, constant);
+            }
+            return new ContainerClick(null, null);
+        }
+    };
+    static boolean pickupSlot(int containerId, int slot) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.gameMode == null || client.player == null || client.player.containerMenu.containerId != containerId) return false;
+        ContainerClick click = CONTAINER_CLICK.get(client.gameMode.getClass());
+        if (click.method() == null) return false;
+        try {
+            click.method().invoke(client.gameMode, containerId, slot, 0, click.pickup(), client.player);
+            return true;
+        } catch (ReflectiveOperationException failure) {
+            DebugLog.line("TICKET/SELECT", "container input failed: " + failure.getClass().getSimpleName());
+            return false;
+        }
+    }
+
 	static Screen screen() {
 		Minecraft client = Minecraft.getInstance();
 		try {
@@ -54,6 +83,17 @@ final class ClientCompat {
 		}
 		invoke(chat, "addClientSystemMessage", new Class<?>[]{Component.class}, message);
 	}
+
+    static void rebuildWorldGeometry() {
+        var client=Minecraft.getInstance();
+        // Vanilla's full rebuild API is shared with Sodium; only run when the setting/area changes.
+        try { invoke(client.levelRenderer,"allChanged"); }
+        catch(IllegalStateException olderMethodAbsent) {
+            invoke(client.levelRenderer,"invalidateCompiledGeometry",
+                new Class<?>[]{net.minecraft.client.multiplayer.ClientLevel.class,net.minecraft.client.Options.class,Camera.class,net.minecraft.client.color.block.BlockColors.class},
+                client.level,client.options,camera(),client.getBlockColors());
+        }
+    }
 
 	static Camera camera() {
 		Object renderer = Minecraft.getInstance().gameRenderer;

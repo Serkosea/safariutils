@@ -39,7 +39,12 @@ final class LookupHistory {
 	/** Only a completed manual request acknowledges Refresh, not selecting a recent entry. */
 	SparklingPlayerLookup rememberChecked(SparklingPlayerLookup result, long now) {
 		SparklingPlayerLookup accepted = remember(result);
-		checkedAt.put(key(accepted), now);
+		// A successful cached lookup is still the most recently requested player.
+        var ordered = new ArrayList<SparklingPlayerLookup>(entries.size());
+        ordered.add(accepted);
+        for(var saved:entries) if(!key(saved).equals(key(accepted))) ordered.add(saved);
+        entries=List.copyOf(ordered);
+        checkedAt.put(key(accepted), now);
 		return accepted;
 	}
 

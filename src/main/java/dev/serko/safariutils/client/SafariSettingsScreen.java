@@ -31,7 +31,7 @@ public final class SafariSettingsScreen extends Screen {
 	private static int rememberedScroll;
 	private static Set<String> rememberedExpandedSections = Set.of();
 	private static long rememberedAt;
-	private static final int WIDE_NAV_WIDTH = 136;
+	private static final int WIDE_NAV_WIDTH = 144;
 	private static final int HEADER_HEIGHT = 48;
 	private static final int BRAND_LINE_GAP = 4;
 	private static final int FOOTER_HEIGHT = 30;
@@ -362,7 +362,8 @@ public final class SafariSettingsScreen extends Screen {
 		SettingsArea gameplay = area("gameplay", "Safari Runs", "Safari behavior, party tools, and profit tracking");
 		SettingsArea waypoints = area("markers", "Markers", "Critter overlays, world markers, and colors");
 		SettingsArea alerts = area("alerts", "Alerts", "On-screen and outgoing chat alerts");
-		SettingsArea sparkling = area("sparkling", "Sparkling", "Sparkling hunting, detection, and celebrations");
+		SettingsArea sparkling = area("sparkling", "Unique Mode", "Unique catches and Sparkling-focused hunting");
+		SettingsArea sparklingAlerts = area("sparklings", "Sparklings", "Sparkling banners, chat alerts, and special catch effects");
 		SettingsArea advanced = !BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS)
 			? null : area("advanced", "Safe Mode",
 			"Visibility-based detection and marker behavior");
@@ -381,6 +382,8 @@ public final class SafariSettingsScreen extends Screen {
 			"Hide selected server dialogue while retaining mod detection", "hiddenChatMessages");
 		addRootPage(display, displaySource, "display.safari.comfort", "Visual Comfort",
 			"Reduce disruptive Safari screen effects", "removeColdOverlay", "removeDarkness");
+        addRootPage(display, displaySource, "display.safari.water", "Water",
+            "Water clarity in Safari", "clearWater", "waterOpacity");
         addRootPage(display, displaySource, "display.safari.prefix", "Client Message Prefix",
             "Choose the prefix shown on SafariUtils client messages", "clientMessagePrefix");
 		appendAllSections(display, displaySource, 0, "Display");
@@ -393,12 +396,24 @@ public final class SafariSettingsScreen extends Screen {
 		}
 
         addRootPage(gameplay, gameplaySource, "gameplay.auto-hideyho", "Hideyho",
-			"Automatically accept Hideyho's Hide N' Seek game", "autoAcceptHideyho");
-		addRootPage(gameplay, gameplaySource, "gameplay.tickets", "Tickets",
-			"Protect tickets and configure trusted players for timed ticket trading",
-			"protectSafariTicket", "configureTicketTrading");
+            "Automatically accept Hideyho's Hide N' Seek game", "autoAcceptHideyho");
+        if (BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS)) addRootPage(gameplay, gameplaySource, "gameplay.candles", "Candle Targeting",
+            "Use the full candle block when holding incense", "fullCandleTarget");
+		addRootPage(gameplay, gameplaySource, "gameplay.ticket-protection", "Ticket Protection",
+			"Wait for your party before using a ticket", "protectSafariTicket");
+        addRootPage(gameplay, gameplaySource, "gameplay.ticket-selection", "Automatic Tickets",
+            "Choose a ticket for each run mode", "fullClearTicket", "uniqueTicket", "sparklingTicket");
+        addRootPage(gameplay, gameplaySource, "gameplay.ticket-trading", "Ticket Trading",
+            "Configure trusted invites and timed party warps", "configureTicketTrading");
+        addRootPage(gameplay, gameplaySource, "gameplay.coordination", "Party Coordination",
+            "Coordinate biomes and chat with other mods", "assignHotspots", "mutualsCompatibility");
         addRootPage(gameplay, gameplaySource, "gameplay.personal-bests", "Personal Bests",
             "Unique-clear and personal biome-mob catch messages", "personalBestMessages", "biomeMobBestMessages");
+
+        addRootPage(gameplay, gameplaySource, "gameplay.prediction", "Capsule Prediction",
+            "Predicted throw path and contact", "capsulePrediction", "capsulePredictionColour", "capsulePredictionHitColour");
+        addRootPage(gameplay, gameplaySource, "gameplay.honeyhives", "Honeyhives",
+            "Canyon hive availability and beacons", "honeyhiveBeacons", "honeyhiveColour");
 
 		addRootPage(gameplay, profitSource, "gameplay.profit", "Profit Tracking",
 			"Control run profit tracking and Bazaar pricing");
@@ -408,10 +423,15 @@ public final class SafariSettingsScreen extends Screen {
 		appendAllSections(alerts, alertSource, 0, "On-Screen Alerts");
 		appendAllSections(alerts, chatSource, 0, "Chat");
 
-		addRootPage(sparkling, sparklingSource, "sparkling.overview", "Sparkling Mode",
-			"Core Sparkling hunting behavior", "sparklingMode");
+		addRootPage(sparkling, sparklingSource, "sparkling.overview", "Unique Mode",
+			"Unique catches and Sparkling hunting", "sparklingMode");
 		appendAllSections(sparkling, sparklingSource, 0, "Sparkling");
 		organizeSparklingAlertSettings(sparkling);
+        for (SettingsPage page : List.copyOf(sparkling.pages)) {
+            if (!page.breadcrumb.contains("Sparkling Alerts")) continue;
+            sparkling.pages.remove(page);
+            if (!page.name.equals("Sparkling Alerts")) sparklingAlerts.pages.add(page);
+        }
 
 		if (advanced != null && advancedSource != null) {
 			appendNamedSection(advanced, advancedSource, "safeModeAccordion", 0, "Advanced");
@@ -427,7 +447,7 @@ public final class SafariSettingsScreen extends Screen {
 		for (int i = 0; i < display.tabs.size(); i++) {
 			SettingsTab tab = display.tabs.get(i);
 			List<SettingsPage> pages = new ArrayList<>();
-			pages.add(layout);
+			if (!tab.key.equals("borders")) pages.add(layout);
 			pages.addAll(tab.pages);
 			display.tabs.set(i, new SettingsTab(tab.key, tab.name, tab.description, List.copyOf(pages)));
 		}
@@ -466,8 +486,24 @@ public final class SafariSettingsScreen extends Screen {
 	private void buildSettingsTabs() {
 		for (SettingsArea area : settingsAreas) area.tabs.clear();
 		SettingsArea display = areaByKey("display");
-		for (String hud : List.of("Progress HUD", "Missing HUD", "Contest HUD", "Party Objective HUD"))
-			addTab(display, hud, hud, "HUD visibility, content, and layout", page -> !page.breadcrumb.contains("Border Colors") && page.breadcrumb.contains(hud));
+		for (String hud : List.of("Progress HUD", "Missing HUD", "Contest HUD", "Party Objective HUD")) {
+			addTab(display, hud, hud, "HUD visibility, content, layout, and borders", page -> !page.breadcrumb.contains("Border Colors") && page.breadcrumb.contains(hud));
+            int index = display.tabs.size() - 1;
+            SettingsTab tab = display.tabs.get(index);
+            List<SettingsPage> pages = new ArrayList<>();
+            for (SettingsPage page : tab.pages) {
+                // The HUD toggle is a standalone card, not an ancestor indenting Options.
+                SettingsPage normalized = page.name.equals(hud)
+                    ? new SettingsPage(page.key, page.name, page.description, hud + " General", page.owner, page.fields, 0)
+                    : page;
+                pages.add(normalized);
+                if (normalized != page) display.pages.set(display.pages.indexOf(page), normalized);
+            }
+            display.pages.stream().filter(page -> page.breadcrumb.contains("Border Colors") && page.name.equals(hud))
+                .forEach(page -> pages.add(new SettingsPage(page.key, "Border Options", "",
+                    hud + "  ›  Border Options", page.owner, page.fields, 0)));
+            display.tabs.set(index, new SettingsTab(tab.key, tab.name, tab.description, List.copyOf(pages)));
+        }
 		SettingsArea markers = areaByKey("markers");
 		addTab(markers, "general", "General", "Shared marker labels and visibility",
 			page -> page.key.equals("display.marker-settings"));
@@ -476,14 +512,26 @@ public final class SafariSettingsScreen extends Screen {
 				|| page.key.equals("display.marker-settings.recatch") || page.key.equals("display.marker-settings.critters"));
 		addTab(markers, "objectives", "Objectives", "Floor drops, walls, mounds, and nests",
 			page -> page.key.equals("display.marker-settings.objectives"));
-		addTab(display, "borders", "Borders", "HUD border colors", page -> page.breadcrumb.contains("Border Colors"));
+		SettingsPage screenColors = navigationPage(source("display").value, "display.screen-colors", "Screen Borders", "", 0,
+            "statsTabBorderColour", "historyTabBorderColour", "profitTabBorderColour", "personalBestsTabBorderColour", "currentRunTabBorderColour");
+        display.tabs.add(new SettingsTab("borders", "Screen Borders", "Border colors for statistics and run detail screens", List.of(screenColors)));
+        // All old border controls now live in the canonical tabs above. Do not let
+        // the fallback navigation resurrect their obsolete hierarchy as More.
+        display.pages.removeIf(page -> page.breadcrumb.contains("Border Colors"));
 
 		SettingsArea gameplay = areaByKey("gameplay");
-		addTab(gameplay, "safari", "General", "Safari convenience, tickets, and optional party synchronization",
-			page -> page.key.equals("gameplay.auto-hideyho") || page.key.equals("gameplay.tickets")
-				|| page.key.equals("gameplay.party") || page.key.equals("gameplay.personal-bests"));
+		addTab(gameplay, "safari", "General", "Safari convenience and personal-best messages",
+			page -> page.key.equals("gameplay.auto-hideyho") || page.key.equals("gameplay.candles") || page.key.equals("gameplay.honeyhives") || page.key.equals("gameplay.personal-bests"));
+        addTab(gameplay, "tickets", "Tickets", "Ticket protection, automatic selection, and ticket trading",
+            page -> page.key.startsWith("gameplay.ticket-"));
+        addTab(gameplay, "party", "Party", "Hotspot assignments and cross-mod party coordination",
+            page -> page.key.equals("gameplay.coordination") || page.key.equals("gameplay.party"));
+        // Keep prediction before water, with the client prefix last in Visual.
+        var visualTail=gameplay.pages.stream().filter(page -> page.key.equals("display.safari.water")
+            || page.key.equals("display.safari.prefix")).toList();
+        gameplay.pages.removeAll(visualTail);gameplay.pages.addAll(visualTail);
 		addTab(gameplay, "visual", "Visual", "Safari chat visibility and visual comfort",
-			page -> page.key.startsWith("display.safari."));
+			page -> page.key.startsWith("display.safari.") || page.key.equals("gameplay.prediction"));
 		addTab(gameplay, "profit", "Profit", "Run profit tracking and Bazaar pricing",
 			page -> page.key.equals("gameplay.profit"));
 
@@ -496,11 +544,16 @@ public final class SafariSettingsScreen extends Screen {
 			page -> page.breadcrumb.startsWith("Chat"));
 
 		SettingsArea sparkling = areaByKey("sparkling");
-		addTab(sparkling, "sparkling-mode", "Sparkling Mode", "Sparkling detection and hunting behavior",
+		addTab(sparkling, "sparkling-mode", "Unique Mode", "Unique catches and optional Sparkling-focused hunting",
 			page -> page.key.equals("sparkling.overview")
-				|| page.breadcrumb.contains("Sparkling Mode Options"));
-		addTab(sparkling, "alerts", "Alerts", "Sparkling banners, catches, sounds, and chat alerts",
-			page -> page.breadcrumb.contains("Sparkling Alerts"));
+				|| page.breadcrumb.contains("Unique Mode Options"));
+        SettingsArea sparklingAlerts = areaByKey("sparklings");
+        addTab(sparklingAlerts, "banner", "Banner", "Sparkling detection banners and sounds",
+            page -> page.breadcrumb.contains("  ›  Banner"));
+        addTab(sparklingAlerts, "chat", "Chat", "Detected, caught, and shared Sparkling messages",
+            page -> page.breadcrumb.contains("  ›  Chat"));
+        addTab(sparklingAlerts, "special-catch", "Special Catch", "Special Sparkling catch effects and sounds",
+            page -> page.breadcrumb.contains("  ›  Special Catch"));
 
 		SettingsArea advanced = areaByKey("advanced");
 		addTab(advanced, "options", "Options", "Choose which features require visible confirmation",
@@ -752,6 +805,7 @@ public final class SafariSettingsScreen extends Screen {
 
 	@Override
 	protected void init() {
+        releasePointerCapture();
 		updateResponsiveLayout();
 		String preservedSearch = search == null ? "" : search.getValue();
 		boolean searchFocused = search != null && search.isFocused();
@@ -821,9 +875,9 @@ public final class SafariSettingsScreen extends Screen {
 		if (width >= 760) {
 			navWidth = WIDE_NAV_WIDTH;
 		} else if (width >= 520) {
-			navWidth = 116;
+			navWidth = 124;
 		} else {
-			navWidth = Math.max(88, Math.min(102, width / 5));
+			navWidth = Math.max(98, Math.min(112, width / 5));
 		}
 		workspaceLeft = navWidth;
 		int contentWidth = width - workspaceLeft;
@@ -1712,7 +1766,7 @@ public final class SafariSettingsScreen extends Screen {
 
 	/** Applies build-level availability for Safe Mode, private, and Developer settings. */
 	private static boolean visibleInThisBuild(Class<?> owner, Field field) {
-		if (field.getName().equals("floorDropItemColours")
+		if ((field.getName().equals("floorDropItemColours") || field.getName().equals("fullCandleTarget"))
                 && !BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS)) return false;
 		if (field.getName().startsWith("private")
 				&& !BuildVersion.has(BuildVersion.Capability.AUTHENTICATED_API)) return false;
@@ -1907,6 +1961,11 @@ public final class SafariSettingsScreen extends Screen {
 		int controlWidth = settingControlWidth(left, right, stacked);
 		int x = stacked ? left + 12 : right - controlWidth - 10;
 		int controlY = stacked ? y + height - 28 : y + (height - 22) / 2;
+        String locked = ChatTemplateFormats.lockedValue(owner, field.getName());
+        if (locked != null) {
+            drawTextValue(graphics, x, controlY, controlWidth, locked);
+            return;
+        }
 		try {
 			SettingChoice dropdown = field.getAnnotation(SettingChoice.class);
 			SettingMultiChoice multiChoice = field.getAnnotation(SettingMultiChoice.class);
@@ -4114,16 +4173,37 @@ public final class SafariSettingsScreen extends Screen {
 		}
 	}
 
+    private boolean windowFocused=true;
+    private void releasePointerCapture() {
+        boolean dirty=draggingSlider!=null||customDurationDragging||customVolumeDragging;
+        draggingSlider=null;draggingOwner=null;draggingRange=null;
+        customDurationDragging=false;customVolumeDragging=false;setDragging(false);
+        if(dirty)ConfigManager.save();
+    }
+    @Override public void tick() {
+        super.tick();
+        boolean focused=Minecraft.getInstance().isWindowActive();
+        if(focused!=windowFocused) {
+            releasePointerCapture();setFocused(null);
+            if(search!=null)search.setFocused(false);
+            if(editor!=null)editor.setFocused(false);
+            windowFocused=focused;
+        }
+    }
+
 	@Override
 	public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
-		if (event.button() == 0) blurInlineFieldsOutside(event.x(), event.y());
-		if (event.button() == 0 && !backgroundBlocked() && search != null && search.visible
+        // A new press cannot belong to a drag whose release was lost during Alt+Tab.
+        releasePointerCapture();
+        if(!backgroundBlocked()) {modalHitStart=-1;customPresetHitStart=-1;}
+		if (event.button() == com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT) blurInlineFieldsOutside(event.x(), event.y());
+		if (event.button() == com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT && !backgroundBlocked() && search != null && search.visible
 				&& inside(event.x(), event.y(), searchFrameX, searchFrameY,
 					searchFrameX + searchFrameWidth, searchFrameY + searchFrameHeight)) {
 			return focusEditorFrame(event, doubled, search, searchFrameX, searchFrameY,
 				searchFrameX + searchFrameWidth, searchFrameY + searchFrameHeight);
 		}
-		if (choiceField != null && isSoundChoice(choiceField) && event.button() == 1) {
+		if (choiceField != null && isSoundChoice(choiceField) && event.button() == com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_RIGHT) {
 			for (SoundPreviewHit hit : soundPreviewHits) {
 				if (!hit.contains(event.x(), event.y())) continue;
 				AlertSounds.preview(Minecraft.getInstance(), hit.soundId,
@@ -4146,7 +4226,7 @@ public final class SafariSettingsScreen extends Screen {
 			return focusEditorFrame(event, doubled, editor, inlineEditorLeft,
 				inlineEditorTop, inlineEditorRight, inlineEditorBottom);
 		}
-		if (event.button() == 0 && updateColourControl(event.x(), event.y())) return true;
+		if (event.button() == com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT && updateColourControl(event.x(), event.y())) return true;
 		if (editor != null && editor.isMouseOver(event.x(), event.y())) {
 			return super.mouseClicked(event, doubled);
 		}
@@ -4171,7 +4251,7 @@ public final class SafariSettingsScreen extends Screen {
 			return focusEditorFrame(event, doubled, customPresetNameEditor,
 				customPresetNameBounds);
 		}
-		if (customSparklingPanel && !customPresetMenu && event.button() == 0
+		if (customSparklingPanel && !customPresetMenu && event.button() == com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT
 				&& inside(event.x(), event.y(), customDurationSliderLeft,
 					customDurationSliderTop + 3,
 					customDurationSliderLeft + customDurationSliderWidth,
@@ -4181,7 +4261,7 @@ public final class SafariSettingsScreen extends Screen {
 			updateCustomDuration(event.x());
 			return true;
 		}
-		if (customSparklingPanel && !customPresetMenu && event.button() == 0
+		if (customSparklingPanel && !customPresetMenu && event.button() == com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT
 				&& inside(event.x(), event.y(), customVolumeSliderLeft,
 					customVolumeSliderTop + 3,
 					customVolumeSliderLeft + customVolumeSliderWidth,
@@ -4191,7 +4271,7 @@ public final class SafariSettingsScreen extends Screen {
 			updateCustomVolume(event.x());
 			return true;
 		}
-		if (event.button() == 0) {
+		if (event.button() == com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT) {
 			int minimum = customPresetHitStart >= 0 ? customPresetHitStart
 				: modalHitStart >= 0 ? modalHitStart : 0;
 			for (int i = hits.size() - 1; i >= minimum; i--) {
@@ -4207,14 +4287,14 @@ public final class SafariSettingsScreen extends Screen {
 
 	private boolean focusEditorFrame(MouseButtonEvent event, boolean doubled,
 			EditBox field, EditorBounds bounds) {
-		if (event.button() != 0 || field == null
+		if (event.button() != com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT || field == null
 				|| !bounds.contains(event.x(), event.y())) return false;
 		return focusEditorFrame(event, doubled, field);
 	}
 
 	private boolean focusEditorFrame(MouseButtonEvent event, boolean doubled,
 			EditBox field, int left, int top, int right, int bottom) {
-		if (event.button() != 0 || field == null
+		if (event.button() != com.mojang.blaze3d.platform.InputConstants.MOUSE_BUTTON_LEFT || field == null
 				|| !inside(event.x(), event.y(), left, top, right, bottom)) return false;
 		return focusEditorFrame(event, doubled, field);
 	}
@@ -4307,6 +4387,7 @@ public final class SafariSettingsScreen extends Screen {
 
 	@Override
 	public boolean mouseReleased(MouseButtonEvent event) {
+        setDragging(false);
 		if (customDurationDragging) {
 			customDurationDragging = false;
 			ConfigManager.save();
@@ -4365,7 +4446,7 @@ public final class SafariSettingsScreen extends Screen {
 	@Override
 	public boolean keyPressed(KeyEvent event) {
 		SettingsUiKit.available(search, !backgroundBlocked());
-		if (event.key() == 258) return true;
+		if (event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_TAB) return true;
 		if (customSparklingPanel && customPresetNaming && SettingsUiKit.enter(event.key())) {
 			finishPresetSave();
 			return true;
@@ -4373,15 +4454,15 @@ public final class SafariSettingsScreen extends Screen {
 		if (SettingsUiKit.enter(event.key()) && blurFocusedInlineField()) return true;
 		// Alt+Tab can deliver the Tab key before Windows removes focus. Do not let
 		// Minecraft cycle focus into hidden widgets behind this modal.
-		if (customSparklingPanel && customPresetMenu && event.key() == 256) {
+		if (customSparklingPanel && customPresetMenu && event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) {
 			closeCustomPresetMenu();
 			return true;
 		}
-		if (specialSparklingConfirmation && event.key() == 256) {
+		if (specialSparklingConfirmation && event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) {
 			cancelSparklingIntensity();
 			return true;
 		}
-		if (choiceField != null && event.key() == 256) {
+		if (choiceField != null && event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) {
 			closeChoicePicker();
 			return true;
 		}
@@ -4389,19 +4470,19 @@ public final class SafariSettingsScreen extends Screen {
 			applyEditor();
 			return true;
 		}
-		if (editor != null && event.key() == 256) {
+		if (editor != null && event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) {
 			cancelEditor();
 			return true;
 		}
-		if (customThemePanel && event.key() == 256) {
+		if (customThemePanel && event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) {
 			closeCustomThemePanel();
 			return true;
 		}
-		if (customSparklingPanel && event.key() == 256) {
+		if (customSparklingPanel && event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) {
 			closeCustomSparklingPanel();
 			return true;
 		}
-		if (constellationPanel && event.key() == 256) {
+		if (constellationPanel && event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) {
 			closeConstellationPanel();
 			return true;
 		}

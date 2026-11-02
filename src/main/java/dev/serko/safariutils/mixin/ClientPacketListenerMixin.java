@@ -50,7 +50,7 @@ public abstract class ClientPacketListenerMixin {
 	private void safariutils$outboundCommand(String command, CallbackInfo info) {
 		if (!HypixelConnection.active()) return;
 		InteractionDebugLog.onCommand(command);
-		dev.serko.safariutils.client.CommandCoordinator.observeOutboundCommand();
+		dev.serko.safariutils.client.CommandCoordinator.observeOutboundCommand(command);
 	}
 
 	@Inject(method = "handleParticleEvent", at = @At("HEAD"))

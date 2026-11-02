@@ -59,6 +59,8 @@ public final class CommandCoordinator {
 	}
 
 	private static final MonotonicCooldowns<Cooldown> cooldowns = new MonotonicCooldowns<>(System::nanoTime);
+	private static final dev.serko.safariutils.state.PartyWarpCooldown partyWarp =
+		new dev.serko.safariutils.state.PartyWarpCooldown(System::nanoTime);
 	private static final Deque<SentCommand> recent = new ArrayDeque<>();
 	private static long sequence;
 	private record SentCommand(long sequence, long sentAt, Category category, String root) { }
@@ -93,12 +95,15 @@ public final class CommandCoordinator {
 		}
 		if (request.requireLeader() && (!party.known() || !party.localLeader())) return false;
 		if (request.requireParty() && !party.inParty()) return false;
-		if (remaining(request.cooldown()) > 0L) {
+		if (remaining(request.cooldown()) > 0L
+				|| dev.serko.safariutils.state.PartyWarpCooldown.isWarp(request.command())
+				&& partyWarp.remainingMillis() > 0L) {
 			return false;
 		}
 		client.getConnection().sendCommand(stripSlash(request.command()));
 		cooldowns.mark(Cooldown.SHARED);
 		cooldowns.mark(request.cooldown());
+		partyWarp.observeCommand(request.command());
 		sequence++;
 		remember(new SentCommand(sequence, System.nanoTime(), request.category(), root(request.command())));
 		diagnostic("sent", request, "#" + sequence);
@@ -130,20 +135,26 @@ public final class CommandCoordinator {
 	}
 
 	/** Observes manual/other-mod commands without delaying or changing their send. */
-	public static void observeOutboundCommand() {
+	public static void observeOutboundCommand(String command) {
 		cooldowns.mark(Cooldown.SHARED);
+		partyWarp.observeCommand(command);
 	}
 
+	public static long partyWarpRemainingMillis() { return partyWarp.remainingMillis(); }
+
 	public static void resetConnection() {
+		// World transfers and party replacement do not reset Hypixel's warp restriction.
 		cooldowns.clear();
 		recent.clear();
 	}
 
 	/** Correlates concise server failures with recent automatic commands for diagnostics. */
 	public static void observeServerMessage(String line) {
-		if (line == null || line.isBlank() || recent.isEmpty()) return;
+		if (line == null || line.isBlank()) return;
+		boolean warpRejected = partyWarp.observeRejection(line);
+		if (recent.isEmpty()) return;
 		String lower = line.toLowerCase(Locale.ROOT);
-		String result = null;
+		String result = warpRejected ? "warp-cooldown" : null;
 		if (lower.contains("command is on cooldown") || lower.contains("woah slow down")
 				|| lower.contains("you're doing that too fast")) {
 			result = "cooldown";

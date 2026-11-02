@@ -24,7 +24,7 @@ public final class SettingsMotionRegression {
 		check(motion.navigation(60) == 60, "navigation persists across content changes");
 		motion.begin(900_000_000_000L, 3, false);
 		check(motion.value(1999, 1) == 1, "long focus gaps do not replay animation");
-		check(SettingsUiKit.enter(257) && SettingsUiKit.enter(335) && !SettingsUiKit.enter(258), "both enter keys, not Tab");
+		check(SettingsUiKit.enter(com.mojang.blaze3d.platform.InputConstants.KEY_RETURN) && SettingsUiKit.enter(com.mojang.blaze3d.platform.InputConstants.KEY_NUMPADENTER) && !SettingsUiKit.enter(com.mojang.blaze3d.platform.InputConstants.KEY_TAB), "both enter keys, not Tab");
 		SettingsUiKit.pointer(25, 40);
 		check(SettingsUiKit.hovered(10, 20, 100, 60), "card whitespace belongs to card hover");
 		SettingsUiKit.pointer(110, 40);

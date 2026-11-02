@@ -21,10 +21,7 @@ public final class VisibilityCheck {
 	/** A generous half-angle that mainly rejects targets behind the player. */
 	private static final double FOV_HALF_ANGLE_DEGREES = 60.0;
 	private static final double FOV_COSINE = Math.cos(Math.toRadians(FOV_HALF_ANGLE_DEGREES));
-	private static final long PAINTING_CACHE_MILLIS = 1_000;
-	private static final List<net.minecraft.world.phys.AABB> paintingBoxes = new ArrayList<>();
-	private static long paintingsCachedAt = Long.MIN_VALUE;
-	private static Object paintingLevel;
+    private static final TickCache<List<net.minecraft.world.phys.AABB>> PAINTINGS = new TickCache<>();
 
 	private VisibilityCheck() {
 	}
@@ -165,15 +162,14 @@ public final class VisibilityCheck {
 	private static boolean paintingBlocks(Vec3 from, Vec3 to) {
 		Minecraft client = Minecraft.getInstance();
 		if (client.level == null) return false;
-		long now = System.currentTimeMillis();
-		if (paintingLevel != client.level || now - paintingsCachedAt >= PAINTING_CACHE_MILLIS) {
-			paintingLevel = client.level;
-			paintingsCachedAt = now;
-			paintingBoxes.clear();
-			for (Entity entity : WorldEntities.current()) {
-				if (EntityTypeIds.is(entity, "painting")) paintingBoxes.add(entity.getBoundingBox());
-			}
-		}
+        // Follow the shared world tick, not a one-second timer: newly loaded paintings
+        // must occlude hidden critter predictions as soon as the target snapshot updates.
+        var paintingBoxes=PAINTINGS.get(() -> {
+            var boxes=new ArrayList<net.minecraft.world.phys.AABB>();
+            for(Entity entity:WorldEntities.current())
+                if(EntityTypeIds.is(entity,"painting")) boxes.add(entity.getBoundingBox());
+            return List.copyOf(boxes);
+        });
 		for (net.minecraft.world.phys.AABB box : paintingBoxes) {
 			if (box.inflate(0.01).clip(from, to).isPresent()) return true;
 		}

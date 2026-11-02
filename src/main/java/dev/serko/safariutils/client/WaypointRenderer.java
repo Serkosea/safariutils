@@ -1,10 +1,6 @@
 package dev.serko.safariutils.client;
 
-import com.mojang.blaze3d.pipeline.DepthStencilState;
-import com.mojang.blaze3d.pipeline.ColorTargetState;
-import com.mojang.blaze3d.pipeline.RenderPipeline;
-import com.mojang.blaze3d.pipeline.BlendFunction;
-import com.mojang.blaze3d.platform.CompareOp;
+import static dev.serko.safariutils.client.MarkerPipelines.*;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.serko.safariutils.BuildVersion;
@@ -16,10 +12,6 @@ import dev.serko.safariutils.session.SessionManager;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.renderer.RenderPipelines;
-import net.minecraft.client.renderer.blockentity.BeaconRenderer;
-import net.minecraft.client.renderer.rendertype.LayeringTransform;
-import net.minecraft.client.renderer.rendertype.RenderSetup;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
@@ -103,77 +95,6 @@ public final class WaypointRenderer {
 	 * <p>Registered so the game precompiles it along with its own; it would be compiled
 	 * on first use either way.
 	 */
-	private static final RenderPipeline LINES_THROUGH_WALLS = RenderPipelines.register(
-		RenderPipeline.builder(RenderPipelines.LINES_SNIPPET)
-			.withLocation(Identifier.fromNamespaceAndPath(SafariUtils.MOD_ID, "pipeline/lines_through_walls"))
-			.withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
-			.build());
-
-	private static final RenderType LINES = RenderType.create(
-		SafariUtils.MOD_ID + ":lines_through_walls",
-		RenderSetup.builder(LINES_THROUGH_WALLS)
-			.setLayeringTransform(LayeringTransform.VIEW_OFFSET_Z_LAYERING)
-			.createRenderSetup());
-
-	/** Textured translucent beacon pipeline that remains visible through terrain. */
-	private static final RenderPipeline BEACON_THROUGH_WALLS_PIPELINE = RenderPipelines.register(
-		RenderPipeline.builder(RenderPipelines.BEACON_BEAM_SNIPPET)
-			.withLocation(Identifier.fromNamespaceAndPath(SafariUtils.MOD_ID,
-				"pipeline/beacon_through_walls"))
-			.withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
-			.withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
-			.build());
-
-	private static final RenderType BEACON_THROUGH_WALLS = RenderType.create(
-		SafariUtils.MOD_ID + ":beacon_through_walls",
-		RenderSetup.builder(BEACON_THROUGH_WALLS_PIPELINE)
-			.withTexture("Sampler0", BeaconRenderer.BEAM_LOCATION)
-			.sortOnUpload()
-			.createRenderSetup());
-
-	/** Ordinary depth-tested beam used when Safe Mode requires visual confirmation. */
-	private static final RenderPipeline BEACON_DEPTH_TESTED_PIPELINE = RenderPipelines.register(
-		RenderPipeline.builder(RenderPipelines.BEACON_BEAM_SNIPPET)
-			.withLocation(Identifier.fromNamespaceAndPath(SafariUtils.MOD_ID,
-				"pipeline/beacon_depth_tested"))
-            .withDepthStencilState(new DepthStencilState(DepthStencilState.DEFAULT.depthTest(), false))
-			.withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
-			.build());
-
-	private static final RenderType BEACON_DEPTH_TESTED = RenderType.create(
-		SafariUtils.MOD_ID + ":beacon_depth_tested",
-		RenderSetup.builder(BEACON_DEPTH_TESTED_PIPELINE)
-			.withTexture("Sampler0", BeaconRenderer.BEAM_LOCATION)
-			.sortOnUpload()
-			.createRenderSetup());
-
-    /** Never write marker depth: real models must remain able to cover early geometry. */
-    private static final RenderPipeline DEPTH_LINES_PIPELINE = RenderPipelines.register(
-        RenderPipeline.builder(RenderPipelines.LINES_SNIPPET)
-            .withLocation(Identifier.fromNamespaceAndPath(SafariUtils.MOD_ID, "pipeline/marker_depth_lines"))
-            .withDepthStencilState(new DepthStencilState(DepthStencilState.DEFAULT.depthTest(), false)).build());
-    private static final RenderType DEPTH_LINES = RenderType.create(SafariUtils.MOD_ID + ":marker_depth_lines",
-        RenderSetup.builder(DEPTH_LINES_PIPELINE).createRenderSetup());
-    private static final RenderPipeline FACE_PIPELINE = RenderPipelines.register(
-        RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET)
-            .withCull(false)
-            .withLocation(Identifier.fromNamespaceAndPath(SafariUtils.MOD_ID, "pipeline/marker_face"))
-            .withDepthStencilState(new DepthStencilState(DepthStencilState.DEFAULT.depthTest(), false)).build());
-
-    private static final RenderPipeline FACE_THROUGH_PIPELINE = RenderPipelines.register(
-        RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET)
-            .withCull(false)
-            .withLocation(Identifier.fromNamespaceAndPath(SafariUtils.MOD_ID, "pipeline/marker_face_through"))
-            .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false)).build());
-    private static final RenderType FACE_THROUGH = RenderType.create(SafariUtils.MOD_ID + ":face_through",
-        RenderSetup.builder(FACE_THROUGH_PIPELINE).createRenderSetup());
-
-	/** Depth-tested fill used for the visible top face of a floor drop. */
-	private static final RenderType FILLED_FACE = RenderType.create(
-		SafariUtils.MOD_ID + ":filled_face",
-		RenderSetup.builder(FACE_PIPELINE)
-			.setLayeringTransform(LayeringTransform.VIEW_OFFSET_Z_LAYERING)
-			.createRenderSetup());
 
 	private WaypointRenderer() {
 	}
@@ -198,10 +119,74 @@ public final class WaypointRenderer {
 		MarkerRegistry.invalidate();
 	}
 
+    private static void renderCapsulePrediction(LevelRenderContext context,WaypointRenderBackend backend,Vec3 camera) {
+        var frame=CapsulePrediction.frame(framePartialTick); if(frame==null)return;
+        var poses=context.poseStack();poses.pushPose();poses.translate(-camera.x,-camera.y,-camera.z);
+        var settings=ConfigManager.get().gameplay;
+        int colour=Colours.argb(frame.entity()?settings.capsulePredictionHitColour:settings.capsulePredictionColour,
+            frame.entity()?0xFFFF7070:0xFF55FFAA)|0xFF000000;
+        backend.geometry(DEPTH_LINES,(pose,lines)->{
+            for(int i=1;i<frame.points().size();i++) {
+                Vec3 a=frame.points().get(i-1),b=frame.points().get(i);
+                gradientLine(pose,lines,(float)a.x,(float)a.y,(float)a.z,(float)b.x,(float)b.y,(float)b.z,
+                    capsulePathColour(colour,a,camera),capsulePathColour(colour,b,camera));
+            }
+            for(int i=1;i<frame.ring().size();i++) {
+                Vec3 a=frame.ring().get(i-1),b=frame.ring().get(i);
+                gradientLine(pose,lines,(float)a.x,(float)a.y,(float)a.z,(float)b.x,(float)b.y,(float)b.z,colour,colour);
+            }
+        });poses.popPose();backend.flush(DEPTH_LINES);
+    }
+
+    /** Fade only the path near the camera; the contact ring stays fully visible. */
+    private static int capsulePathColour(int colour, Vec3 point, Vec3 camera) {
+        double distanceSquared=point.distanceToSqr(camera);
+        if(distanceSquared>=36) return colour;
+        double progress=Math.clamp((Math.sqrt(distanceSquared)-.5)/5.5,0,1);
+        double smooth=progress*progress*(3-2*progress);
+        int alpha=(int)Math.round(255*(.12+.88*smooth));
+        return (colour&0x00FFFFFF)|(alpha<<24);
+    }
+
+    /** Canyon overlays reuse the same render backend and beacon/label pipelines as Safari markers. */
+    private static void renderHoneyhives(LevelRenderContext context) {
+        var hives=Honeyhives.visible();
+        if(hives.isEmpty()) return;
+        FRAME_VISIBILITY.clear(); frameNowNanos=System.nanoTime();
+        var backend=new WaypointRenderBackend(context);
+        var camera=backend.cameraPosition(); var poses=context.poseStack();
+        for(var entry:hives) {
+            var pos=entry.hive().pos();
+            double projection=dev.serko.safariutils.state.WorldOverlayProjection.scale(Vec3.atCenterOf(pos),camera);
+            AABB bounds=dev.serko.safariutils.state.WorldOverlayProjection.project(new AABB(pos),camera,projection);
+            AABB worldBeam=new AABB(pos.getX()+.38,pos.getY()+1,pos.getZ()+.38,pos.getX()+.62,Math.max(pos.getY()+1,camera.y)+4096,pos.getZ()+.62);
+            AABB beam=dev.serko.safariutils.state.WorldOverlayProjection.project(worldBeam,camera,projection);
+            if(!visible(beam)) continue;
+            int colour=Colours.argb(ConfigManager.get().gameplay.honeyhiveColour,0xFFFFDA70)|0xFF000000;
+            poses.pushPose(); poses.translate(bounds.minX-camera.x,bounds.minY-camera.y,bounds.minZ-camera.z);
+            backend.geometry(LINES,(pose,lines)->box(pose,lines,(float)bounds.getXsize(),(float)bounds.getYsize(),(float)bounds.getZsize(),colour)); poses.popPose();
+            drawHoneyhiveBeam(poses,backend,beam,camera,colour,1f/projection);
+            drawHoneyhiveBeam(poses,backend,beam.inflate(.10*projection,0,.10*projection),camera,
+                (colour&0xFFFFFF)|0x60000000,1f/projection);
+        }
+        backend.flush(LINES); backend.flush(BEACON_THROUGH_WALLS);
+        for(var entry:hives) {
+            var actual=new AABB(entry.hive().pos());
+            double projection=dev.serko.safariutils.state.WorldOverlayProjection.scale(Vec3.atCenterOf(entry.hive().pos()),camera);
+            var bounds=dev.serko.safariutils.state.WorldOverlayProjection.project(actual,camera,projection);
+            if(!visible(bounds)) continue;
+            var marker=new Markers.Marker(bounds,entry.ready()?"Honeyhive (Ready)":"Honeyhive (Unchecked)",Colours.argb(ConfigManager.get().gameplay.honeyhiveColour,0xFFFFDA70)|0xFF000000,Markers.Style.WAYPOINT,true);
+            label(poses,backend,marker,camera,Math.sqrt(distanceSquared(actual,camera)),true);
+        }
+    }
+
 	private static void render(LevelRenderContext context) {
 		Minecraft client = Minecraft.getInstance();
 		if (!HypixelConnection.active() || client.player == null || ClientCompat.hudHidden()) return;
-		if (!SafariLocation.inside()) return;
+		if (!SafariLocation.inside()) {
+            renderHoneyhives(context);
+            return;
+        }
 		nextReplacedVanillaNames.clear();
 		FRAME_VISIBILITY.clear();
 		framePartialTick = client.getDeltaTracker().getGameTimeDeltaPartialTick(false);
@@ -270,6 +255,13 @@ public final class WaypointRenderer {
 		renderCaptureShrinks(context, backend, camera, snapshot);
 		renderFloorDropFaces(context, backend, camera);
 		renderDiagnosticHitboxes(context, backend, camera);
+        var candle=CandleTarget.aimedBlock();
+        if(candle!=null) {
+            poses.pushPose();poses.translate(candle.getX()-camera.x,candle.getY()-camera.y,candle.getZ()-camera.z);
+            backend.geometry(DEPTH_LINES,(pose,lines)->box(pose,lines,1,1,1,0xFFFF3030));
+            poses.popPose();
+        }
+        renderCapsulePrediction(context,backend,camera);
         backend.flush(DEPTH_LINES);
         backend.flush(LINES);
 		// Publish only after the complete pass. Vanilla entity names may be extracted
@@ -1098,7 +1090,6 @@ public final class WaypointRenderer {
 					: Colours.argb(display.hitboxColour, 0xFFFFFFFF)
 				: configuredColour;
 			for (BlockPos possible : display.hideyhoSolver && !display.hidePossibleWaypoints
-				&& SparklingMode.showHideyhoLocations()
 				? HideyhoSolver.candidates() : java.util.Set.<BlockPos>of()) {
 				AABB box = new AABB(
 					possible.getX(), possible.getY() - 2, possible.getZ(),
@@ -1327,6 +1318,21 @@ public final class WaypointRenderer {
 		}
 	}
 
+    /** Same animated vanilla texture as Sparkling beams, with a full-opacity core and softer halo. */
+    private static void drawHoneyhiveBeam(PoseStack poses,WaypointRenderBackend backend,AABB beam,
+        Vec3 camera,int colour,double textureScale) {
+        float width=(float)beam.getXsize(),depth=(float)beam.getZsize(),height=(float)beam.getYsize();
+        float scroll=-Math.floorMod(frameNowNanos,2_000_000_000L)/2_000_000_000f;
+        float top=scroll+(float)(height*textureScale/4);
+        poses.pushPose();poses.translate(beam.minX-camera.x,beam.minY-camera.y,beam.minZ-camera.z);
+        backend.geometry(BEACON_THROUGH_WALLS,(pose,quad)->{
+            beaconFace(pose,quad,colour,colour,scroll,top,0,0,0,width,0,0,width,height,0,0,height,0);
+            beaconFace(pose,quad,colour,colour,scroll,top,width,0,0,width,0,depth,width,height,depth,width,height,0);
+            beaconFace(pose,quad,colour,colour,scroll,top,width,0,depth,0,0,depth,0,height,depth,width,height,depth);
+            beaconFace(pose,quad,colour,colour,scroll,top,0,0,depth,0,0,0,0,height,0,0,height,depth);
+        });poses.popPose();
+    }
+
 	private static void beaconFace(PoseStack.Pose stackPose, VertexConsumer quad,
 			int bottomColour, int topColour, float vBottom, float vTop,
 			float x0, float y0, float z0, float x1, float y1, float z1,
@@ -1478,7 +1484,7 @@ public final class WaypointRenderer {
 			box.getCenter().x - camera.x,
 			box.maxY + LABEL_HEIGHT - camera.y,
 			box.getCenter().z - camera.z);
-		poses.mulPose(backend.cameraRotation());
+		ClientVersionCompat.rotate(poses,backend.cameraRotation());
 		poses.scale(LABEL_SCALE, -LABEL_SCALE, LABEL_SCALE);
 
 		float x = -cached.width() / 2.0f;

@@ -19,8 +19,8 @@ public final class CritterEntities {
 	private static final int SCAN_INTERVAL_TICKS = 5;
 	/** All indexes belong to the same completed scan; entity references remain live. */
 	private record Observations(List<Sighting> sightings, Map<Critter, List<Sighting>> byCritter,
-			Map<UUID, Critter> bodyless, Map<UUID, Sighting> byEntity) { }
-	private static final Observations EMPTY = new Observations(List.of(), Map.of(), Map.of(), Map.of());
+			Map<UUID, Critter> bodyless, Map<UUID, Sighting> byEntity, java.util.Set<UUID> capsuleLabels) { }
+	private static final Observations EMPTY = new Observations(List.of(), Map.of(), Map.of(), Map.of(), java.util.Set.of());
 	private static final ScanPublication<Observations> observations = new ScanPublication<>(EMPTY);
 	private static int ticks;
 
@@ -76,7 +76,41 @@ public final class CritterEntities {
 			}
 		}
 		observations.publish(new Observations(List.copyOf(result), Map.copyOf(grouped),
-			Map.copyOf(nextBodylessLabels), Map.copyOf(nextSightingsByEntity)));
+			Map.copyOf(nextBodylessLabels), Map.copyOf(nextSightingsByEntity), capsuleLabels(result)));
+	}
+
+	/** Capsule labels are visual scaffolding regardless of who threw the capsule. */
+	private static java.util.Set<UUID> capsuleLabels(List<Sighting> sightings) {
+		if (sightings.stream().noneMatch(sighting -> sighting.mob() == null
+			&& !"Hideyho".equals(sighting.critter().name()))) return java.util.Set.of();
+		List<Vec3> capsules = new ArrayList<>();
+		for (Entity entity : WorldEntities.current()) {
+			if (entity instanceof net.minecraft.world.entity.Display.ItemDisplay display
+					&& CritterCapsules.matches(display)) capsules.add(entity.position());
+		}
+		if (capsules.isEmpty()) return java.util.Set.of();
+		java.util.Set<UUID> labels = new java.util.HashSet<>();
+		for (Sighting sighting : sightings) {
+			// A real paired body is independent evidence: never hide a nearby peer.
+			if (sighting.mob() != null || "Hideyho".equals(sighting.critter().name())) continue;
+			for (Vec3 capsule : capsules) {
+				Vec3 offset = sighting.label().position().subtract(capsule);
+				if (capsuleLabelOffset(offset.x, offset.y, offset.z)) {
+					labels.add(sighting.label().getUUID());
+					break;
+				}
+			}
+		}
+		return java.util.Set.copyOf(labels);
+	}
+
+	static boolean capsuleLabelOffset(double x, double y, double z) {
+		// Name stands sit above the capsule; this is not a species/body ownership match.
+		return x * x + z * z <= 0.75 * 0.75 && y >= -0.5 && y <= 3.0;
+	}
+
+	static boolean isRemoteCaptureLabel(Sighting sighting) {
+		return observations.current().value().capsuleLabels().contains(sighting.label().getUUID());
 	}
 
 	/** Correlates debug-only capsule candidates with nearby reappearing critters. */

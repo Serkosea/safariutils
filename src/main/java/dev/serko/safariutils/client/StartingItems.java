@@ -46,4 +46,11 @@ public final class StartingItems {
 		}
 		return String.join(", ", items);
 	}
+
+    static String mutualsFormat(int[] counts) {
+        List<String> items = new ArrayList<>();
+        for (int i = 0; i < counts.length && i < ORDERED.size(); i++)
+            if ((i == 4 || i >= 6) && counts[i] > 0) items.add(counts[i] + "x " + ORDERED.get(i).inventoryName());
+        return String.join("; ", items);
+    }
 }

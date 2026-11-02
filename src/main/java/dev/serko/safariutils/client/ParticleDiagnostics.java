@@ -35,15 +35,15 @@ public final class ParticleDiagnostics {
 
 	public static void onParticle(ClientboundLevelParticlesPacket packet) {
 		if (!HypixelConnection.active() || !SafariLocation.inSafari()) return;
-		Vec3 position = new Vec3(packet.getX(), packet.getY(), packet.getZ());
-		if (sparklingPattern(packet)) observeSparklingPattern(position);
+		var data=ClientVersionCompat.particle(packet);
+        if(sparklingPattern(data)) observeSparklingPattern(data.position());
 	}
 
 	/** Packet shape consistently observed for Sparkling effects. */
-	private static boolean sparklingPattern(ClientboundLevelParticlesPacket packet) {
-		return packet.getParticle().getType() == ParticleTypes.WAX_ON && packet.getCount() == 5
-			&& close(packet.getXDist(), 0.30f) && close(packet.getYDist(), 0.50f)
-			&& close(packet.getZDist(), 0.30f) && close(packet.getMaxSpeed(), 1.00f);
+	private static boolean sparklingPattern(ParticleData packet) {
+		return packet.particle().getType() == ParticleTypes.WAX_ON && packet.count() == 5
+			&& close(packet.xDist(), 0.30f) && close(packet.yDist(), 0.50f)
+			&& close(packet.zDist(), 0.30f) && close(packet.xSpeed(), 1.00f) && close(packet.ySpeed(),1.00f) && close(packet.zSpeed(),1.00f);
 	}
 
 	private static boolean close(float actual, float expected) {
@@ -60,7 +60,9 @@ public final class ParticleDiagnostics {
 			nearestSq = distanceSq;
 			nearest = sighting;
 		}
-		if (nearest == null) return;
+		// Do not redirect a capsule's particles onto the next-nearest real critter.
+		if (nearest == null || CritterEntities.isRemoteCaptureLabel(nearest)
+				|| CritterEntities.isCaptureScaffolding(nearest)) return;
 
 		// The named stand is the stable identity we detected first. A mob can pair a
 		// scan later, which must not reset accumulated particle evidence merely because

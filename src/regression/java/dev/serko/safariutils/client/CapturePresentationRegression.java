@@ -14,6 +14,8 @@ public final class CapturePresentationRegression {
 		var config = ConfigManager.class.getDeclaredField("config");
 		config.setAccessible(true);
 		Object previous = config.get(null);
+		var previousShared = SparklingMode.shared();
+		boolean previousSharedConfigured = SparklingMode.sharedConfigured();
 		var catalog = StaticEntityCatalog.class.getDeclaredField("local");
 		catalog.setAccessible(true);
 		Object previousCatalog = catalog.get(null);
@@ -26,6 +28,8 @@ public final class CapturePresentationRegression {
 		config.set(null, settings);
 		int checks = 0;
 		try {
+            checks += huntingModePolicy(settings);
+            SparklingMode.clearShared();
             var solsnatcher = Critters.byName("Solsnatcher");
             UUID captured = new UUID(28, 1), untouched = new UUID(28, 2);
             for (int nameMode : new int[]{0, 1, 2, 3}) {
@@ -53,7 +57,8 @@ public final class CapturePresentationRegression {
             }
             settings.display.displayNametags = 2;
             settings.sparkling.sparklingMode = true;
-            settings.sparkling.sparklingOnlyShowSparkling = true;
+            settings.sparkling.sparklingIgnoreUniques = true;
+            SparklingMode.replaceShared(Set.of(solsnatcher));
             var hiddenOrdinary = new RecatchSpots.PresentationSnapshot(List.of(), List.of(), Set.of(),
                 Set.of(captured), Set.of(), Set.of(solsnatcher));
             check(!WaypointRenderer.captureTransitionReplacesName(solsnatcher, captured, false, false, hiddenOrdinary),
@@ -61,7 +66,8 @@ public final class CapturePresentationRegression {
             check(WaypointRenderer.captureTransitionReplacesName(solsnatcher, captured, true, false, hiddenOrdinary),
                 "sparkling capture lost name replacement"); checks++;
             settings.sparkling.sparklingMode = false;
-            settings.sparkling.sparklingOnlyShowSparkling = false;
+            settings.sparkling.sparklingIgnoreUniques = false;
+            SparklingMode.clearShared();
             var idle = new RecatchSpots.PresentationSnapshot(List.of(), List.of(), Set.of(), Set.of(), Set.of(), Set.of());
             check(!WaypointRenderer.captureTransitionReplacesName(solsnatcher, null, false, false, idle),
                 "capture name suppression survived outcome"); checks++;
@@ -151,11 +157,37 @@ public final class CapturePresentationRegression {
 		} finally {
 			CritterState.onVisitStarted(); RecatchSpots.clear(); config.set(null, previous);
 			catalog.set(null, previousCatalog);
+			if (previousSharedConfigured) SparklingMode.replaceShared(previousShared);
+			else SparklingMode.clearShared();
 			var cache = StaticEntityCatalog.class.getDeclaredField("positionCache");
 			cache.setAccessible(true);
 			((java.util.Map<?, ?>) cache.get(null)).clear();
 		}
 	}
+
+    private static int huntingModePolicy(SafariConfig settings) {
+        var species = Critters.byName("Solsnatcher");
+        SparklingMode.replaceShared(Set.of(species));
+        int checks = 0;
+        for (boolean uniqueMode : new boolean[]{false, true}) {
+            for (boolean sparklingMode : new boolean[]{false, true}) {
+                settings.sparkling.sparklingMode = uniqueMode;
+                settings.sparkling.sparklingIgnoreUniques = sparklingMode;
+                boolean hideShared = uniqueMode && sparklingMode;
+                check(SparklingMode.hideOrdinaryHitbox(species, false) == hideShared, "shared ordinary mode gate");
+                check(!SparklingMode.hideOrdinaryHitbox(species, true), "mode must retain actual Sparkling");
+                check(SparklingMode.displayName().equals(!uniqueMode ? "Full Clear Mode" : hideShared ? "Sparkling Mode" : "Unique Mode"), "effective HUD mode title");
+                checks += 3;
+            }
+        }
+        var gson = new com.google.gson.GsonBuilder().excludeFieldsWithoutExposeAnnotation().create();
+        var legacy = gson.fromJson("{\"sparklingMode\":true,\"sparklingIgnoreUniques\":false,\"sparklingOnlyShowSparkling\":true}", SafariConfig.SparklingConfig.class);
+        check(legacy.sparklingMode && !legacy.sparklingIgnoreUniques, "existing mode preferences preserved");
+        check(!gson.toJson(legacy).contains("sparklingOnlyShowSparkling"), "retired restriction must not persist");
+        settings.sparkling.sparklingMode = true;
+        settings.sparkling.sparklingIgnoreUniques = true;
+        return checks + 2;
+    }
 
 	/** Impact chat can arrive after the capsule has already been flying for several scans. */
 	private static int inFlightCapsuleContact() {
@@ -309,7 +341,7 @@ public final class CapturePresentationRegression {
 		position.setAccessible(true); confirmed.setAccessible(true);
 		Object oldPosition = position.get(null), oldConfirmed = confirmed.get(null);
 		boolean oldMarkers = settings.display.enableHitboxes, oldMode = settings.sparkling.sparklingMode;
-		boolean oldOnly = settings.sparkling.sparklingOnlyShowSparkling;
+		boolean oldSparklingMode = settings.sparkling.sparklingIgnoreUniques;
 		long oldAlways = settings.sparkling.sparklingAlwaysActiveCritters;
 		try {
 			position.set(null, new net.minecraft.core.BlockPos(0, 80, 0)); confirmed.setBoolean(null, true);
@@ -320,7 +352,8 @@ public final class CapturePresentationRegression {
 			check(!HideyhoSolver.markerEnabled(), "disabled markers must silence Hideyho");
 			settings.display.enableHitboxes = true;
 			settings.sparkling.sparklingMode = true;
-			settings.sparkling.sparklingOnlyShowSparkling = true;
+			settings.sparkling.sparklingIgnoreUniques = true;
+			SparklingMode.replaceShared(Set.of(Critters.byName("Hideyho")));
 			settings.sparkling.sparklingAlwaysActiveCritters = 0;
 			check(!HideyhoSolver.markerEnabled(), "hidden ordinary Hideyho must be silent");
 			settings.sparkling.sparklingAlwaysActiveCritters = Critters.allSelectionMask();
@@ -331,7 +364,7 @@ public final class CapturePresentationRegression {
 		} finally {
 			position.set(null, oldPosition); confirmed.set(null, oldConfirmed);
 			settings.display.enableHitboxes = oldMarkers; settings.sparkling.sparklingMode = oldMode;
-			settings.sparkling.sparklingOnlyShowSparkling = oldOnly;
+			settings.sparkling.sparklingIgnoreUniques = oldSparklingMode;
 			settings.sparkling.sparklingAlwaysActiveCritters = oldAlways;
 		}
 	}

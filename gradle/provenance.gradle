@@ -4,6 +4,7 @@ def profileName = project.ext.safariProvenanceProfile.toString()
 def edition = project.ext.safariProvenanceEdition.toString()
 def componentVersion = project.ext.safariProvenanceVersion.toString()
 def roots = ['src/main', "src/${profileName}"]
+if (profileName != '26.3') roots.add('src/compat-pre26.3')
 if (edition == 'developer') roots.add('src/developer')
 def sourceInputs = files(roots.collect { fileTree(new File(safariRoot, it)) })
 def generated = layout.buildDirectory.dir('generated/safari-provenance')

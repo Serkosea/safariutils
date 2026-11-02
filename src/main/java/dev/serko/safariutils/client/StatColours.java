@@ -24,10 +24,10 @@ public final class StatColours {
         if(value.contains("duplicate")) return DUPLICATES;
         if(value.contains("unique")) return UNIQUE;
         if(value.contains("sparkling")) return PERSONAL_BEST;
-        if(value.contains("coin") || value.contains("profit") || value.contains("per run") && !value.contains("catch")) return COINS;
+        if(value.contains("coin") || value.contains("profit") || (value.contains("per run") || value.contains("per hour")) && !value.contains("catch")) return COINS;
         if(value.contains("essence")) return ESSENCE;
         if(value.contains("shard")) return UNIQUE;
-        if(value.contains("played") || value.contains("length") || value.contains("attempt")) return TIME;
+        if(value.contains("time") || value.contains("played") || value.contains("length") || value.contains("attempt")) return TIME;
         if(value.contains("catch") || value.contains("caught")) return CATCHES;
         return INFO;
     }

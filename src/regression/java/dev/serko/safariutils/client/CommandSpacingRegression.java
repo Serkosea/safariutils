@@ -7,11 +7,14 @@ public final class CommandSpacingRegression {
 		CommandCoordinator.resetConnection();
 		for (var category : CommandCoordinator.Cooldown.values()) {
 			if (CommandCoordinator.remaining(category) != 0) throw new AssertionError("reset cooldown");
-			CommandCoordinator.observeOutboundCommand();
+			CommandCoordinator.observeOutboundCommand("warp safari");
 			if (CommandCoordinator.remaining(category) <= 0) throw new AssertionError("shared command gap: " + category);
 			CommandCoordinator.resetConnection();
 			checks += 2;
 		}
-		return checks;
+		CommandCoordinator.observeOutboundCommand("party warp");
+		CommandCoordinator.resetConnection();
+		if (CommandCoordinator.partyWarpRemainingMillis() <= 0) throw new AssertionError("warp cooldown survives transfer");
+		return checks + 1;
 	}
 }

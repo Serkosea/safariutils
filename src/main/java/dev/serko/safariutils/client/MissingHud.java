@@ -56,7 +56,7 @@ public final class MissingHud implements HudElement {
 
 	/** Builds the list for {@code biome}; production rendering supplies the ticketed run. */
 	static HudPanel buildPanel(SafariBiome biome, SafariSession session) {
-		if (SparklingMode.enabled()) return buildSparklingModePanel(biome, SessionManager.current());
+		if (SparklingMode.enabled()) return buildSparklingModePanel(biome, session);
 		// Gimmiegold is always kept in, regardless of session.missing()'s usual
 		// caught-once-and-done judgement: its line tracks coins found against
 		// Gimmiegolds caught, not a one-and-done catch, so it needs to stay in its
@@ -64,9 +64,7 @@ public final class MissingHud implements HudElement {
 		// here" the moment the first one is caught.
 		List<Critter> shown = session == null ? Critters.inBiome(biome)
 			: Critters.inBiome(biome).stream()
-				.filter(c -> !ConfigManager.get().display.missingUniqueOnly
-					|| !session.caughtByParty(c))
-				.filter(c -> !c.hasQuota() || !session.isComplete(c))
+				.filter(c -> RunRelevance.fullClearHud(c, session))
 				.toList();
 
 		HudPanel panel = new HudPanel();
@@ -121,7 +119,7 @@ public final class MissingHud implements HudElement {
 				else note = ConfigManager.get().display.showTotalCatches
 					? caught + " Caught" : "";
 				panel.statusPair(session != null && session.caughtByParty(critter),
-					critter.name(), note, ProgressHud.rarityColour(critter), DIM);
+					critter.name(), note, ProgressHud.rarityColour(critter), DIM, RunRelevance.indicateProfit(critter));
 			}
 		}
 		// Anything the run can no longer produce is stated outright rather than just
@@ -159,29 +157,17 @@ public final class MissingHud implements HudElement {
 		panel.sparklingModeTitle(biome.displayName(), HudBorderStyle.missingTitle(biome, session));
 		if (appendSparklingEntries(panel, biome)) panel.blank();
 
-		boolean nonSharedShown = false;
+		boolean speciesShown = false;
 		for (Critter critter : Critters.inBiome(biome)) {
-			if (SparklingMode.isShared(critter)) continue;
-			boolean caught = session != null && session.caughtByParty(critter);
-			if (ConfigManager.get().display.missingUniqueOnly && caught) continue;
+			if (!RunRelevance.showInHud(critter, session)) continue;
+			// Optional profit/explicit targets can remain after a unique; their reason
+			// is independent of the catch-backed completion mark.
 			boolean complete = session != null && session.isComplete(critter);
 			String note = sparklingModeNear(session, critter);
-			panel.statusPair(complete, critter.name(), note, ProgressHud.rarityColour(critter), DIM);
-			nonSharedShown = true;
+			panel.statusPair(complete, critter.name(), note, ProgressHud.rarityColour(critter), DIM,
+				RunRelevance.indicateProfit(critter));
+			speciesShown = true;
 		}
-
-		boolean sharedShown = false;
-		for (Critter critter : Critters.inBiome(biome)) {
-			if (!SparklingMode.isShared(critter)) continue;
-			if (SparklingMode.ignoreUniques()) continue;
-			if (session != null && session.caughtByParty(critter)) continue;
-			if (!sharedShown && nonSharedShown) panel.blank();
-			panel.statusPair(false, critter.name(), sparklingModeNear(session, critter),
-				ProgressHud.rarityColour(critter), DIM);
-			sharedShown = true;
-		}
-
-		boolean speciesShown = nonSharedShown || sharedShown;
 		boolean groupStarted = false;
 		groupStarted |= appendFloorDropCount(panel, biome, speciesShown && !groupStarted);
 		groupStarted |= appendMounds(panel, biome, speciesShown && !groupStarted);
@@ -239,6 +225,7 @@ public final class MissingHud implements HudElement {
 	 * decided, since its ratio keeps being worth showing after every other species in
 	 * the biome is done, right up until it genuinely has nothing left to say.
 	 */
+
 	private static void appendGimmiegold(HudPanel panel, SafariSession session) {
 		// Same near-beats-everything priority as any other critter: once coins are
 		// thrown in and one actually spawns, that matters more than the ratio, exactly
@@ -260,7 +247,7 @@ public final class MissingHud implements HudElement {
 			note = caught + "/" + (coins == 0 ? "?" : String.valueOf(coins));
 		}
 		panel.statusPair(session != null && session.caughtByParty(GIMMIEGOLD),
-			GIMMIEGOLD.name(), note, ProgressHud.rarityColour(GIMMIEGOLD), DIM);
+			GIMMIEGOLD.name(), note, ProgressHud.rarityColour(GIMMIEGOLD), DIM, RunRelevance.indicateProfit(GIMMIEGOLD));
 	}
 
 	/**

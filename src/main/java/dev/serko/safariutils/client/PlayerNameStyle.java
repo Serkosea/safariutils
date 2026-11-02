@@ -115,6 +115,14 @@ public final class PlayerNameStyle {
 		SharedSparklingProviders.refreshNameColour(name, uuid);
 	}
 
+    /** Chat components share the UUID-backed identity rule with HUD names. */
+    static Component component(String name) {
+        String displayed=CanonicalPlayerNames.display(name);
+        if(SharedSparklingProviders.specialName(displayed))
+            return UIDraw.rainbowComponent(net.minecraft.client.Minecraft.getInstance().font, displayed, 0, 0.45f);
+        return Component.literal(displayed).withColor(colour(displayed));
+    }
+
 	/** Draws one canonical username with UUID-backed owner styling or its rank colour. */
 	static String drawName(GuiGraphicsExtractor graphics, Font font, String name, int x, int y) {
 		String displayed = CanonicalPlayerNames.display(name);

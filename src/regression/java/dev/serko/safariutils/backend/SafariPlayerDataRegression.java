@@ -27,6 +27,9 @@ public final class SafariPlayerDataRegression {
 		catch (UnsupportedOperationException expected) { checks++; }
 		try { data.species().clear(); throw new AssertionError("mutable species"); }
 		catch (UnsupportedOperationException expected) { checks++; }
+        var hunting=SafariPlayerData.decode(JsonParser.parseString("{\"fetchedAt\":1,\"huntingLevel\":42.5}").getAsJsonObject());
+        if(!Double.valueOf(42.5).equals(hunting.lookup("Test").huntingLevel()))throw new AssertionError("hunting level decoding");
+
 		var empty = SafariPlayerData.decode(JsonParser.parseString("{\"fetchedAt\":1}").getAsJsonObject());
 		check(empty.species().isEmpty() && empty.duplicates() == 0 && empty.tickets().values().stream().allMatch(n -> n == 0),
 			"never-owned collections retain zero defaults"); checks++;

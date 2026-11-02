@@ -42,6 +42,7 @@ public final class BazaarPrices {
 	private static final MonotonicCooldowns<Boolean> REFRESH = new MonotonicCooldowns<>(System::nanoTime);
 
 	private static volatile Map<String, Price> prices = Map.of();
+	private static Set<String> freshProducts = Set.of();
 	private static volatile long fetchedAt;
 	private static long priceRevision;
 	private static volatile String lastError;
@@ -82,9 +83,15 @@ public final class BazaarPrices {
 	 * client thread only ever hands the job over.
 	 */
 	public static void tick() {
-		if (stopped || fetching || NetworkRuntime.stopping() || !ConfigManager.get().profit.enabled) return;
+		request(ConfigManager.get().profit.enabled || ConfigManager.get().display.indicateProfitableCritters && SafariLocation.inside() || SparklingMode.enabled()
+			&& ConfigManager.get().sparkling.alwaysShowProfitableCritters);
+	}
 
-		dev.serko.safariutils.backend.AuctionMarketClient.requestIfNeeded();
+	/** Demand shares the same refresh interval, in-flight request, and market service. */
+	static void request(boolean demand) {
+		if (stopped || fetching || NetworkRuntime.stopping() || !demand) return;
+
+		if (ConfigManager.get().profit.enabled) dev.serko.safariutils.backend.AuctionMarketClient.requestIfNeeded();
         if (REFRESH.remainingMillis(true, REFRESH_MILLIS) > 0) return;
 		// Held off before the job starts, so a slow request cannot queue a second one.
 		REFRESH.mark(true);
@@ -112,6 +119,7 @@ public final class BazaarPrices {
 			Map<String, Price> merged = new HashMap<>(prices);
 			merged.putAll(parsed);
 			prices = Map.copyOf(merged);
+			freshProducts = Set.copyOf(parsed.keySet());
 			fetchedAt = System.currentTimeMillis();
 			priceRevision++;
 			lastError = null;
@@ -182,6 +190,18 @@ public final class BazaarPrices {
 	/** The same, at whichever side the settings pick — the figure everything shows. */
 	public static double price(Critter critter) {
 		return price(critter, ConfigManager.get().profit.priceSource());
+	}
+
+	static double essencePrice() {
+		return freshProducts.contains(SAFARI_ESSENCE) ? price(SAFARI_ESSENCE, ConfigManager.get().profit.priceSource()) : 0;
+	}
+
+	static double rankingPrice(Critter critter) {
+		return freshProducts.contains(critter.bazaarId()) ? price(critter) : 0;
+	}
+
+	static long rankingRevision() {
+		return priceRevision * 2L + ConfigManager.get().profit.priceSource().ordinal();
 	}
 
 	/** What a pile of shards is worth. Species with no price simply add nothing. */

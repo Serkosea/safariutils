@@ -99,6 +99,19 @@ public class SafariConfig {
 	public AdvancedConfig advanced = new AdvancedConfig();
 
 	public static class GameplayConfig {
+        @SettingInfo(name = "Full Candle Target", desc = "Use Soothing Incense by aiming anywhere inside the candle's block")
+        @SettingToggle @Expose public boolean fullCandleTarget = true;
+        @SettingInfo(name = "Honeyhive Beacons", desc = "Shows available Canyon Honeyhives and remembers collection times")
+        @SettingToggle @Expose public boolean honeyhiveBeacons = true;
+        @SettingInfo(name = "Color", desc = "Color of Honeyhive beacons and markers")
+        @SettingColor @Expose public String honeyhiveColour = DisplayConfig.colour(0xFF,0xDA,0x70);
+        @SettingInfo(name = "Capsule Prediction", desc = "Shows an estimated capsule path while holding a capsule")
+        @SettingToggle @Expose public boolean capsulePrediction = true;
+        @SettingInfo(name = "Critter Contact Color", desc = "Path color when a critter is predicted to be hit")
+        @SettingColor @Expose public String capsulePredictionHitColour = DisplayConfig.colour(0xFF,0x70,0x70);
+        @SettingInfo(name = "Path Color", desc = "Color of the capsule path before a predicted critter hit")
+        @SettingColor @Expose public String capsulePredictionColour = DisplayConfig.colour(0x55,0xFF,0xAA);
+
         @SettingInfo(name = "Unique Clear PBs", desc = "Shows biome and All Uniques clear times with colored PB comparisons, grouped by unique-catch contributors")
         @SettingChoice(values = {"All Completions", "PBs Only", "Off"})
         @Expose public int personalBestMessages = 0;
@@ -119,6 +132,20 @@ public class SafariConfig {
 		@Expose
 		public boolean protectSafariTicket = true;
 
+        @SettingInfo(name = "Full Clear Ticket", desc = "Selects your preferred Full Clear ticket when the ticket menu opens")
+        @SettingChoice(values = {"Manual", "Basic", "Economy", "Premium", "First Class"}) @Expose
+        public int fullClearTicket = 0;
+        @SettingInfo(name = "Unique Mode Ticket", desc = "Ticket to select automatically in Unique mode; keeps normal party protection")
+        @SettingChoice(values = {"Manual", "Basic", "Economy", "Premium", "First Class"}) @Expose
+        public int uniqueTicket = 0;
+        @SettingInfo(name = "Sparkling Mode Ticket", desc = "Ticket to select automatically in Sparkling mode; never substitutes another ticket")
+        @SettingChoice(values = {"Manual", "Basic", "Economy", "Premium", "First Class"}) @Expose
+        public int sparklingTicket = 0;
+        @SettingInfo(name = "Assign Hotspots", desc = "Shares your hotspot and assigns separate biomes when party hotspots overlap")
+        @SettingToggle @Expose public boolean assignHotspots = false;
+        @SettingInfo(name = "Mutuals Compatibility", desc = "Uses Sparkling Mutuals party messages and hotspot assignments; restores your custom messages when disabled")
+        @SettingToggle @Expose public boolean mutualsCompatibility = false;
+
 		@SettingInfo(name = "Ticket Trading",
 			desc = "Configure trusted players for timed Safari ticket trading")
 		@SettingAction(buttonText = "Configure")
@@ -126,6 +153,11 @@ public class SafariConfig {
 	}
 
 	public static class DisplayConfig {
+        @SettingInfo(name = "Clear Water", desc = "Removes underwater haze and the water overlay while in Safari")
+        @SettingToggle @Expose public boolean clearWater = false;
+        @SettingInfo(name = "Water Opacity", desc = "Adjusts water transparency with Clear Water")
+        @SettingRange(minValue=0,maxValue=100,minStep=5) @Expose public float waterOpacity = 60;
+
 		@SettingInfo(name = "Settings Theme", desc = "Changes the colors and style of this settings menu")
 		@SettingChoice(values = {"Default", "Rainbow", "Amethyst", "Arctic", "Aurora",
 			"Blueprint", "Candy", "Canyon", "Cherry Blossom", "Coffee", "Copper", "Cyberpunk",
@@ -161,7 +193,7 @@ public class SafariConfig {
 		public String customThemeError = "0:255:106:133:0";
 		@SettingInfo(name = "Highlight", desc = "") @Expose
 		public String customThemeHighlight = "0:255:255:200:87";
-		@SettingInfo(name = "Primary Text", desc = "") @Expose
+		@SettingInfo(name = "Primary Text", desc = "Custom message text") @Expose
 		public String customThemeText = "0:255:198:255:184";
 		@SettingInfo(name = "Secondary Text", desc = "") @Expose
 		public String customThemeMuted = "0:255:133:0:80";
@@ -310,6 +342,12 @@ public class SafariConfig {
 		@Expose
 		public boolean countSpawns = true;
 
+        @SettingInfo(name = "Indicate Profitable Critters", desc = "Marks profitable critters with a green $ in every run mode")
+        @SettingToggle
+        @SettingGroup(id = MISSING_HUD_OPTIONS)
+        @Expose
+        public boolean indicateProfitableCritters = true;
+
 		@SettingInfo(
 			name = "Unique Only",
 			desc = "Removes a critter from the Missing HUD after its first unique catch")
@@ -425,19 +463,19 @@ public class SafariConfig {
 		@Expose
 		public boolean contestTimeRemaining = true;
 
-		@SettingInfo(name = "Current Standing",
-			desc = "Shows your current bracket and score in ongoing Miria's Contest")
-		@SettingToggle
-		@SettingGroup(id = CONTEST_HUD_OPTIONS)
-		@Expose
-		public boolean contestCurrentStanding = false;
-
 		@SettingInfo(name = "Ticket Earned",
 			desc = "Shows whether or not a Safari Ticket has been earned in ongoing Miria's Contest")
 		@SettingToggle
 		@SettingGroup(id = CONTEST_HUD_OPTIONS)
 		@Expose
 		public boolean contestTicketEarned = true;
+
+		@SettingInfo(name = "Current Standing",
+			desc = "Shows your current bracket and score in ongoing Miria's Contest")
+		@SettingToggle
+		@SettingGroup(id = CONTEST_HUD_OPTIONS)
+		@Expose
+		public boolean contestCurrentStanding = false;
 
 		@SettingInfo(name = "Hide On Complete",
 			desc = "Hide the Contest HUD if a Safari Ticket has been earned for the ongoing Miria's Contest")
@@ -533,7 +571,7 @@ public class SafariConfig {
 		@Expose
 		public boolean floorDropLoot = true;
 
-        @SettingInfo(name = "Floor Drop Quest Items", desc = "Marks needed quest items and hides surplus items, even outside Sparkling Mode; Sparkling Mode respects Always Active")
+        @SettingInfo(name = "Floor Drop Quest Items", desc = "Marks needed quest items and hides surplus items, even outside Unique Mode; Unique Mode respects Always Active")
         @SettingToggle @SettingGroup(id = MARKERS) @Expose
         public boolean floorDropQuestItems = true;
 
@@ -765,7 +803,7 @@ public class SafariConfig {
 		@SettingGroup(id = HUD_BORDER_COLOURS)
 		public boolean statsBordersAccordion = false;
 
-		@SettingInfo(name = "Run Details", desc = "Border color for selected run details")
+		@SettingInfo(name = "Run Details", desc = "")
 		@SettingColor @SettingGroup(id = HUD_BORDER_STATS) @Expose
 		public String currentRunTabBorderColour = colour(0x55, 0xFF, 0x55);
 
@@ -776,6 +814,14 @@ public class SafariConfig {
 		@SettingInfo(name = "Stats", desc = "")
 		@SettingColor @SettingGroup(id = HUD_BORDER_STATS) @Expose
 		public String statsTabBorderColour = colour(0x55, 0xFF, 0xFF);
+
+		@SettingInfo(name = "Personal Bests", desc = "")
+		@SettingColor @SettingGroup(id = HUD_BORDER_STATS) @Expose
+		public String personalBestsTabBorderColour = colour(0xB5, 0x8A, 0xFF);
+
+        @SettingInfo(name = "Profit", desc = "")
+        @SettingColor @SettingGroup(id = HUD_BORDER_STATS) @Expose
+        public String profitTabBorderColour = colour(0xFF, 0xDB, 0x70);
 
 		@SettingInfo(name = "Progress HUD", desc = "")
 		@SettingSection(id = PROGRESS_HUD_BORDER)
@@ -1016,6 +1062,10 @@ public class SafariConfig {
 		@SettingChoice(values = {"Instant Sell", "Sell Offer"})
 		@Expose
 		public int priceSource = 0;
+
+		@SettingInfo(name = "Profit Estimate Ticket", desc = "Ticket essence bonus used by /safari profit and profitable critter markers; does not change recorded run rewards")
+		@SettingChoice(values = {"Basic", "Economy", "Premium", "First Class"}) @Expose
+		public int estimateTicket = 0;
 
 		/** The chosen side, guarded against a config file holding something out of range. */
 		public PriceSource priceSource() {
@@ -1457,7 +1507,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_HOTSPOT) @SettingGroup(id = SOUND_HOTSPOT)
 		public boolean hotspotAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "Custom banner text\n§bTags: <BIOME>")
+		@SettingInfo(name = "Text", desc = "Custom banner text\n§bTags: " + AlertText.BIOME_HELP)
 		@SettingText @SettingGroup(id = APPEAR_HOTSPOT) @Expose
 		public String hotspotText = "<BIOME> Hotspot";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -1598,7 +1648,7 @@ public class SafariConfig {
 		@SettingGroup(id = BIOME_UNIQUES_DONE)
 		public boolean biomeUniquesDoneAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "Custom banner text\n§bTags: <BIOME>")
+		@SettingInfo(name = "Text", desc = "Custom banner text\n§bTags: " + AlertText.BIOME_HELP)
 		@SettingText @SettingGroup(id = APPEAR_BIOME_UNIQUES_DONE) @Expose
 		public String biomeUniquesDoneText = "<BIOME> Uniques Done";
 
@@ -1664,7 +1714,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_ALL_BUT_MACAW_DONE) @SettingGroup(id = ALL_BUT_MACAW_DONE)
 		public boolean allButMacawDoneAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom message text")
 		@SettingText @SettingGroup(id = APPEAR_ALL_BUT_MACAW_DONE) @Expose
 		public String allButMacawDoneText = "All Except Macaw Done";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -1716,7 +1766,7 @@ public class SafariConfig {
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_ALL_UNIQUES_DONE) @SettingGroup(id = ALL_UNIQUES_DONE)
 		public boolean allUniquesDoneAppearanceAccordion = false;
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom message text")
 		@SettingText @SettingGroup(id = APPEAR_ALL_UNIQUES_DONE) @Expose
 		public String allUniquesDoneText = "All Uniques Done";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -1780,7 +1830,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_GEMZIE_READY) @SettingGroup(id = SOUND_GEMZIE_READY)
 		public boolean gemzieReadyAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom text\n§bTags: <CRITTER>, <RARITY>")
 		@SettingText @SettingGroup(id = APPEAR_GEMZIE_READY) @Expose
 		public String gemzieReadyText = "Gemzie Ready";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -1840,7 +1890,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_GEMZIE_DONE) @SettingGroup(id = SOUND_GEMZIE_DONE)
 		public boolean gemzieDoneAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom text\n§bTags: <CRITTER>, <RARITY>")
 		@SettingText @SettingGroup(id = APPEAR_GEMZIE_DONE) @Expose
 		public String gemzieDoneText = "Gemzie Done!";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -1911,7 +1961,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_WUMPA_READY) @SettingGroup(id = SOUND_WUMPA_READY)
 		public boolean wumpaReadyAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom text\n§bTags: <CRITTER>, <RARITY>")
 		@SettingText @SettingGroup(id = APPEAR_WUMPA_READY) @Expose
 		public String wumpaReadyText = "Wumpa Ready";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -1971,7 +2021,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_WUMPA_STARTED) @SettingGroup(id = SOUND_WUMPA_STARTED)
 		public boolean wumpaStartedAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom text\n§bTags: <CRITTER>, <RARITY>")
 		@SettingText @SettingGroup(id = APPEAR_WUMPA_STARTED) @Expose
 		public String wumpaStartedText = "Wumpa Started";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -2031,7 +2081,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_WUMPA_DONE) @SettingGroup(id = SOUND_WUMPA_DONE)
 		public boolean wumpaDoneAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom text\n§bTags: <CRITTER>, <RARITY>")
 		@SettingText @SettingGroup(id = APPEAR_WUMPA_DONE) @Expose
 		public String wumpaDoneText = "Wumpa Done!";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -2102,7 +2152,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_DOOM_READY) @SettingGroup(id = SOUND_DOOMSPIRAL_READY)
 		public boolean doomspiralReadyAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom text\n§bTags: <CRITTER>, <RARITY>")
 		@SettingText @SettingGroup(id = APPEAR_DOOM_READY) @Expose
 		public String doomspiralReadyText = "Doomspiral Ready";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -2162,7 +2212,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_DOOM_STARTED) @SettingGroup(id = SOUND_DOOMSPIRAL_STARTED)
 		public boolean doomspiralStartedAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom text\n§bTags: <CRITTER>, <RARITY>")
 		@SettingText @SettingGroup(id = APPEAR_DOOM_STARTED) @Expose
 		public String doomspiralStartedText = "Doomspiral Started";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -2222,7 +2272,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_DOOM_DONE) @SettingGroup(id = SOUND_DOOMSPIRAL_DONE)
 		public boolean doomspiralDoneAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom text\n§bTags: <CRITTER>, <RARITY>")
 		@SettingText @SettingGroup(id = APPEAR_DOOM_DONE) @Expose
 		public String doomspiralDoneText = "Doomspiral Done!";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -2294,7 +2344,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_HIDEYHO) @SettingGroup(id = SOUND_HIDEYHO)
 		public boolean hideyhoAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom message text")
 		@SettingText @SettingGroup(id = APPEAR_HIDEYHO) @Expose
 		public String hideyhoText = "Hideyho Found";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -2363,7 +2413,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_MACAW) @SettingGroup(id = SOUND_MACAW)
 		public boolean macawAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom text\n§bTags: " + AlertText.SPAWN_HELP)
 		@SettingText @SettingGroup(id = APPEAR_MACAW) @Expose
 		public String macawText = "Macaw Spawned";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -2426,7 +2476,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_BIRDS) @SettingGroup(id = SOUND_BIRDS)
 		public boolean birdfeederAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "Custom banner text\n§bTags: <CRITTER>")
+		@SettingInfo(name = "Text", desc = "Custom text\n§bTags: " + AlertText.SPAWN_HELP)
 		@SettingText @SettingGroup(id = APPEAR_BIRDS) @Expose
 		public String birdfeederText = "<CRITTER> Spawned";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -2489,7 +2539,7 @@ public class SafariConfig {
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_BIRDFEEDER_EMPTY) @SettingGroup(id = BIRDFEEDER_EMPTY)
 		public boolean birdfeederEmptyAppearanceAccordion = false;
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom message text")
 		@SettingText @SettingGroup(id = APPEAR_BIRDFEEDER_EMPTY) @Expose
 		public String birdfeederEmptyText = "Birdfeeder Empty";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -2538,7 +2588,7 @@ public class SafariConfig {
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = APPEAR_FEED_GONE) @SettingGroup(id = FEED_GONE)
 		public boolean feedGoneAppearanceAccordion = false;
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom message text")
 		@SettingText @SettingGroup(id = APPEAR_FEED_GONE) @Expose
 		public String feedGoneText = "All Feed Used";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -2585,7 +2635,7 @@ public class SafariConfig {
 		@SettingInfo(name = "Appearance Settings", desc = "")
 		@SettingSection(id = ALL_FEED_DONE_APPEARANCE) @SettingGroup(id = ALL_FEED_DONE)
 		public boolean allFeedDoneAppearanceAccordion = false;
-		@SettingInfo(name = "Text", desc = "") @SettingText
+		@SettingInfo(name = "Text", desc = "Custom message text") @SettingText
 		@SettingGroup(id = ALL_FEED_DONE_APPEARANCE) @Expose
 		@SerializedName(value = "allFeedDoneText", alternate = "privateFeedDoneText")
 		public String allFeedDoneText = "All Feed Done";
@@ -2652,7 +2702,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_CONTEST_START) @SettingGroup(id = SOUND_CONTEST_START)
 		public boolean contestStartAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom message text")
 		@SettingText @SettingGroup(id = APPEAR_CONTEST_START) @Expose
 		public String contestStartText = "Contest Started";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -2716,7 +2766,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_CONTEST_FIVE) @SettingGroup(id = SOUND_CONTEST_FIVE)
 		public boolean contestFiveMinuteAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom message text")
 		@SettingText @SettingGroup(id = APPEAR_CONTEST_FIVE) @Expose
 		public String contestFiveMinuteText = "5 Minutes Left";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -2780,7 +2830,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_CONTEST_ONE) @SettingGroup(id = SOUND_CONTEST_ONE)
 		public boolean contestOneMinuteAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom message text")
 		@SettingText @SettingGroup(id = APPEAR_CONTEST_ONE) @Expose
 		public String contestOneMinuteText = "1 Minute Left";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -2844,7 +2894,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_CONTEST_ENDED) @SettingGroup(id = SOUND_CONTEST_ENDED)
 		public boolean contestEndedAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom message text")
 		@SettingText @SettingGroup(id = APPEAR_CONTEST_ENDED) @Expose
 		public String contestEndedText = "Contest Ended";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -2908,7 +2958,7 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_TICKET) @SettingGroup(id = SOUND_TICKET)
 		public boolean contestTicketEarnedAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom message text")
 		@SettingText @SettingGroup(id = APPEAR_TICKET) @Expose
 		public String contestTicketEarnedText = "Ticket Earned";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
@@ -3038,7 +3088,7 @@ public class SafariConfig {
 		@SettingGroup(id = CHAT_HOTSPOT)
 		@Expose
 		public int hotspotBroadcast = 0;
-		@SettingInfo(name = "Text", desc = "Custom chat text\n§bTags: <BIOME>") @SettingText @SettingGroup(id = CHAT_HOTSPOT) @Expose
+		@SettingInfo(name = "Text", desc = "Custom chat text\n§bTags: " + AlertText.BIOME_HELP) @SettingText @SettingGroup(id = CHAT_HOTSPOT) @Expose
 		public String hotspotChatText = "<BIOME> Hotspot!";
 
 		@SettingInfo(name = "Unique Completions", desc = "")
@@ -3053,7 +3103,7 @@ public class SafariConfig {
 		@SettingGroup(id = CHAT_BIOME_DONE)
 		@Expose
 		public int biomeDoneBroadcast = 0;
-		@SettingInfo(name = "Text", desc = "Custom chat text\n§bTags: <BIOME>") @SettingText @SettingGroup(id = CHAT_BIOME_DONE) @Expose
+		@SettingInfo(name = "Text", desc = "Custom chat text\n§bTags: " + AlertText.BIOME_HELP) @SettingText @SettingGroup(id = CHAT_BIOME_DONE) @Expose
 		public String biomeDoneChatText = "<BIOME> Uniques Done!";
 
 		@SettingInfo(name = "All Uniques Except Macaw", desc = "")
@@ -3063,7 +3113,7 @@ public class SafariConfig {
 		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
 		@SettingGroup(id = CHAT_ALL_BUT_MACAW) @Expose
 		public int allButMacawBroadcast = 0;
-		@SettingInfo(name = "Text", desc = "") @SettingText @SettingGroup(id = CHAT_ALL_BUT_MACAW) @Expose
+		@SettingInfo(name = "Text", desc = "Custom message text") @SettingText @SettingGroup(id = CHAT_ALL_BUT_MACAW) @Expose
 		public String allButMacawChatText = "All Except Macaw Done!";
 
 		@SettingInfo(name = "All Uniques Done", desc = "")
@@ -3073,7 +3123,7 @@ public class SafariConfig {
 		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
 		@SettingGroup(id = CHAT_ALL_DONE) @Expose
 		public int allDoneBroadcast = 0;
-		@SettingInfo(name = "Text", desc = "") @SettingText @SettingGroup(id = CHAT_ALL_DONE) @Expose
+		@SettingInfo(name = "Text", desc = "Custom message text") @SettingText @SettingGroup(id = CHAT_ALL_DONE) @Expose
 		public String allDoneChatText = "All Uniques Done!";
 
 		@SettingInfo(name = "Encounter Chat Alerts", desc = "")
@@ -3087,8 +3137,8 @@ public class SafariConfig {
 		@SettingGroup(id = CHAT_GEMZIE)
 		@Expose
 		public int gemzieBroadcast = 0;
-		@SettingInfo(name = "Ready Text", desc = "") @SettingText @SettingGroup(id = CHAT_GEMZIE) @Expose public String gemzieReadyChatText = "";
-		@SettingInfo(name = "Done Text", desc = "") @SettingText @SettingGroup(id = CHAT_GEMZIE) @Expose public String gemzieDoneChatText = "Gemzie Done!";
+		@SettingInfo(name = "Ready Text", desc = "Custom text\n§bTags: <CRITTER>, <RARITY>") @SettingText @SettingGroup(id = CHAT_GEMZIE) @Expose public String gemzieReadyChatText = "";
+		@SettingInfo(name = "Done Text", desc = "Custom text\n§bTags: <CRITTER>, <RARITY>") @SettingText @SettingGroup(id = CHAT_GEMZIE) @Expose public String gemzieDoneChatText = "Gemzie Done!";
 
 		@SettingInfo(name = "Wumpa", desc = "") @SettingSection(id = CHAT_WUMPA)
 		@SettingGroup(id = ENCOUNTER_CHAT_ALERTS) public boolean wumpaChatAccordion = false;
@@ -3097,9 +3147,9 @@ public class SafariConfig {
 		@SettingGroup(id = CHAT_WUMPA)
 		@Expose
 		public int wumpaBroadcast = 0;
-		@SettingInfo(name = "Ready Text", desc = "") @SettingText @SettingGroup(id = CHAT_WUMPA) @Expose public String wumpaReadyChatText = "";
-		@SettingInfo(name = "Started Text", desc = "") @SettingText @SettingGroup(id = CHAT_WUMPA) @Expose public String wumpaStartedChatText = "";
-		@SettingInfo(name = "Done Text", desc = "") @SettingText @SettingGroup(id = CHAT_WUMPA) @Expose public String wumpaDoneChatText = "Wumpa Done!";
+		@SettingInfo(name = "Ready Text", desc = "Custom text\n§bTags: <CRITTER>, <RARITY>") @SettingText @SettingGroup(id = CHAT_WUMPA) @Expose public String wumpaReadyChatText = "";
+		@SettingInfo(name = "Started Text", desc = "Custom text\n§bTags: <CRITTER>, <RARITY>") @SettingText @SettingGroup(id = CHAT_WUMPA) @Expose public String wumpaStartedChatText = "";
+		@SettingInfo(name = "Done Text", desc = "Custom text\n§bTags: <CRITTER>, <RARITY>") @SettingText @SettingGroup(id = CHAT_WUMPA) @Expose public String wumpaDoneChatText = "Wumpa Done!";
 
 		@SettingInfo(name = "Doomspiral", desc = "") @SettingSection(id = CHAT_DOOMSPIRAL)
 		@SettingGroup(id = ENCOUNTER_CHAT_ALERTS) public boolean doomspiralChatAccordion = false;
@@ -3108,9 +3158,9 @@ public class SafariConfig {
 		@SettingGroup(id = CHAT_DOOMSPIRAL)
 		@Expose
 		public int doomspiralBroadcast = 0;
-		@SettingInfo(name = "Ready Text", desc = "") @SettingText @SettingGroup(id = CHAT_DOOMSPIRAL) @Expose public String doomspiralReadyChatText = "";
-		@SettingInfo(name = "Started Text", desc = "") @SettingText @SettingGroup(id = CHAT_DOOMSPIRAL) @Expose public String doomspiralStartedChatText = "";
-		@SettingInfo(name = "Done Text", desc = "") @SettingText @SettingGroup(id = CHAT_DOOMSPIRAL) @Expose public String doomspiralDoneChatText = "Doomspiral Done!";
+		@SettingInfo(name = "Ready Text", desc = "Custom text\n§bTags: <CRITTER>, <RARITY>") @SettingText @SettingGroup(id = CHAT_DOOMSPIRAL) @Expose public String doomspiralReadyChatText = "";
+		@SettingInfo(name = "Started Text", desc = "Custom text\n§bTags: <CRITTER>, <RARITY>") @SettingText @SettingGroup(id = CHAT_DOOMSPIRAL) @Expose public String doomspiralStartedChatText = "";
+		@SettingInfo(name = "Done Text", desc = "Custom text\n§bTags: <CRITTER>, <RARITY>") @SettingText @SettingGroup(id = CHAT_DOOMSPIRAL) @Expose public String doomspiralDoneChatText = "Doomspiral Done!";
 
 		@SettingInfo(
 			name = "Only In That Biome",
@@ -3130,7 +3180,7 @@ public class SafariConfig {
 		@SettingGroup(id = CHAT_MACAW)
 		@Expose
 		public int macawBroadcast = 1;
-		@SettingInfo(name = "Text", desc = "") @SettingText @SettingGroup(id = CHAT_MACAW) @Expose public String macawChatText = "Macaw Spawned!";
+		@SettingInfo(name = "Text", desc = "Custom text\n§bTags: " + AlertText.SPAWN_HELP) @SettingText @SettingGroup(id = CHAT_MACAW) @Expose public String macawChatText = "Macaw Spawned!";
 
 		@SettingInfo(name = "All Birds", desc = "") @SettingSection(id = CHAT_ALL_BIRDS)
 		@SettingGroup(id = CHAT_BIRDS) public boolean allBirdsChatAccordion = false;
@@ -3138,7 +3188,7 @@ public class SafariConfig {
 		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
 		@SettingGroup(id = CHAT_ALL_BIRDS) @Expose
 		public int allBirdsBroadcast = 0;
-		@SettingInfo(name = "Text", desc = "Custom chat text\n§bTags: <CRITTER>")
+		@SettingInfo(name = "Text", desc = "Custom text\n§bTags: " + AlertText.SPAWN_HELP)
 		@SettingText @SettingGroup(id = CHAT_ALL_BIRDS) @Expose
 		public String allBirdsChatText = "<CRITTER> Spawned!";
 
@@ -3158,7 +3208,7 @@ public class SafariConfig {
 		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
 		@SettingGroup(id = CHAT_FEED_GONE) @Expose
 		public int feedGoneBroadcast = 1;
-		@SettingInfo(name = "Text", desc = "")
+		@SettingInfo(name = "Text", desc = "Custom message text")
 		@SettingText @SettingGroup(id = CHAT_FEED_GONE) @Expose
 		public String feedGoneChatText = "All Feed Used!";
 
@@ -3170,7 +3220,7 @@ public class SafariConfig {
 		@SettingGroup(id = CHAT_ALL_FEED_DONE) @Expose
 		@SerializedName(value = "allFeedDoneBroadcast", alternate = "privateFeedDoneBroadcast")
 		public int allFeedDoneBroadcast = 1;
-		@SettingInfo(name = "Text", desc = "") @SettingText
+		@SettingInfo(name = "Text", desc = "Custom message text") @SettingText
 		@SettingGroup(id = CHAT_ALL_FEED_DONE) @Expose
 		@SerializedName(value = "allFeedDoneChatText", alternate = "privateFeedDoneChatText")
 		public String allFeedDoneChatText = "All Feed Done!";
@@ -3191,7 +3241,7 @@ public class SafariConfig {
 		@SettingGroup(id = CHAT_CONTEST_START)
 		@Expose
 		public int contestStartBroadcast = 1;
-		@SettingInfo(name = "Text", desc = "") @SettingText @SettingGroup(id = CHAT_CONTEST_START) @Expose public String contestStartChatText = "New Contest Started!";
+		@SettingInfo(name = "Text", desc = "Custom message text") @SettingText @SettingGroup(id = CHAT_CONTEST_START) @Expose public String contestStartChatText = "New Contest Started!";
 
 		@SettingInfo(name = "5 Minute Warning", desc = "") @SettingSection(id = CHAT_CONTEST_FIVE)
 		@SettingGroup(id = CONTEST_CHAT_ALERTS) public boolean contestFiveMinuteChatAccordion = false;
@@ -3200,7 +3250,7 @@ public class SafariConfig {
 		@SettingGroup(id = CHAT_CONTEST_FIVE)
 		@Expose
 		public int contestFiveMinuteBroadcast = 1;
-		@SettingInfo(name = "Text", desc = "") @SettingText @SettingGroup(id = CHAT_CONTEST_FIVE) @Expose public String contestFiveMinuteChatText = "Contest Has 5 Minutes Left!";
+		@SettingInfo(name = "Text", desc = "Custom message text") @SettingText @SettingGroup(id = CHAT_CONTEST_FIVE) @Expose public String contestFiveMinuteChatText = "Contest Has 5 Minutes Left!";
 
 		@SettingInfo(name = "Contest Ended", desc = "") @SettingSection(id = CHAT_CONTEST_ENDED)
 		@SettingGroup(id = CONTEST_CHAT_ALERTS) public boolean contestEndedChatAccordion = false;
@@ -3209,7 +3259,7 @@ public class SafariConfig {
 		@SettingGroup(id = CHAT_CONTEST_ENDED)
 		@Expose
 		public int contestEndedBroadcast = 0;
-		@SettingInfo(name = "Text", desc = "") @SettingText @SettingGroup(id = CHAT_CONTEST_ENDED) @Expose public String contestEndedChatText = "Contest Ended! New One In 30 Seconds";
+		@SettingInfo(name = "Text", desc = "Custom message text") @SettingText @SettingGroup(id = CHAT_CONTEST_ENDED) @Expose public String contestEndedChatText = "Contest Ended! New One In 30 Seconds";
 
 		@SettingInfo(name = "Ticket Earned", desc = "") @SettingSection(id = CHAT_TICKET)
 		@SettingGroup(id = CONTEST_CHAT_ALERTS) public boolean ticketChatAccordion = false;
@@ -3218,7 +3268,7 @@ public class SafariConfig {
 		@SettingGroup(id = CHAT_TICKET)
 		@Expose
 		public int contestTicketEarnedBroadcast = 1;
-		@SettingInfo(name = "Text", desc = "") @SettingText @SettingGroup(id = CHAT_TICKET) @Expose public String contestTicketEarnedChatText = "Ticket Earned!";
+		@SettingInfo(name = "Text", desc = "Custom message text") @SettingText @SettingGroup(id = CHAT_TICKET) @Expose public String contestTicketEarnedChatText = "Ticket Earned!";
 
 		public Broadcast gemzie() {
 			return broadcast(gemzieBroadcast);
@@ -3233,7 +3283,7 @@ public class SafariConfig {
 		}
 
 		public Broadcast biomeDone() {
-			return broadcast(biomeDoneBroadcast);
+			return ChatTemplateFormats.BIOME_UNIQUES.locked() ? Broadcast.PARTY : broadcast(biomeDoneBroadcast);
 		}
 
 		public Broadcast allButMacaw() {
@@ -3265,7 +3315,7 @@ public class SafariConfig {
 		}
 
 		public Broadcast hotspot() {
-			return broadcast(hotspotBroadcast);
+			return ChatTemplateFormats.HOTSPOT.locked() ? Broadcast.PARTY : broadcast(hotspotBroadcast);
 		}
 
 		public Broadcast fullPartyJoined() {
@@ -3273,7 +3323,7 @@ public class SafariConfig {
 		}
 
 		public Broadcast startingItems() {
-			return broadcast(startingItemsBroadcast);
+			return ChatTemplateFormats.STARTING_ITEMS.locked() ? Broadcast.PARTY : broadcast(startingItemsBroadcast);
 		}
 
 		public Broadcast contestStart() {
@@ -3309,15 +3359,15 @@ public class SafariConfig {
 		private static final int SPARKLING_MODE_OPTIONS = 9;
 		private static final int CATCH_ALERT = 10;
 
-		@SettingInfo(name = "Enable Sparkling Mode",
-			desc = "Sparkling mode removes extra information based on current party's shared Sparkling critters\n" +
-				"§bUse /sparkling to see your collected sparklings and update party's Shared sparklings")
+        @SettingInfo(name = "Unique Mode",
+            desc = "Focus on missing Sparklings and one catch of each species per run. Uses your /sparkling collection and automatic party-shared lists. Turn off for Full Clear")
 		@SettingToggle
 		@Expose
 		public boolean sparklingMode = true;
 
 		// Edited by the dedicated Ticket Trading screen rather than ordinary cards.
 		@Expose public boolean ticketTradingEnabled = false;
+		@Expose public boolean ticketTradingDisbandParty = true;
 		@Expose public java.util.List<TicketTraderProfile> ticketTradingProfiles = new java.util.ArrayList<>();
 		@Expose public java.util.List<String> ticketTradingHostQueue = new java.util.ArrayList<>();
 		@Expose public java.util.List<String> ticketTradingGuestPlayers = new java.util.ArrayList<>();
@@ -3345,18 +3395,28 @@ public class SafariConfig {
 			}
 		}
 
-		@SettingInfo(name = "Sparkling Mode Options", desc = "")
+		@SettingInfo(name = "Unique Mode Options", desc = "")
 		@SettingSection(id = SPARKLING_MODE_OPTIONS)
 		public boolean sparklingModeOptionsAccordion = false;
 
+		@SettingInfo(name = "Sparkling Mode",
+			desc = "While Unique Mode is on, skip ordinary unique catches for species whose Sparkling is already shared; Always Active selections still apply")
+		@SettingToggle @SettingGroup(id = SPARKLING_MODE_OPTIONS)
+		@Expose
+		public boolean sparklingIgnoreUniques = true;
+
+		@SettingInfo(name = "Always Show Profitable Critters", desc = "Keeps top earners visible in Unique/Sparkling Mode, marked with a green $; excludes Rockmites. See /safari profit")
+		@SettingToggle @SettingGroup(id = SPARKLING_MODE_OPTIONS) @Expose
+		public boolean alwaysShowProfitableCritters = false;
+
 		@SettingInfo(name = "Always Active Critters",
-			desc = "Keep selected ordinary critter markers visible in Sparkling Mode, even with Ignore Uniques or Only Show Sparkling")
+			desc = "Keep selected ordinary critter markers visible in Unique Mode, including when Sparkling Mode is on")
 		@SettingMultiChoice(critters = true, biomeColumns = true)
 		@SettingGroup(id = SPARKLING_MODE_OPTIONS) @Expose
 		public long sparklingAlwaysActiveCritters = 0L;
 
 		@SettingInfo(name = "Always Active Markers",
-			desc = "Keep selected objective and possible-location markers visible when Sparkling Mode would normally hide them")
+			desc = "Keep selected objective and possible-location markers visible when Unique Mode or Sparkling Mode would normally hide them")
 		@SettingMultiChoice(
             values = {"Floor Loot", "Lime Gem", "Purple Gem", "Orange Gem", "Rockmite Mounds", "Snoozle Walls", "Gem Pedestals",
                 "Floor Loot", "Icebreakers", "Troodon Walls", "Floor Loot", "Soothing Incense", "Shining Coin",
@@ -3366,18 +3426,6 @@ public class SafariConfig {
             groupStarts = {0, 7, 10, 13}, biomeColumns = true)
 		@SettingGroup(id = SPARKLING_MODE_OPTIONS) @Expose
 		public int sparklingAlwaysActiveWaypoints = 0;
-
-		@SettingInfo(name = "Ignore Uniques",
-			desc = "Ignore unique catches in Sparkling Mode to prioritize faster Sparkling checks, completely ignoring already shared Sparkling critters")
-		@SettingToggle @SettingGroup(id = SPARKLING_MODE_OPTIONS)
-		@Expose
-		public boolean sparklingIgnoreUniques = true;
-
-		@SettingInfo(name = "Only Show Sparkling",
-			desc = "Hides ordinary critter markers and critter markers while Sparkling Mode is enabled")
-		@SettingToggle @SettingGroup(id = SPARKLING_MODE_OPTIONS)
-		@Expose
-		public boolean sparklingOnlyShowSparkling = false;
 
 		// Kept only so older settings files can migrate this value to Display.
 		@Expose
@@ -3406,7 +3454,7 @@ public class SafariConfig {
 		@SettingGroup(id = BANNER_ALERT)
 		public boolean sparklingBannerAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "Custom banner text\n§bTags: <CRITTER>")
+		@SettingInfo(name = "Text", desc = "Custom text\n§bTags: " + AlertText.SPAWN_HELP)
 		@SettingText @SettingGroup(id = BANNER_APPEARANCE) @Expose
 		public String sparklingBannerText = "Sparkling <CRITTER> Found!";
 
@@ -3574,7 +3622,7 @@ public class SafariConfig {
 		@SettingGroup(id = CHAT_DETECTED)
 		@Expose
 		public int sparklingBroadcast = 1;
-		@SettingInfo(name = "Text", desc = "Custom chat text\n§bTags: <CRITTER>") @SettingText @SettingGroup(id = CHAT_DETECTED) @Expose
+		@SettingInfo(name = "Text", desc = "Custom text\n§bTags: " + AlertText.SPAWN_HELP) @SettingText @SettingGroup(id = CHAT_DETECTED) @Expose
 		public String sparklingDetectedChatText = "Sparkling <CRITTER> Found!";
 
 		@SettingInfo(name = "Sparkling Caught", desc = "")
@@ -3585,9 +3633,9 @@ public class SafariConfig {
 		@SettingGroup(id = CHAT_CAUGHT)
 		@Expose
 		public int sparklingCaughtBroadcast = 1;
-		@SettingInfo(name = "First Text", desc = "Custom chat text\n§bTags: <CRITTER>") @SettingText @SettingGroup(id = CHAT_CAUGHT) @Expose
+		@SettingInfo(name = "First Text", desc = "Custom chat text\n§bTags: " + AlertText.CRITTER_HELP) @SettingText @SettingGroup(id = CHAT_CAUGHT) @Expose
 		public String sparklingFirstCaughtChatText = "New! Sparkling <CRITTER> Caught!";
-		@SettingInfo(name = "Duplicate Text", desc = "Custom chat text\n§bTags: <CRITTER>, <COUNT>") @SettingText @SettingGroup(id = CHAT_CAUGHT) @Expose
+		@SettingInfo(name = "Duplicate Text", desc = "Custom chat text\n§bTags: <CRITTER>, <RARITY>, <COUNT>") @SettingText @SettingGroup(id = CHAT_CAUGHT) @Expose
 		public String sparklingDuplicateCaughtChatText = "Sparkling <CRITTER> Caught! #<COUNT>";
 
 		@SettingInfo(name = "Sparkling Shared", desc = "")

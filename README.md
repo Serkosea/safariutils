@@ -8,12 +8,14 @@ SafariUtils is a Fabric mod made for Hypixel SkyBlock's Critter Safari. It keeps
 - Confirmed Gemzie, Icy Wumpa, Haunted Doomspiral, and Forest Birdfeeder progress with selectable biome-completion marks in the Party Objective HUD.
 - Run history, per-player catch breakdowns, lifetime totals, Safari Essence, Rainbow Feathers, Emerald Dyes, and market-based profit estimates.
 - Personal Bests for biome and All Uniques clears, plus personal Gemzie, Doomspiral, Wumpa and Macaw catch times.
-- A dedicated Sparkling menu with editable collection totals, party-shared lists, Sparkling Mode, selectable always-active critters and markers, and special catch effects.
+- An integrated stats dashboard with editable Sparkling collection totals, player lookup and session profit, Unique Mode with optional Sparkling Mode, selectable always-active critters and markers, and special catch effects.
 - Helpful markers for Safari objectives and encounters, colored Gem Pedestals, and confirmed Rockmite mound hit progress.
 - Extra floor-drop item identification, matching item colors, and Scrappy food/feeding markers, controlled by Safe Mode.
 - Separate loot/quest-item controls and relevant remaining-item counts; surplus quest items hide once no longer needed.
-- Model glow for selected critters and Rockmite mounds on Minecraft 26.2; 26.1.2 retains standard markers.
-- Party-ready alerts and ticket protection while waiting for everyone to arrive.
+- Model glow for selected critters and Rockmite mounds on Minecraft 26.2 and 26.3; 26.1.2 retains standard markers.
+- Party-ready alerts, mode-specific ticket selection, hotspot assignment and optional Sparkling Mutuals chat compatibility.
+- Capsule trajectory previews, Honeyhive cooldown beacons, adjustable water opacity and Extra-only full-block candle targeting.
+- Optional profitable-critter targeting and independent profit indicators in the Missing HUD.
 - Optional Ticket Trading with draggable invite queues, per-player guest controls, Sparkling filters, and timed party automation.
 - Player lookups for tickets and Sparkling collections, cached rank colors, and party-shared collections with no API key setup.
 - Automatic network party sync for objectives and Sparkling discoveries, with ticket reminders and objective inventory rows for known, nonempty inventories.
@@ -32,12 +34,13 @@ Choose the jar that matches your Minecraft version.
 
 | Minecraft | Safe Mode | Extra |
 |---|---|---|
-| 26.1.2 | `safariutils-3.3.0+mc26.1.2.jar` | `safariutils-3.3.0-extra+mc26.1.2.jar` |
-| 26.2 | `safariutils-3.3.0+mc26.2.jar` | `safariutils-3.3.0-extra+mc26.2.jar` |
+| 26.1.2 | `safariutils-3.4.0+mc26.1.2.jar` | `safariutils-3.4.0-extra+mc26.1.2.jar` |
+| 26.2 | `safariutils-3.4.0+mc26.2.jar` | `safariutils-3.4.0-extra+mc26.2.jar` |
+| 26.3 | `safariutils-3.4.0+mc26.3.jar` | `safariutils-3.4.0-extra+mc26.3.jar` |
 
 The Safe Mode edition is the recommended download. Extra includes features that may provide information the player cannot directly see and may not be safe to use.
 
-The Minecraft 26.1.2 builds have received limited testing compared with the 26.2 builds.
+The Minecraft 26.1.2 and 26.3 builds have received limited testing compared with the 26.2 builds.
 
 SafariUtils requires Java 25, Fabric Loader 0.19 or newer, and Fabric API. Mod Menu is optional.
 
@@ -57,9 +60,22 @@ Important mod errors appear in Minecraft's log. Developer builds additionally re
 | `/su`, `/safari`, `/safariutils` | Opens SafariUtils settings. |
 | `/su gui` | Opens the HUD editor. |
 | `/safari stats` | Opens run history, statistics and Personal Bests. |
-| `/sparkling` | Opens the Sparkling collection and party menu. |
+| `/sparkling` | Opens your Sparklings collection tab in the stats dashboard. |
+| `/safari lookup <name>` | Looks up a player's collection and tickets; saves the full profile in Lookup recents. |
+| `/safari missing <name>` | Shows missing Sparklings with a biome breakdown on hover. |
+| `/safari tickets <name>` | Shows ticket counts and saves the full lookup. |
+| `/safari refresh <name>` | Refreshes a lookup through the shared API cache and cooldown. |
+| `/safari shared` | Shows the current party's known shared Sparklings. |
+| `/safari fc`, `/safari fullclear` | Selects Full Clear mode. |
+| `/safari unique`, `/safari uniques` | Selects Unique mode. |
+| `/safari sparkling` | Selects Sparkling mode. |
+| `/safari mode` | Shows the current mode; also accepts `fullclear`, `unique`, or `sparkling`. |
+| `/safari help` | Lists commands, aliases and clickable chat suggestions. |
+| `/safari profit` | Lists cached estimated critter earnings. |
 
 The `/su`, `/safari`, and `/safariutils` aliases support the same subcommands.
+
+Configurable alert text supports [message tags](docs/development/MESSAGE_TEMPLATES.md), including biome letters, run mode, elapsed time and player coordinates.
 
 ## License
 

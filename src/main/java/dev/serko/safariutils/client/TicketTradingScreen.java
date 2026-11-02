@@ -37,9 +37,11 @@ public final class TicketTradingScreen extends Screen {
 		"",
 		"Host",
 		"Uses your ticket and invites players from the Host queue in order.",
-		"- Every Run: Invites this player during the normal invite window",
+		"- Every Run: Starts inviting at 5 seconds; normally warps joined players at 26 seconds",
 		"- Sparklings Only: Invites this player when a selected Sparkling is detected",
 		"- Queue Order: Attempts eligible players from top to bottom while space and time remain",
+		"- Disband Party: On cleans up guests after hosting; Off keeps your party for later runs",
+		"- Party Warps: Wait at least 5 seconds between warps, including manual warps",
 		"",
 		"Guest",
 		"Accepts party invites from trusted players in the Guest list.",
@@ -221,7 +223,12 @@ public final class TicketTradingScreen extends Screen {
 	private void roleColumn(GuiGraphicsExtractor g, int x, int y, int w, int h,
 			String title, List<TicketTraderProfile> entries, int kind, int mx, int my) {
 		section(g, x, y, w, h, title);
-		if (kind == 1) button(g, x + w - 64, y + 5, 56, 18, "Swap All", mx, my,
+		if (kind == 0) button(g, x + w - 94, y + 5, 86, 18,
+            config().ticketTradingDisbandParty ? "Disband: On" : "Disband: Off", mx, my, () -> {
+                config().ticketTradingDisbandParty = !config().ticketTradingDisbandParty;
+                ConfigManager.save();
+            });
+        if (kind == 1) button(g, x + w - 64, y + 5, 56, 18, "Swap All", mx, my,
 			this::swapAllGuests);
 		if (kind == 2) button(g, x + w - 48, y + 5, 40, 18, "New", mx, my,
 			this::openNewPlayer);
@@ -762,13 +769,13 @@ public final class TicketTradingScreen extends Screen {
 	}
 
 	@Override public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
-		if (event.key() == 258) return true;
-		if (event.key() == 256) {
+		if (event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_TAB) return true;
+		if (event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) {
 			if (view != View.MAIN) switchView(View.MAIN);
 			else onClose();
 			return true;
 		}
-		if ((event.key() == 257 || event.key() == 335) && editorName != null && editorName.isFocused()) {
+		if ((event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_RETURN || event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_NUMPADENTER) && editorName != null && editorName.isFocused()) {
 			SettingsUiKit.blurToStart(editorName); setFocused(null); return true;
 		}
 		if (editorName != null && editorName.isFocused()) return editorName.keyPressed(event);

@@ -50,6 +50,13 @@ final class TicketTradingSimulationAudit {
 		Random random = new Random(seed);
 		List<String> failures = new ArrayList<>();
 		int checks = auditProtocolIds(failures);
+        HostModel timed = new HostModel(List.of(new SimPlayer("guest", false, false, Outcome.JOINS)), 1, -1L, -1L);
+        timed.run();
+        if (timed.commands.size() != 2 || timed.commands.get(0).type != CommandType.INVITE
+                || timed.commands.get(0).at != 5_000L || timed.commands.get(1).type != CommandType.WARP
+                || timed.commands.get(1).at != 26_000L)
+            failures.add("Every Run must invite at 5s and warp at 26s");
+        checks++;
 		int hosts = 0, guests = 0;
 		for (int scenario = 0; scenario < HOST_SCENARIOS; scenario++) {
 			checkCancelled(cancelled);
@@ -95,10 +102,7 @@ final class TicketTradingSimulationAudit {
 			}
 			priorCommand = command.at;
 			if (command.type == CommandType.INVITE) {
-				checks++;
-				if (command.at >= TicketTrading.SPARKLING_BATCH_FROM_MILLIS
-						&& command.at < TicketTrading.INVITE_AT_MILLIS)
-					fail(failures, scenario, "invite during reserved batching gap", model);
+
 				checks += command.targets.size();
 				for (String target : command.targets) {
 					SimPlayer player = all.stream().filter(value -> value.name.equals(target))
@@ -114,7 +118,7 @@ final class TicketTradingSimulationAudit {
 					}
 					if (!player.sparklingOnly
 							&& command.at < TicketTrading.INVITE_AT_MILLIS) {
-						fail(failures, scenario, "normal invite before 20s", model);
+						fail(failures, scenario, "normal invite before 5s", model);
 					}
 					if (command.at > TicketTrading.SPARKLING_INVITE_DEADLINE_MILLIS) {
 						fail(failures, scenario, "queue invite after safe deadline", model);
@@ -230,10 +234,9 @@ final class TicketTradingSimulationAudit {
 				pending.clear();
 				nextInviteAt = Math.max(nextInviteAt, elapsed);
 			}
-			boolean early = elapsed < TicketTrading.SPARKLING_BATCH_FROM_MILLIS;
+			boolean early = elapsed < TicketTrading.INVITE_AT_MILLIS;
 			if (ready() && pending.isEmpty() && elapsed >= nextInviteAt
-					&& elapsed <= TicketTrading.SPARKLING_INVITE_DEADLINE_MILLIS
-					&& (early || elapsed >= TicketTrading.INVITE_AT_MILLIS)) {
+					&& elapsed <= TicketTrading.SPARKLING_INVITE_DEADLINE_MILLIS) {
 				List<SimPlayer> wave = TicketInvitePolicy.select(all,
 					TicketInvitePolicy.capacity(baseline, joined.size()), Set.of(), invited,
 					early, SimPlayer::name, SimPlayer::sparklingOnly, this::qualifies);
@@ -275,7 +278,7 @@ final class TicketTradingSimulationAudit {
 			// Independent oracle: every eligible preceding entry must be selected before a later one.
 			List<String> expected = all.stream().filter(player -> !invited.contains(player.name)
 				&& (!player.sparklingOnly || qualifies(player))
-				&& (elapsed >= TicketTrading.SPARKLING_BATCH_FROM_MILLIS || player.sparklingOnly))
+				&& (elapsed >= TicketTrading.INVITE_AT_MILLIS || player.sparklingOnly))
 				.limit(Math.max(0, 4 - baseline - joined.size())).map(SimPlayer::name).toList();
 			if (!targets.equals(expected)) violations.add("wave differs from eligible queue order");
 			command(CommandType.INVITE, targets);

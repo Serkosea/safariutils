@@ -94,12 +94,13 @@ public final class StartingItemsWatch {
 		}
 
 		if (!startingItemsAnnounced) {
-			if (dev.serko.safariutils.api.PartyItemSyncProviders.suppressStartingItems()) {
+			if (!ConfigManager.get().gameplay.mutualsCompatibility && dev.serko.safariutils.api.PartyItemSyncProviders.suppressStartingItems()) {
 				startingItemsAnnounced = true;
 				return;
 			}
 			SafariConfig.PartyConfig party = ConfigManager.get().party;
-			String items = StartingItems.format(startingInventory, party.startingItemsMask);
+			String items = ConfigManager.get().gameplay.mutualsCompatibility
+                ? StartingItems.mutualsFormat(startingInventory) : StartingItems.format(startingInventory, party.startingItemsMask);
 			String command = party.startingItems().command();
 			boolean verifiedParty = "pc".equals(command)
 				&& dev.serko.safariutils.session.SessionManager.expectedRunPlayers() > 1;
@@ -108,7 +109,7 @@ public final class StartingItemsWatch {
 			if (items.isEmpty() || command == null) {
 				startingItemsAnnounced = true;
 			} else if (!partyUnavailable) {
-				String message = AlertText.format(party.startingItemsChatText, "<ITEMS>", items);
+				String message = ChatTemplateFormats.STARTING_ITEMS.format(party, "<ITEMS>", items);
 				if (!message.isBlank()) {
 					if (verifiedParty) ChatQueue.enqueueRunScopedVerifiedParty(command + " " + message);
 					else EncounterAlerts.post(party.startingItems(), message);

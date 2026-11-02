@@ -193,8 +193,9 @@ public final class EncounterAlerts implements HudElement {
 				alerts.biomeUniquesDoneSoundMode, alerts.biomeUniquesDoneSoundChoice,
 				alerts.biomeUniquesDoneSoundVolume);
 		}
-		if (config.party.biomeDone() != SafariConfig.Broadcast.NONE) {
-			String chatText = AlertText.format(config.party.biomeDoneChatText,
+		if (config.party.biomeDone() != SafariConfig.Broadcast.NONE
+            && (!ChatTemplateFormats.BIOME_UNIQUES.locked() || RunMode.current().focused())) {
+			String chatText = ChatTemplateFormats.BIOME_UNIQUES.format(config.party,
 				"<BIOME>", biome.displayName());
 			post(config.party.biomeDone(), chatText);
 		}
@@ -205,13 +206,13 @@ public final class EncounterAlerts implements HudElement {
 		SafariConfig config = ConfigManager.get();
 		SafariConfig.AlertConfig alerts = config.alerts;
 		if ((alerts.allButMacawDoneSoundMode != 0)) {
-			banner(alerts.allButMacawDoneText,
+			banner(AlertText.format(alerts.allButMacawDoneText),
 				Colours.argb(alerts.allButMacawDoneColour, DONE_COLOUR),
 				alerts.allButMacawDoneSoundPitch, alerts.allButMacawDoneDuration,
 				alerts.allButMacawDoneSoundMode, alerts.allButMacawDoneSoundChoice,
 				alerts.allButMacawDoneSoundVolume);
 		}
-		post(config.party.allButMacaw(), config.party.allButMacawChatText);
+		post(config.party.allButMacaw(), AlertText.format(config.party.allButMacawChatText));
 	}
 
 	/**
@@ -222,11 +223,15 @@ public final class EncounterAlerts implements HudElement {
 	 * announced it from out of range.
 	 */
 	public static void onMacawSpawn() {
+        onMacawSpawn(null);
+    }
+
+    static void onMacawSpawn(net.minecraft.world.phys.Vec3 position) {
 		SafariConfig config = ConfigManager.get();
 		if (birdBannerAllowed() && config.alerts.macawSoundMode != 0) {
 			Critter macaw = Critters.byName("Macaw");
 			int rarityColour = 0xFF000000 | (macaw == null ? 0xFFAA00 : macaw.rarity().colour());
-			banner(config.alerts.macawText,
+			banner(AlertText.spawn(config.alerts.macawText, "Macaw", position),
 				config.alerts.macawUseRarityColour ? rarityColour
 					: Colours.argb(config.alerts.macawAlertColour, rarityColour),
 				config.alerts.macawSoundPitch,
@@ -234,7 +239,7 @@ public final class EncounterAlerts implements HudElement {
 				config.alerts.macawSoundChoice, config.alerts.macawSoundVolume);
 		}
 
-		if (birdChatAllowed()) post(config.party.macaw(), config.party.macawChatText);
+		if (birdChatAllowed()) post(config.party.macaw(), AlertText.spawn(config.party.macawChatText, "Macaw", position));
 	}
 
 	/** All 37 caught by someone. */
@@ -242,13 +247,13 @@ public final class EncounterAlerts implements HudElement {
 		SafariConfig config = ConfigManager.get();
 		SafariConfig.AlertConfig alerts = config.alerts;
 		if ((alerts.allUniquesDoneSoundMode != 0)) {
-			banner(alerts.allUniquesDoneText,
+			banner(AlertText.format(alerts.allUniquesDoneText),
 				Colours.argb(alerts.allUniquesDoneColour, DONE_COLOUR),
 				alerts.allUniquesDoneSoundPitch, alerts.allUniquesDoneDuration,
 				alerts.allUniquesDoneSoundMode, alerts.allUniquesDoneSoundChoice,
 				alerts.allUniquesDoneSoundVolume);
 		}
-		post(config.party.allDone(), config.party.allDoneChatText);
+		post(config.party.allDone(), AlertText.format(config.party.allDoneChatText));
 	}
 
 	/**
@@ -260,7 +265,7 @@ public final class EncounterAlerts implements HudElement {
 		if (!HideyhoSolver.markerEnabled()) return;
 		SafariConfig.AlertConfig alerts = ConfigManager.get().alerts;
 		if (alerts.hideyhoSoundMode == 0) return;
-		banner(alerts.hideyhoText, Colours.argb(alerts.hideyhoAlertColour, 0xFFFF55FF),
+		banner(AlertText.format(alerts.hideyhoText, "<CRITTER>", "Hideyho"), Colours.argb(alerts.hideyhoAlertColour, 0xFFFF55FF),
 			alerts.hideyhoSoundPitch, alerts.hideyhoDuration, alerts.hideyhoSoundMode,
 			alerts.hideyhoSoundChoice, alerts.hideyhoSoundVolume);
 	}
@@ -320,38 +325,38 @@ public final class EncounterAlerts implements HudElement {
 		boolean chatWarnings = ContestTracker.ticketEarned() && settings.party.contestNoWarningsAfterTicket;
 		switch (alert) {
 			case START -> {
-				if ((config.contestStartSoundMode != 0)) banner(config.contestStartText,
+				if ((config.contestStartSoundMode != 0)) banner(AlertText.format(config.contestStartText),
 					Colours.argb(config.contestStartColour, 0xFF55FF55), config.contestStartSoundPitch,
 					config.contestStartDuration, config.contestStartSoundMode,
 					config.contestStartSoundChoice, config.contestStartSoundVolume);
-				post(settings.party.contestStart(), settings.party.contestStartChatText);
+				post(settings.party.contestStart(), AlertText.format(settings.party.contestStartChatText));
 			}
 			case FIVE_MINUTES -> {
-				if (!bannerWarnings && config.contestFiveMinuteSoundMode != 0) banner(config.contestFiveMinuteText,
+				if (!bannerWarnings && config.contestFiveMinuteSoundMode != 0) banner(AlertText.format(config.contestFiveMinuteText),
 					Colours.argb(config.contestFiveMinuteColour, 0xFFFFFF55), config.contestFiveMinuteSoundPitch,
 					config.contestFiveMinuteDuration, config.contestFiveMinuteSoundMode,
 					config.contestFiveMinuteSoundChoice, config.contestFiveMinuteSoundVolume);
-				if (!chatWarnings) post(settings.party.contestFiveMinute(), settings.party.contestFiveMinuteChatText);
+				if (!chatWarnings) post(settings.party.contestFiveMinute(), AlertText.format(settings.party.contestFiveMinuteChatText));
 			}
 			case ONE_MINUTE -> {
-				if (!bannerWarnings && config.contestOneMinuteSoundMode != 0) banner(config.contestOneMinuteText,
+				if (!bannerWarnings && config.contestOneMinuteSoundMode != 0) banner(AlertText.format(config.contestOneMinuteText),
 					Colours.argb(config.contestOneMinuteColour, 0xFFFFAA00), config.contestOneMinuteSoundPitch,
 					config.contestOneMinuteDuration, config.contestOneMinuteSoundMode,
 					config.contestOneMinuteSoundChoice, config.contestOneMinuteSoundVolume);
 			}
 			case ENDED -> {
-				if ((config.contestEndedSoundMode != 0)) banner(config.contestEndedText,
+				if ((config.contestEndedSoundMode != 0)) banner(AlertText.format(config.contestEndedText),
 					Colours.argb(config.contestEndedColour, 0xFFFF5555), config.contestEndedSoundPitch,
 					config.contestEndedDuration, config.contestEndedSoundMode,
 					config.contestEndedSoundChoice, config.contestEndedSoundVolume);
-				post(settings.party.contestEnded(), settings.party.contestEndedChatText);
+				post(settings.party.contestEnded(), AlertText.format(settings.party.contestEndedChatText));
 			}
 			case TICKET_EARNED -> {
-				if ((config.contestTicketEarnedSoundMode != 0)) banner(config.contestTicketEarnedText,
+				if ((config.contestTicketEarnedSoundMode != 0)) banner(AlertText.format(config.contestTicketEarnedText),
 					Colours.argb(config.contestTicketEarnedColour, 0xFF55FF55), config.contestTicketEarnedSoundPitch,
 					config.contestTicketEarnedDuration, config.contestTicketEarnedSoundMode,
 					config.contestTicketEarnedSoundChoice, config.contestTicketEarnedSoundVolume);
-				post(settings.party.contestTicketEarned(), settings.party.contestTicketEarnedChatText);
+				post(settings.party.contestTicketEarned(), AlertText.format(settings.party.contestTicketEarnedChatText));
 			}
 		}
 	}
@@ -364,20 +369,23 @@ public final class EncounterAlerts implements HudElement {
 	 * actually waiting for.
 	 */
 	static void fireAllBirdSpawn(Critter bird) {
+        fireAllBirdSpawn(bird, null);
+    }
+
+    static void fireAllBirdSpawn(Critter bird, net.minecraft.world.phys.Vec3 position) {
 		SafariConfig config = ConfigManager.get();
 		SafariConfig.AlertConfig alerts = config.alerts;
 		if (birdBannerAllowed() && alerts.birdfeederSoundMode != 0) {
 			int rarityColour = 0xFF000000 | bird.rarity().colour();
 			String chosen = bird.name().equals("Parakeet")
 				? alerts.parakeetAlertColour : alerts.bluebirdAlertColour;
-			banner(AlertText.format(alerts.birdfeederText, "<CRITTER>", bird.name()), alerts.birdfeederUseRarityColour
+			banner(AlertText.spawn(alerts.birdfeederText, bird.name(), position), alerts.birdfeederUseRarityColour
 					? rarityColour : Colours.argb(chosen, rarityColour),
 				alerts.birdfeederSoundPitch,
 				alerts.birdfeederDuration, alerts.birdfeederSoundMode,
 				alerts.birdfeederSoundChoice, alerts.birdfeederSoundVolume);
 		}
-		if (birdChatAllowed()) post(config.party.allBirds(), AlertText.format(config.party.allBirdsChatText,
-			"<CRITTER>", bird.name()));
+		if (birdChatAllowed()) post(config.party.allBirds(), AlertText.spawn(config.party.allBirdsChatText, bird.name(), position));
 	}
 
 	/** Reports the completed Forest's live feed inventory through its selected chat. */
@@ -407,11 +415,11 @@ public final class EncounterAlerts implements HudElement {
 		SafariConfig config = ConfigManager.get();
 		SafariConfig.AlertConfig alerts = config.alerts;
 		if (birdBannerAllowed() && alerts.feedGoneSoundMode != 0) {
-			banner(alerts.feedGoneText, Colours.argb(alerts.feedGoneColour, 0xFFFF5555),
+			banner(AlertText.format(alerts.feedGoneText), Colours.argb(alerts.feedGoneColour, 0xFFFF5555),
 				alerts.feedGoneSoundPitch, alerts.feedGoneDuration, alerts.feedGoneSoundMode,
 				alerts.feedGoneSoundChoice, alerts.feedGoneSoundVolume);
 		}
-		if (birdChatAllowed()) post(config.party.feedGone(), config.party.feedGoneChatText);
+		if (birdChatAllowed()) post(config.party.feedGone(), AlertText.format(config.party.feedGoneChatText));
 	}
 
 	/** Called only after the open feeder changes from containing feed to empty. */
@@ -419,7 +427,7 @@ public final class EncounterAlerts implements HudElement {
 		SafariConfig.AlertConfig a = ConfigManager.get().alerts;
 		if (!birdBannerAllowed()) return;
 		if (!BirdfeederWatch.claimEmptyAlert()) return;
-		banner(a.birdfeederEmptyText, Colours.argb(a.birdfeederEmptyColour, 0xFFFF5555),
+		banner(AlertText.format(a.birdfeederEmptyText), Colours.argb(a.birdfeederEmptyColour, 0xFFFF5555),
 			a.birdfeederEmptySoundPitch, a.birdfeederEmptyDuration, a.birdfeederEmptySoundMode,
 			a.birdfeederEmptySoundChoice, a.birdfeederEmptySoundVolume);
 	}
@@ -429,14 +437,14 @@ public final class EncounterAlerts implements HudElement {
 		SafariConfig config = ConfigManager.get();
 		SafariConfig.AlertConfig alerts = config.alerts;
 		if (birdBannerAllowed() && alerts.allFeedDoneSoundMode != 0) {
-			banner(alerts.allFeedDoneText,
+			banner(AlertText.format(alerts.allFeedDoneText),
 				Colours.argb(alerts.allFeedDoneColour, 0xFF55FF55),
 				alerts.allFeedDoneSoundPitch, alerts.allFeedDoneDuration,
 				alerts.allFeedDoneSoundMode, alerts.allFeedDoneSoundChoice,
 				alerts.allFeedDoneSoundVolume);
 		}
 		if (sendChat && birdChatAllowed()) {
-			post(config.party.allFeedDone(), config.party.allFeedDoneChatText);
+			post(config.party.allFeedDone(), AlertText.format(config.party.allFeedDoneChatText));
 		}
 	}
 
@@ -471,7 +479,7 @@ public final class EncounterAlerts implements HudElement {
 
 	private static String encounterBannerText(String boss, Stage stage) {
 		SafariConfig.AlertConfig a = ConfigManager.get().alerts;
-		return switch (boss) {
+		return AlertText.format(switch (boss) {
 			case "Gemzie" -> stage == Stage.READY ? a.gemzieReadyText : a.gemzieDoneText;
 			case "Wumpa" -> switch (stage) {
 				case READY -> a.wumpaReadyText;
@@ -484,12 +492,12 @@ public final class EncounterAlerts implements HudElement {
 				case DONE -> a.doomspiralDoneText;
 			};
 			default -> boss;
-		};
+		}, "<CRITTER>", boss);
 	}
 
 	private static String encounterChatText(String boss, Stage stage) {
 		SafariConfig.PartyConfig p = ConfigManager.get().party;
-		return switch (boss) {
+		return AlertText.format(switch (boss) {
 			case "Gemzie" -> stage == Stage.READY ? p.gemzieReadyChatText : p.gemzieDoneChatText;
 			case "Wumpa" -> switch (stage) {
 				case READY -> p.wumpaReadyChatText;
@@ -502,7 +510,7 @@ public final class EncounterAlerts implements HudElement {
 				case DONE -> p.doomspiralDoneChatText;
 			};
 			default -> boss;
-		};
+		}, "<CRITTER>", boss);
 	}
 
 	private static int stageColour(Stage stage, String ready, String started, String done) {
@@ -795,9 +803,13 @@ public final class EncounterAlerts implements HudElement {
 	}
 
 	static void fireSparklingDetected(String critterName) {
+        fireSparklingDetected(critterName, null);
+    }
+
+    static void fireSparklingDetected(String critterName, net.minecraft.world.phys.Vec3 position) {
 		SafariConfig.SparklingConfig config = ConfigManager.get().sparkling;
 		if (config.sparklingBannerSoundMode == 0) return;
-		rainbowBanner(AlertText.format(config.sparklingBannerText, "<CRITTER>", critterName),
+		rainbowBanner(AlertText.spawn(config.sparklingBannerText, critterName, position),
 			config.sparklingBannerSoundPitch, config.sparklingBannerDuration,
 			config.sparklingBannerSoundMode, config.sparklingBannerSoundChoice,
 			config.sparklingBannerSoundVolume);
@@ -841,7 +853,7 @@ public final class EncounterAlerts implements HudElement {
 	public static void fireTestSparklingDetected() {
 		ClientCompat.setScreen(null);
 		SafariConfig.SparklingConfig config = ConfigManager.get().sparkling;
-		rainbowBanner(AlertText.format(config.sparklingBannerText, "<CRITTER>", "Rockmite"),
+		rainbowBanner(AlertText.spawn(config.sparklingBannerText, "Rockmite", null),
 			config.sparklingBannerSoundPitch, config.sparklingBannerDuration,
 			config.sparklingBannerSoundMode, config.sparklingBannerSoundChoice,
 			config.sparklingBannerSoundVolume);
@@ -884,45 +896,45 @@ public final class EncounterAlerts implements HudElement {
 				a.biomeUniquesDoneSoundPitch, a.biomeUniquesDoneDuration,
 				a.biomeUniquesDoneSoundMode, a.biomeUniquesDoneSoundChoice,
 				a.biomeUniquesDoneSoundVolume);
-			case ALL_BUT_MACAW -> banner(a.allButMacawDoneText,
+			case ALL_BUT_MACAW -> banner(AlertText.format(a.allButMacawDoneText),
 				Colours.argb(a.allButMacawDoneColour, DONE_COLOUR),
 				a.allButMacawDoneSoundPitch, a.allButMacawDoneDuration,
 				a.allButMacawDoneSoundMode, a.allButMacawDoneSoundChoice,
 				a.allButMacawDoneSoundVolume);
-			case ALL_DONE -> banner(a.allUniquesDoneText,
+			case ALL_DONE -> banner(AlertText.format(a.allUniquesDoneText),
 				Colours.argb(a.allUniquesDoneColour, DONE_COLOUR),
 				a.allUniquesDoneSoundPitch, a.allUniquesDoneDuration,
 				a.allUniquesDoneSoundMode, a.allUniquesDoneSoundChoice,
 				a.allUniquesDoneSoundVolume);
-			case HIDEYHO -> banner(a.hideyhoText, Colours.argb(a.hideyhoAlertColour, 0xFFFF55FF),
+			case HIDEYHO -> banner(AlertText.format(a.hideyhoText, "<CRITTER>", "Hideyho"), Colours.argb(a.hideyhoAlertColour, 0xFFFF55FF),
 				a.hideyhoSoundPitch, a.hideyhoDuration, a.hideyhoSoundMode, a.hideyhoSoundChoice,
 				a.hideyhoSoundVolume);
-			case MACAW -> banner(a.macawText, a.macawUseRarityColour
+			case MACAW -> banner(AlertText.spawn(a.macawText, "Macaw", null), a.macawUseRarityColour
 					? 0xFFFFAA00 : Colours.argb(a.macawAlertColour, 0xFFFFAA00), a.macawSoundPitch,
 				a.macawDuration, a.macawSoundMode, a.macawSoundChoice, a.macawSoundVolume);
-			case BIRDS -> banner(AlertText.format(a.birdfeederText, "<CRITTER>", "Bluebird"), a.birdfeederUseRarityColour
+			case BIRDS -> banner(AlertText.spawn(a.birdfeederText, "Bluebird", null), a.birdfeederUseRarityColour
 					? 0xFF55FF55 : Colours.argb(a.bluebirdAlertColour, 0xFF55FF55), a.birdfeederSoundPitch,
 				a.birdfeederDuration, a.birdfeederSoundMode, a.birdfeederSoundChoice,
 				a.birdfeederSoundVolume);
-			case FEED_GONE -> banner(a.feedGoneText, Colours.argb(a.feedGoneColour, 0xFFFF5555),
+			case FEED_GONE -> banner(AlertText.format(a.feedGoneText), Colours.argb(a.feedGoneColour, 0xFFFF5555),
 				a.feedGoneSoundPitch, a.feedGoneDuration, a.feedGoneSoundMode,
 				a.feedGoneSoundChoice, a.feedGoneSoundVolume);
-			case BIRDFEEDER_EMPTY -> banner(a.birdfeederEmptyText, Colours.argb(a.birdfeederEmptyColour, 0xFFFF5555),
+			case BIRDFEEDER_EMPTY -> banner(AlertText.format(a.birdfeederEmptyText), Colours.argb(a.birdfeederEmptyColour, 0xFFFF5555),
 				a.birdfeederEmptySoundPitch, a.birdfeederEmptyDuration, a.birdfeederEmptySoundMode,
 				a.birdfeederEmptySoundChoice, a.birdfeederEmptySoundVolume);
-			case START -> testContest(a.contestStartText, a.contestStartColour, 0xFF55FF55,
+			case START -> testContest(AlertText.format(a.contestStartText), a.contestStartColour, 0xFF55FF55,
 				a.contestStartDuration, a.contestStartSoundMode, a.contestStartSoundChoice,
 				a.contestStartSoundVolume, a.contestStartSoundPitch);
-			case FIVE_MINUTES -> testContest(a.contestFiveMinuteText, a.contestFiveMinuteColour, 0xFFFFFF55,
+			case FIVE_MINUTES -> testContest(AlertText.format(a.contestFiveMinuteText), a.contestFiveMinuteColour, 0xFFFFFF55,
 				a.contestFiveMinuteDuration, a.contestFiveMinuteSoundMode, a.contestFiveMinuteSoundChoice,
 				a.contestFiveMinuteSoundVolume, a.contestFiveMinuteSoundPitch);
-			case ONE_MINUTE -> testContest(a.contestOneMinuteText, a.contestOneMinuteColour, 0xFFFFAA00,
+			case ONE_MINUTE -> testContest(AlertText.format(a.contestOneMinuteText), a.contestOneMinuteColour, 0xFFFFAA00,
 				a.contestOneMinuteDuration, a.contestOneMinuteSoundMode, a.contestOneMinuteSoundChoice,
 				a.contestOneMinuteSoundVolume, a.contestOneMinuteSoundPitch);
-			case ENDED -> testContest(a.contestEndedText, a.contestEndedColour, 0xFFFF5555,
+			case ENDED -> testContest(AlertText.format(a.contestEndedText), a.contestEndedColour, 0xFFFF5555,
 				a.contestEndedDuration, a.contestEndedSoundMode, a.contestEndedSoundChoice,
 				a.contestEndedSoundVolume, a.contestEndedSoundPitch);
-			case TICKET -> testContest(a.contestTicketEarnedText, a.contestTicketEarnedColour, 0xFF55FF55,
+			case TICKET -> testContest(AlertText.format(a.contestTicketEarnedText), a.contestTicketEarnedColour, 0xFF55FF55,
 				a.contestTicketEarnedDuration, a.contestTicketEarnedSoundMode, a.contestTicketEarnedSoundChoice,
 				a.contestTicketEarnedSoundVolume, a.contestTicketEarnedSoundPitch);
 		}

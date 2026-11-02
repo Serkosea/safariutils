@@ -107,6 +107,9 @@ public final class ProgressHud implements HudElement {
 			panel.compactPair("Hotspot", hotspot.displayName(), 0xFF000000 | hotspot.colour(),
 				0xFF000000 | hotspot.colour());
 		}
+        SafariBiome assigned = HotspotWatch.assignedBiome();
+        if (live && config.display.showHotspot && assigned != null && assigned != hotspot)
+            panel.compactPair("Assigned", assigned.displayName(), 0xFF000000 | assigned.colour(), 0xFF000000 | assigned.colour());
 		if (config.profit.enabled && config.display.shardProfit) {
 			boolean hasRewards = session.totalShards() > 0 || session.safariEssence() > 0
 				|| session.rainbowFeathers() > 0;

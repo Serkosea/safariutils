@@ -18,12 +18,13 @@ import java.util.regex.Pattern;
 
 /** Timed, opt-in party commands for trading Safari entry windows with trusted players. */
 public final class TicketTrading {
-	static final long INVITE_AT_MILLIS = 20_000L;
-	static final long SPARKLING_BATCH_FROM_MILLIS = 17_000L;
-	static final long WARP_AT_MILLIS = 27_000L;
+	static final long INVITE_AT_MILLIS = 5_000L;
+	private static final long HOST_START_DEADLINE_MILLIS = 20_000L;
+	static final long WARP_AT_MILLIS = 26_000L;
 	static final long LAST_WARP_AT_MILLIS = 29_500L;
-	static final long SPARKLING_INVITE_DEADLINE_MILLIS = 25_000L;
 	static final long COMMAND_COOLDOWN_MILLIS = 3_100L;
+    // Leave the existing party-command cooldown clear for the scheduled warp.
+    static final long SPARKLING_INVITE_DEADLINE_MILLIS = WARP_AT_MILLIS - COMMAND_COOLDOWN_MILLIS;
 	static final long INVITE_RETRY_DELAY_MILLIS = 3_000L;
 	static final long INVITE_RESPONSE_WINDOW_MILLIS = 5_000L;
 	static final long GUEST_LEAVE_SETTLE_MILLIS = 1_100L;
@@ -93,7 +94,7 @@ public final class TicketTrading {
 		if (testMode) return;
 		if (!ConfigManager.get().sparkling.ticketTradingEnabled) return;
 		long elapsed = SessionManager.ticketWindowElapsedMillis();
-		if (elapsed < 0L || elapsed >= INVITE_AT_MILLIS) {
+		if (elapsed < 0L || elapsed >= HOST_START_DEADLINE_MILLIS) {
 			OperationalLog.info("TICKET_TRADE", "Not scheduled: ticket accepted after invite deadline");
 			return;
 		}
@@ -177,10 +178,10 @@ public final class TicketTrading {
 		}
 		boolean commandReady = now - lastHostCommandAt >= COMMAND_COOLDOWN_MILLIS;
 		boolean inviteWindow = elapsed <= SPARKLING_INVITE_DEADLINE_MILLIS;
-		boolean earlySparklingWindow = elapsed < SPARKLING_BATCH_FROM_MILLIS;
-		boolean normalWindow = elapsed >= INVITE_AT_MILLIS;
+		boolean earlySparklingWindow = elapsed < INVITE_AT_MILLIS;
+		includeRetainedGuests(earlySparklingWindow);
 		if (!warpSent && inviteWindow && commandReady && pendingResponses.isEmpty()
-				&& now >= nextInviteAt && (earlySparklingWindow || normalWindow)) {
+				&& now >= nextInviteAt) {
 			List<String> pending = pendingQueueTargets(earlySparklingWindow);
 			if (!pending.isEmpty()) sendInviteBatch(pending, now);
 		}
@@ -190,7 +191,8 @@ public final class TicketTrading {
 			unavailableTargets, !pendingQueueTargets(false).isEmpty());
 		// Ordinary trading retains its scouting window; settled sparkling parties can go now.
 		boolean warpReady = hasJoinedPlayer && (earlyWarp || now >= connectionStartedAt + WARP_AT_MILLIS)
-			&& now - lastHostCommandAt >= COMMAND_COOLDOWN_MILLIS;
+			&& now - lastHostCommandAt >= COMMAND_COOLDOWN_MILLIS
+			&& CommandCoordinator.partyWarpRemainingMillis() == 0L;
 		if (!warpSent && warpReady && now < connectionStartedAt + LAST_WARP_AT_MILLIS) {
 			if (sendCommand("party warp", CommandCoordinator.Category.TICKET_HOST,
 					CommandCoordinator.Cooldown.PARTY_ACTION, true, true)) {
@@ -215,6 +217,11 @@ public final class TicketTrading {
 		if (line == null || line.isBlank()) return;
 		long now = System.currentTimeMillis();
 		String lower = line.toLowerCase(Locale.ROOT);
+        if (dev.serko.safariutils.state.PartyWarpCooldown.rejectedSeconds(line) >= 0
+                && hostScheduled && warpSent && now - lastHostCommandAt <= 3_000L) {
+            warpSent = false;
+            OperationalLog.info("TICKET_TRADE", "Warp rejected by server cooldown; retry only within entry window");
+        }
 		if (ConfigManager.get().sparkling.ticketTradingEnabled
 				&& (lower.contains("you were kicked while joining that server")
 				|| lower.contains("a kick occurred in your connection")
@@ -418,7 +425,7 @@ public final class TicketTrading {
 			return;
 		}
 		freezeBaselineParty();
-		if (baselinePartySize >= 4) {
+		if (baselinePartySize >= 4 && ConfigManager.get().sparkling.ticketTradingDisbandParty) {
 			OperationalLog.info("TICKET_TRADE",
 				"Host automation disabled for this visit: party was already full");
 			resetRunAutomation();
@@ -532,17 +539,41 @@ public final class TicketTrading {
 		}
 		baselineMembers.add(Minecraft.getInstance().getUser().getName().toLowerCase(Locale.ROOT));
 		baselinePartySize = Math.max(1, snapshot.expectedPlayers());
-		inviteQueue = inviteQueue.stream()
-			.filter(player -> !baselineMembers.contains(player.name())).toList();
+		if (ConfigManager.get().sparkling.ticketTradingDisbandParty) {
+			inviteQueue = inviteQueue.stream()
+				.filter(player -> !baselineMembers.contains(player.name())).toList();
+		}
 		OperationalLog.info("TICKET_TRADE", "Baseline party frozen size=" + baselinePartySize
 			+ " guestCapacity=" + Math.max(0, 4 - baselinePartySize));
 	}
 
 	private static int guestCapacityRemaining() {
-		return TicketInvitePolicy.capacity(baselinePartySize, joinedTargets.size());
+		return TicketInvitePolicy.capacity(baselinePartySize,
+			(int) joinedTargets.stream().filter(name -> !baselineMembers.contains(name)).count());
 	}
 
-	private static void armCleanup() {
+	private static void includeRetainedGuests(boolean earlySparklingWindow) {
+        if (ConfigManager.get().sparkling.ticketTradingDisbandParty) return;
+        PartySnapshot party = PartyState.snapshot();
+        if (!party.known() || !party.localLeader()) return;
+        for (ConfiguredPlayer player : inviteQueue) {
+            if (!baselineMembers.contains(player.name())) continue;
+            if (earlySparklingWindow && !player.sparklingOnly()) continue;
+            if (player.sparklingOnly() && (player.sparklingCritters() & PartySparklingDiscoveries.activeMask()) == 0L) continue;
+            if (party.members().stream().noneMatch(member -> normalizeName(member.name()).equals(player.name()))) continue;
+            if (activeTargets.add(player.name())) {
+                invitedTargets.add(player.name());
+                joinedTargets.add(player.name());
+                OperationalLog.info("TICKET_TRADE", "Retained configured guest eligible for warp");
+            }
+        }
+    }
+
+    private static void armCleanup() {
+        if (!ConfigManager.get().sparkling.ticketTradingDisbandParty) {
+            clearCleanup("party retention enabled");
+            return;
+        }
 		pendingCleanupGuests.clear();
 		for (String joined : joinedTargets) {
 			if (!baselineMembers.contains(joined)) pendingCleanupGuests.add(joined);
@@ -560,6 +591,10 @@ public final class TicketTrading {
 	}
 
 	private static void processPendingCleanup(long now) {
+        if (!ConfigManager.get().sparkling.ticketTradingDisbandParty) {
+            clearCleanup("party retention enabled");
+            return;
+        }
 		if (!pendingCleanupDisband && pendingCleanupGuests.isEmpty()) return;
 		if (now > cleanupDeadline) {
 			clearCleanup("expired");

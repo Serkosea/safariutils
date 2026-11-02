@@ -24,6 +24,8 @@ public final class SafariPaths {
 	private SafariPaths() {
 	}
 
+    public static Path honeyhives() { return ROOT.resolve("safariutils-honeyhives.json"); }
+
 	public static Path settings() {
 		return ROOT.resolve("safariutils.json");
 	}

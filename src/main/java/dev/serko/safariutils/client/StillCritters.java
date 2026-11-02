@@ -8,7 +8,6 @@ import dev.serko.safariutils.state.MonotonicTime;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Display;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -382,7 +381,7 @@ public final class StillCritters {
 		if (client.level == null) return;
 
 		for (Entity entity : WorldEntities.current()) {
-			if (!(entity instanceof Display.ItemDisplay display) || !isCritterCapsule(display)) continue;
+			if (!(entity instanceof Display.ItemDisplay display) || !CritterCapsules.matches(display)) continue;
 			Vec3 previous = new Vec3(entity.xOld, entity.yOld, entity.zOld);
 			Vec3 current = entity.position();
 			if (previous.distanceToSqr(current) < 1.0e-6) continue;
@@ -419,13 +418,6 @@ public final class StillCritters {
 			return;
 		}
 		DebugLog.line("STILL", "CAPSULE resolved empty Hideonwall perch pos=" + pos(candidate));
-	}
-
-	private static boolean isCritterCapsule(Display.ItemDisplay display) {
-		Display.ItemDisplay.ItemRenderState state = display.itemRenderState();
-		if (state == null) return false;
-		ItemStack stack = state.itemStack();
-		return !stack.isEmpty() && stack.getHoverName().getString().endsWith("Critter Capsule");
 	}
 
 	private static void prepareLobby() {

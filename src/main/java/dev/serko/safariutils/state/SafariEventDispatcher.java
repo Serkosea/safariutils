@@ -29,6 +29,7 @@ public final class SafariEventDispatcher {
 		StructuredDiagnostics.event(event);
 		String line = event.rawText();
 		CommandCoordinator.observeServerMessage(line);
+        dev.serko.safariutils.client.Honeyhives.onChatMessage(line);
 		CritterState.onCritterEvent(event.critterEvent(), line);
 		PartyItemSyncProviders.onServerMessage(line, event.critterEvent());
 		SafariLocation.onChatMessage(line);

@@ -53,7 +53,20 @@ public final class SafariCommands {
 				HudEditorScreen.open();
 				return 1;
 			}))
-			.then(statsRoot());
+			.then(statsRoot())
+			.then(ClientCommands.literal("profit").executes(ctx -> ProfitableCritters.show()));
+
+            settingsRoot.then(ClientCommands.literal("shared").executes(ctx -> SafariLookupCommands.shared()));
+            for(String command:List.of("lookup","tickets","refresh","missing")) {
+                settingsRoot.then(ClientCommands.literal(command)
+                    .then(ClientCommands.argument("name",com.mojang.brigadier.arguments.StringArgumentType.word())
+                        .executes(ctx -> SafariLookupCommands.lookup(com.mojang.brigadier.arguments.StringArgumentType.getString(ctx,"name"),command))));
+            }
+			addModeCommands(settingsRoot);
+			var helpRoot = ClientCommands.literal("help").executes(ctx -> SafariCommandHelp.show(false));
+			if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS))
+				helpRoot.then(ClientCommands.literal("debug").executes(ctx -> SafariCommandHelp.show(true)));
+			settingsRoot.then(helpRoot);
 
 			// Developer builds alone register the diagnostic command tree.
 			if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)) {
@@ -157,6 +170,30 @@ public final class SafariCommands {
 		dispatcher.register(sparklingRoot());
 	}
 
+	/** Explicit selections are idempotent and shared by every Safari command alias. */
+	static void addModeCommands(com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource> root) {
+		var modeRoot = ClientCommands.literal("mode").executes(ctx -> {
+			RunMode current = RunMode.current();
+			ctx.getSource().sendFeedback(ClientMessages.prefixed("Run Mode: " + current.title()
+				+ " — " + current.description() + ". Choices: fullclear, unique, sparkling", ClientMessages.Tone.INFO));
+			return 1;
+		});
+		for (RunMode mode : RunMode.values()) {
+			for (String alias : mode.commands()) {
+				root.then(ClientCommands.literal(alias).executes(ctx -> selectMode(ctx.getSource(), mode)));
+				modeRoot.then(ClientCommands.literal(alias).executes(ctx -> selectMode(ctx.getSource(), mode)));
+			}
+		}
+		root.then(modeRoot);
+	}
+
+	private static int selectMode(FabricClientCommandSource source, RunMode mode) {
+		boolean changed = mode.select();
+		source.sendFeedback(ClientMessages.prefixed(mode.title() + (changed ? " mode selected" : " mode is already selected"),
+			ClientMessages.Tone.SUCCESS));
+		return 1;
+	}
+
 	/** Builds the statistics branch shared by all three command names. */
 	private static com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource>
 			statsRoot() {
@@ -167,7 +204,7 @@ public final class SafariCommands {
 			});
 	}
 
-	/** The standalone screen owns every Sparkling action; no subcommands remain. */
+	/** Convenient shortcut to the Sparklings view in the shared stats dashboard. */
 	private static com.mojang.brigadier.builder.LiteralArgumentBuilder<FabricClientCommandSource>
 			sparklingRoot() {
 		return ClientCommands.literal("sparkling").executes(ctx -> {
@@ -260,7 +297,7 @@ public final class SafariCommands {
 	 */
 	private static void openScreen() {
 		Minecraft client = Minecraft.getInstance();
-		client.execute(() -> ClientCompat.setScreen(new SafariDashboardScreen()));
+		client.execute(() -> ClientCompat.setScreen(new SafariDashboardScreen(DashboardNavigation.Tab.STATS)));
 	}
 
 	/**
@@ -311,7 +348,7 @@ public final class SafariCommands {
 			+ (SafariLocation.safariEssence() == null ? "not present" : SafariLocation.safariEssence()),
 			ChatFormatting.GRAY);
 		report(source, record, "    safe mode     " + SafeMode.active()
-			+ "  sparkling mode " + SparklingMode.enabled(), ChatFormatting.GRAY);
+			+ "  run mode " + RunMode.current().title(), ChatFormatting.GRAY);
 		// Which trigger opened the live run: if a stale run is showing, this says whether
 		// a reset was missed or one fired and something else is wrong.
 		report(source, record, "    run opened by " + SessionManager.startedBy(), ChatFormatting.WHITE);
@@ -345,7 +382,7 @@ public final class SafariCommands {
 			+ "  opened by " + SessionManager.startedBy(), ChatFormatting.WHITE);
 		report(source, record, "  joined    " + SafariPartyWatch.joinedPlayers() + "/"
 			+ SessionManager.expectedRunPlayers()
-			+ "  sparkling mode " + SparklingMode.enabled(), ChatFormatting.GRAY);
+			+ "  run mode " + RunMode.current().title(), ChatFormatting.GRAY);
 
 		var session = SessionManager.current();
 		if (session == null) {

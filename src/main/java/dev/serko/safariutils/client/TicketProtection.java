@@ -64,6 +64,7 @@ public final class TicketProtection {
 	}
 
 	private static boolean allowMouseClick(Screen screen, MouseButtonEvent event) {
+        TicketSelection.manualInteraction(screen);
 		Slot slot = slotAt(screen, event.x(), event.y());
 		if (slot == null || slot.getItem().isEmpty()) return true;
 		if (shouldBlock()) {
@@ -75,8 +76,9 @@ public final class TicketProtection {
 	}
 
 	private static boolean allowKeyPress(Screen screen, KeyEvent event) {
+        TicketSelection.manualInteraction(screen);
 		int key = event.key();
-		if ((key < 49 || key > 57) && (key < 321 || key > 329)) return true;
+		if ((key < com.mojang.blaze3d.platform.InputConstants.KEY_1 || key > com.mojang.blaze3d.platform.InputConstants.KEY_9) && (key < com.mojang.blaze3d.platform.InputConstants.KEY_NUMPAD1 || key > com.mojang.blaze3d.platform.InputConstants.KEY_NUMPAD9)) return true;
 		if (shouldBlock()) {
 			blockedMessage();
 			return false;
@@ -85,14 +87,14 @@ public final class TicketProtection {
 		return true;
 	}
 
-	private static boolean shouldBlock() {
+	static boolean shouldBlock() {
 		PartySnapshot party = PartyState.snapshot();
 		return ConfigManager.get().gameplay.protectSafariTicket && SafariLocation.inside()
 			&& SessionManager.current() == null && party.known()
 			&& SafariPartyWatch.joinedPlayers() < party.expectedPlayers();
 	}
 
-	private static boolean isEntryScreen(Screen screen) {
+	static boolean isEntryScreen(Screen screen) {
 		return screen instanceof AbstractContainerScreen<?>
 			&& "Critter Safari Entry".equals(screen.getTitle().getString());
 	}

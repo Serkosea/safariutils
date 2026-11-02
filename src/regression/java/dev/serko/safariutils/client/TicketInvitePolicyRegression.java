@@ -9,6 +9,13 @@ public final class TicketInvitePolicyRegression {
 	private record Player(String name, boolean sparkling, boolean qualifies) { }
 	public static int run() {
 		int checks = 0;
+        var gson = new com.google.gson.GsonBuilder().excludeFieldsWithoutExposeAnnotation().create();
+        var legacy = gson.fromJson("{}", SafariConfig.SparklingConfig.class);
+        if (!legacy.ticketTradingDisbandParty) throw new AssertionError("Existing users keep cleanup enabled");
+        legacy.ticketTradingDisbandParty = false;
+        if (gson.fromJson(gson.toJson(legacy), SafariConfig.SparklingConfig.class).ticketTradingDisbandParty)
+            throw new AssertionError("Party retention survives config save");
+        checks += 2;
 		for (boolean sparkling : List.of(false, true))
 			for (boolean waiting : List.of(false, true))
 				for (boolean more : List.of(false, true)) {

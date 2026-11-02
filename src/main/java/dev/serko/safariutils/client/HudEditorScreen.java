@@ -340,10 +340,10 @@ public final class HudEditorScreen extends Screen {
 		int dx = 0;
 		int dy = 0;
 		switch (event.key()) {
-			case 262 -> dx = 1;
-			case 263 -> dx = -1;
-			case 264 -> dy = 1;
-			case 265 -> dy = -1;
+			case com.mojang.blaze3d.platform.InputConstants.KEY_RIGHT -> dx = 1;
+			case com.mojang.blaze3d.platform.InputConstants.KEY_LEFT -> dx = -1;
+			case com.mojang.blaze3d.platform.InputConstants.KEY_DOWN -> dy = 1;
+			case com.mojang.blaze3d.platform.InputConstants.KEY_UP -> dy = -1;
 			default -> { return super.keyPressed(event); }
 		}
 		HudBox target = lastHovered;

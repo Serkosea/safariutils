@@ -16,6 +16,8 @@ final class MarkerPipelines {
 	private static final RenderPipeline LINES_THROUGH_WALLS = RenderPipelines.register(
 		RenderPipeline.builder(RenderPipelines.LINES_SNIPPET)
 			.withLocation(Identifier.fromNamespaceAndPath(SafariUtils.MOD_ID, "pipeline/lines_through_walls"))
+            // Unlike earlier renderers, 26.3 LINES_SNIPPET declares no color attachment.
+            .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
 			.withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
 			.build());
 

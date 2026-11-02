@@ -54,6 +54,7 @@ public final class CoreRegressionSuite {
 		checks += dev.serko.safariutils.client.SettingsMotionRegression.run();
 		checks += dev.serko.safariutils.client.SettingsNavigationRegression.run();
 		checks += dev.serko.safariutils.client.DashboardRegression.run();
+        checks += dev.serko.safariutils.client.MarkerPipelineRegression.run();
         checks += dev.serko.safariutils.client.HoneyhiveRegression.run();
 		checks += dev.serko.safariutils.client.SettingsColourStateRegression.run();
         checks += dev.serko.safariutils.client.StatColoursRegression.run();

@@ -160,6 +160,15 @@ public enum HudBox {
 		}
 	},
 
+    PARTY_SYNC_DEBUG("Party Sync Debug", PartySyncDebugHud::buildPanel) {
+        @Override public float x() { return ConfigManager.get().advanced.syncDebugX; }
+        @Override public float y() { return ConfigManager.get().advanced.syncDebugY; }
+        @Override public float scale() { return ConfigManager.get().advanced.syncDebugScale; }
+        @Override public void setPosition(float x,float y) { ConfigManager.get().advanced.syncDebugX=x; ConfigManager.get().advanced.syncDebugY=y; }
+        @Override public void setScale(float value) { ConfigManager.get().advanced.syncDebugScale=value; }
+        @Override public boolean enabled() { return PartySyncDebugHud.enabled(); }
+    },
+
 	ALERTS("Banner Alerts", EncounterAlerts::editorPanel) {
 		@Override
 		public float x() {

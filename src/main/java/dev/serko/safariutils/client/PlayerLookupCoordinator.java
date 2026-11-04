@@ -20,7 +20,7 @@ final class PlayerLookupCoordinator {
         if(name==null||!name.matches("[A-Za-z0-9_]{1,16}")) return failed("Invalid Minecraft username");
         if(active!=null&&!active.isDone()) return name.equalsIgnoreCase(activeName)?active:failed("A lookup is already loading");
         if(!SharedSparklingProviders.available())return failed("API unavailable");
-        if(System.currentTimeMillis()<SharedSparklingProviders.lookupAvailableAt())return failed("Lookup cooldown active");
+        // The provider checks its cache before applying the uncached-request cooldown.
         Minecraft client=Minecraft.getInstance();
         var account=client.player==null?null:client.player.getUUID();
         activeName=name;

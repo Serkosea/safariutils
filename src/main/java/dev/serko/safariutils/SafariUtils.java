@@ -211,6 +211,7 @@ public class SafariUtils implements ClientModInitializer {
 			tickSafely("darkness", DarknessFilter::tick);
 			// Off-thread, at most every five minutes, and only where a price is shown.
 			tickSafely("bazaar", BazaarPrices::tick);
+			tickSafely("biome-coordination", dev.serko.safariutils.client.BiomeCoordination::tick);
 			tickSafely("chat-queue", ChatQueue::tick);
 			tickSafely("config", ConfigManager::tick);
 			tickSafely("player-identities", PlayerIdentityStore::tick);
@@ -312,9 +313,12 @@ public class SafariUtils implements ClientModInitializer {
 		ClientCommandRegistrationCallback.EVENT.register(
 			(dispatcher, registryAccess) -> SafariCommands.register(dispatcher));
 
-		HudElementRegistry.attachElementBefore(
-			VanillaHudElements.CHAT,
-			Identifier.fromNamespaceAndPath(MOD_ID, "safari_progress"),
+        if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)) HudElementRegistry.attachElementBefore(
+            VanillaHudElements.CHAT, Identifier.fromNamespaceAndPath(MOD_ID, "party_sync_debug"),
+            OperationalLog.hud("party-sync-debug", new dev.serko.safariutils.client.PartySyncDebugHud()));
+        HudElementRegistry.attachElementBefore(
+            VanillaHudElements.CHAT,
+            Identifier.fromNamespaceAndPath(MOD_ID, "safari_progress"),
 			OperationalLog.hud("progress", new ProgressHud()));
 		HudElementRegistry.attachElementBefore(
 			VanillaHudElements.CHAT,
@@ -383,6 +387,7 @@ public class SafariUtils implements ClientModInitializer {
 		OperationalLog.run("DISCONNECT/spotter", CritterSpotter::reset);
 		OperationalLog.run("DISCONNECT/waypoints", WaypointRenderer::onWorldChange);
 		OperationalLog.run("DISCONNECT/roster", PartyRosterWatch::resetConnectionState);
+        OperationalLog.run("DISCONNECT/hotspot", HotspotWatch::resetConnection);
 		OperationalLog.run("DISCONNECT/chat", ChatQueue::clear);
 		OperationalLog.run("DISCONNECT/sounds", AlertSounds::onConnectionExit);
 		OperationalLog.run("DISCONNECT/banner", FullScreenAlert::clear);

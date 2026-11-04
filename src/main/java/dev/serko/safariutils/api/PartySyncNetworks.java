@@ -19,12 +19,24 @@ public final class PartySyncNetworks {
 		PROVIDER.run("tick", provider -> provider.tick(context, receiver));
 	}
 
+	public static boolean coordinationSupported() {
+		return PROVIDER.read("coordination", PartySyncNetworkProvider::coordinationSupported, false);
+	}
+
+	public static java.util.Set<String> connectedPlayers() {
+        return PROVIDER.read("presence", PartySyncNetworkProvider::connectedPlayers, java.util.Set.of());
+    }
+
 	public static boolean connected() {
 		return PROVIDER.read("connected", PartySyncNetworkProvider::connected, false);
 	}
 
 	public static void send(long sequence, String type, String payload) {
 		PROVIDER.run("send", provider -> provider.send(sequence, type, payload));
+	}
+
+	public static void sendSnapshot(long sequence, String payload, boolean catchUpOnly) {
+		PROVIDER.run("snapshot", provider -> provider.sendSnapshot(sequence, payload, catchUpOnly));
 	}
 
 	public static void disconnect() {

@@ -5,8 +5,32 @@ import dev.serko.safariutils.state.PartySnapshot;
 import java.util.List;
 
 public final class BackendValuesRegression {
-	public static int run() {
+	public static int run() throws Exception {
 		int checks = 0;
+        var client = new HypixelApiClient();
+        var lastRequest = HypixelApiClient.class.getDeclaredField("lastManualProfileRequestAt");
+        lastRequest.setAccessible(true);
+        long now = System.currentTimeMillis();
+        lastRequest.setLong(client, now);
+        var cacheField = HypixelApiClient.class.getDeclaredField("players");
+        cacheField.setAccessible(true);
+        @SuppressWarnings("unchecked") var cache = (java.util.Map<String, Object>) cacheField.get(client);
+        var cacheType = Class.forName("dev.serko.safariutils.backend.HypixelApiClient$CachedPlayer");
+        var constructor = cacheType.getDeclaredConstructors()[0];
+        constructor.setAccessible(true);
+        var data = new SafariPlayerData(java.util.Set.of("Wumpa"), 0, java.util.Map.of(), now, null);
+        String cachedId = "a".repeat(32);
+        cache.put(cachedId, constructor.newInstance(data, null, now));
+        check(client.collectionManual(cachedId) == data, "cached lookup bypasses active cooldown"); checks++;
+        check(lastRequest.getLong(client) == now, "cache reads do not extend cooldown"); checks++;
+        for (String uncached : List.of("b".repeat(32), cachedId)) {
+            cache.put(cachedId, constructor.newInstance(data, null, now - 300001));
+            try { client.collectionManual(uncached); throw new AssertionError("Uncached lookup bypassed cooldown"); }
+            catch (dev.serko.safariutils.api.LookupCooldownException expected) {
+                check(expected.seconds() > 0 && expected.seconds() <= 10, "uncached lookup reports wait without sleeping or networking"); checks++;
+            }
+        }
+
 		for (long colour : new long[]{0xff55ffffL, (int) 0xff55ffffL}) {
 			var source = JsonParser.parseString("{\"rankColour\":" + colour
 				+ ",\"permanentRankColour\":" + colour

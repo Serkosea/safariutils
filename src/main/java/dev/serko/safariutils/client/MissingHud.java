@@ -15,7 +15,7 @@ import java.util.List;
 
 /**
  * Top-right panel listing what is still uncaught <em>in the biome you are standing
- * in</em> — the working list for whoever is assigned that biome.
+ * in</em>, plus all known uncaught Sparklings across the visit.
  *
  * <p>Species already caught by a partymate count as done, since the run's goal is
  * party-wide coverage. A caught-by-you marker distinguishes the two.
@@ -31,15 +31,16 @@ public final class MissingHud implements HudElement {
 	public void extractRenderState(GuiGraphicsExtractor graphics, DeltaTracker deltaTracker) {
 		SafariConfig config = ConfigManager.get();
 		if (!config.display.hudEnabled || !config.display.showMissing) return;
-		if (!SafariLocation.inside() || SafariLocation.biome() == null) return;
-		if (SessionManager.current() == null) return;
+		if (!SafariLocation.inside()) return;
+        if ((SafariLocation.biome() == null || SessionManager.current() == null)
+            && !SparklingWatch.hasOutstanding()) return;
 
 		Minecraft client = Minecraft.getInstance();
 		if (client.player == null || ClientCompat.hudHidden()) return;
 
 		SafariBiome biome = SafariLocation.biome();
 
-		HudPanel panel = panelCache.get(() -> buildPanel(biome, SessionManager.currentOrLast()));
+		HudPanel panel = panelCache.get(() -> buildPanel(biome, SessionManager.current()));
 		HudBox box = HudBox.MISSING;
 		float scale = box.scale() * ResponsiveUI.scale(graphics.guiWidth(), graphics.guiHeight());
 		int x = box.pixelX(graphics.guiWidth(), panel, client.font, scale);
@@ -50,12 +51,18 @@ public final class MissingHud implements HudElement {
 			panel.renderRainbowBorder(graphics, client.font, x, y, scale);
 		} else {
 			panel.render(graphics, client.font, x, y, scale,
-				HudBorderStyle.missing(biome, SessionManager.currentOrLast()));
+				HudBorderStyle.missing(biome, SessionManager.current()));
 		}
 	}
 
-	/** Builds the list for {@code biome}; production rendering supplies the ticketed run. */
+	/** Ordinary objectives require a ticket and biome; Sparkling information does not. */
 	static HudPanel buildPanel(SafariBiome biome, SafariSession session) {
+        if (biome == null || session == null) {
+            HudPanel panel = new HudPanel();
+            panel.title("Sparklings", StatColours.UNIQUE);
+            appendSparklingEntries(panel);
+            return panel.trimTrailingBlanks();
+        }
 		if (SparklingMode.enabled()) return buildSparklingModePanel(biome, session);
 		// Gimmiegold is always kept in, regardless of session.missing()'s usual
 		// caught-once-and-done judgement: its line tracks coins found against
@@ -97,7 +104,7 @@ public final class MissingHud implements HudElement {
 				HudBorderStyle.missingTitle(biome, session),
 				HudBorderStyle.missingTitle(biome, session));
 		}
-		if (appendSparklingEntries(panel, biome)) panel.blank();
+		if (appendSparklingEntries(panel)) panel.blank();
 		if (!shown.isEmpty()) {
 			// Gimmiegold sits wherever its own rarity
 			// places it alphabetically among the rest — Rare, so between the Uncommon
@@ -151,11 +158,11 @@ public final class MissingHud implements HudElement {
 		return panel.trimTrailingBlanks();
 	}
 
-	/** Sparkling-search view: Sparkling-needed species, then shared species needing only a unique. */
+	/** Focused view: detected Sparklings, then uncaught uniques and explicit optional targets. */
 	private static HudPanel buildSparklingModePanel(SafariBiome biome, SafariSession session) {
 		HudPanel panel = new HudPanel();
 		panel.sparklingModeTitle(biome.displayName(), HudBorderStyle.missingTitle(biome, session));
-		if (appendSparklingEntries(panel, biome)) panel.blank();
+		if (appendSparklingEntries(panel)) panel.blank();
 
 		boolean speciesShown = false;
 		for (Critter critter : Critters.inBiome(biome)) {
@@ -202,11 +209,19 @@ public final class MissingHud implements HudElement {
 	}
 
 	/** Adds retained, uncaught Sparkling detections above the ordinary species rows. */
-	private static boolean appendSparklingEntries(HudPanel panel, SafariBiome biome) {
-		java.util.Map<Critter, Integer> counts = SparklingWatch.outstandingCounts(biome);
+	private static boolean appendSparklingEntries(HudPanel panel) {
+		java.util.Map<Critter, Integer> counts = SparklingWatch.outstandingCounts();
+		var nearby = SparklingWatch.nearbyCounts();
 		counts.forEach((critter, count) -> panel.rainbowPair(
-			"SPARKLING " + critter.name(), count + " Near"));
+			"SPARKLING " + critter.name(), sparklingCountLabel(count, nearby.getOrDefault(critter, 0))));
 		return !counts.isEmpty();
+	}
+
+	static String sparklingCountLabel(int total, int nearby) {
+		int near = Math.max(0, Math.min(total, nearby));
+		int distant = total - near;
+		if (near == 0) return total + " Found";
+		return near + " Near" + (distant > 0 ? " · " + distant + " Found" : "");
 	}
 
 	private static boolean gimmiegoldWouldShow(SafariSession session) {
@@ -358,8 +373,9 @@ public final class MissingHud implements HudElement {
             panel.pair("Floor Drops Left", Integer.toString(total), general, general);
             return true;
         }
-        for (var entry : remaining.entrySet()) {
-            var kind = entry.getKey();
+        for (var kind : FloorDropPattern.Kind.DISPLAY_ORDER) {
+            Integer count = remaining.get(kind);
+            if (count == null) continue;
             String name = switch (kind) {
                 case UNKNOWN -> "Floor Drops"; case LOOT -> "Floor Loot";
                 case COIN -> "Shining Coins"; case ICE -> "Icebreakers";
@@ -368,7 +384,7 @@ public final class MissingHud implements HudElement {
                 case INCENSE -> "Soothing Incense";
             };
             int colour = kind.colour == 0 ? general : 0xFF000000 | kind.colour;
-            panel.pair(name + " Left", Integer.toString(entry.getValue()), colour, colour);
+            panel.pair(name + " Left", Integer.toString(count), colour, colour);
         }
         return true;
 	}

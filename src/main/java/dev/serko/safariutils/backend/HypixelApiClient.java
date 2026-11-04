@@ -67,7 +67,7 @@ final class HypixelApiClient {
 		String compact = compactUuid(uuid);
 		CachedPlayer cached = fresh(compact);
 		if (cached != null) return cached.collection();
-		if (manual) waitForManualRequestSlot();
+		if (manual) requireManualRequestSlot();
 		fetchPlayers(List.of(compact));
 		if (manual) lastManualProfileRequestAt = System.currentTimeMillis();
 		return required(compact).collection();
@@ -80,10 +80,10 @@ final class HypixelApiClient {
 		if (!missing.isEmpty()) fetchPlayers(missing);
 	}
 
-	private void waitForManualRequestSlot() throws InterruptedException {
+	private void requireManualRequestSlot() {
 		long remaining = MANUAL_REQUEST_INTERVAL_MILLIS
 			- (System.currentTimeMillis() - lastManualProfileRequestAt);
-		if (remaining > 0) Thread.sleep(remaining);
+		if (remaining > 0) throw new dev.serko.safariutils.api.LookupCooldownException(remaining);
 	}
 
 	long nextProfileRequestAt() {
@@ -186,14 +186,8 @@ final class HypixelApiClient {
 
 
 	private static IOException backendError(HttpResponse<String> response) {
-		try {
-			JsonObject root = JsonParser.parseString(response.body()).getAsJsonObject();
-			if (root.has("message")) return new IOException(root.get("message").getAsString());
-		} catch (RuntimeException ignored) {
-			// Fall through to the stable HTTP message.
-		}
-		return new IOException("SafariUtils API request failed with HTTP " + response.statusCode());
-	}
+        return RemoteSession.backendError(response);
+    }
 
 	private CachedPlayer fresh(String uuid) {
 		CachedPlayer cached = players.get(uuid);

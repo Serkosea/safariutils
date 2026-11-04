@@ -11,6 +11,21 @@ import java.util.function.Predicate;
 final class TicketInvitePolicy {
 	private TicketInvitePolicy() { }
 
+    private static final java.util.regex.Pattern TRANSFER = java.util.regex.Pattern.compile(
+        "^» (?:\\[[^]]+]\\s*)?([A-Za-z0-9_]{1,16}) is traveling to .+ FOLLOW$");
+
+    static String transferredPlayer(String line) {
+        var match = TRANSFER.matcher(line);
+        return match.matches() ? match.group(1) : null;
+    }
+
+    /** The final entry opportunity takes precedence over the extra settling buffer. */
+    static long warpDueAt(long normalDue, long readySince, long transferAt, long deadline) {
+        return Math.min(deadline - 250L, Math.max(normalDue,
+            Math.max(readySince > 0 ? readySince + 2_000L : 0L,
+                transferAt > 0 ? transferAt + 3_000L : 0L)));
+    }
+
 	static int capacity(int baselinePlayers, int joinedGuests) {
 		return Math.max(0, 4 - Math.max(1, baselinePlayers) - Math.max(0, joinedGuests));
 	}

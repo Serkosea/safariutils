@@ -45,6 +45,7 @@ public final class SafariEventDispatcher {
 		ShiningCoinWatch.onChatMessage(line);
 		SafariObjectives.onChatMessage(line);
 		HotspotWatch.onChatMessage(line);
+        dev.serko.safariutils.client.BiomeCoordination.onChatMessage(line);
 		HideyhoSolver.onChatMessage(line);
 		StillCritters.onChatMessage(line, event.critterEvent());
 		FloorDrops.onChatMessage(line);

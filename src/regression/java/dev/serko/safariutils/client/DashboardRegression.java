@@ -4,7 +4,16 @@ import dev.serko.safariutils.session.RunRecord;
 import java.util.List;
 
 public final class DashboardRegression {
-    public static int run() {
+    public static int run() throws Exception {
+        var field = ConfigManager.class.getDeclaredField("config");
+        field.setAccessible(true);
+        Object previous = field.get(null);
+        try {
+            field.set(null, new SafariConfig());
+            return checkDashboard();
+        } finally { field.set(null, previous); }
+    }
+    private static int checkDashboard() {
         if(!java.util.Arrays.stream(DashboardNavigation.Tab.values()).map(t->t.label).toList()
             .equals(List.of("Stats","History","Profit","Sparklings","Lookup","Personal Bests")))throw new AssertionError("dashboard tab order");
         RunRecord old=new RunRecord();old.started=99;
@@ -92,14 +101,28 @@ public final class DashboardRegression {
                 throw new AssertionError("continuous parabola curvature");
         }
         var report=ClientMessages.reportLines(List.of(net.minecraft.network.chat.Component.literal("Title"),LookupPresentation.missingSummary(owned)));
-        if(report.size()!=4 || !report.get(1).getString().equals("Title") || !report.get(2).getString().startsWith("•  Missing")
+        if(report.size()!=4 || !report.get(1).getString().equals(ClientMessages.prefixPreview(ConfigManager.get().display.clientMessagePrefix).getString() + "Title") || !report.get(2).getString().startsWith(" Missing")
             || report.getFirst().getStyle().getColor().getValue()!=0xFFD45A || !report.getFirst().getString().equals(report.getLast().getString()))
-            throw new AssertionError("API report has unprefixed heading, gold rules and body bullets");
+            throw new AssertionError("API report has selected-prefix heading, gold rules and body bullets");
         var framed = ClientMessages.reportMessage(List.of(net.minecraft.network.chat.Component.literal("Title"), LookupPresentation.missingSummary(owned)));
         if (!report.getFirst().getStyle().isStrikethrough() || report.getFirst().getString().length() != 28
             || !framed.getString().equals(report.stream().map(net.minecraft.network.chat.Component::getString)
                 .collect(java.util.stream.Collectors.joining("\n"))))
             throw new AssertionError("short continuous rules remain in one atomic report message");
-        return 26;
+        var numbered = ClientMessages.reportLines(List.of(net.minecraft.network.chat.Component.literal("Profit"),
+            net.minecraft.network.chat.Component.literal("1. Hideonwall")), " ");
+        if (!numbered.get(2).getString().equals(" 1. Hideonwall"))
+            throw new AssertionError("Profit rows use one leading space without an extra bullet");
+        int savedPrefix = ConfigManager.get().display.clientMessagePrefix;
+        try {
+            String[] prefixes = {"[SafariUtils] ", "[SU] ", "[Safari] "};
+            for (int choice = 0; choice < prefixes.length; choice++) {
+                ConfigManager.get().display.clientMessagePrefix = choice;
+                var titled = ClientMessages.reportLines(List.of(net.minecraft.network.chat.Component.literal("Title")));
+                if (!titled.get(1).getString().equals(prefixes[choice] + "Title"))
+                    throw new AssertionError("Selected prefix missing from report title");
+            }
+        } finally { ConfigManager.get().display.clientMessagePrefix = savedPrefix; }
+        return 29;
     }
 }

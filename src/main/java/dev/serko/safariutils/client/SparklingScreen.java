@@ -434,13 +434,11 @@ public final class SparklingScreen extends Screen {
 		boolean available = SharedSparklingProviders.available();
 		boolean refreshable = blank && displayed && !freshCached && cooldown == 0L && available;
 		boolean enabled = !lookupLoading && (refreshable
-			|| !blank && cooldown == 0L && available);
+			|| !blank && available);
 		String label;
 		if (lookupLoading) label = "Loading…";
 		else if (blank && displayed) label = refreshable ? "Refresh" : "Loaded";
-		else if (!blank && cooldown > 0L) {
-			label = "Lookup " + ((cooldown + 999L) / 1_000L) + "s";
-		} else label = "Lookup";
+		else label = "Lookup";
 		int colour = enabled ? refreshable ? COLLECTION_GOLD : AQUA : DIM;
 		return new LookupState(enabled, label, colour);
 	}

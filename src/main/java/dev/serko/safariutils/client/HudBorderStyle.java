@@ -86,6 +86,7 @@ final class HudBorderStyle {
 			case CONTEST -> Colours.argb(ConfigManager.get().display.contestHudBorderColour,
 				BETWEEN_CONTESTS_GOLD);
 			case PARTY_OBJECTIVE -> partyObjectives();
+			case PARTY_SYNC_DEBUG -> 0xFF65DDEC;
 			case ALERTS -> 0xFFFFC857;
 		};
 	}

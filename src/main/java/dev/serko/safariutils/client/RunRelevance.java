@@ -7,7 +7,7 @@ import dev.serko.safariutils.session.SafariSession;
 
 /** Allocation-free decisions over existing run evidence. Never changes catch or PB state. */
 final class RunRelevance {
-    static final int UNIQUE = 1, SEARCH = 2, PROFIT = 4, ALWAYS = 8, PREREQUISITE = 16, FULL_CLEAR = 32;
+    static final int UNIQUE = 1, PROFIT = 4, ALWAYS = 8, PREREQUISITE = 16, FULL_CLEAR = 32;
     private RunRelevance() { }
 
     static boolean indicateProfit(Critter critter) {
@@ -23,7 +23,8 @@ final class RunRelevance {
         if (!SparklingMode.enabled() || critter.biome() != SafariBiome.ICY || critter.name().equals("Wumpa")) return false;
         if (session != null && session.caughtByParty(critter) || SafariObjectives.wumpaComplete()) return false;
         Critter wumpa = Critters.byName("Wumpa");
-        return !SparklingMode.isShared(wumpa) || profitable(wumpa) || SparklingMode.alwaysActive(wumpa);
+        return RunMode.current().seeksRunUniques() && (session == null || !session.caughtByParty(wumpa))
+            || profitable(wumpa) || SparklingMode.alwaysActive(wumpa) || SparklingWatch.outstandingCount(wumpa) > 0;
     }
 
     static int reasons(Critter critter, SafariSession session) {
@@ -34,8 +35,6 @@ final class RunRelevance {
         if (!mode.focused()) return FULL_CLEAR;
         if (!unavailable) {
             if (mode.seeksRunUniques() && !caught) reasons |= UNIQUE;
-            // A single ordinary sighting/catch does not prove every spawn was checked.
-            if (!SparklingMode.isShared(critter) && remainingOpportunity(critter, session)) reasons |= SEARCH;
             if (profitable(critter) && remainingOpportunity(critter, session)) reasons |= PROFIT;
             if (prerequisite(critter, session)) reasons |= PREREQUISITE;
         }
@@ -51,13 +50,13 @@ final class RunRelevance {
     private static int hudReasons(Critter critter, SafariSession session) {
         int reasons = reasons(critter, session);
         if (ConfigManager.get().display.missingUniqueOnly && session != null && session.caughtByParty(critter))
-            reasons &= ~(UNIQUE | SEARCH);
+            reasons &= ~UNIQUE;
         return reasons;
     }
 
     static boolean showInHud(Critter critter, SafariSession session) {
         int reasons = hudReasons(critter, session);
-        if ((reasons & (UNIQUE | SEARCH | PREREQUISITE)) != 0) return true;
+        if ((reasons & (UNIQUE | PREREQUISITE)) != 0) return true;
         if ((reasons & (PROFIT | ALWAYS)) == 0) return false;
         // Do not retain a dead profit row once an exact quota is caught; dynamic
         // species retain uncertainty until the existing tracker proves exhaustion.

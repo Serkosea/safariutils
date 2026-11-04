@@ -6,6 +6,10 @@ public final class ShiningCoinRegression {
     public static int run() {
         ShiningCoinWatch.reset();
         ShiningCoinWatch.creditFound(1);
+        check(ShiningCoinWatch.reportTarget(6) == 7);
+        ShiningCoinWatch.onChatMessage("Party > Friend: [SM] Starting items: 2x Shining Coin", 0);
+        check(ShiningCoinWatch.reportTarget(6) == 7); // teammate inventory is not a local requirement
+        check(!ShiningCoinWatch.ownCoinsUsed());
         ShiningCoinWatch.observeInventory(1,0);
         ShiningCoinWatch.observeInventory(1,750);
         check(ShiningCoinWatch.found()==1);
@@ -38,6 +42,6 @@ public final class ShiningCoinRegression {
         check(ShiningCoinWatch.found()==2); // late spawn restores discarded candidate
         ShiningCoinWatch.reset();
         check(ShiningCoinWatch.found()==0 && ShiningCoinWatch.acquired()==0);
-        return 10;
+        return 13;
     }
 }

@@ -4,7 +4,7 @@ package dev.serko.safariutils.client;
 public final class ShiningCoinWatch {
     private static final String SPAWN = "A Gimmiegold appeared out of nowhere and gobbled up your Shining Coin!";
     private static final long SETTLE_MILLIS = 750;
-    private static int found, acquired, floorFound, spawned;
+    private static int found, acquired, floorFound, spawned, startingCoins;
     private static int candidateHeld = -1;
     private static long settleAt;
     private ShiningCoinWatch() { }
@@ -25,9 +25,12 @@ public final class ShiningCoinWatch {
     }
     /** Starting inventory evidence; later authoritative inventory replaces this quota. */
     public static void creditFound(int amount) {
+        startingCoins += Math.max(0, amount);
         found += Math.max(0, amount);
         acquired += Math.max(0, amount);
     }
+    static int reportTarget(int floorCoins) { return Math.max(3, Math.max(floorFound, floorCoins)) + startingCoins; }
+    static boolean ownCoinsUsed() { return spawned >= floorFound + startingCoins; }
     public static int acquired() { return acquired; }
     public static int floorFound() { return floorFound; }
     /** Available coins plus coins confirmed to have spawned a Gimmiegold. */
@@ -49,7 +52,7 @@ public final class ShiningCoinWatch {
         }
     }
     public static void reset() {
-        found = acquired = floorFound = spawned = 0;
+        found = acquired = floorFound = spawned = startingCoins = 0;
         candidateHeld = -1;
         settleAt = 0;
     }

@@ -98,6 +98,7 @@ public final class MoundSpotter {
 	private static final Set<BlockPos> confirmedVisible = new HashSet<>();
 	/** Completed positions cannot be re-added by a stale interaction entity. */
 	private static final Set<BlockPos> completed = new HashSet<>();
+    private static final Set<BlockPos> surveyed = new HashSet<>();
 	/** Completion supported by direct inspection or an authoritative local break. */
 	private static final Set<BlockPos> safeCompleted = new HashSet<>();
 	/** Resolved live mounds safe to publish as local party evidence. */
@@ -260,6 +261,14 @@ public final class MoundSpotter {
 			confirmedVisible.remove(pos);
 			absentSince.remove(pos);
 		}
+        // Reuse the existing scheduled scan to survey catalog coverage. Empty unloaded
+        // or out-of-range sites are never evidence; no extra entity sweep or raycast.
+        if (!safeMode && playerInCavern && client.level != null && client.player != null) {
+            for (BlockPos pos : StaticWaypointCatalog.mounds()) {
+                if (client.level.isLoaded(pos) && client.player.distanceToSqr(pos.getX()+0.5, pos.getY()+0.5, pos.getZ()+0.5)
+                        <= RELIABLE_DETECTION_RANGE * RELIABLE_DETECTION_RANGE) surveyed.add(pos);
+            }
+        }
 		// A live scan or newly remembered mound proves this run contained one.
 		if (!liveNow.isEmpty() || everSeen.size() > beforeSize) everDetectedAny = true;
 
@@ -269,7 +278,14 @@ public final class MoundSpotter {
 			.toList();
 	}
 
-	/** Whether any mound at all has been detected this run, even if all are now broken. */
+    /** A surveyed empty catalog, not merely zero nearby entities. */
+    static boolean sourcesExhausted() {
+        var catalog = StaticWaypointCatalog.mounds();
+        return !catalog.isEmpty() && (SafeMode.mounds() ? safeCompleted : surveyed).containsAll(catalog)
+            && cached.isEmpty();
+    }
+
+	/** Whether any mound has been detected this run, even if all are now broken. */
 	public static boolean everDetectedAny() {
 		return everDetectedAny;
 	}
@@ -287,6 +303,7 @@ public final class MoundSpotter {
 		detectedLive.clear();
 		confirmedVisible.clear();
 		completed.clear();
+        surveyed.clear();
 		safeCompleted.clear();
 		shareableCompleted.clear();
 		partyCompleted.clear();

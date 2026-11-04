@@ -64,9 +64,10 @@ public final class TicketProtection {
 	}
 
 	private static boolean allowMouseClick(Screen screen, MouseButtonEvent event) {
-        TicketSelection.manualInteraction(screen);
 		Slot slot = slotAt(screen, event.x(), event.y());
 		if (slot == null || slot.getItem().isEmpty()) return true;
+        TicketSelection.manualInteraction(screen);
+        if (TicketSelection.tier(slot.getItem().getHoverName().getString()) == 0) return true;
 		if (shouldBlock()) {
 			blockedMessage();
 			return false;
@@ -76,9 +77,9 @@ public final class TicketProtection {
 	}
 
 	private static boolean allowKeyPress(Screen screen, KeyEvent event) {
-        TicketSelection.manualInteraction(screen);
 		int key = event.key();
 		if ((key < com.mojang.blaze3d.platform.InputConstants.KEY_1 || key > com.mojang.blaze3d.platform.InputConstants.KEY_9) && (key < com.mojang.blaze3d.platform.InputConstants.KEY_NUMPAD1 || key > com.mojang.blaze3d.platform.InputConstants.KEY_NUMPAD9)) return true;
+        TicketSelection.manualInteraction(screen);
 		if (shouldBlock()) {
 			blockedMessage();
 			return false;
@@ -96,7 +97,7 @@ public final class TicketProtection {
 
 	static boolean isEntryScreen(Screen screen) {
 		return screen instanceof AbstractContainerScreen<?>
-			&& "Critter Safari Entry".equals(screen.getTitle().getString());
+			&& TicketSelection.entryTitle(screen.getTitle().getString());
 	}
 
 	private static Slot slotAt(Screen screen, double mouseX, double mouseY) {

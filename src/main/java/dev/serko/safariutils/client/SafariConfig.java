@@ -141,10 +141,10 @@ public class SafariConfig {
         @SettingInfo(name = "Sparkling Mode Ticket", desc = "Ticket to select automatically in Sparkling mode; never substitutes another ticket")
         @SettingChoice(values = {"Manual", "Basic", "Economy", "Premium", "First Class"}) @Expose
         public int sparklingTicket = 0;
-        @SettingInfo(name = "Assign Hotspots", desc = "Shares your hotspot and assigns separate biomes when party hotspots overlap")
+        @SettingInfo(name = "Assign Hotspots", desc = "Fairly assigns separate biomes to party members, preserving each finalized assignment")
         @SettingToggle @Expose public boolean assignHotspots = false;
-        @SettingInfo(name = "Mutuals Compatibility", desc = "Uses Sparkling Mutuals party messages and hotspot assignments; restores your custom messages when disabled")
-        @SettingToggle @Expose public boolean mutualsCompatibility = false;
+        @SettingInfo(name = "Biome Reports", desc = "Shares biome completion for your run mode; uses party sync when available and chat otherwise")
+        @SettingToggle @Expose public boolean biomeReports = false;
 
 		@SettingInfo(name = "Ticket Trading",
 			desc = "Configure trusted players for timed Safari ticket trading")
@@ -256,7 +256,7 @@ public class SafariConfig {
 
 		@SettingInfo(
 			name = "Personal Hotspot",
-			desc = "Shows which biome your hotspot is")
+			desc = "Shows your actual hotspot and a separate assigned biome when it differs")
 		@SettingToggle
 		@SettingGroup(id = PROGRESS_HUD_OPTIONS)
 		@Expose
@@ -1133,6 +1133,11 @@ public class SafariConfig {
 		@Expose
 		public boolean enableAutomaticLogging = false;
 
+        @SettingInfo(name = "Party Sync HUD", desc = "Shows connection status and recent party-sync updates in a movable developer HUD")
+        @SettingToggle @SettingGroup(id = TESTING) @Expose
+        public boolean partySyncDebugHud = false;
+        @Expose public float syncDebugX = 0.01f, syncDebugY = 0.48f, syncDebugScale = 0.8f;
+
 		/** Accordion id for developer-only data collection and persistence controls. */
 		private static final int DATA_COLLECTING = 25;
 
@@ -1142,7 +1147,7 @@ public class SafariConfig {
 		public boolean dataCollectingAccordion = false;
 
 		@SettingInfo(name = "Don't Save Run",
-			desc = "Runs normally but prevents this run and its catches, profits, rewards, and Sparklings from being saved")
+			desc = "Prevents runs, PBs, rewards, and collection changes from being saved. Always on while connected to Hypixel Alpha.")
 		@SettingToggle
 		@SettingGroup(id = DATA_COLLECTING)
 		public transient boolean testingDoNotSaveRun = false;
@@ -1487,17 +1492,21 @@ public class SafariConfig {
 		@SettingGroup(id = SOUND_SETTINGS_FULL_PARTY_JOINED) @Expose
 		public float fullPartyJoinedSoundPitch = 1f;
 
-		@SettingInfo(name = "Personal Hotspot", desc = "")
+		@SettingInfo(name = "Hotspot & Assignment", desc = "")
 		@SettingSection(id = SOUND_HOTSPOT)
 		@SettingGroup(id = SAFARI_ALERTS)
 		public boolean hotspotAlertAccordion = false;
 
-		@SettingInfo(name = "Test Alert", desc = "Preview this alert with its current settings")
+		@SettingInfo(name = "Test Hotspot", desc = "Preview your actual-hotspot alert")
 		@SettingAction(buttonText = "Alert")
 		@SettingGroup(id = SOUND_HOTSPOT)
 		public Runnable testHotspotAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.HOTSPOT);
 
-		@SettingInfo(name = "Play Alert", desc = "Plays alert when your Hotspot is chosen for a run")
+        @SettingInfo(name = "Test Assignment", desc = "Preview the assigned-biome alert with these settings")
+        @SettingAction(buttonText = "Alert") @SettingGroup(id = SOUND_HOTSPOT)
+        public Runnable testHotspotAssignmentAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.HOTSPOT_ASSIGNMENT);
+
+		@SettingInfo(name = "Play Alert", desc = "Alerts for your assigned biome when available; otherwise your actual hotspot")
 		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"})
 		@SettingGroup(id = SOUND_HOTSPOT)
 		@Expose
@@ -1507,9 +1516,12 @@ public class SafariConfig {
 		@SettingSection(id = APPEAR_HOTSPOT) @SettingGroup(id = SOUND_HOTSPOT)
 		public boolean hotspotAppearanceAccordion = false;
 
-		@SettingInfo(name = "Text", desc = "Custom banner text\n§bTags: " + AlertText.BIOME_HELP)
+		@SettingInfo(name = "Hotspot Text", desc = "Shown for your actual personal hotspot\n§bTags: " + AlertText.BIOME_HELP)
 		@SettingText @SettingGroup(id = APPEAR_HOTSPOT) @Expose
 		public String hotspotText = "<BIOME> Hotspot";
+        @SettingInfo(name = "Assignment Text", desc = "Shown for your assigned clearing biome\n§bTags: " + AlertText.BIOME_HELP)
+        @SettingText @SettingGroup(id = APPEAR_HOTSPOT) @Expose
+        public String hotspotAssignmentText = "Assigned: <BIOME>";
 		@SettingInfo(name = "Scale", desc = "How large this banner alert's text is")
 		@SettingRange(minValue = 0.1f, maxValue = 10f, minStep = 0.1f)
 		@SettingGroup(id = APPEAR_HOTSPOT) @Expose
@@ -1526,7 +1538,7 @@ public class SafariConfig {
 		@SettingInfo(name = "Color", desc = "")
 		@SettingColor @SettingGroup(id = APPEAR_HOTSPOT) @Expose
 		public String hotspotAlertColour = DisplayConfig.colour(0xFF, 0x55, 0xFF);
-		@SettingInfo(name = "Use Biome Color", desc = "Uses the current biome's color instead of the selected color")
+		@SettingInfo(name = "Use Biome Color", desc = "Uses the displayed biome's color instead of the selected color")
 		@SettingToggle @SettingGroup(id = APPEAR_HOTSPOT) @Expose
 		public boolean hotspotUseBiomeColour = true;
 
@@ -1564,7 +1576,7 @@ public class SafariConfig {
 		@SettingGroup(id = SOUND_FLOOR_DROPS)
 		public Runnable testFloorDropsDoneAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.FLOOR_DROPS);
 
-		@SettingInfo(name = "Play Alert", desc = "Plays alert once every floor drop in a biome has been collected")
+		@SettingInfo(name = "Play Alert", desc = "All known floor drops are collected, or no more are needed in Unique/Sparkling mode")
 		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"})
 		@SettingGroup(id = SOUND_FLOOR_DROPS)
 		@Expose
@@ -1627,7 +1639,7 @@ public class SafariConfig {
 		@SettingSection(id = UNIQUE_COMPLETIONS) @SettingGroup(id = SAFARI_ALERTS)
 		public boolean uniqueCompletionsAccordion = false;
 
-		@SettingInfo(name = "Biome Uniques Done", desc = "")
+		@SettingInfo(name = "Biome Uniques Caught", desc = "")
 		@SettingSection(id = BIOME_UNIQUES_DONE)
 		@SettingGroup(id = UNIQUE_COMPLETIONS)
 		public boolean biomeUniquesDoneAccordion = false;
@@ -1637,7 +1649,7 @@ public class SafariConfig {
 		@SettingGroup(id = BIOME_UNIQUES_DONE)
 		public Runnable testBiomeUniquesDoneAlert = () -> EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.BIOME_UNIQUES);
 
-		@SettingInfo(name = "Play Alert", desc = "Plays alert when every unique species in a biome has been caught")
+		@SettingInfo(name = "Play Alert", desc = "Every species in a biome has been caught by the party, in any mode; not a Full Clear or Sparkling check")
 		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"})
 		@SettingGroup(id = BIOME_UNIQUES_DONE)
 		@Expose
@@ -1706,7 +1718,7 @@ public class SafariConfig {
 		public Runnable testAllButMacawDoneAlert = () ->
 			EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.ALL_BUT_MACAW);
 
-		@SettingInfo(name = "Play Alert", desc = "Plays alert when every unique species except Macaw has been caught")
+		@SettingInfo(name = "Play Alert", desc = "Every species except Macaw has been caught by the party, in any mode")
 		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = ALL_BUT_MACAW_DONE) @Expose
 		public int allButMacawDoneSoundMode = 0;
 
@@ -1750,7 +1762,7 @@ public class SafariConfig {
 		@SettingGroup(id = SOUND_SETTINGS_ALL_BUT_MACAW_DONE) @Expose
 		public float allButMacawDoneSoundPitch = 1.6f;
 
-		@SettingInfo(name = "All Uniques Done", desc = "")
+		@SettingInfo(name = "All Uniques Caught", desc = "")
 		@SettingSection(id = ALL_UNIQUES_DONE) @SettingGroup(id = UNIQUE_COMPLETIONS)
 		public boolean allUniquesDoneAccordion = false;
 
@@ -1759,7 +1771,7 @@ public class SafariConfig {
 		public Runnable testAllUniquesDoneAlert = () ->
 			EncounterAlerts.fireTestAlert(EncounterAlerts.Preview.ALL_DONE);
 
-		@SettingInfo(name = "Play Alert", desc = "Plays alert when all 37 unique species have been caught")
+		@SettingInfo(name = "Play Alert", desc = "All 37 species have been caught by the party, in any mode")
 		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = ALL_UNIQUES_DONE) @Expose
 		public int allUniquesDoneSoundMode = 0;
 
@@ -3071,7 +3083,8 @@ public class SafariConfig {
 		public int startingItemsBroadcast = 1;
 		@SettingInfo(name = "Items", desc = "Choose which starting item types may be included")
 		@SettingMultiChoice(
-			values = {"Lime Gem", "Orange Gem", "Purple Gem", "Icebreaker", "Coin", "Incense", "Berry", "Worm", "Seed"},
+			values = {"Purple Gem", "Lime Gem", "Orange Gem", "Icebreaker", "Incense", "Coin", "Berry", "Worm", "Seed"},
+            bits = {2, 0, 1, 3, 5, 4, 6, 7, 8},
 			groups = {"Cavern", "Icy", "Haunted", "Forest"},
 			groupStarts = {0, 3, 4, 6})
 		@SettingGroup(id = CHAT_STARTING_ITEMS) @Expose
@@ -3080,10 +3093,10 @@ public class SafariConfig {
 		@SettingText @SettingGroup(id = CHAT_STARTING_ITEMS) @Expose
 		public String startingItemsChatText = "<ITEMS>";
 
-		@SettingInfo(name = "Your Hotspot", desc = "")
+		@SettingInfo(name = "Actual Hotspot", desc = "")
 		@SettingSection(id = CHAT_HOTSPOT) @SettingGroup(id = SAFARI_CHAT_ALERTS)
 		public boolean hotspotChatAccordion = false;
-		@SettingInfo(name = "Send To", desc = "Sends your Hotspot when a run starts")
+		@SettingInfo(name = "Send To", desc = "Shares your actual hotspot, not your assignment. Assign Hotspots manages its party format automatically")
 		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
 		@SettingGroup(id = CHAT_HOTSPOT)
 		@Expose
@@ -3095,10 +3108,10 @@ public class SafariConfig {
 		@SettingSection(id = CHAT_UNIQUE_COMPLETIONS) @SettingGroup(id = SAFARI_CHAT_ALERTS)
 		public boolean uniqueCompletionsChatAccordion = false;
 
-		@SettingInfo(name = "Biome Uniques Done", desc = "")
+		@SettingInfo(name = "Biome Completion", desc = "")
 		@SettingSection(id = CHAT_BIOME_DONE) @SettingGroup(id = CHAT_UNIQUE_COMPLETIONS)
 		public boolean biomeDoneChatAccordion = false;
-		@SettingInfo(name = "Send To", desc = "Sends when every unique species in a biome has been caught")
+		@SettingInfo(name = "Send To", desc = "Normally sends on all unique catches. With Biome Reports on, waits for your mode's completion rules")
 		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
 		@SettingGroup(id = CHAT_BIOME_DONE)
 		@Expose
@@ -3109,17 +3122,17 @@ public class SafariConfig {
 		@SettingInfo(name = "All Uniques Except Macaw", desc = "")
 		@SettingSection(id = CHAT_ALL_BUT_MACAW) @SettingGroup(id = CHAT_UNIQUE_COMPLETIONS)
 		public boolean allButMacawChatAccordion = false;
-		@SettingInfo(name = "Send To", desc = "Sends when every unique species except Macaw has been caught")
+		@SettingInfo(name = "Send To", desc = "Every species except Macaw has been caught by the party, in any mode")
 		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
 		@SettingGroup(id = CHAT_ALL_BUT_MACAW) @Expose
 		public int allButMacawBroadcast = 0;
 		@SettingInfo(name = "Text", desc = "Custom message text") @SettingText @SettingGroup(id = CHAT_ALL_BUT_MACAW) @Expose
 		public String allButMacawChatText = "All Except Macaw Done!";
 
-		@SettingInfo(name = "All Uniques Done", desc = "")
+		@SettingInfo(name = "All Uniques Caught", desc = "")
 		@SettingSection(id = CHAT_ALL_DONE) @SettingGroup(id = CHAT_UNIQUE_COMPLETIONS)
 		public boolean allDoneChatAccordion = false;
-		@SettingInfo(name = "Send To", desc = "Sends when all 37 unique species have been caught")
+		@SettingInfo(name = "Send To", desc = "All 37 species have been caught by the party, in any mode")
 		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
 		@SettingGroup(id = CHAT_ALL_DONE) @Expose
 		public int allDoneBroadcast = 0;
@@ -3360,7 +3373,7 @@ public class SafariConfig {
 		private static final int CATCH_ALERT = 10;
 
         @SettingInfo(name = "Unique Mode",
-            desc = "Focus on missing Sparklings and one catch of each species per run. Uses your /sparkling collection and automatic party-shared lists. Turn off for Full Clear")
+            desc = "Show uncaught run uniques and detected Sparklings. Profit and Always Active choices still apply. Turn off for Full Clear")
 		@SettingToggle
 		@Expose
 		public boolean sparklingMode = true;
@@ -3400,12 +3413,12 @@ public class SafariConfig {
 		public boolean sparklingModeOptionsAccordion = false;
 
 		@SettingInfo(name = "Sparkling Mode",
-			desc = "While Unique Mode is on, skip ordinary unique catches for species whose Sparkling is already shared; Always Active selections still apply")
+			desc = "While Unique Mode is on, show detected Sparklings without ordinary unique targets. Profit and Always Active choices still apply")
 		@SettingToggle @SettingGroup(id = SPARKLING_MODE_OPTIONS)
 		@Expose
 		public boolean sparklingIgnoreUniques = true;
 
-		@SettingInfo(name = "Always Show Profitable Critters", desc = "Keeps top earners visible in Unique/Sparkling Mode, marked with a green $; excludes Rockmites. See /safari profit")
+		@SettingInfo(name = "Always Show Profitable Critters", desc = "Keeps top earners visible in Unique/Sparkling Mode; excludes Rockmites. The Missing HUD controls the $ indicator")
 		@SettingToggle @SettingGroup(id = SPARKLING_MODE_OPTIONS) @Expose
 		public boolean alwaysShowProfitableCritters = false;
 
@@ -3418,10 +3431,10 @@ public class SafariConfig {
 		@SettingInfo(name = "Always Active Markers",
 			desc = "Keep selected objective and possible-location markers visible when Unique Mode or Sparkling Mode would normally hide them")
 		@SettingMultiChoice(
-            values = {"Floor Loot", "Lime Gem", "Purple Gem", "Orange Gem", "Rockmite Mounds", "Snoozle Walls", "Gem Pedestals",
+            values = {"Floor Loot", "Purple Gem", "Lime Gem", "Orange Gem", "Rockmite Mounds", "Snoozle Walls", "Gem Pedestals",
                 "Floor Loot", "Icebreakers", "Troodon Walls", "Floor Loot", "Soothing Incense", "Shining Coin",
-                "Floor Loot", "Wriggleworm", "Yogi Berry", "Bag of Seeds", "Bee Nests"},
-            bits = {0, 9, 14, 15, 1, 2, 8, 3, 10, 4, 5, 12, 13, 6, 11, 16, 17, 7},
+                "Floor Loot", "Yogi Berry", "Wriggleworm", "Bag of Seeds", "Bee Nests"},
+            bits = {0, 14, 9, 15, 1, 2, 8, 3, 10, 4, 5, 12, 13, 6, 16, 11, 17, 7},
             groups = {"Cavern", "Icy", "Haunted", "Forest"},
             groupStarts = {0, 7, 10, 13}, biomeColumns = true)
 		@SettingGroup(id = SPARKLING_MODE_OPTIONS) @Expose
@@ -3445,7 +3458,7 @@ public class SafariConfig {
 		@SettingGroup(id = BANNER_ALERT)
 		public Runnable testSparklingBanner = EncounterAlerts::fireTestSparklingDetected;
 
-		@SettingInfo(name = "Play Alert", desc = "Plays alert when a Sparkling critter is detected")
+		@SettingInfo(name = "Play Alert", desc = "Alerts for found Sparklings in any mode or biome, including before you use a ticket")
 		@SettingChoice(values = {"Off", "Banner", "Sound", "Banner + Sound"}) @SettingGroup(id = BANNER_ALERT) @Expose
 		public int sparklingBannerSoundMode = 3;
 
@@ -3617,7 +3630,7 @@ public class SafariConfig {
 		@SettingInfo(name = "Sparkling Detected", desc = "")
 		@SettingSection(id = CHAT_DETECTED) @SettingGroup(id = CHAT_ALERTS)
 		public boolean sparklingDetectedChatAccordion = false;
-		@SettingInfo(name = "Send To", desc = "Sends when a Sparkling critter is found")
+		@SettingInfo(name = "Send To", desc = "Shares a found Sparkling in any run mode; independent of Biome Reports")
 		@SettingChoice(values = {"Off", "Party Chat", "All Chat"})
 		@SettingGroup(id = CHAT_DETECTED)
 		@Expose

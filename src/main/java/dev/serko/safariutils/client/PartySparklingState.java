@@ -5,12 +5,19 @@ import dev.serko.safariutils.data.Critters;
 /** Visit-scoped, monotone discovery facts. Remote facts are never re-published as local facts. */
 final class PartySparklingState {
 	private long localFound, localCaught, remoteFound, found, caught;
+	private long locallyAlertedSpecies;
 	long localRevision;
 	long active() { return found & ~caught; }
 	long shared() { return remoteFound & ~caught; }
 	long caughtMask() { return caught; }
 	long reminder(boolean inside, boolean ticketed, long remainingMillis) {
 		return inside && !ticketed && remainingMillis > 0 ? active() : 0;
+	}
+	/** Suppress the first local counterpart of a previously shared find, not a second individual. */
+	boolean claimLocalAlert(long bit) {
+		boolean sharedFirst = (remoteFound & bit) != 0 && (locallyAlertedSpecies & bit) == 0;
+		locallyAlertedSpecies |= bit;
+		return !sharedFirst;
 	}
 	void discover(long bit) {
 		long next = localFound | bit;
@@ -26,10 +33,13 @@ final class PartySparklingState {
 		return (localFound & 0x3fffffffL) + "," + (localFound >>> 30) + ","
 			+ (localCaught & 0x3fffffffL) + "," + (localCaught >>> 30);
 	}
-	boolean accept(int[] values) {
+	boolean accept(int[] values) { return accept(values, false); }
+	boolean acceptRoom(int[] values) { return accept(values, true); }
+	private boolean accept(int[] values, boolean room) {
 		if (!valid(values)) return false;
-		remoteFound |= values[0] | ((long) values[1] << 30);
-		found |= remoteFound;
+		long incomingFound = values[0] | ((long) values[1] << 30);
+		remoteFound |= room ? incomingFound & ~localFound : incomingFound;
+		found |= incomingFound;
 		caught |= values[2] | ((long) values[3] << 30);
 		return true;
 	}
@@ -42,5 +52,5 @@ final class PartySparklingState {
 		}
 		return true;
 	}
-	void clear() { localFound = localCaught = remoteFound = found = caught = 0; localRevision++; }
+	void clear() { localFound = localCaught = remoteFound = found = caught = locallyAlertedSpecies = 0; localRevision++; }
 }

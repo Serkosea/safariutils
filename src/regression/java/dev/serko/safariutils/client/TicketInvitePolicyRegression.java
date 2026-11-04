@@ -9,6 +9,15 @@ public final class TicketInvitePolicyRegression {
 	private record Player(String name, boolean sparkling, boolean qualifies) { }
 	public static int run() {
 		int checks = 0;
+        if (TicketInvitePolicy.warpDueAt(5000, 5000, 0, 27000) != 7000
+            || TicketInvitePolicy.warpDueAt(5000, 5000, 6500, 27000) != 9500
+            || TicketInvitePolicy.warpDueAt(26000, 10000, 25500, 27000) != 26750
+            || TicketInvitePolicy.warpDueAt(26000, 10000, 0, 27000) != 26000)
+            throw new AssertionError("Join/transfer settling and last-entry cap");
+        if (!"JohnFounder".equals(TicketInvitePolicy.transferredPlayer("» JohnFounder is traveling to Torrhus Canyon FOLLOW"))
+            || TicketInvitePolicy.transferredPlayer("Party > JohnFounder: » JohnFounder is traveling to Torrhus Canyon FOLLOW") != null)
+            throw new AssertionError("Only server transfer announcements extend warp settling");
+        checks += 2;
         var gson = new com.google.gson.GsonBuilder().excludeFieldsWithoutExposeAnnotation().create();
         var legacy = gson.fromJson("{}", SafariConfig.SparklingConfig.class);
         if (!legacy.ticketTradingDisbandParty) throw new AssertionError("Existing users keep cleanup enabled");

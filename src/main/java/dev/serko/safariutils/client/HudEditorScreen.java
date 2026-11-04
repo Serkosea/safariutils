@@ -367,6 +367,11 @@ public final class HudEditorScreen extends Screen {
 		HudBox.MISSING.setScale(display.missingScale);
 		HudBox.CONTEST.setScale(display.contestScale);
 		HudBox.PARTY_OBJECTIVE.setScale(display.partyObjectiveScale);
+        if (dev.serko.safariutils.BuildVersion.has(dev.serko.safariutils.BuildVersion.Capability.DEVELOPER_TOOLS)) {
+            var defaults = new SafariConfig.AdvancedConfig();
+            HudBox.PARTY_SYNC_DEBUG.setPosition(defaults.syncDebugX, defaults.syncDebugY);
+            HudBox.PARTY_SYNC_DEBUG.setScale(defaults.syncDebugScale);
+        }
 		HudBox.ALERTS.setScale(alerts.alertScale);
 		HudBox.PROGRESS.setPosition(display.progressX, display.progressY);
 		HudBox.MISSING.setPosition(display.missingX, display.missingY);

@@ -176,13 +176,13 @@ public final class PartyObjectiveHud implements HudElement {
 	private static HudPanel hauntedPanel(Minecraft client) {
 		SafariConfig.DisplayConfig config = ConfigManager.get().display;
 		HudPanel panel = basePanel();
+		if (config.partyObjectiveShowPlayers) addUnsynchronizedObjectivePlayers(panel, client, SafariBiome.HAUNTED);
 		if (SafariObjectives.doomspiralComplete()) {
 			if (config.partyObjectiveShowPlacement) panel.pair("Doomspiral",
 				SafariObjectives.doomspiralCaught() ? "Caught" : "Retreated",
 				HAUNTED_LINE_COLOUR, 0xFF55FF55);
 			return panel;
 		}
-		if (config.partyObjectiveShowPlayers) addUnsynchronizedObjectivePlayers(panel, client, SafariBiome.HAUNTED);
 		int candles = Math.min(4, SafariObjectives.incenseUsed());
 		if (config.partyObjectiveShowProgress) {
 			int ready = Math.min(4, candles + SafariObjectives.incenseHeld());
@@ -235,13 +235,14 @@ public final class PartyObjectiveHud implements HudElement {
 		int localItems = biome == SafariBiome.CAVERN
 			? SafariObjectives.purpleGemsHeld() + SafariObjectives.limeGemsHeld()
 				+ SafariObjectives.orangeGemsHeld()
-			: SafariObjectives.incenseHeld();
+			: SafariObjectives.incenseHeld() + SafariObjectives.shiningCoinsHeld();
 		if (localItems > 0) {
 			addPlayerRow(panel, localName, biome == SafariBiome.CAVERN
 				? gemValues(String.valueOf(SafariObjectives.purpleGemsHeld()),
 					String.valueOf(SafariObjectives.limeGemsHeld()),
 					String.valueOf(SafariObjectives.orangeGemsHeld()))
-				: incenseValue(String.valueOf(SafariObjectives.incenseHeld())));
+				: hauntedValues(String.valueOf(SafariObjectives.incenseHeld()),
+					String.valueOf(SafariObjectives.shiningCoinsHeld())));
 			showed = true;
 		}
 
@@ -264,9 +265,15 @@ public final class PartyObjectiveHud implements HudElement {
 		};
 	}
 
-	public static HudPanel.IconValue[] incenseValue(String incense) {
+	static boolean hasHauntedItems(int incense, int coins) {
+		return incense > 0 || coins > 0;
+	}
+
+	/** Shared presentation for held Haunted items, in objective display order. */
+	public static HudPanel.IconValue[] hauntedValues(String incense, String coins) {
 		return new HudPanel.IconValue[] {
-			new HudPanel.IconValue(HudPanel.HudIcon.INCENSE, incense, INCENSE_COLOUR)
+			new HudPanel.IconValue(HudPanel.HudIcon.INCENSE, incense, INCENSE_COLOUR),
+			new HudPanel.IconValue(HudPanel.HudIcon.COIN, coins, 0xFFFFEF63)
 		};
 	}
 

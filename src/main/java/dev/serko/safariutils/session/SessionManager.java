@@ -106,6 +106,7 @@ public final class SessionManager {
 
 	/** Called every client tick to open/close runs as the player moves around. */
 	public static void tick() {
+        persistenceSuppressed();
 		TrackingMode.setUniqueOnly(ConfigManager.get().display.uniqueOnly || SparklingMode.enabled());
 		TrackingMode.setCountSpawns(ConfigManager.get().display.countSpawns);
 		updateUnavailable();
@@ -460,8 +461,7 @@ public final class SessionManager {
 		boolean finishedSuppressed = persistenceSuppressed();
 		current = new SafariSession(selfName(), System.currentTimeMillis());
 		SafariRuntimeState.runStarted(SafariLocation.lobbyId());
-		suppressCurrentRunPersistence = BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
-			&& ConfigManager.get().advanced.testingDoNotSaveRun;
+		suppressCurrentRunPersistence = suppressionRequested();
 		runExpectedPlayers = Math.max(visitExpectedPlayers, visitPeakPlayers);
         current.startPersonalBests(!catchBeforeTicket && !suppressCurrentRunPersistence);
         DebugLog.line("PB/START", "rules="+PersonalBestTracker.RULES+" partial="+catchBeforeTicket+" testing="+suppressCurrentRunPersistence);
@@ -516,6 +516,7 @@ public final class SessionManager {
 		BirdfeederWatch.reset();
 		ShiningCoinWatch.reset();
 		HotspotWatch.reset();
+        dev.serko.safariutils.client.BiomeCoordination.resetVisit();
 		FloorDrops.reset();
 		MoundSpotter.reset();
 		WallTracker.SNOOPER.reset();
@@ -685,13 +686,18 @@ public final class SessionManager {
 		RunHistory.record(session);
 	}
 
-	private static boolean persistenceSuppressed() {
-		if (current != null && BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
-				&& ConfigManager.get().advanced.testingDoNotSaveRun) {
-			suppressCurrentRunPersistence = true;
-		}
-		return suppressCurrentRunPersistence;
-	}
+    private static boolean suppressionRequested() {
+        return dev.serko.safariutils.client.HypixelConnection.alpha()
+            || BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
+                && ConfigManager.testRunPersistenceDisabled();
+    }
+
+    /** Shared write guard; a test run stays excluded even after toggling off or disconnecting. */
+    public static boolean persistenceSuppressed() {
+        boolean requested = suppressionRequested();
+        if (current != null && requested) suppressCurrentRunPersistence = true;
+        return requested || suppressCurrentRunPersistence;
+    }
 
 	/** What opened the live run, normally the server's Critter Capsule allocation. */
 	public static String startedBy() {

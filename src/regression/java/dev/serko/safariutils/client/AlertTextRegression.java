@@ -7,6 +7,28 @@ import java.util.Locale;
 public final class AlertTextRegression {
     public static int run() throws Exception {
         int checks = 0;
+        var hideyhoCatch = dev.serko.safariutils.parse.ChatParser.sparklingCatch(
+            "SPARKLING! Serkosea found a SPARKLING Hideyho!");
+        check(hideyhoCatch != null && hideyhoCatch.critter().name().equals("Hideyho")
+            && hideyhoCatch.catcher().equals("Serkosea"), "recorded interaction Sparkling announcement"); checks++;
+        check(dev.serko.safariutils.parse.ChatParser.sparklingCatch(
+            "SPARKLING! Serkosea caught a SPARKLING Flitter!") != null, "capsule announcement preserved"); checks++;
+        check(dev.serko.safariutils.parse.ChatParser.sparklingCatch(
+            "Party > Serkosea: SPARKLING! Serkosea found a SPARKLING Hideyho!") == null,
+            "quoted interaction announcement rejected"); checks++;
+        var reward = dev.serko.safariutils.parse.ChatParser.parse(
+            "CAPTURE! You found the SPARKLING Hideyho, and as a reward it gave you a Rainbow Feather and 60x Hideyho Shard!", "Serkosea");
+        check(reward != null && reward.sparkling() && reward.isCatch(), "recorded Hideyho reward remains a catch"); checks++;
+
+        check(ClientMessages.playerLookupFailure(new java.util.concurrent.CompletionException(
+            new dev.serko.safariutils.api.LookupCooldownException(1001))).equals("Lookup cooldown — try again in 2s"), "rounded cooldown survives wrapper"); checks++;
+        check(ClientMessages.playerLookupFailure(new java.util.concurrent.CompletionException(
+            new dev.serko.safariutils.api.ServiceRequestException("HTTP 429", 429, 8))).contains("8s"), "server retry delay survives wrapper"); checks++;
+        check(ClientMessages.playerLookupFailure(new IllegalStateException("A lookup is already loading")).contains("still loading"), "busy admission"); checks++;
+        check(ClientMessages.playerLookupFailure(new java.net.http.HttpTimeoutException("request timed out")).contains("timed out"), "timeout reason"); checks++;
+        check(ClientMessages.playerLookupFailure(new java.io.IOException("Minecraft player not found: Test")).contains("check the username"), "unknown player reason"); checks++;
+        check(!ClientMessages.playerLookupFailure(new java.io.IOException("private internal detail")).contains("private internal detail"), "unknown failure does not leak raw response"); checks++;
+
         String plain = "Sparkling Rockmite Found!";
         check(AlertText.format(plain) == plain, "tag-free fast path"); checks++;
         check(AlertText.format(null).isEmpty(), "null template"); checks++;
@@ -20,7 +42,7 @@ public final class AlertTextRegression {
             check(AlertText.format(ChatTemplateFormats.BIOME_UNIQUES.mutualsTemplate(),
                 "<BIOME>", name).equals(letter + "d"), "Mutuals completion wire format"); checks++;
             check(AlertText.format(ChatTemplateFormats.HOTSPOT.mutualsTemplate(),
-                "<BIOME>", name).equals("[SM] Hotspot: " + name), "Mutuals hotspot wire format"); checks++;
+                "<BIOME>", name).equals("[SU] Hotspot: " + name), "Mutuals hotspot wire format"); checks++;
         }
         check(AlertText.format("<CRITTER> <RARITY> <BIOMELETTER>",
             "<CRITTER>", "Gemzie").equals("Gemzie EPIC <BIOMELETTER>"), "species event context"); checks++;

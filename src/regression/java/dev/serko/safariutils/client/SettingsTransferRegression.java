@@ -23,7 +23,7 @@ public final class SettingsTransferRegression {
         }
 		var markers = SafariConfig.SparklingConfig.class.getField("sparklingAlwaysActiveWaypoints")
 			.getAnnotation(SettingMultiChoice.class);
-		check(java.util.Arrays.equals(markers.bits(), new int[] {0, 9, 14, 15, 1, 2, 8, 3, 10, 4, 5, 12, 13, 6, 11, 16, 17, 7}),
+		check(java.util.Arrays.equals(markers.bits(), new int[] {0, 14, 9, 15, 1, 2, 8, 3, 10, 4, 5, 12, 13, 6, 16, 11, 17, 7}),
 			"pedestal insertion changed saved objective bits"); checks++;
 		for (int mask : new int[] {0, 1, 128, 255, 256, 511}) {
 			var imported = ConfigManager.validateImported(com.google.gson.JsonParser.parseString(

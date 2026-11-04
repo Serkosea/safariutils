@@ -57,8 +57,9 @@ public final class SafariCommands {
 			.then(ClientCommands.literal("profit").executes(ctx -> ProfitableCritters.show()));
 
             settingsRoot.then(ClientCommands.literal("shared").executes(ctx -> SafariLookupCommands.shared()));
-            for(String command:List.of("lookup","tickets","refresh","missing")) {
+            for(String command:List.of("lookup","tickets","missing")) {
                 settingsRoot.then(ClientCommands.literal(command)
+                    .executes(ctx -> SafariLookupCommands.lookupSelf(command))
                     .then(ClientCommands.argument("name",com.mojang.brigadier.arguments.StringArgumentType.word())
                         .executes(ctx -> SafariLookupCommands.lookup(com.mojang.brigadier.arguments.StringArgumentType.getString(ctx,"name"),command))));
             }

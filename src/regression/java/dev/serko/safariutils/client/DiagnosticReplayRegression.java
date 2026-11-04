@@ -12,6 +12,16 @@ public final class DiagnosticReplayRegression {
 		Path root = Files.createTempDirectory("safari-replay-");
 		try {
 			Path first = root.resolve("first.jsonl.gz"), second = root.resolve("second.jsonl.gz");
+            write(first, "{\"k\":\"l\",\"c\":2,\"v\":2,\"r\":2}\n"
+                + "{\"k\":\"perf\",\"c\":1,\"v\":1,\"r\":1}\n"
+                + "{\"k\":\"er\",\"c\":1,\"v\":1,\"r\":1}\n");
+            check(DiagnosticReplay.replay(List.of(first)).warnings()==0, "buffered observations rewound gameplay epoch");
+            write(first, "{\"k\":\"l\",\"c\":2}\n{\"k\":\"l\",\"c\":1}\n");
+            check(DiagnosticReplay.replay(List.of(first)).detail().contains("epoch regression"), "real epoch regression hidden");
+            write(first, "{\"k\":\"x\",\"g\":\"CAPTURE/REPLAY\",\"a\":\"omitted\",\"d\":\"input journal awaits visit boundary\"}\n");
+            check(DiagnosticReplay.replay(List.of(first)).warnings()==0, "pre-visit wait treated as missing run evidence");
+            write(first, "{\"k\":\"ci\"}\n{\"k\":\"x\",\"g\":\"CAPTURE/REPLAY\",\"a\":\"omitted\",\"d\":\"input journal awaits visit boundary\"}\n");
+            check(DiagnosticReplay.replay(List.of(first)).detail().contains("capture trace omitted"), "mid-run omission hidden");
 			write(first, line("ATTEMPT A1 bat", "ACTIVE", 1));
 			write(second, line("RESOLVE-RETIRED A1 CAUGHT", "IDLE", 1));
 			var report = DiagnosticReplay.replay(List.of(first, second));
@@ -100,7 +110,7 @@ public final class DiagnosticReplayRegression {
 			write(first, "{\"k\":\"x\",\"g\":\"CAPTURE/REPLAY\",\"a\":\"omitted\"}\n");
 			check(DiagnosticReplay.replay(List.of(first)).detail().contains("capture trace omitted; replay incomplete"),
 				"bounded trace omission must not report a complete clean replay");
-			return 22;
+			return 26;
 		} finally {
 			try (var paths = Files.list(root)) {
 				for (Path path : paths.toList()) Files.delete(path);

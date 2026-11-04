@@ -66,6 +66,14 @@ public final class RunModeRegression {
             boolean developer = dev.serko.safariutils.BuildVersion.has(
                 dev.serko.safariutils.BuildVersion.Capability.DEVELOPER_TOOLS);
             for (String rootName : new String[]{"safari", "su", "safariutils"}) {
+                check(commands.getRoot().getChild(rootName).getChild("refresh") == null, "refresh alias removed"); checks++;
+                for (String lookup : new String[]{"lookup", "tickets", "missing"}) {
+                    for (String suffix : new String[]{"", " TestPlayer"}) {
+                        var parsed = commands.parse(rootName + " " + lookup + suffix, null);
+                        check(!parsed.getReader().canRead() && parsed.getContext().getCommand() != null,
+                            "self and named lookup available on every alias"); checks++;
+                    }
+                }
                 check(commands.getRoot().getChild(rootName).getChild("standard") == null
                     && commands.getRoot().getChild(rootName).getChild("mode").getChild("standard") == null,
                     "removed standard alias remains"); checks++;
@@ -74,7 +82,7 @@ public final class RunModeRegression {
             }
             for (boolean debug : developer ? new boolean[]{false, true} : new boolean[]{false}) {
                 for (var entry : SafariCommandHelp.entries(debug)) {
-                    String command = entry.command().substring(1).replace("<note>", "test note").replace("<name>", "TestPlayer");
+                    String command = entry.command().substring(1).replace("<note>", "test note").replace("<name>", "TestPlayer").replace("[name]", "TestPlayer");
                     var parsed = commands.parse(command, null);
                     check(!parsed.getReader().canRead() && parsed.getContext().getCommand() != null,
                         "help lists an unavailable command: " + command); checks++;

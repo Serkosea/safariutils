@@ -23,6 +23,8 @@ public final class StartingItems {
 		new Entry("Bag of Seeds", "Seed", "Seeds")
 	);
 
+	private static final int[] DISPLAY_ORDER = {2, 0, 1, 3, 5, 4, 6, 7, 8};
+
 	public static final int ALL = (1 << ORDERED.size()) - 1;
 	public static final int BIRD_FEED = 1 << 6 | 1 << 7 | 1 << 8;
 
@@ -39,7 +41,8 @@ public final class StartingItems {
 	/** Formats only selected, present items; an empty result means no alert should send. */
 	public static String format(int[] counts, int selectedMask) {
 		List<String> items = new ArrayList<>(ORDERED.size());
-		for (int i = 0; i < ORDERED.size() && i < counts.length; i++) {
+		for (int i : DISPLAY_ORDER) {
+            if (i >= counts.length) continue;
 			if ((selectedMask & 1 << i) != 0 && counts[i] > 0) {
 				items.add(ORDERED.get(i).format(counts[i]));
 			}

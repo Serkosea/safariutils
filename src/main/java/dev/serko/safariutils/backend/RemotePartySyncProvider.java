@@ -35,7 +35,15 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 	private final ArrayBlockingQueue<Delivery> incoming = new ArrayBlockingQueue<>(MAX_INCOMING_MESSAGES);
 	private final AtomicLong generation = new AtomicLong();
 	private volatile WebSocket socket;
+	private volatile WebSocketOutbox outbox;
 	private volatile boolean connected;
+    private volatile java.util.Set<String> connectedPlayers = java.util.Set.of();
+    @Override public java.util.Set<String> connectedPlayers() { return connected ? connectedPlayers : java.util.Set.of(); }
+    private synchronized void presence(long attempt, java.util.Set<String> players) {
+        if (generation.get() == attempt && connected) connectedPlayers = java.util.Set.copyOf(players);
+    }
+	private volatile boolean coordination;
+	@Override public boolean coordinationSupported() { return connected && coordination; }
 	private volatile boolean connecting;
 	private volatile long retryAt;
 	private volatile int failures;
@@ -85,14 +93,25 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 
 	@Override
 	public void send(long sequence, String type, String payload) {
+		send(sequence, type, payload, false);
+	}
+
+	@Override
+	public void sendSnapshot(long sequence, String payload, boolean catchUpOnly) {
+		send(sequence, "A", payload, catchUpOnly);
+	}
+
+	private void send(long sequence, String type, String payload, boolean catchUpOnly) {
 		WebSocket current = socket;
 		long operationGeneration = generation.get();
-		if (!connected || current == null) return;
+		WebSocketOutbox queue = outbox;
+		if (!connected || current == null || queue == null) return;
 		JsonObject state = new JsonObject();
 		state.addProperty("sequence", sequence);
 		state.addProperty("kind", type);
 		state.addProperty("payload", payload);
-		current.sendText(state.toString(), true).exceptionally(error -> {
+		if (catchUpOnly) state.addProperty("catchUpOnly", true);
+		queue.send(state.toString()).exceptionally(error -> {
 			failedSend(operationGeneration, current, error);
 			return null;
 		});
@@ -101,18 +120,14 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 	@Override
 	public synchronized void disconnect() {
 		generation.incrementAndGet();
-		connected = false;
+		connected = false; coordination = false; connectedPlayers = java.util.Set.of();
 		connecting = false;
 		incoming.clear();
 		WebSocket current = socket;
 		socket = null;
-		if (current != null) {
-			try { current.sendClose(WebSocket.NORMAL_CLOSURE, "leaving Safari"); }
-			finally {
-				// Also abort if initiating the graceful close fails; shutdown never waits on a peer.
-				current.abort();
-			}
-		}
+        WebSocketOutbox queue = outbox; outbox = null;
+        if (queue != null) queue.close();
+        else if (current != null) current.abort();
 	}
 
 	@Override
@@ -146,7 +161,8 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 			return;
 		}
 		socket = value;
-		connected = false;
+        outbox = new WebSocketOutbox(value);
+		connected = false; coordination = false; connectedPlayers = java.util.Set.of();
 		connecting = false;
 		failures = 0;
 		nextPingAt = System.currentTimeMillis() + PING_INTERVAL_MILLIS;
@@ -170,7 +186,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		generation.incrementAndGet();
 		incoming.clear();
 		socket = null;
-		connected = false;
+		connected = false; coordination = false; connectedPlayers = java.util.Set.of();
 		connecting = false;
 		scheduleRetry();
 		DebugLog.line("SYNC_NET", "closed status=" + statusCode + " retryMs="
@@ -189,7 +205,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		WebSocket current = socket;
 		socket = null;
 		if (current != null) current.abort();
-		connected = false;
+		connected = false; coordination = false; connectedPlayers = java.util.Set.of();
 		connecting = false;
 		scheduleRetry();
 		OperationalLog.error("SYNC/NETWORK", unwrap(error));
@@ -207,6 +223,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		private final Context desired;
 		private final StringBuilder text = new StringBuilder();
 		private Map<String, String> mapping = Map.of();
+		private boolean roomSparklings;
 
 		private Listener(long attempt, Context desired) {
 			this.attempt = attempt;
@@ -260,15 +277,45 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 						rejectWelcome("identity");
 						return;
 					}
-					mapping = Map.copyOf(next);
+					coordination = root.has("features") && root.getAsJsonArray("features").asList().stream()
+                        .anyMatch(feature -> "hotspots-v1".equals(feature.getAsString()));
+                    roomSparklings = root.has("features") && root.getAsJsonArray("features").asList().stream()
+                        .anyMatch(feature -> "room-sparklings-v1".equals(feature.getAsString()));
+                    mapping = Map.copyOf(next);
 					ready(attempt, mapping);
 					return;
 				}
-				if (!"state".equals(type)) return;
+                if ("sparklings".equals(type) && roomSparklings && !mapping.isEmpty()) {
+                    String payload = root.get("payload").getAsString();
+                    if (validRelay(1, "S", payload)
+                        && !incoming.offer(new Delivery(attempt, new Message("", 1, "S_ROOM", payload))))
+                        StructuredDiagnostics.decision("party-network", "rejected", "queueFull");
+                    return;
+                }
+                if ("presence".equals(type)) {
+                    JsonArray members = root.getAsJsonArray("members");
+                    if (members == null || members.size() > desired.roster().size()) return;
+                    var players = new java.util.HashSet<String>();
+                    for (var member : members) {
+                        String id = mapping.get(member.getAsString());
+                        if (id == null || !players.add(id)) return;
+                    }
+                    presence(attempt, players);
+                    return;
+                }
+				if ("hotspots-unavailable".equals(type)) { coordination = false; return; }
+                if ("hotspots".equals(type) && coordination) {
+                    JsonObject payload = root.getAsJsonObject("payload");
+                    if (payload != null && payload.toString().length() <= 4096)
+                        incoming.offer(new Delivery(attempt, new Message("", 1, "H", payload.toString())));
+                    return;
+                }
+                if (!"state".equals(type)) return;
 				String uuid = mapping.get(root.get("sender").getAsString());
 				if (uuid == null) return;
 				long sequence = root.get("sequence").getAsLong();
 				String kind = root.get("kind").getAsString();
+				if (roomSparklings && "S".equals(kind)) return;
 				String payload = root.get("payload").getAsString();
 				if (!validRelay(sequence, kind, payload)) {
 					StructuredDiagnostics.decision("party-network", "rejected", "relayShape");
@@ -311,13 +358,16 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 	}
 
 	private static boolean validRelay(long sequence, String kind, String payload) {
+		if (sequence > 0 && "B".equals(kind) && payload != null && payload.matches("[fcih]d")) return true;
 		if (sequence <= 0 || kind == null || payload == null
 			|| payload.length() > PartySyncProtocol.MAX_PAYLOAD_LENGTH
 			|| !NUMERIC_PAYLOAD.matcher(payload).matches()) return false;
 		String[] values = payload.split(",", -1);
-		if ("A".equals(kind)) return values.length == PartySyncProtocol.AGGREGATE_VALUES
-			&& String.valueOf(PartySyncProtocol.VERSION).equals(
-				values[PartySyncProtocol.AGGREGATE_VERSION_INDEX]);
+		if ("A".equals(kind)) return values.length > PartySyncProtocol.AGGREGATE_VERSION_INDEX
+			&& ((values.length == PartySyncProtocol.AGGREGATE_VALUES
+				&& String.valueOf(PartySyncProtocol.VERSION).equals(values[PartySyncProtocol.AGGREGATE_VERSION_INDEX]))
+				|| (values.length == PartySyncProtocol.LEGACY_AGGREGATE_VALUES
+					&& "2".equals(values[PartySyncProtocol.AGGREGATE_VERSION_INDEX])));
 		if ("U".equals(kind)) return values.length == PartySyncProtocol.USAGE_VALUES;
 		if ("S".equals(kind)) return values.length == PartySyncProtocol.SPARKLING_VALUES;
 		return "N".equals(kind) && values.length == PartySyncProtocol.NEST_VALUES;

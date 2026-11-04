@@ -94,13 +94,12 @@ public final class StartingItemsWatch {
 		}
 
 		if (!startingItemsAnnounced) {
-			if (!ConfigManager.get().gameplay.mutualsCompatibility && dev.serko.safariutils.api.PartyItemSyncProviders.suppressStartingItems()) {
+			if (dev.serko.safariutils.api.PartyItemSyncProviders.suppressStartingItems()) {
 				startingItemsAnnounced = true;
 				return;
 			}
 			SafariConfig.PartyConfig party = ConfigManager.get().party;
-			String items = ConfigManager.get().gameplay.mutualsCompatibility
-                ? StartingItems.mutualsFormat(startingInventory) : StartingItems.format(startingInventory, party.startingItemsMask);
+			String items = StartingItems.format(startingInventory, party.startingItemsMask);
 			String command = party.startingItems().command();
 			boolean verifiedParty = "pc".equals(command)
 				&& dev.serko.safariutils.session.SessionManager.expectedRunPlayers() > 1;

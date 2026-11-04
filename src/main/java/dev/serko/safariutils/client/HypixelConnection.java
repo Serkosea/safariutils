@@ -10,6 +10,7 @@ import java.util.Objects;
 public final class HypixelConnection {
 	private static String checkedAddress;
 	private static boolean active;
+    private static boolean alpha;
 
 	private HypixelConnection() {
 	}
@@ -22,8 +23,9 @@ public final class HypixelConnection {
 		if (!Objects.equals(address, checkedAddress)) {
 			checkedAddress = address;
 			active = isHypixelAddress(address);
+            alpha = isAlphaAddress(address);
 		}
-		if (client.getConnection() == null) active = false;
+		if (client.getConnection() == null) { active = false; alpha = false; }
 		return active;
 	}
 
@@ -36,10 +38,18 @@ public final class HypixelConnection {
 	public static void onDisconnect() {
 		checkedAddress = null;
 		active = false;
+        alpha = false;
 	}
 
-	static boolean isHypixelAddress(String address) {
-		if (address == null || address.isBlank()) return false;
+    /** Cached connection identity; never inferred from a lobby's display name. */
+    public static boolean alpha() { return alpha; }
+    static boolean isAlphaAddress(String address) { return host(address).equals("alpha.hypixel.net"); }
+    static boolean isHypixelAddress(String address) {
+        String host = host(address);
+        return host.equals("hypixel.net") || host.endsWith(".hypixel.net");
+    }
+    private static String host(String address) {
+		if (address == null || address.isBlank()) return "";
 		String host = address.trim().toLowerCase(Locale.ROOT);
 		int scheme = host.indexOf("://");
 		if (scheme >= 0) host = host.substring(scheme + 3);
@@ -49,6 +59,6 @@ public final class HypixelConnection {
 		int colon = host.lastIndexOf(':');
 		if (colon > 0 && host.indexOf(':') == colon) host = host.substring(0, colon);
 		while (host.endsWith(".")) host = host.substring(0, host.length() - 1);
-		return host.equals("hypixel.net") || host.endsWith(".hypixel.net");
+		return host;
 	}
 }

@@ -39,6 +39,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 	private int localOrangeGems;
 	private int localPurpleGems;
 	private int localIncense;
+	private int localCoins;
 	private int localPlacedGems;
 	private int localCandlesLit;
 	private boolean localGemzieOpen;
@@ -62,7 +63,8 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 	private final Set<BlockPos> confirmedNests = new LinkedHashSet<>();
 	private final Map<String, Long> missingSince = new HashMap<>();
 	private long sequence;
-	private long stateSendAt;
+	private final PartySnapshotBatch snapshotBatch = new PartySnapshotBatch();
+	private String lastPublishedAggregate;
 	private boolean active;
 	private boolean networkConnected;
 	private boolean networkEngaged;
@@ -79,17 +81,19 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		if (++ticks % 10 != 0) return;
 		long now = System.currentTimeMillis();
 		if (!SafariLocation.inside()) {
-			if (insideVisit || networkEngaged) clearRun();
+			if (insideVisit || networkEngaged) { PartyHotspotSync.leave(); clearRun(); }
 			insideVisit = false;
 			visitLobby = null;
 			visitEnteredAt = 0;
 			active = false;
 			roster = List.of();
+            PartySyncDebugHud.status(false, false, 0);
 			return;
 		}
 
 		String lobby = SafariLocation.lobbyId();
 		if (!insideVisit || lobby != null && visitLobby != null && !lobby.equals(visitLobby)) {
+            if (insideVisit) PartyHotspotSync.leave();
 			clearRun();
 			roster = List.of();
 			active = false;
@@ -147,8 +151,12 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		} else {
 			disconnectNetwork();
 		}
-		if (DebugLog.isEnabled()) {
-			String transportState = "roster=" + roster.size() + " active=" + active
+        PartySyncDebugHud.status(networkConnected, networkEngaged, roster.size());
+        PartyHotspotSync.tick(roster.stream().map(Member::uuid).toList(), (type, payload) -> {
+            PartySyncNetworks.send(++sequence, type, payload);
+        }, !wasNetworkConnected && networkConnected);
+        if (DebugLog.isEnabled()) {
+            String transportState = "roster=" + roster.size() + " active=" + active
 				+ " remote=" + (remoteSupported
 					? (networkConnected ? "connected" : networkEngaged ? "connecting" : "idle") : "absent");
 			if (!transportState.equals(lastDebugTransport)) {
@@ -158,8 +166,9 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			}
 		} else lastDebugTransport = "";
 		if (!wasNetworkConnected && networkConnected) {
+			lastPublishedAggregate = null;
 			sentSparklingRevision = -1;
-			stateSendAt = 0;
+			snapshotBatch.clear();
 			snapshotSent = true;
 			sendState();
 			sendNests();
@@ -180,7 +189,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		if (validPresence) reconcilePresence(present, now);
 		if (!snapshotSent) {
 			snapshotSent = true;
-			stateSendAt = 0;
+			snapshotBatch.clear();
 			sendState();
 		}
 		flushScheduled(now);
@@ -264,7 +273,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			if (gemzieOpenedAt == 0L) gemzieOpenedAt = System.currentTimeMillis();
 			localPlacedGems = 7;
 			updateLocal();
-			scheduleState();
+			scheduleState(true);
 		}
 		if (line.startsWith("You used the Soothing Incense to light the candle")) {
 			localCandlesLit = Math.min(4, localCandlesLit + 1);
@@ -274,18 +283,19 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		if (SafariObjectives.doomspiralObjectiveCompleteMessage(line)) {
 			localDoomspiralSpawned = true;
 			updateLocal();
-			scheduleState();
+			// The summoner-only confirmation still provides new information to peers.
+			scheduleState(!line.startsWith("Your ritual"));
 		}
 		if (line.startsWith("The Doomspiral retreats back underground")) {
 			localDoomspiralSpawned = true;
 			localDoomspiralRetreated = true;
 			updateLocal();
-			scheduleState();
+			scheduleState(true);
 		}
 		if (line.startsWith("The Wumpa has awoken")) {
 			localWumpaSpawned = true;
 			updateLocal();
-			scheduleState();
+			scheduleState(true);
 		}
 		if (line.contains("fainted by a Wumpa") && line.endsWith("lost some of your items!")) {
 			localWumpaSpawned = true;
@@ -317,17 +327,17 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 				localGemzieCaught = true;
 				localPlacedGems = 7;
 				updateLocal();
-				scheduleState();
+				scheduleState(true);
 			} else if ("Doomspiral".equals(event.critter().name())) {
 				localDoomspiralSpawned = true;
 				localDoomspiralCaught = true;
 				updateLocal();
-				scheduleState();
+				scheduleState(true);
 			} else if ("Wumpa".equals(event.critter().name())) {
 				localWumpaSpawned = true;
 				localWumpaCaught = true;
 				updateLocal();
-				scheduleState();
+				scheduleState(true);
 			}
 			for (int index = 0; index < BIRDS.length; index++) {
 				if (!BIRDS[index].equals(event.critter().name()) || birdCounts[index] <= 0) continue;
@@ -516,24 +526,24 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 	private HudPanel hauntedPanel() {
 		SafariConfig.DisplayConfig config = ConfigManager.get().display;
 		HudPanel panel = objectivePanelBase();
-		if (doomspiralComplete()) {
-			if (config.partyObjectiveShowPlacement) panel.pair("Doomspiral",
-				doomspiralCaught() ? "Caught" : "Retreated",
-				PartyObjectiveHud.HAUNTED_LINE_COLOUR, 0xFF55FF55);
-			return panel;
-		}
 		boolean showedPlayer = false;
 		if (config.partyObjectiveShowPlayers) {
 			for (Member member : displayRoster()) {
 				State state = states.get(member.uuid());
 				boolean local = member.uuid().equals(localUuid());
 				boolean known = inventoryKnown(active, local, state != null && state.reported);
-				if (!known || state == null || state.incense <= 0) continue;
-				HudPanel.IconValue[] values = PartyObjectiveHud.incenseValue(String.valueOf(state.incense));
+				if (!known || state == null || !PartyObjectiveHud.hasHauntedItems(state.incense, state.coins)) continue;
+				HudPanel.IconValue[] values = PartyObjectiveHud.hauntedValues(String.valueOf(state.incense), state.coins < 0 ? "?" : String.valueOf(state.coins));
 				PartyObjectiveHud.addPlayerRow(panel, member.name(), values);
 				showedPlayer = true;
 			}
 			if (showedPlayer) panel.blank();
+		}
+		if (doomspiralComplete()) {
+			if (config.partyObjectiveShowPlacement) panel.pair("Doomspiral",
+				doomspiralCaught() ? "Caught" : "Retreated",
+				PartyObjectiveHud.HAUNTED_LINE_COLOUR, 0xFF55FF55);
+			return panel;
 		}
 		int candles = candlesLit();
 		if (config.partyObjectiveShowProgress) {
@@ -562,12 +572,14 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 	}
 
 	/** One compact message keeps discovery and held inventory from drifting apart. */
-	private void sendState() {
+	private void sendState() { sendState(false); }
+
+	private void sendState(boolean catchUpOnly) {
 		String counts = Arrays.stream(localFound)
 			.mapToObj(String::valueOf)
 			.reduce((left, right) -> left + "," + right)
 			.orElse("");
-		send("A", counts + "," + localForestDrops + "," + localSeeds + "," + localWorms
+		String payload = counts + "," + localForestDrops + "," + localSeeds + "," + localWorms
 			+ "," + localBerries + "," + used + "," + birdCounts[0] + "," + birdCounts[1]
 			+ "," + birdCounts[2] + "," + feederType + "," + feederCount
 			+ "," + localLimeGems + "," + localOrangeGems + "," + localPurpleGems
@@ -577,11 +589,18 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			+ "," + (localWumpaCaught ? 1 : 0) + "," + (localDoomspiralRetreated ? 1 : 0)
 			+ "," + (localGemzieCaught ? 1 : 0) + "," + (localWumpaRetreated ? 1 : 0)
 			+ "," + PartySyncProtocol.VERSION + "," + localSnoozleWallMask + ","
-			+ localTroodonWallMask + "," + localMoundLow + "," + localMoundHigh);
+			+ localTroodonWallMask + "," + localMoundLow + "," + localMoundHigh + "," + localCoins;
+		if (!active || networkConnected && payload.equals(lastPublishedAggregate)) return;
+		send("A", payload, catchUpOnly);
+		if (networkConnected) lastPublishedAggregate = payload;
 	}
 
 	private void scheduleState() {
-		stateSendAt = System.currentTimeMillis() + STATE_COALESCE_MILLIS;
+		scheduleState(false);
+	}
+
+	private void scheduleState(boolean catchUpOnly) {
+		snapshotBatch.schedule(System.currentTimeMillis(), STATE_COALESCE_MILLIS, catchUpOnly);
 	}
 
 	private void sendNests() {
@@ -595,9 +614,10 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 	}
 
 	private void flushScheduled(long now) {
-		if (stateSendAt > 0 && now >= stateSendAt) {
-			stateSendAt = 0;
-			sendState();
+		if (snapshotBatch.due(now)) {
+			boolean catchUpOnly = snapshotBatch.catchUpOnly();
+			snapshotBatch.clear();
+			sendState(catchUpOnly);
 		}
 	}
 
@@ -624,19 +644,38 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		if (changed) checkFeedDone(false);
 	}
 
-	private void send(String type, String payload) {
+	private void send(String type, String payload) { send(type, payload, false); }
+
+	private void send(String type, String payload, boolean catchUpOnly) {
 		if (!active) return;
 		String body = localUuid() + "-" + (++sequence) + ":" + type + ":" + payload;
 		apply(localName(), body, true);
-		if (networkConnected) PartySyncNetworks.send(sequence, type, payload);
+		if (networkConnected) {
+			if ("A".equals(type)) PartySyncNetworks.sendSnapshot(sequence, payload, catchUpOnly);
+			else PartySyncNetworks.send(sequence, type, payload);
+		}
 		DebugLog.line("SYNC", "sent type=" + type + " transport="
 			+ (networkConnected ? "network" : "local")
-			+ " recipients=" + Math.max(0, roster.size() - 1));
+			+ " delivery=" + (catchUpOnly ? "catch-up" : "live")
+			+ " recipients=" + (catchUpOnly ? 0 : Math.max(0, roster.size() - 1)));
 		StructuredDiagnostics.decision("party-sync", "sent",
-			"type=" + type + " transport=" + (networkConnected ? "network" : "local"));
+			"type=" + type + " transport=" + (networkConnected ? "network" : "local")
+				+ " delivery=" + (catchUpOnly ? "catch-up" : "live"));
 	}
 
 	private void applyNetworkMessage(PartySyncNetworkProvider.Message message) {
+		if (message != null && "H".equals(message.type())) { PartyHotspotSync.accept(message.payload()); return; }
+        if (message != null && "S_ROOM".equals(message.type())) {
+            if (!SafariLocation.inside() || !SparklingWatch.discoveryAllowed(
+                dev.serko.safariutils.state.SafariRuntimeState.current().phase())) return;
+            try {
+                PartySparklingDiscoveries.acceptRoom(Arrays.stream(message.payload().split(",", -1))
+                    .mapToInt(Integer::parseInt).toArray());
+            } catch (NumberFormatException malformed) {
+                StructuredDiagnostics.decision("party-sync", "rejected", "roomSparklingShape");
+            }
+            return;
+        }
 		if (message == null || message.senderUuid() == null || message.sequence() <= 0) return;
 		Member member = roster.stream()
 			.filter(value -> value.uuid().equals(message.senderUuid()))
@@ -645,6 +684,8 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			DebugLog.line("SYNC", "ignored network state from outside frozen roster");
 			return;
 		}
+		if ("B".equals(message.type())) { BiomeCoordination.onNetworkReport(message.payload());
+            if (PartySyncDebugHud.enabled()) PartySyncDebugHud.event(member.name()+": biome report "+message.payload(), 0xFF65DDEC); return; }
 		String body = member.uuid() + "-" + message.sequence() + ":"
 			+ message.type() + ":" + message.payload();
 		apply(member.name(), body, false);
@@ -679,6 +720,14 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 					"shape=" + parts[1] + "/" + values.length);
 				return;
 			}
+			if (DebugLog.isEnabled() && "A".equals(parts[1])) {
+				DebugLog.line("SYNC_OBJECTIVES", "from=" + member.name() + " local=" + localReporter
+					+ " used=" + values[13] + " feeder=" + values[17] + "/" + values[18]
+					+ " appliedFeeder=" + feederType + "/" + feederCount
+					+ " mounds=" + values[36] + "/" + values[37]
+					+ " coins=" + PartySyncProtocol.heldCoins(values));
+			}
+			PartySyncDebugHud.received(member.name(), parts[1], values, localReporter);
 			if (!localReporter) DebugLog.line("SYNC", "received type=" + parts[1]
 				+ " from=" + member.name());
 			if (!localReporter) StructuredDiagnostics.decision("party-sync", "received",
@@ -692,9 +741,9 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 
 	private boolean applyAggregate(State state, int[] values) {
 		int itemCount = StartingItems.ORDERED.size();
-		if (values.length != PartySyncProtocol.AGGREGATE_VALUES
-			|| !validAggregateValues(values, itemCount)
-			|| values[PartySyncProtocol.AGGREGATE_VERSION_INDEX] != PartySyncProtocol.VERSION) return false;
+		if (values.length <= PartySyncProtocol.AGGREGATE_VERSION_INDEX
+			|| !PartySyncProtocol.validAggregateShape(values.length, values[PartySyncProtocol.AGGREGATE_VERSION_INDEX])
+			|| !validAggregateValues(values, itemCount)) return false;
 		int snoozleMask = values[itemCount + 25];
 		int troodonMask = values[itemCount + 26];
 		int moundLow = values[itemCount + 27];
@@ -714,16 +763,20 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		int nextFeederType = feederType;
 		int nextFeederCount = feederCount;
 		int reportedCount = Math.max(0, values[itemCount + 9]);
-		if (reportedCount > 0) {
+		if (feederSnapshotApplies(values[itemCount + 4], used, reportedCount,
+			state.reportedFeederUsed, state.reportedFeederCount)) {
 			nextFeederType = values[itemCount + 8];
 			nextFeederCount = reportedCount;
 		}
 		applyUsage(values[itemCount + 4], values[itemCount + 5], values[itemCount + 6],
 			values[itemCount + 7], nextFeederType, nextFeederCount, false);
+		state.reportedFeederUsed = values[itemCount + 4];
+		state.reportedFeederCount = reportedCount;
 		state.limeGems = Math.max(0, values[itemCount + 10]);
 		state.orangeGems = Math.max(0, values[itemCount + 11]);
 		state.purpleGems = Math.max(0, values[itemCount + 12]);
 		state.incense = Math.max(0, values[itemCount + 13]);
+		state.coins = PartySyncProtocol.heldCoins(values);
 		state.placedGems |= values[itemCount + 14] & 7;
 		state.candlesLit = Math.max(state.candlesLit, Math.max(0, values[itemCount + 15]));
 		boolean openedNow = values[itemCount + 16] != 0;
@@ -780,6 +833,8 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 	}
 
 	private static boolean validAggregateValues(int[] values, int itemCount) {
+		if (values.length == PartySyncProtocol.AGGREGATE_VALUES
+			&& !PartySyncProtocol.validHeldCoins(values[PartySyncProtocol.HELD_COINS_INDEX])) return false;
 		for (int index = 0; index < itemCount; index++) {
 			if (!between(values[index], 0, 256)) return false;
 		}
@@ -801,6 +856,13 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			if (!between(values[index], 0, 1)) return false;
 		}
 		return true;
+	}
+
+	/** An advanced consume cycle can empty the feeder; unrelated zero snapshots cannot. */
+	static boolean feederSnapshotApplies(int reportedUsed, int currentUsed, int count,
+		int previousReportedUsed, int previousCount) {
+		return reportedUsed > currentUsed || reportedUsed == currentUsed
+			&& (count > 0 || previousReportedUsed == reportedUsed && previousCount > 0);
 	}
 
 	private static boolean validUsageValues(int[] values) {
@@ -864,6 +926,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		state.orangeGems = localOrangeGems;
 		state.purpleGems = localPurpleGems;
 		state.incense = localIncense;
+		state.coins = localCoins;
 		state.placedGems = localPlacedGems;
 		state.candlesLit = localCandlesLit;
 		state.gemzieOpen = localGemzieOpen;
@@ -887,6 +950,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		int orange = SafariObjectives.orangeGemsHeld();
 		int purple = SafariObjectives.purpleGemsHeld();
 		int incense = SafariObjectives.incenseHeld();
+		int coins = SafariObjectives.shiningCoinsHeld();
 		int placed = SafariObjectives.confirmedGemMask();
 		boolean open = localGemzieOpen || SafariObjectives.gemzieDoorOpened();
 		boolean gemzieDone = localGemzieCaught || SafariObjectives.gemzieCaught();
@@ -901,7 +965,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		int[] mounds = MoundSpotter.localCompletionWords();
 		int candles = Math.max(localCandlesLit, SafariObjectives.incenseUsed());
 		if (lime == localLimeGems && orange == localOrangeGems && purple == localPurpleGems
-			&& incense == localIncense && placed == localPlacedGems && candles == localCandlesLit
+			&& incense == localIncense && coins == localCoins && placed == localPlacedGems && candles == localCandlesLit
 			&& open == localGemzieOpen && gemzieDone == localGemzieCaught
 			&& spawned == localDoomspiralSpawned
 			&& doomCaught == localDoomspiralCaught && doomRetreated == localDoomspiralRetreated
@@ -915,6 +979,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		localOrangeGems = orange;
 		localPurpleGems = purple;
 		localIncense = incense;
+		localCoins = coins;
 		localPlacedGems = placed;
 		localCandlesLit = candles;
 		localGemzieOpen = open;
@@ -1117,6 +1182,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		localOrangeGems = 0;
 		localPurpleGems = 0;
 		localIncense = 0;
+		localCoins = 0;
 		localPlacedGems = 0;
 		localCandlesLit = 0;
 		localGemzieOpen = false;
@@ -1137,7 +1203,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		feederType = -1;
 		Arrays.fill(birdCounts, 0);
 		sequence = 0;
-		stateSendAt = 0;
+		snapshotBatch.clear();
 		snapshotSent = false;
 		feedDoneAnnounced = false;
 		lastDebugTransport = "";
@@ -1148,6 +1214,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		networkEngaged = false;
 		networkConnected = false;
 		sentSparklingRevision = -1;
+		lastPublishedAggregate = null;
 	}
 
 	private static int itemIn(String line) {
@@ -1196,7 +1263,10 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		private int limeGems;
 		private int orangeGems;
 		private int purpleGems;
+		private int reportedFeederUsed = -1;
+		private int reportedFeederCount;
 		private int incense;
+		private int coins = -1;
 		private int placedGems;
 		private int candlesLit;
 		private boolean gemzieOpen;

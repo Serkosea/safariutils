@@ -253,6 +253,12 @@ public final class NestTracker {
 		return confirmedVisible.contains(pos);
 	}
 
+    static int confirmedNestCount() { return present.size(); }
+
+    static boolean sourcesExhausted() {
+        return !known.isEmpty() && (SafeMode.nests() ? safePunched : punched).containsAll(known);
+    }
+
 	public static long unpunchedCount() {
 		return nests().stream().filter(Nest::unpunched).count();
 	}

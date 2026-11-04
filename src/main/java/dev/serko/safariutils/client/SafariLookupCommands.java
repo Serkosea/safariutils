@@ -8,6 +8,14 @@ import java.util.*;
 
 final class SafariLookupCommands {
     private SafariLookupCommands() { }
+    static int lookupSelf(String view) {
+        var player = Minecraft.getInstance().player;
+        if (player == null) {
+            ClientMessages.send("Join a server before looking up your profile", ClientMessages.Tone.INFO);
+            return 0;
+        }
+        return lookup(player.getGameProfile().name(), view);
+    }
     static int lookup(String name,boolean ticketsOnly) { return lookup(name,ticketsOnly?"tickets":"lookup"); }
     static int lookup(String name,String view) {
         boolean ticketsOnly=view.equals("tickets"), missingOnly=view.equals("missing");
@@ -50,26 +58,47 @@ final class SafariLookupCommands {
         var expected=new java.util.TreeSet<String>(String.CASE_INSENSITIVE_ORDER);expected.addAll(second);
         return names.equals(expected);
     }
+    static Component sharedBiomeLine(SafariBiome biome, Set<Critter> shared) {
+        var species = Critters.inBiome(biome).stream().filter(shared::contains).toList();
+        String heading = biome.displayName() + " (" + species.size() + "/" + Critters.totalIn(biome) + ")";
+        var hover = Component.literal(heading).withColor(biome.colour());
+        if (species.isEmpty()) hover.append(Component.literal("\nNone shared").withColor(StatColours.MISSING));
+        for (var critter : species)
+            hover.append(Component.literal("\n" + critter.name()).withColor(critter.rarity().colour()));
+        return Component.literal(heading).withColor(biome.colour())
+            .withStyle(style -> style.withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(hover)));
+    }
+
     static int shared() {
         var party=dev.serko.safariutils.state.PartyState.snapshot();
-        if(!party.known()||!party.inParty()) {ClientMessages.send("No current party shared collection",ClientMessages.Tone.INFO);return 1;}
+        if(!party.known()) {ClientMessages.send("Party membership is not known yet",ClientMessages.Tone.INFO);return 1;}
+        boolean solo = !party.inParty();
         var snapshot=SharedSparklingProviders.partySnapshot();
-        if(!snapshot.apiManaged()||!party.completeRoster()||!sameMembers(snapshot.members(),party.members().stream().map(dev.serko.safariutils.state.PartySnapshot.Member::name).toList())) {
+        if(!solo && (!snapshot.apiManaged()||!party.completeRoster()||!sameMembers(snapshot.members(),party.members().stream().map(dev.serko.safariutils.state.PartySnapshot.Member::name).toList()))) {
             ClientMessages.send("Shared Sparklings are not loaded for your current party yet",ClientMessages.Tone.INFO);return 1;
         }
-        var shared=SparklingMode.shared();
+        var shared = solo ? Critters.all().stream()
+            .filter(critter -> dev.serko.safariutils.session.SparklingStats.count(critter) > 0)
+            .collect(java.util.stream.Collectors.toSet()) : SparklingMode.shared();
+        var names = solo ? List.of(Minecraft.getInstance().getUser().getName()) : snapshot.members();
         List<Component> lines=new ArrayList<>();
         lines.add(Component.literal("Shared Sparklings ("+shared.size()+"/"+Critters.total()+")").withColor(StatColours.UNIQUE));
-        lines.add(Component.literal("Party: "+String.join(", ",snapshot.members())).withColor(StatColours.INFO));
-        if(!snapshot.apiManaged()||SharedSparklingProviders.partyRefreshStatus().error()!=null)
-            lines.add(Component.literal("Known collection only — party API data may be incomplete").withColor(0xFFAA55));
-        for(var biome:SafariBiome.values()) {
-            var species=Critters.inBiome(biome).stream().filter(shared::contains).toList();
-            var line=Component.literal(biome.displayName()+": ").withColor(biome.colour());
-            for(int i=0;i<species.size();i++) { if(i>0)line.append(Component.literal(", ").withColor(0xFFFFFF));
-                var critter=species.get(i); line.append(Component.literal(critter.name()).withColor(critter.rarity().colour())); }
-            if(species.isEmpty())line.append(Component.literal("None known").withColor(StatColours.MISSING)); lines.add(line);
+        var members = Component.literal(solo ? "Player: " : "Party: ").withColor(StatColours.INFO);
+        for (int index = 0; index < names.size(); index++) {
+            if (index > 0) members.append(Component.literal(", ").withColor(0xFFFFFF));
+            members.append(PlayerNameStyle.component(names.get(index)));
         }
-        ClientMessages.sendBlock(lines);return 1;
+        lines.add(members);
+        if(!solo && (!snapshot.apiManaged()||SharedSparklingProviders.partyRefreshStatus().error()!=null))
+            lines.add(Component.literal("Known collection only — party API data may be incomplete").withColor(0xFFAA55));
+        var biomes = Component.empty();
+        for (var biome : List.of(SafariBiome.FOREST, SafariBiome.CAVERN, SafariBiome.ICY, SafariBiome.HAUNTED)) {
+            if (!biomes.getSiblings().isEmpty())
+                biomes.append(Component.literal(LookupPresentation.DIVIDER).withColor(0xFFFFFF));
+            biomes.append(sharedBiomeLine(biome, shared));
+        }
+        lines.add(biomes);
+        lines.add(Component.literal("Hover a biome for shared Sparklings").withColor(StatColours.INFO));
+        ClientMessages.sendReport(lines);return 1;
     }
 }

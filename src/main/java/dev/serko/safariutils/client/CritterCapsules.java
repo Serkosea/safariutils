@@ -7,9 +7,7 @@ import net.minecraft.world.item.ItemStack;
 final class CritterCapsules {
 	private CritterCapsules() { }
 	static boolean matches(Display.ItemDisplay display) {
-		Display.ItemDisplay.ItemRenderState state = display.itemRenderState();
-		if (state == null) return false;
-		ItemStack stack = state.itemStack();
+		ItemStack stack = display.getItemStack();
 		return !stack.isEmpty() && stack.getHoverName().getString().endsWith("Critter Capsule");
 	}
 }

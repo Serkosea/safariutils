@@ -87,7 +87,7 @@ final class ProfitableCritters {
         }
         lines.add(Component.literal("Priced " + BazaarPrices.ageMillis() / 60_000 + "m Ago • Hover for Profit Breakdown")
             .withColor(0x8DE8FF));
-        ClientMessages.sendBlock(lines);
+        ClientMessages.sendReport(lines);
         return 1;
     }
 }

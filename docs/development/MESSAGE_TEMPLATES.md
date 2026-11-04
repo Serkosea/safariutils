@@ -25,39 +25,57 @@ not overwritten.
 - Forest feed: `<ALL_FEED>`, `<TOTAL>`, `<SEEDS>`, `<WORMS>`, `<BERRIES>`.
 - Existing floor-drop completion banners retain `<BIOME>` for their default text.
 
-Examples: `<BIOMELETTER>d` produces `cd`; `[SM] Hotspot: <BIOME>` produces
-`[SM] Hotspot: Icy`. `Sparkling <CRITTER>! <X> <Y> <Z>` uses the detected critter's position.
+Examples: `<BIOMELETTER>d` produces `cd`; `[SU] Hotspot: <BIOME>` produces
+`[SU] Hotspot: Icy`. `Sparkling <CRITTER>! <X> <Y> <Z>` uses the detected critter's position.
 Expansion is event-time, single-pass; values are never interpreted recursively and
 queued messages retain their event context. Unsupported tags remain literal.
 
-## Mutuals compatibility
+## Party coordination
 
-The opt-in Safari Runs / Party toggle provides reversible effective overrides. It
-locks the affected settings controls without overwriting custom fields. Disabling it
-restores the saved choices. The managed formats/channels are:
+Safari Runs / Party has independent Assign Hotspots and Biome Reports switches.
+Each locks only its own party-message format without overwriting custom text.
+Starting-item alerts remain independent. Schema 10 migrates the old combined setting
+into both switches when it was enabled. The formats are:
 
-- Hotspot: `[SM] Hotspot: <BIOME>` in Party chat.
-- Unique completion: `<BIOMELETTER>d` in Party chat, on actual all-species catches in
-  focused modes only. Full Clear does not emit this code from an all-uniques event,
-  because that would incorrectly imply all populations were caught.
-- Starting items: `[SM] Starting items: Nx Shining Coin; Nx Yogi Berry; ...` in Party chat.
-  Only coins and bird feed are included: Mutuals rejects the entire payload when it
-  contains unsupported quest items. Native objective sync still owns our item state.
+- Hotspot: `[SU] Hotspot: <BIOME>` in Party chat. Accepted incoming prefixes are
+  SU, SafariUtils, SM, CritterMod and CM, plus the unprefixed Mutuals forms.
+- Biome completion: bare `fd`, `cd`, `hd`, `id` in Party chat. `BiomeCoordination`
+  evaluates the effective RunMode independently of unique/PB announcements.
+- Starting-item alerts are **not** managed by either feature. Their saved toggle,
+  channel, item selection, template, and native-sync suppression remain unchanged.
+  Teammate starting-item announcements do not contribute to reporting requirements.
 
-Hotspot assignment also enables/locks its own hotspot report when used independently.
-Party reports are accepted only from the current known roster and current visit. The
-server party-chat echo provides report order consistently for mixed-mod parties.
-Allocation matches Mutuals: first report keeps a contested hotspot, duplicate holders
-are ordered by normalized UUID string hash, then identity string, with name fallback.
-Free biomes use Forest/Cavern/Icy/Haunted order. Assignment starts after all reports or
-3.5 seconds, can revise until 10 seconds, and then freezes. Actual hotspot stays separate.
+Hotspot assignment also enables/locks its own report independently. Current-roster
+reports start a two-second complete-roster / five-second partial-roster window.
+Fewest prior retained hotspots wins a contested biome, then normalized UUID hash and
+identity break ties. Losers use UUID order and Forest/Cavern/Icy/Haunted free-biome
+order. Counters survive runs for the same roster, clear on roster change/disconnect,
+and increment once when the assignment finalizes. Roster comparison uses normalized
+UUIDs (name fallback), not IGN alone; resolving UUIDs must not discard current-run
+reports or unfreeze an assignment. Announcements wait until the run is active for
+0.5 seconds. Actual hotspot stays separate.
 
-This is chat interoperability, not a claim that incoming messages prove catches or PBs.
-Mutuals' spatial-zone/UUID-minimum checks are heuristics over client-loaded entities;
-we do not import them as exhaustive population or catch proof. References reviewed:
-HotspotAssignments, SafariCompletionEvents, StartingResourceNotice/Reminder, and
-SparklingChecks from the local 3.6.4 review. Unimplemented report types are not advertised
-as compatible. Existing ticket-trading/party networking remain independent.
+Full Clear requires minimum population, observed population, local zone coverage,
+no live remainder, and exhausted spawn sources. One Macaw suffices even if more
+ordinary Macaws remain; actual uncaught Sparklings still take priority. Unique requires unique catches (or
+proven unavailable RNG species), plus required Sparkling source checks; bird feed
+must be exhausted. Sparkling requires checks only for species missing from the
+shared collection. All modes retain actual uncaught Sparkling evidence. Focused
+modes suppress `id` after Wumpa is caught; Sparkling can send it before Wumpa only
+when Wumpa is not needed and another Icy species is needed.
+
+Reports require the current biome, a complete roster, and loaded party collections for Sparkling mode. Unique mode treats
+unknown collections as requiring all relevant checks. They settle for 1.5 seconds, revalidate before sending, and use the
+central command cooldowns with at least three seconds between reports. Incoming done
+words only suppress redundant coordination, never fabricate catches, PBs, or collections.
+Evidence uses existing scans/ledgers at four evaluations per second while enabled. Structural and
+population evidence is intentionally conservative when coverage is incomplete; absent
+out-of-range entities alone never imply a clear. `COORDINATION/BIOME` logs changing blockers
+and sends only while automatic logging is enabled.
+
+References: Mutuals 4.0 HotspotAssignments, HotspotAssignmentAlert, SafariCompletionEvents,
+SparklingChecks and completion zones. Mixed-mod live testing remains required, especially
+when a client joins/restarts mid-session and has different hotspot fairness history.
 
 ## Performance and tests
 
@@ -66,3 +84,32 @@ Token scanning is linear, single-pass, and does not interpret replacement values
 templates. No runtime/player lookup is performed. Coordinates are formatted only when requested. No unbounded parsed
 text cache is retained. `AlertTextRegression` covers all biome codes, precedence, legacy
 replacements, literal/unknown tags, malformed input, laziness and exact recorded wire formats.
+
+JohnCEO's supplied compatibility.md (2026-11-02) is the protocol reference. Forest
+requirements use nine floor feeds plus personal starting feed. Confirmed bird spawn
+counts inform full-clear targets. Coin requirements use known floor supply plus
+personal starting coins, independent of other players' starting-item messages.
+Known coin-source exhaustion does not require unrelated Haunted loot to be collected;
+unknown ordering retains the conservative floor-clear fallback.
+
+
+## Alert presentation and mode semantics
+
+The Hotspot & Assignment banner displays the final assigned destination when Assign
+Hotspots is enabled. Outgoing party hotspot messages still describe the actual Hypixel
+hotspot. Actual and assigned banner texts are independent; both use the displayed
+biome's color. The banner waits for assignment, with an actual-hotspot fallback after
+6.5 seconds if unavailable. A delayed assignment can correct the fallback once.
+Both forms have previews and share the existing sound, duration and color controls.
+
+Biome Uniques Caught, All Uniques Caught, and All Uniques Except Macaw are real catch
+milestones in every mode. They are not claims that Full Clear or Sparkling source checks
+are finished. The chat Biome Completion card uses those unique catches only when Biome
+Reports is off; when on, its managed party code comes from BiomeCoordination's current
+mode policy. Managed controls name Assign Hotspots or Biome Reports as their owner.
+Custom messages are retained when either feature is switched off.
+
+Floor Drops Done may also mean the focused-mode objectives no longer need floor drops,
+not that every physical drop was picked up. Sparkling alerts apply in every mode and
+biome, including pre-ticket discoveries. No alert preference is changed automatically
+when selecting a run mode.

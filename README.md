@@ -13,7 +13,7 @@ SafariUtils is a Fabric mod made for Hypixel SkyBlock's Critter Safari. It keeps
 - Extra floor-drop item identification, matching item colors, and Scrappy food/feeding markers, controlled by Safe Mode.
 - Separate loot/quest-item controls and relevant remaining-item counts; surplus quest items hide once no longer needed.
 - Model glow for selected critters and Rockmite mounds on Minecraft 26.2 and 26.3; 26.1.2 retains standard markers.
-- Party-ready alerts, mode-specific ticket selection, hotspot assignment and optional Sparkling Mutuals chat compatibility.
+- Party-ready alerts, mode-specific ticket selection, hotspot assignment and cross-mod biome-completion reporting.
 - Capsule trajectory previews, Honeyhive cooldown beacons, adjustable water opacity and Extra-only full-block candle targeting.
 - Optional profitable-critter targeting and independent profit indicators in the Missing HUD.
 - Optional Ticket Trading with draggable invite queues, per-player guest controls, Sparkling filters, and timed party automation.
@@ -34,9 +34,9 @@ Choose the jar that matches your Minecraft version.
 
 | Minecraft | Safe Mode | Extra |
 |---|---|---|
-| 26.1.2 | `safariutils-3.4.0+mc26.1.2.jar` | `safariutils-3.4.0-extra+mc26.1.2.jar` |
-| 26.2 | `safariutils-3.4.0+mc26.2.jar` | `safariutils-3.4.0-extra+mc26.2.jar` |
-| 26.3 | `safariutils-3.4.0+mc26.3.jar` | `safariutils-3.4.0-extra+mc26.3.jar` |
+| 26.1.2 | `safariutils-3.5.0+mc26.1.2.jar` | `safariutils-3.5.0-extra+mc26.1.2.jar` |
+| 26.2 | `safariutils-3.5.0+mc26.2.jar` | `safariutils-3.5.0-extra+mc26.2.jar` |
+| 26.3 | `safariutils-3.5.0+mc26.3.jar` | `safariutils-3.5.0-extra+mc26.3.jar` |
 
 The Safe Mode edition is the recommended download. Extra includes features that may provide information the player cannot directly see and may not be safe to use.
 
@@ -55,16 +55,17 @@ Important mod errors appear in Minecraft's log. Developer builds additionally re
 
 ## Commands
 
+Omit `[name]` to look up yourself. Fresh cached profiles are reused automatically.
+
 | Command | Usage |
 |---|---|
 | `/su`, `/safari`, `/safariutils` | Opens SafariUtils settings. |
 | `/su gui` | Opens the HUD editor. |
 | `/safari stats` | Opens run history, statistics and Personal Bests. |
 | `/sparkling` | Opens your Sparklings collection tab in the stats dashboard. |
-| `/safari lookup <name>` | Looks up a player's collection and tickets; saves the full profile in Lookup recents. |
-| `/safari missing <name>` | Shows missing Sparklings with a biome breakdown on hover. |
-| `/safari tickets <name>` | Shows ticket counts and saves the full lookup. |
-| `/safari refresh <name>` | Refreshes a lookup through the shared API cache and cooldown. |
+| `/safari lookup [name]` | Looks up a player's collection and tickets; saves the full profile in Lookup recents. |
+| `/safari missing [name]` | Shows missing Sparklings with a biome breakdown on hover. |
+| `/safari tickets [name]` | Shows ticket counts and saves the full lookup. |
 | `/safari shared` | Shows the current party's known shared Sparklings. |
 | `/safari fc`, `/safari fullclear` | Selects Full Clear mode. |
 | `/safari unique`, `/safari uniques` | Selects Unique mode. |

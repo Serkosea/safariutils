@@ -25,6 +25,8 @@ final class FloorDropPattern {
             this.title = title; this.colour = colour; this.biome = biome; this.alwaysBit = alwaysBit;
             this.faceColour = Colours.softFaceRgb(colour);
         }
+        static final List<Kind> DISPLAY_ORDER = List.of(UNKNOWN, LOOT, PURPLE, LIME, ORANGE,
+            BERRY, WORM, SEEDS, INCENSE, COIN, ICE);
         static Kind reward(String message) {
             for (Kind kind : values()) if (kind.biome != null && message.contains(kind.title)) return kind;
             if (message.contains("Hunting") || message.contains("Safari Essence") || message.contains("Shard")) return LOOT;
@@ -68,6 +70,13 @@ final class FloorDropPattern {
         Kind result = candidates.getFirst().kind(id);
         for (Candidate candidate : candidates) if (candidate.kind(id) != result) return Kind.UNKNOWN;
         return result;
+    }
+    /** Exact consensus only; no guessed supply from incomplete ordering evidence. */
+    int coinSupply() {
+        refresh();
+        if (invalid || candidates.isEmpty()) return -1;
+        int count = candidates.getFirst().coins();
+        return candidates.stream().allMatch(c -> c.coins() == count) ? count : -1;
     }
     int candidateCount() { refresh(); return invalid ? 0 : candidates.size(); }
     private void refresh() {

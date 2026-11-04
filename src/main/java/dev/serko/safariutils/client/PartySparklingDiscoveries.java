@@ -11,26 +11,39 @@ public final class PartySparklingDiscoveries {
 	private static final PartySparklingState state = new PartySparklingState();
 	private static long displayed, nextSound;
 	private PartySparklingDiscoveries() { }
-	static void discovered(Critter critter) { state.discover(Critters.selectionMask(critter)); }
-	static void caught(Critter critter) { state.caught(Critters.selectionMask(critter)); }
+	static void discovered(Critter critter) {
+        long before=state.localRevision; state.discover(Critters.selectionMask(critter));
+        if(before!=state.localRevision && PartySyncDebugHud.enabled()) PartySyncDebugHud.event("Local: found Sparkling "+critter.name(),0xFF65DDEC);
+    }
+	static void caught(Critter critter) {
+        long before=state.localRevision; state.caught(Critters.selectionMask(critter));
+        if(before!=state.localRevision && PartySyncDebugHud.enabled()) PartySyncDebugHud.event("Local: caught Sparkling "+critter.name(),0xFF77E59E);
+    }
+	static boolean claimLocalAlert(Critter critter) {
+		return state.claimLocalAlert(Critters.selectionMask(critter));
+	}
 	static long activeMask() { return state.active(); }
 	static long sharedMask() { return state.shared(); }
 	static boolean wasCaught(Critter critter) { return (state.caughtMask() & Critters.selectionMask(critter)) != 0; }
 	static long localRevision() { return state.localRevision; }
 	static String payload() { return state.payload(); }
-	static boolean accept(int[] values) {
+	static boolean accept(int[] values) { return accept(values, false); }
+	static boolean acceptRoom(int[] values) { return accept(values, true); }
+	private static boolean accept(int[] values, boolean room) {
 		long before = state.active();
-		if (!state.accept(values)) return false;
+		if (!(room ? state.acceptRoom(values) : state.accept(values))) return false;
 		// Species-only remote catch masks cannot erase individually observed local bodies.
 		long added = state.active() & ~before;
-		if (added != 0 && SessionManager.current() != null)
+		if (added != 0 && SessionManager.current() != null && SafariLocation.inside()
+			&& SparklingWatch.discoveryAllowed(dev.serko.safariutils.state.SafariRuntimeState.current().phase()))
 			EncounterAlerts.fireSparklingDetected(names(added));
 		if (before != state.active()) StructuredDiagnostics.decision("party-sparkling", "received",
 			"active=" + Long.bitCount(state.active()) + " added=" + Long.bitCount(added));
 		return true;
 	}
 	public static void tick() {
-		boolean inside = HypixelConnection.active() && SafariLocation.inside();
+		boolean inside = HypixelConnection.active() && SafariLocation.inside()
+			&& SparklingWatch.discoveryAllowed(dev.serko.safariutils.state.SafariRuntimeState.current().phase());
 		boolean ticketed = SessionManager.current() != null;
 		long remaining = SessionManager.ticketWindowRemainingMillis();
 		long eligible = state.reminder(inside, ticketed, remaining);

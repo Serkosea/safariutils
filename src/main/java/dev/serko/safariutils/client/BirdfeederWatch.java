@@ -19,6 +19,8 @@ public final class BirdfeederWatch {
 	private static int feedAcquired;
 	/** Forest pickups only; starting feed does not consume one of its nine drops. */
 	private static int floorFeedFound;
+    private static int startingFeed;
+    private static final java.util.Map<dev.serko.safariutils.data.Critter, Integer> birdSpawns = new java.util.HashMap<>();
 	private static final int[] lastHeld = new int[3];
 	/** Every Birdfeeder spawn event observed this run, whatever species it produced. */
 	private static int spawnEventsObserved;
@@ -160,6 +162,7 @@ public final class BirdfeederWatch {
 		if (feederCount > 0) setFeederState(feederCount == 1 ? -1 : feederType,
 			Math.max(0, feederCount - 1));
 		spawnedBirds.add(bird);
+        birdSpawns.merge(bird, "Macaw".equals(bird.name()) ? 2 : 1, Integer::sum);
 		if (NAME.equals(bird.name())) {
 			announce();
 		} else {
@@ -170,6 +173,7 @@ public final class BirdfeederWatch {
 	/** Credited by {@link StartingItemsWatch} from the frozen run-start inventory. */
 	public static void creditFeedFound(int seeds, int worms, int berries) {
 		int total = seeds + worms + berries;
+        startingFeed += total;
 		feedFound += total;
 		feedAcquired += total;
 	}
@@ -214,8 +218,11 @@ public final class BirdfeederWatch {
 
 	/** Only a full nine-feed Forest clear can prove that an unspawned bird is absent. */
 	public static boolean allForestFeedUsed() {
-		return spawnEventsObserved >= 9 && allFeedUsed();
+		return spawnEventsObserved >= requiredForestFeed(startingFeed) && allFeedUsed();
 	}
+
+    static int requiredForestFeed(int ownStartingFeed) { return 9 + Math.max(0, ownStartingFeed); }
+    static int spawnedCount(dev.serko.safariutils.data.Critter bird) { return birdSpawns.getOrDefault(bird, 0); }
 
 	/** Whether an observed feed use produced this bird at least once this run. */
 	public static boolean everSpawned(dev.serko.safariutils.data.Critter bird) {
@@ -433,6 +440,7 @@ public final class BirdfeederWatch {
 		feedFound = 0;
 		feedAcquired = 0;
 		floorFeedFound = 0;
+        startingFeed = 0; birdSpawns.clear();
 		java.util.Arrays.fill(lastHeld, 0);
 		spawnEventsObserved = 0;
 		personalFeedDeposited = 0;

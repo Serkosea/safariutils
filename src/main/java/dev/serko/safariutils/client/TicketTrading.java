@@ -21,7 +21,7 @@ public final class TicketTrading {
 	static final long INVITE_AT_MILLIS = 5_000L;
 	private static final long HOST_START_DEADLINE_MILLIS = 20_000L;
 	static final long WARP_AT_MILLIS = 26_000L;
-	static final long LAST_WARP_AT_MILLIS = 29_500L;
+	static final long LAST_WARP_AT_MILLIS = 27_000L;
 	static final long COMMAND_COOLDOWN_MILLIS = 3_100L;
     // Leave the existing party-command cooldown clear for the scheduled warp.
     static final long SPARKLING_INVITE_DEADLINE_MILLIS = WARP_AT_MILLIS - COMMAND_COOLDOWN_MILLIS;
@@ -57,6 +57,8 @@ public final class TicketTrading {
 	private static boolean hostScheduled;
 	private static boolean tradeRunActive;
 	private static boolean warpSent;
+    private static long warpReadySince;
+    private static long lastGuestTransferAt;
 	private static boolean rosterMinuteChecked;
 	private static String lastAccepted = "";
 	private static long lastAcceptedAt;
@@ -189,11 +191,17 @@ public final class TicketTrading {
 		boolean earlyWarp = TicketInvitePolicy.earlyWarpReady(
 			PartySparklingDiscoveries.activeMask() != 0L, invitedTargets, joinedTargets,
 			unavailableTargets, !pendingQueueTargets(false).isEmpty());
-		// Ordinary trading retains its scouting window; settled sparkling parties can go now.
-		boolean warpReady = hasJoinedPlayer && (earlyWarp || now >= connectionStartedAt + WARP_AT_MILLIS)
+        // A newly settled group gets two seconds before its first warp, including retained guests.
+        boolean groupReady = hasJoinedPlayer && (earlyWarp || pendingResponses.isEmpty());
+        if (!groupReady) warpReadySince = 0L;
+        else if (warpReadySince == 0L) warpReadySince = now;
+        long deadline = connectionStartedAt + LAST_WARP_AT_MILLIS;
+        long warpDue = TicketInvitePolicy.warpDueAt(earlyWarp ? now : connectionStartedAt + WARP_AT_MILLIS,
+            warpReadySince, lastGuestTransferAt, deadline);
+		boolean warpReady = hasJoinedPlayer && now >= warpDue
 			&& now - lastHostCommandAt >= COMMAND_COOLDOWN_MILLIS
 			&& CommandCoordinator.partyWarpRemainingMillis() == 0L;
-		if (!warpSent && warpReady && now < connectionStartedAt + LAST_WARP_AT_MILLIS) {
+		if (!warpSent && warpReady && now <= connectionStartedAt + LAST_WARP_AT_MILLIS) {
 			if (sendCommand("party warp", CommandCoordinator.Category.TICKET_HOST,
 					CommandCoordinator.Cooldown.PARTY_ACTION, true, true)) {
 				lastHostCommandAt = now;
@@ -217,6 +225,13 @@ public final class TicketTrading {
 		if (line == null || line.isBlank()) return;
 		long now = System.currentTimeMillis();
 		String lower = line.toLowerCase(Locale.ROOT);
+        String transferred = TicketInvitePolicy.transferredPlayer(line);
+        if (hostScheduled && !warpSent && transferred != null
+                && PartyState.snapshot().containsName(transferred)
+                && !transferred.equalsIgnoreCase(Minecraft.getInstance().getUser().getName())) {
+            lastGuestTransferAt = now;
+            OperationalLog.info("TICKET_TRADE", "Guest transfer observed; warp buffer refreshed to 3s, capped at 27s");
+        }
         if (dev.serko.safariutils.state.PartyWarpCooldown.rejectedSeconds(line) >= 0
                 && hostScheduled && warpSent && now - lastHostCommandAt <= 3_000L) {
             warpSent = false;
@@ -262,7 +277,7 @@ public final class TicketTrading {
 		if (joined.matches() && hostScheduled) {
 			String name = joined.group(1).toLowerCase(Locale.ROOT);
 			if (activeTargets.contains(name)) {
-				joinedTargets.add(name);
+                if (joinedTargets.add(name)) warpReadySince = 0L;
 				pendingResponses.remove(name);
 			}
 		}
@@ -441,6 +456,8 @@ public final class TicketTrading {
 
 	private static void resetRunAutomation() {
 		joinedTargets.clear();
+        warpReadySince = 0L;
+        lastGuestTransferAt = 0L;
 		hostScheduled = false;
 		warpSent = false;
 		hostQualificationPending = false;
@@ -484,6 +501,7 @@ public final class TicketTrading {
 
 	private static boolean isOfflineInviteFailure(String line) {
 		String lower = line.toLowerCase(Locale.ROOT);
+
 		return lower.contains("couldn't find a player with that name")
 			|| lower.contains("could not find a player with that name")
 			|| lower.contains("cannot find a player with that name")
@@ -492,6 +510,13 @@ public final class TicketTrading {
 
 	private static void recordOfflinePrimaryInvite(String line, long now) {
 		String lower = line.toLowerCase(Locale.ROOT);
+        String transferred = TicketInvitePolicy.transferredPlayer(line);
+        if (hostScheduled && !warpSent && transferred != null
+                && PartyState.snapshot().containsName(transferred)
+                && !transferred.equalsIgnoreCase(Minecraft.getInstance().getUser().getName())) {
+            lastGuestTransferAt = now;
+            OperationalLog.info("TICKET_TRADE", "Guest transfer observed; warp buffer refreshed to 3s, capped at 27s");
+        }
 		String failed = null;
 		for (String target : pendingResponses) {
 			if (lower.matches(".*\\b" + Pattern.quote(target) + "\\b.*")) {

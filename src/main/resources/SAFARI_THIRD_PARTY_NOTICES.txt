@@ -18,3 +18,9 @@ ClearWater and water mixin integration were informed by Mutuals ClearWater and
 its vanilla/Sodium water hooks. CapsulePath uses the measured ordinary-capsule
 curve from its prediction implementation; collision, state, settings and rendering
 are integrated into SafariUtils systems. No Mutuals runtime is bundled.
+
+Sparkling texture identifiers: Sparkling Mutuals 4.0.0, JohnCEO / JohnKuudra, CC0-1.0.
+https://github.com/johnceoskyblock/sparkling-mutuals
+Species-to-texture and completion survey-zone data are reused; detection integrates with SafariUtils observations.
+Hotspot fairness and mode-aware report protocol reference: HotspotAssignments, HotspotAssignmentAlert,
+SafariCompletionEvents and SparklingChecks (4.0.0). No Mutuals runtime is bundled.

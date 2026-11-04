@@ -37,10 +37,9 @@ final class SafariCommandHelp {
         entries.add(new Entry("/sparkling", "", "Open your Sparklings tab"));
         entries.add(new Entry("/safari profit", "", "Estimated critter earnings"));
         entries.add(new Entry("/safari shared", "", "Current party's known shared Sparklings"));
-        entries.add(new Entry("/safari lookup <name>", "", "Lookup a profile and save it to recents"));
-        entries.add(new Entry("/safari refresh <name>", "", "Refresh a profile through the shared API cache"));
-        entries.add(new Entry("/safari missing <name>", "", "Missing Sparklings with a biome breakdown"));
-        entries.add(new Entry("/safari tickets <name>", "", "Lookup ticket counts and save the full profile"));
+        entries.add(new Entry("/safari lookup [name]", "", "Profile lookup; omit name for yourself"));
+        entries.add(new Entry("/safari missing [name]", "", "Missing Sparklings; omit name for yourself"));
+        entries.add(new Entry("/safari tickets [name]", "", "Ticket counts; omit name for yourself"));
         for (RunMode mode : RunMode.values()) {
             String aliases = String.join(", ", mode.commands().subList(1, mode.commands().size()));
             entries.add(new Entry("/safari " + mode.commands().getFirst(), aliases, "Select " + mode.title() + " mode"));
@@ -57,7 +56,7 @@ final class SafariCommandHelp {
         lines.add(Component.literal(debug ? "Developer Commands" : "Safari Commands")
             .withColor(0x8DE8FF).withStyle(style -> style.withBold(true)));
         for (Entry entry : entries(debug)) {
-            String suggestion = entry.command().replace("<note>", "");
+            String suggestion = entry.command().replace("<note>", "").replace("[name]", "");
             var command = Component.literal(entry.command()).withColor(StatColours.COINS)
                 .withStyle(style -> style.withClickEvent(new ClickEvent.SuggestCommand(suggestion))
                     .withHoverEvent(new HoverEvent.ShowText(Component.literal("Click to fill chat — " + entry.description())

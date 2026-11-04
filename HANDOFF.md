@@ -1,5 +1,35 @@
 # SafariUtils developer handoff
 
+## SafariUtils 3.5.0 release review (2026-11-03)
+
+Latest 17H31M live session: 26,160 records, no warn/error or rejected sync decisions;
+John feeder 2 -> 1 -> 0 accepted; John mound masks remained zero (sender not implemented).
+Lease renewal reconnected in ~2.6s. Capture replay verifies all 15,343 inputs; structured
+audit now excludes buffered perf/er epochs and pre-visit-only journal wait notices,
+with tests preserving detection of genuine epoch regressions/mid-run omissions.
+Hotspot cleanup keeps unresolved/solo membership from latching network fallback and
+keeps frozen-visit ticket hello updates alive across temporary disbands. Leadership
+claims require a complete live party within the visit roster.
+Backend health and deployment verified; historical observability returns403 under current
+OAuth scopes, so no claim of server-side historical test-window coverage.
+
+
+## Party lifecycle replay update (2026-11-03)
+
+Backend deployed as `752f7b58-9185-4218-ad82-bafd5c459dbf`. Normalizes mini+digits
+to m before deriving lobby/member keys. Welcome advertises room-sparklings-v1; combined
+found/caught snapshot precedes legacy per-reporter replay and is retained on all active
+matching-roster peers. Updated clients use S_ROOM internally (not an outbound kind),
+ignore legacy S when advertised, merge catches before alerts, and exclude their own
+local discoveries from remote-first alert suppression. Phase guards stop transfer alerts.
+Prior ticketed hello/display retention and final-feed zero fixes remain in place.
+89 backend tests, real Worker WebSocket replay smoke, and the full BuildAllArtifacts matrix
+passed (633 byte-identical shared classes). SerkoAddons deployed with verified SHA256
+to Skyblock 26.2 and Ticket Collecting; applies on next launch.
+Send John docs/integrations/PARTY_SYNC_UPDATE_2026-11-03.md; updated mixed-mod retest
+is still needed. No release/version bump or GitHub/website publication requested here.
+
+
 ## UUID service sessions (2026-10-22)
 
 The user explicitly chose compatibility over verified Minecraft identity. Updated clients
@@ -48,7 +78,7 @@ manual commands. Manual sends are never intercepted or delayed. Guest invite act
 pending across cooldowns with a bounded expiry; leave/accept keeps its existing settle delay.
 Co-host cleanup accepts roster changes caused by its own kicks, but cancels on other changes.
 Sparkling parties may warp before 26 seconds only when invited guests have joined or
-become unavailable and no remaining eligible queue entry fits; normal scouting keeps 26 seconds. Every Run invites begin at 5 seconds from the same connection-window clock. Host ticket qualification retains its separate 20-second cutoff. Invite waves stop at 22.9 seconds to reserve the existing 3.1-second command cooldown before warp; the 30-second ticket connection window is unchanged. The Invite Players header persists Disband On/Off (default On). Off suppresses both disband and guest-kick cleanup and includes eligible configured baseline members in warp scheduling without reinviting or double-counting capacity. CommandCoordinator owns a monotonic 5.1-second party-warp cooldown shared with observed manual warps and preserved across world transfers; server cooldown feedback extends it, and rejected automated warps retry only before the existing 29.5-second deadline.
+become unavailable and no remaining eligible queue entry fits; normal scouting keeps 26 seconds. Every Run invites begin at 5 seconds from the same connection-window clock. Host ticket qualification retains its separate 20-second cutoff. Invite waves stop at 22.9 seconds to reserve the existing 3.1-second command cooldown before warp; the 30-second ticket connection window is unchanged. The Invite Players header persists Disband On/Off (default On). Off suppresses both disband and guest-kick cleanup and includes eligible configured baseline members in warp scheduling without reinviting or double-counting capacity. CommandCoordinator owns a monotonic 5.1-second party-warp cooldown shared with observed manual warps and preserved across world transfers; server cooldown feedback extends it, and rejected automated warps retry only before the 27-second deadline.
 
 Current overhaul progress and outstanding validation gates: [v3 implementation ledger](IMPLEMENTATION_V3.md).
 Settings imports preserve both `original.json` (unaltered disk bytes, when present) and
@@ -642,7 +672,7 @@ in these tabs using the existing card/navigation model; persistent config keys s
 
 HotspotAllocation is the pure bounded allocation policy; HotspotWatch integrates it with
 current PartyState, monotonic visit timing and ChatQueue. Do not overwrite the actual
-hotspot with assigned biome. Mixed-mod ordering comes from server party-chat echoes;
+hotspot with assigned biome. Mutuals 4 allocation uses retained-hotspot fairness and UUID tie-breaks;
 no backend, HTTP request or additional roster cache is introduced. See MESSAGE_TEMPLATES.
 
 TicketSelection is opt-in independently for each RunMode (Manual by default). It checks
@@ -768,3 +798,184 @@ Missing HUD profit indicators are independently controlled by `display.indicateP
 indicators never turn on retention. HUD label measurements include the dollar suffix.
 Capsule contact radius is an estimate, not measured server physics. Landing indicators use
 cached frame geometry; no additional render-time entity scans are introduced.
+
+## Sparkling appearance evidence and focused modes (2026-11-02)
+
+SparklingTextures identifies already-received profile/head textures using a bounded decoded-property
+cache (512 entries, 8 KiB input limit), never skin downloads or profile resolution. Known texture
+identifiers originate from Mutuals 4.0.0 (CC0; notice packaged). The shared CritterEntities scan merges
+appearance evidence via SparklingTextureEvidence before publication: real players
+are excluded; exact owners beat proximity; ambiguous same-species neighbours do not inherit
+Sparkling status, and capsule-only labels cannot acquire an appearance body. Texture aliases follow
+SparklingWatch's existing individual ownership, replacement and resolved-catch suppression so delayed
+nametags do not create a second found alert. Safe Mode still requires visual confirmation. Existing
+name and repeated-particle detection remain active. SPARKLING found diagnostics include source,
+distance and ticket presence; normal runtime does not log or decode textures per rendered frame.
+
+Missing party-shared collection membership is no longer an ordinary-marker/HUD/objective retention
+reason. Unique Mode keeps uncaught run uniques; Sparkling Mode omits those ordinary targets. Both
+preserve detected Sparkling individuals, explicit Always Active choices, profit choices and necessary
+prerequisites. Wumpa prerequisites depend on run uniques, an explicit target or a detected Wumpa,
+not missing collection membership. Shared collections, API sync and party discovery remain available.
+
+## Ticket menu selection (2026-11-02)
+
+TicketSelection owns one bounded action per entry menu, using the current mode preference.
+Bare tier labels and ticket labels (including count suffixes) are recognized only inside
+Critter Safari Entry; player inventory slots remain excluded. Selection waits for an
+unambiguous requested option with known availability on two polls, not all four tiers.
+Manual slot/hotbar interaction cancels automation; unrelated keys and background clicks do
+not. Existing known-party protection still applies; unknown party state alone no longer
+adds a second independent blockade. Five-second fallback diagnostics name the waiting
+reason and selected tier, with a visible manual-selection message. No automatic NPC
+interaction, ticket substitution, or repeat submission is introduced. Live party-menu
+validation is still needed; regression coverage cannot reproduce the tester's incident.
+
+## Alpha and developer test persistence
+
+HypixelConnection caches Alpha identity from the actual server address (alpha.hypixel.net,
+case/port/trailing-dot tolerant). SessionManager.persistenceSuppressed is the shared guard:
+Alpha forces suppression without changing the saved/manual developer preference, and any
+active test run retains suppression through disconnect or disabling the manual setting.
+The developer setting renders locked On (Alpha). Run history/PBs/rewards remain excluded;
+SparklingStats also guards API imports, manual edits and catch mutations before touching
+memory or scheduling writes. The live profit aggregate excludes test runs. Diagnostic logs
+and live gameplay tracking remain available. Suppression does not undo prior saved data.
+
+## Visit-wide Sparkling visibility
+
+Loaded Sparkling evidence and found alerts do not depend on the player's biome, ticket,
+or the entity being inside its expected biome. Detection remains inside the Safari visit,
+with real-player exclusion, ownership/capsule/caught suppression and Safe Mode visibility.
+The Missing HUD lists all presentable outstanding local and party-shared Sparklings;
+spawn/center/pre-ticket display uses a Sparkling-only panel with no last-run data. Ordinary
+biome objectives retain their existing scope. World Sparkling markers already bypass biome
+filtering. This does not extend the server's entity delivery range.
+
+## Mutuals 4 coordination (2026-11-02)
+
+Hotspot reports use [SU]; biome done words stay bare. Starting-item alerts are not
+compatibility-managed (explicit user preference). See MESSAGE_TEMPLATES for wire and
+mode semantics. BiomeCoordination consumes existing observation/objective state and
+revalidates each report immediately through CommandCoordinator; PBs and actual catch
+ledgers remain separate. No additional API requests or entity scans are introduced.
+Current roster collection failures inhibit Sparkling reports; Unique mode conservatively
+requires all checks rather than treating unknown collections as complete. Structural coverage and unseen populations remain conservative.
+No deployment requested for this work; mixed-mod party testing is still outstanding.
+
+Verification: final VerifyBuilds passed all nine standalone profile/flavor combinations;
+BuildSerkoAddons 26.2 and integrated check 26.3 passed, including regression, artifact
+boundary and IQ/mixin smoke checks. Game instance jars were not modified.
+
+## Native party coordination / JohnCEO protocol (2026-11-02)
+
+User supplied Downloads/compatibility.md; use docs/development/MESSAGE_TEMPLATES.md
+for the maintained protocol summary. Assign Hotspots and Biome Reports are now
+independent native settings. Schema 10 migrates mutualsCompatibility to biomeReports
+and enables assignHotspots when the old combined feature was enabled. No saved custom
+alert text is overwritten. Outgoing hotspot prefix stays [SU]; incoming [SM] remains
+supported; biome codes stay bare. Starting alerts are independent of both features.
+One Macaw suffices for Full Clear; never-spawned birds/Rockmite/Snoozle are exempt only
+with resolved sources. Bird/coin ledgers retain personal starting supply separately;
+party starting-item announcements never raise report requirements. Existing gameplay
+quota and party-objective sync retain their own behavior. UUID roster changes reset
+fairness, not current-run reports/frozen assignments. No deployment requested.
+
+Pre-release review: BiomeCoordination.Survey retains Full Clear and Sparkling survey
+coverage independently across movement and resets both with the run. Full Clear must
+not require the player to occupy every species zone simultaneously (Cavern regions
+can be disjoint). Catch/source/outstanding-Sparkling gates still revalidate before send.
+
+
+## Party snapshot delivery (2026-11-02)
+
+Public encounter-chat changes retain their full aggregate through optional
+catchUpOnly=true on A uploads. The room stores the latest A but skips current-peer
+fanout; joining connections still replay ordinary A envelopes. Private ritual/faint
+messages, inventory and world observations remain live. PartySnapshotBatch coalesces
+for 500ms without postponing continuously; live evidence wins mixed batches.
+Identical connected aggregate uploads are skipped; reconnect resets deduplication and
+publishes a live snapshot. No protocol field reordering or version change. Old clients
+remain supported. See docs/integrations/PARTY_SYNC.md for the shareable integration
+contract, exact masks, source semantics, retention limits and mixed-mod test checklist.
+
+
+## Alert semantics after mode/coordination cleanup (2026-11-02)
+
+Hotspot & Assignment banner waits for the final assignment while Assign Hotspots is
+active. Party chat always shares the actual hotspot. Separate hotspotAssignmentText
+preserves existing custom hotspotText. Both use the destination's biome color and the
+existing shared banner controls. HotspotBannerState prevents repeat alerts, resets on
+visit reset, and falls back to the actual hotspot after 6.5s without an assignment;
+a late assignment may correct that fallback once. Both previews are available.
+Unique-catch banners remain strict party catch milestones in every mode, not mode
+completion. Chat Biome Completion explicitly describes Biome Reports' mode-aware
+replacement and names its controlling setting on managed controls. Existing custom
+messages and playback preferences remain intact. Floor Drops Done describes both
+collection and focused-mode objective sufficiency; Sparkling alerts remain mode- and
+biome-independent. No new mode completion evaluator or duplicate event stream.
+
+## Backend hotspot authority (2026-11-02)
+
+PartyHotspotSync uses H/B operations on the existing PartySyncNetworks transport, with
+PartyItemSync owning the one outbound sequence. HotspotSnapshot validates the bounded
+server result; HotspotWatch displays that result without running its fallback allocator
+in parallel. Finalized fallback assignments are uploaded as locks on recovery; conflicts
+freeze new allocations. A backend-owned visit never switches to competing chat allocation
+on a temporary outage. Only the actual leader sends non-display instructions and acks IDs.
+The standalone implementation is also the integrated source; no IQ/private dependency.
+
+Backend PartyCoordination owns durable fairness and frozen per-lobby assignments. Initial
+allocation is 2 seconds after the third confirmed report (all for smaller parties), capped
+at 5 seconds from the first. Late arrivals batch for 250ms. Membership epochs reset history
+on actual roster changes; older connection leases cannot undo a newer membership. Indexed
+SQLite due/expiry records keep allocation alarms independent of retained history size.
+
+Explicit H leave means a real Safari exit, never a transport failure. After all confirmed
+attendees explicitly depart, a reused lobby can create a fresh assignment generation.
+Uncertain/disconnected attendance is retained conservatively rather than inventing an exit.
+WebSocketOutbox serializes text sends with a 32-message limit and bounded graceful close,
+without blocking the client thread. Tokens, IPs and session credentials stay out of logs.
+Integration contract and retained-run limitations: docs/integrations/PARTY_SYNC.md.
+Mixed-mod live testing remains required; backend tests do not validate another mod's adapter.
+
+## Developer sync HUD (2026-11-02)
+
+Developer > Diagnostics > Party Sync HUD is the sole enable switch. The developer-capability
+guard also controls registration and HudBox editor visibility. It uses the shared HudPanel,
+HudBox positioning/scaling/reset, and a cached panel rebuilt only after status/data changes.
+No extra network requests, world scans, file logging, or API polling. The chronological
+feed holds eight entries; its payload-change cache is capped at 32 and cleared per visit
+or when disabled. It summarizes accepted local/remote objective data, nests, Sparklings,
+completion reports and authoritative assignments. Automatic Logging is independent.
+
+Review fixes: recovery after imported fallback choices adopts backend coordination transport
+without moving finalized choices. HotspotSnapshot checks merged biome collisions, including
+partial snapshots that omit a locally locked player. Do not reduce conflict checks to merely
+comparing UUIDs present in both maps; another UUID may already claim the locked biome.
+
+Ticket-trading guest warps wait two seconds after the guest group settles and three seconds after a current party member's server travel notification. The buffer is capped at 26.75s to allow tick delivery before the hard 27s cutoff; command cooldowns still win. Item presentation order is Purple/Lime/Orange, Berry/Worm/Seeds, Incense/Coin; persisted bit positions and entity-ID prediction ordering remain unchanged.
+
+
+## Held Shining Coins in party sync (2026-11-03)
+
+Aggregate v3 is 39 integers: version at 33, held Shining Coins appended at 38 (0–64).
+Index 4 remains cumulative personal discoveries, not inventory. Backend and client
+accept legacy v2/38 with unknown coins (-1 internally); v2-only clients cannot read v3.
+Use existing inventory cache, 500 ms live snapshot coalescing, reconnect publication,
+and replace-per-sender semantics. Haunted rows show incense then coins and survive
+Doomspiral completion while either item remains. See docs/integrations/PARTY_SYNC_SHINING_COINS.md.
+
+
+## Mixed-mod live test fixes (2026-11-03)
+
+Ten-minute socket lease renewal is expected; backend remembers displayed assignments
+and no longer treats a brief reconnect as an uninformed player. H hello has optional
+ticketed boolean (legacy omitted = eligible); our client reports ticket activation and
+suppresses local assignment display outside active ticketed phase. Keep pre-ticket
+Sparkling sync available. Shared-first Sparkling finds suppress the first matching
+local alert, not marker creation or a second distinct local individual. TRANSFERRING
+cannot discover/announce, and expired ticket windows suppress new local found alerts.
+A aggregate feeder snapshots can clear zero when consumption advances or the same
+reporter empties its known fill; unrelated unknown zero snapshots do not clear a fill.
+SYNC_OBJECTIVES diagnostics record received/applied feeder values and mound words.

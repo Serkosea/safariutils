@@ -89,10 +89,19 @@ final class RemoteSession {
 	}
 
 	static IOException backendError(HttpResponse<String> response) {
-		try {
-			JsonObject root = JsonParser.parseString(response.body()).getAsJsonObject();
-			if (root.has("message")) return new IOException(root.get("message").getAsString());
-		} catch (RuntimeException ignored) { }
-		return new IOException("SafariUtils service request failed with HTTP " + response.statusCode());
-	}
+        long retrySeconds = 0;
+        String retry = response.headers().firstValue("Retry-After").orElse("");
+        try { retrySeconds = Long.parseLong(retry); }
+        catch (NumberFormatException ignored) {
+            try { retrySeconds = Math.max(0, java.time.Duration.between(java.time.Instant.now(),
+                java.time.ZonedDateTime.parse(retry, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant()).toSeconds() + 1); }
+            catch (java.time.DateTimeException invalid) { }
+        }
+        String detail = "SafariUtils API request failed with HTTP " + response.statusCode();
+        try {
+            JsonObject root = JsonParser.parseString(response.body()).getAsJsonObject();
+            if (root.has("message")) detail = root.get("message").getAsString();
+        } catch (RuntimeException ignored) { }
+        return new dev.serko.safariutils.api.ServiceRequestException(detail, response.statusCode(), retrySeconds);
+    }
 }

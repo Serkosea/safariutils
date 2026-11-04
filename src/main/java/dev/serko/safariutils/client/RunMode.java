@@ -6,8 +6,8 @@ import java.util.List;
  * Existing saved toggles are the persistence adapter, not a second cached mode. */
 public enum RunMode {
     FULL_CLEAR("Full Clear", "Show normal run targets using your display settings", List.of("fc", "fullclear")),
-    UNIQUE("Unique", "Keep needed Sparklings and uncaught run uniques visible", List.of("unique", "uniques")),
-    SPARKLING("Sparkling", "Focus on needed Sparklings and your visibility overrides", List.of("sparkling"));
+    UNIQUE("Unique", "Keep detected Sparklings and uncaught run uniques visible", List.of("unique", "uniques")),
+    SPARKLING("Sparkling", "Focus on detected Sparklings and your visibility overrides", List.of("sparkling"));
 
     private final String title, description, hudTitle;
     private final List<String> commands;

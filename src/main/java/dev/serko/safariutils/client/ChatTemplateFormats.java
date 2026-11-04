@@ -4,9 +4,9 @@ import java.util.function.Function;
 
 /** Verified cross-mod formats and reversible effective overrides. Saved custom fields are never rewritten. */
 enum ChatTemplateFormats {
-    HOTSPOT("hotspotChatText", "[SM] Hotspot: <BIOME>", config -> config.hotspotChatText),
+    HOTSPOT("hotspotChatText", "[SU] Hotspot: <BIOME>", config -> config.hotspotChatText),
     BIOME_UNIQUES("biomeDoneChatText", "<BIOMELETTER>d", config -> config.biomeDoneChatText),
-    STARTING_ITEMS("startingItemsChatText", "[SM] Starting items: <ITEMS>", config -> config.startingItemsChatText);
+    STARTING_ITEMS("startingItemsChatText", "<ITEMS>", config -> config.startingItemsChatText);
 
     private final String setting, mutuals;
     private final Function<SafariConfig.PartyConfig, String> configured;
@@ -22,22 +22,21 @@ enum ChatTemplateFormats {
     }
 
     boolean locked() {
-        return ConfigManager.get().gameplay.mutualsCompatibility
+        return this == BIOME_UNIQUES && ConfigManager.get().gameplay.biomeReports
             || this == HOTSPOT && ConfigManager.get().gameplay.assignHotspots;
     }
     static String lockedValue(Object owner, String field) {
         if (!(owner instanceof SafariConfig.PartyConfig)) return null;
         for (var format : values()) {
             if (!format.locked()) continue;
-            if (field.equals(format.setting)) return format.mutuals + " (Locked)";
+            if (field.equals(format.setting)) return format.mutuals + (format == HOTSPOT ? " (Assign Hotspots)" : " (Biome Reports)");
             String channel = switch (format) {
                 case HOTSPOT -> "hotspotBroadcast";
                 case BIOME_UNIQUES -> "biomeDoneBroadcast";
                 case STARTING_ITEMS -> "startingItemsBroadcast";
             };
-            if (field.equals(channel)) return "Party (Locked)";
+            if (field.equals(channel)) return format == HOTSPOT ? "Party (Assign Hotspots)" : "Party (Biome Reports)";
         }
-        if (ConfigManager.get().gameplay.mutualsCompatibility && field.equals("startingItemsMask")) return "Coins & Bird Feed (Locked)";
         return null;
     }
 }

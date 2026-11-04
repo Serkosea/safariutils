@@ -101,6 +101,7 @@ public final class ParticleDiagnostics {
 
 	static String source(CritterEntities.Sighting sighting) {
 		boolean named = sighting != null && sighting.sparkling();
+        if (sighting != null && !sighting.textureIds().isEmpty()) return confirms(sighting) ? "texture+particles" : "texture";
 		boolean particles = confirms(sighting);
 		if (named && particles) return "name+particles";
 		return named ? "name" : particles ? "particles" : "none";

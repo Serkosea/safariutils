@@ -121,6 +121,7 @@ public final class SparklingStats {
 
     /** Client-thread only; imports never lower counters or fabricate catch timestamps. */
     public static boolean syncApiCollection(java.util.Set<String> species, int duplicates, long fetchedAt) {
+        if (SessionManager.persistenceSuppressed()) return false;
         if (!apiComparisonAllowed(fetchedAt) || !apiCollectionAddsInformation(species, duplicates)) return false;
         importApiCollection(species, duplicates);
         OperationalLog.info("SPARKLING/SYNC", "additive=true unique=" + unique() + " duplicates=" + knownDuplicates());
@@ -128,6 +129,7 @@ public final class SparklingStats {
     }
 
 	public static void recordSparkling(Critter critter) {
+        if (SessionManager.persistenceSuppressed()) return;
         revision++;
 		if (critter == null) return;
 		boolean duplicate = count(critter) > 0;
@@ -150,6 +152,7 @@ public final class SparklingStats {
 	}
 
 	public static void recordRainbowFeather() {
+        if (SessionManager.persistenceSuppressed()) return;
 		data.rainbowFeathers++;
 		save();
 	}
@@ -201,6 +204,7 @@ public final class SparklingStats {
 
 	/** Imports ownership without assigning aggregate duplicates to arbitrary species. */
 	public static void importApiCollection(java.util.Set<String> species, int duplicates) {
+        if (SessionManager.persistenceSuppressed()) return;
 		int previousDuplicates = knownDuplicates();
         for (Critter critter : Critters.all()) {
 			String id = critter.name().trim().toUpperCase(java.util.Locale.ROOT).replace(' ', '_');
@@ -220,6 +224,7 @@ public final class SparklingStats {
 	}
 
 	public static boolean set(Critter critter, int count) {
+        if (SessionManager.persistenceSuppressed()) return false;
         revision++;
 		if (critter == null || count < 0) return false;
 		int previous = SparklingStats.count(critter);
@@ -233,6 +238,7 @@ public final class SparklingStats {
 	}
 
 	public static boolean setRainbowFeathers(int count) {
+        if (SessionManager.persistenceSuppressed()) return false;
 		if (count < 0) return false;
 		data.rainbowFeathers = count;
 		save();

@@ -84,7 +84,7 @@ public final class EncounterAlerts implements HudElement {
 			float scale, float horizontalPosition, float verticalPosition, int priority) { }
 
 	public enum Stage {READY, STARTED, DONE}
-	public enum Preview {FULL_PARTY, HOTSPOT, FLOOR_DROPS, BIOME_UNIQUES, ALL_BUT_MACAW, ALL_DONE,
+	public enum Preview {FULL_PARTY, HOTSPOT, HOTSPOT_ASSIGNMENT, FLOOR_DROPS, BIOME_UNIQUES, ALL_BUT_MACAW, ALL_DONE,
 		GEMZIE_READY, GEMZIE_DONE,
 		WUMPA_READY, WUMPA_STARTED, WUMPA_DONE, DOOM_READY, DOOM_STARTED, DOOM_DONE,
 		HIDEYHO, MACAW, BIRDS, FEED_GONE, BIRDFEEDER_EMPTY,
@@ -194,7 +194,7 @@ public final class EncounterAlerts implements HudElement {
 				alerts.biomeUniquesDoneSoundVolume);
 		}
 		if (config.party.biomeDone() != SafariConfig.Broadcast.NONE
-            && (!ChatTemplateFormats.BIOME_UNIQUES.locked() || RunMode.current().focused())) {
+            && !config.gameplay.biomeReports) {
 			String chatText = ChatTemplateFormats.BIOME_UNIQUES.format(config.party,
 				"<BIOME>", biome.displayName());
 			post(config.party.biomeDone(), chatText);
@@ -262,7 +262,7 @@ public final class EncounterAlerts implements HudElement {
 	 * colour, since this is not a ready/started/done progression.
 	 */
 	static void fireHideyho() {
-		if (!HideyhoSolver.markerEnabled()) return;
+		if (!HideyhoSolver.markerEnabled() || HideyhoSolver.sparkling()) return;
 		SafariConfig.AlertConfig alerts = ConfigManager.get().alerts;
 		if (alerts.hideyhoSoundMode == 0) return;
 		banner(AlertText.format(alerts.hideyhoText, "<CRITTER>", "Hideyho"), Colours.argb(alerts.hideyhoAlertColour, 0xFFFF55FF),
@@ -290,12 +290,17 @@ public final class EncounterAlerts implements HudElement {
 			alerts.floorDropsDoneSoundChoice, alerts.floorDropsDoneSoundVolume);
 	}
 
-	/** Announces the run's personal hotspot using that biome's HUD colour. */
-	static void fireHotspot(SafariBiome biome) {
+	/** Announces the assigned destination, or the actual hotspot when not assigning. */
+    static String hotspotBannerText(SafariConfig.AlertConfig alerts, SafariBiome biome, boolean assigned) {
+        return AlertText.format(assigned ? alerts.hotspotAssignmentText : alerts.hotspotText,
+            "<BIOME>", biome.displayName());
+    }
+
+	static void fireHotspot(SafariBiome biome, boolean assigned) {
 		SafariConfig.AlertConfig alerts = ConfigManager.get().alerts;
 		if (alerts.hotspotSoundMode == 0) return;
 		int biomeColour = 0xFF000000 | biome.colour();
-		banner(AlertText.format(alerts.hotspotText, "<BIOME>", biome.displayName()),
+		banner(hotspotBannerText(alerts, biome, assigned),
 			alerts.hotspotUseBiomeColour ? biomeColour
 				: Colours.argb(alerts.hotspotAlertColour, 0xFFFF55FF),
 			alerts.hotspotSoundPitch, alerts.hotspotDuration, alerts.hotspotSoundMode,
@@ -884,7 +889,8 @@ public final class EncounterAlerts implements HudElement {
 			case DOOM_READY -> testEncounter("Doomspiral", Stage.READY);
 			case DOOM_STARTED -> testEncounter("Doomspiral", Stage.STARTED);
 			case DOOM_DONE -> testEncounter("Doomspiral", Stage.DONE);
-			case HOTSPOT -> banner(AlertText.format(a.hotspotText, "<BIOME>", "Icy"), a.hotspotUseBiomeColour
+			case HOTSPOT, HOTSPOT_ASSIGNMENT -> banner(hotspotBannerText(a, SafariBiome.ICY,
+                    preview == Preview.HOTSPOT_ASSIGNMENT), a.hotspotUseBiomeColour
 					? 0xFF55FFFF : Colours.argb(a.hotspotAlertColour, 0xFFFF55FF), a.hotspotSoundPitch,
 				a.hotspotDuration, a.hotspotSoundMode, a.hotspotSoundChoice, a.hotspotSoundVolume);
 			case FLOOR_DROPS -> banner(AlertText.format(a.floorDropsDoneText, "<BIOME>", "Icy"), a.floorDropsDoneUseBiomeColour

@@ -13,41 +13,36 @@ public final class HotspotWatch {
 		Pattern.compile("^HOTSPOT! Your Hunting Hotspot is the (.+?) Biome!$");
 
 	private static SafariBiome hotspot;
-    private static dev.serko.safariutils.state.HotspotAllocation allocation = new dev.serko.safariutils.state.HotspotAllocation();
+    private static final java.util.Map<String, Integer> hotspotWins = new java.util.HashMap<>();
+    private static java.util.Set<String> sessionRoster = java.util.Set.of();
+    private static dev.serko.safariutils.state.HotspotAllocation allocation = new dev.serko.safariutils.state.HotspotAllocation(hotspotWins);
     private static SafariBiome assigned;
     private static boolean announced;
-    private static long rosterGeneration = -1;
+    private static final HotspotBannerState bannerState = new HotspotBannerState();
+
     private static final Pattern PARTY_HOTSPOT = Pattern.compile(
-        "^Party\\s*>\\s*(?:\\[[^\\]]+]\\s*)*([A-Za-z0-9_]{1,16}):\\s*\\[SM] Hotspot: (Forest|Cavern|Icy|Haunted)$");
+        "^Party\\s*>\\s*(?:\\[[^\\]]+]\\s*)*([A-Za-z0-9_]{1,16}):\\s*"
+        + "(?:\\[(?:SM|CritterMod|SafariUtils|CM|SU)]\\s*)?(?:My\\s+)?(?:Hunting\\s+)?Hotspot:\\s*"
+        + "(Forest|Cavern|Icy|Ice|Haunted)(?:\\s+Biome)?[!.]?$", Pattern.CASE_INSENSITIVE);
 
     public static SafariBiome assignedBiome() { return enabled() ? assigned : null; }
     private static boolean enabled() {
         var settings = ConfigManager.get().gameplay;
-        return settings.assignHotspots || settings.mutualsCompatibility;
+        return settings.assignHotspots;
     }
     public static void tick() {
+        if (!HypixelConnection.active() || !enabled()) { hotspotWins.clear(); sessionRoster = java.util.Set.of(); }
         if (!SafariLocation.inside() || !enabled()) {
+            if (SafariLocation.inside()) showBanner();
             clearAssignment();
             return;
         }
-        if (hotspot == null) return;
+        if (hotspot == null || !PartyHotspotSync.assignmentEligible()) return;
+        showBanner();
         var client = net.minecraft.client.Minecraft.getInstance();
         if (client.player == null) return;
         var party = dev.serko.safariutils.state.PartyState.snapshot();
         if (!party.known()) return;
-        if (rosterGeneration >= 0 && rosterGeneration != party.generation()) {
-            // Do not reuse another party's reports or spam a new report mid-run.
-            allocation = new dev.serko.safariutils.state.HotspotAllocation(); assigned = null;
-        }
-        rosterGeneration = party.generation();
-        long now = dev.serko.safariutils.state.MonotonicTime.nowMillis();
-        allocation.begin(client.player.getName().getString(), hotspot, now);
-        if (!announced) {
-            announced = true;
-            EncounterAlerts.post(SafariConfig.Broadcast.PARTY,
-                ChatTemplateFormats.HOTSPOT.format(ConfigManager.get().party, "<BIOME>", hotspot.displayName()));
-        }
-        if (allocation.finished()) return;
         java.util.Set<String> names = new java.util.HashSet<>();
         java.util.Map<String, String> uuids = new java.util.HashMap<>();
         for (var member : party.members()) {
@@ -56,17 +51,65 @@ public final class HotspotWatch {
         }
         String self = client.player.getName().getString().toLowerCase(java.util.Locale.ROOT);
         names.add(self); uuids.put(self, client.player.getUUID().toString());
+        java.util.Set<String> identities = rosterIdentity(names, uuids);
+        if (!sessionRoster.equals(identities)) {
+            sessionRoster = identities;
+            hotspotWins.clear();
+            // Preserve this run's reports and frozen assignment; identity resolution
+            // can complete after the first chat echo. Only fairness history resets.
+        }
+        long now = dev.serko.safariutils.state.MonotonicTime.nowMillis();
+        if (PartyHotspotSync.controlsAssignments()) return;
+        allocation.begin(client.player.getName().getString(), hotspot, now);
+        if (!announced && dev.serko.safariutils.session.SessionManager.current() != null
+                && dev.serko.safariutils.session.SessionManager.current().personalBestElapsed() >= 500) {
+            announced = true;
+            EncounterAlerts.post(SafariConfig.Broadcast.PARTY,
+                ChatTemplateFormats.HOTSPOT.format(ConfigManager.get().party, "<BIOME>", hotspot.displayName()));
+        }
+        if (allocation.finished()) return;
         SafariBiome next = allocation.assignment(names, uuids, party.expectedPlayers(), now);
         if (next != null && next != assigned) {
+            PartyHotspotSync.lockFallback(allocation.finalizedAssignments(), uuids);
             assigned = next;
-            ClientMessages.send("Assigned Biome: " + next.displayName() + " (Hotspot: " + hotspot.displayName() + ")", ClientMessages.Tone.INFO);
+            showBanner();
+            ClientMessages.sendLines(java.util.List.of(assignmentMessage(next, hotspot)));
             DebugLog.line("HOTSPOT/ASSIGN", "actual=" + hotspot + " assigned=" + next + " final=" + allocation.finished());
         }
     }
+    public static void acceptFairness(java.util.Map<String, Integer> fairness) {
+        if (fairness == null || fairness.size() > 4) return;
+        for (var member : dev.serko.safariutils.state.PartyState.snapshot().members()) {
+            int wins = fairness.getOrDefault(member.uuid(), 0);
+            if (wins >= 0 && wins <= 1_000_000) hotspotWins.put(member.name().toLowerCase(java.util.Locale.ROOT), wins);
+        }
+    }
+    public static void acceptAssignment(SafariBiome destination) {
+        if (assigned != null || destination == null || !PartyHotspotSync.assignmentEligible()) return;
+        assigned = destination; showBanner();
+        if (hotspot != null) ClientMessages.sendLines(java.util.List.of(assignmentMessage(destination, hotspot)));
+        DebugLog.line("HOTSPOT/ASSIGN", "backend assigned=" + destination);
+    }
+    static java.util.Set<String> rosterIdentity(java.util.Set<String> names, java.util.Map<String, String> uuids) {
+        java.util.Set<String> result = new java.util.HashSet<>();
+        for (String name : names) {
+            String uuid = uuids.get(name.toLowerCase(java.util.Locale.ROOT));
+            result.add(uuid == null || uuid.isBlank() ? "name:" + name.toLowerCase(java.util.Locale.ROOT)
+                : uuid.replace("-", "").toLowerCase(java.util.Locale.ROOT));
+        }
+        return java.util.Set.copyOf(result);
+    }
+    static net.minecraft.network.chat.Component assignmentMessage(SafariBiome destination, SafariBiome actual) {
+        return net.minecraft.network.chat.Component.literal("Assigned Biome: ").withColor(StatColours.INFO)
+            .append(net.minecraft.network.chat.Component.literal(destination.displayName()).withColor(destination.colour()).withStyle(net.minecraft.ChatFormatting.BOLD))
+            .append(net.minecraft.network.chat.Component.literal("  \u2502  ").withColor(0xFFFFFF))
+            .append(net.minecraft.network.chat.Component.literal("Your Hotspot: ").withColor(StatColours.INFO))
+            .append(net.minecraft.network.chat.Component.literal(actual.displayName()).withColor(actual.colour()));
+    }
     private static void clearAssignment() {
-        if (!announced && assigned == null && rosterGeneration == -1) return;
-        allocation = new dev.serko.safariutils.state.HotspotAllocation();
-        assigned = null; announced = false; rosterGeneration = -1;
+        if (!announced && assigned == null) return;
+        allocation = new dev.serko.safariutils.state.HotspotAllocation(hotspotWins);
+        assigned = null; announced = false;
     }
 
 	private HotspotWatch() {
@@ -80,10 +123,10 @@ public final class HotspotWatch {
 	/** Feeds one cleaned chat line. */
 	public static void onChatMessage(String line) {
 		if (enabled() && SafariLocation.inside()) {
-            Matcher shared = PARTY_HOTSPOT.matcher(line);
-            if (shared.matches() && dev.serko.safariutils.state.PartyState.snapshot().containsName(shared.group(1))) {
-                allocation.report(shared.group(1), SafariBiome.fromDisplayName(shared.group(2)),
-                    dev.serko.safariutils.state.MonotonicTime.nowMillis());
+            PartyReport shared = parsePartyReport(line);
+            if (shared != null && dev.serko.safariutils.state.PartyState.snapshot().containsName(shared.name())) {
+                PartyHotspotSync.report(shared.name(), shared.biome());
+                allocation.report(shared.name(), shared.biome(), dev.serko.safariutils.state.MonotonicTime.nowMillis());
                 return;
             }
         }
@@ -99,17 +142,38 @@ public final class HotspotWatch {
 		announce(found);
 	}
 
+    record PartyReport(String name, SafariBiome biome) { }
+    static PartyReport parsePartyReport(String line) {
+        if (line == null) return null;
+        Matcher matcher = PARTY_HOTSPOT.matcher(line);
+        if (!matcher.matches()) return null;
+        return new PartyReport(matcher.group(1), SafariBiome.fromDisplayName(
+            matcher.group(2).equalsIgnoreCase("Ice") ? "Icy" : matcher.group(2)));
+    }
+
 	private static void announce(SafariBiome biome) {
 		SafariConfig config = ConfigManager.get();
-		EncounterAlerts.fireHotspot(biome);
-		if (!enabled()) EncounterAlerts.post(config.party.hotspot(), ChatTemplateFormats.HOTSPOT.format(config.party,
+		showBanner();
+		if (!enabled() && !dev.serko.safariutils.api.PartySyncNetworks.coordinationSupported()) EncounterAlerts.post(config.party.hotspot(), ChatTemplateFormats.HOTSPOT.format(config.party,
             "<BIOME>", biome.displayName()));
 	}
 
+    private static void showBanner() {
+        var notice = bannerState.poll(hotspot, assigned, enabled(),
+            dev.serko.safariutils.state.MonotonicTime.nowMillis());
+        if (notice != null) EncounterAlerts.fireHotspot(notice.biome(), notice.assigned());
+    }
+
 	/** A hotspot belongs to one run; the next one is told its own. */
+    public static void resetConnection() {
+        hotspotWins.clear(); sessionRoster = java.util.Set.of(); reset();
+    }
+
 	public static void reset() {
+        PartyHotspotSync.reset();
 		hotspot = null;
-        allocation = new dev.serko.safariutils.state.HotspotAllocation();
-        assigned = null; announced = false; rosterGeneration = -1;
+        bannerState.reset();
+        allocation = new dev.serko.safariutils.state.HotspotAllocation(hotspotWins);
+        assigned = null; announced = false;
 	}
 }

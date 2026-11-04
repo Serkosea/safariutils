@@ -39,13 +39,16 @@ public final class ClientMessages {
 
     /** Bordered API report; semantic colors and hover events are retained on each body row. */
     static java.util.List<Component> reportLines(java.util.List<Component> lines) {
+        return reportLines(lines, " ");
+    }
+    static java.util.List<Component> reportLines(java.util.List<Component> lines, String bodyPrefix) {
         if(lines.isEmpty())return java.util.List.of();
         var result=new java.util.ArrayList<Component>();
         // Strikethrough joins the glyph spacing into a continuous, compact rule.
         Component rule=Component.literal("-".repeat(28)).withColor(BRACKET)
             .withStyle(ChatFormatting.STRIKETHROUGH);
-        result.add(rule);result.add(lines.getFirst());
-        for(int i=1;i<lines.size();i++) result.add(Component.literal("•  ").withColor(BRACKET).append(lines.get(i)));
+        result.add(rule);result.add(prefixPreview(ConfigManager.get().display.clientMessagePrefix).copy().append(lines.getFirst()));
+        for(int i=1;i<lines.size();i++) result.add(Component.literal(bodyPrefix).withColor(BRACKET).append(lines.get(i)));
         result.add(rule.copy());return java.util.List.copyOf(result);
     }
     static void sendReport(java.util.List<Component> lines) {
@@ -54,9 +57,12 @@ public final class ClientMessages {
 
     /** Preserve the complete frame as one history/compaction unit, including hover styles. */
     static Component reportMessage(java.util.List<Component> lines) {
+        return reportMessage(lines, " ");
+    }
+    private static Component reportMessage(java.util.List<Component> lines, String bodyPrefix) {
         MutableComponent message = Component.empty();
         boolean first = true;
-        for (Component line : reportLines(lines)) {
+        for (Component line : reportLines(lines, bodyPrefix)) {
             if (!first) message.append(Component.literal("\n"));
             message.append(line);
             first = false;
@@ -183,17 +189,55 @@ public final class ClientMessages {
 
 	/** Keeps lookup details in diagnostics while presenting stable, useful UI errors. */
 	public static String playerLookupFailure(Throwable error) {
-		for (Throwable cause = error; cause != null; cause = cause.getCause()) {
-			String message = cause.getMessage();
-			if (message == null) continue;
-			String lower = message.toLowerCase(java.util.Locale.ROOT);
-			if (lower.contains("player not found")
-					|| lower.contains("invalid minecraft username")) {
-				return "Minecraft player not found";
-			}
-		}
-		return "Player lookup failed; Please try again";
-	}
+        // Walk wrappers without letting a malformed cause cycle hang the game thread.
+        var seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Throwable, Boolean>());
+        for (Throwable cause = error; cause != null && seen.add(cause); cause = cause.getCause()) {
+            if ((cause instanceof java.util.concurrent.CompletionException || cause instanceof java.util.concurrent.ExecutionException)
+                    && cause.getCause() != null) continue;
+            if (cause instanceof dev.serko.safariutils.api.LookupCooldownException cooldown)
+                return "Lookup cooldown — try again in " + cooldown.seconds() + "s";
+            String detail = cause.getMessage() == null ? "" : cause.getMessage().toLowerCase(java.util.Locale.ROOT);
+            if (detail.contains("no skyblock profiles") || detail.contains("no selected skyblock profile"))
+                return "This player has no available SkyBlock profile";
+            if (detail.contains("player is unavailable in the selected skyblock profile"))
+                return "This player's data is unavailable in their selected SkyBlock profile";
+            if (cause instanceof dev.serko.safariutils.api.ServiceRequestException response) {
+                int status = response.status();
+                String wait = response.retrySeconds() > 0 ? "; try again in " + response.retrySeconds() + "s" : "; try again shortly";
+                if (status == 429) return "Lookup service request limit reached" + wait;
+                if (status == 401) return "Lookup service session expired; retry to reconnect";
+                if (status == 403) return "Lookup service denied this request; retry later or report it if it continues";
+                if (status == 404) return "The requested profile or lookup endpoint was not found; check the name and mod version";
+                if (status >= 500) return "Lookup service is temporarily unavailable" + wait;
+                if (status == 400) return "Lookup service rejected the request; check the username or update the mod";
+            }
+            if (cause instanceof java.net.http.HttpTimeoutException || cause instanceof java.util.concurrent.TimeoutException)
+                return "Player lookup timed out; try again shortly";
+            if (cause instanceof java.net.UnknownHostException || cause instanceof java.net.ConnectException
+                    || cause instanceof javax.net.ssl.SSLException)
+                return "Could not connect securely to the lookup service; check your connection and try again";
+            if (cause instanceof java.util.concurrent.RejectedExecutionException)
+                return "Lookup requests are busy; wait for the current requests to finish";
+            if (cause instanceof java.util.concurrent.CancellationException || cause instanceof InterruptedException)
+                return "Player lookup was cancelled; try again";
+            String lower = cause.getMessage() == null ? "" : cause.getMessage().toLowerCase(java.util.Locale.ROOT);
+            if (lower.contains("invalid minecraft username")) return "Enter a Minecraft username using 1–16 letters, numbers, or underscores";
+            if (lower.contains("player not found")) return "Minecraft player not found; check the username";
+            if (lower.contains("already loading")) return "Another player lookup is still loading; wait for it to finish";
+            if (lower.contains("player session changed")) return "Player lookup cancelled because your game session changed; try again";
+            if (lower.contains("join a minecraft server")) return "Join a server before looking up a player";
+            if (lower.contains("timed out")) return "Player lookup timed out; try again shortly";
+            if (lower.contains("unavailable")) return "Lookup service is currently unavailable; try again shortly";
+            if (lower.contains("interrupted") || lower.contains("stopped")) return "Player lookup was interrupted; try again after reconnecting";
+            if (lower.contains("schema")) return "Lookup service response is incompatible; check for a mod update";
+            if (lower.contains("malformed") || lower.contains("incomplete") || lower.contains("empty lookup")
+                    || lower.contains("unexpected player") || lower.contains("omitted requested") || lower.contains("invalid minecraft profile"))
+                return "Lookup service returned incomplete or invalid data; try again shortly";
+            if (lower.contains("http 429")) return "Lookup service request limit reached; try again shortly";
+            if (lower.matches(".*http 5\\d\\d.*")) return "Lookup service is temporarily unavailable; try again shortly";
+        }
+        return "Player lookup could not be completed; try again, and report it with your log if it continues";
+    }
 
 	/** Keep client notices consistent, including messages supplied by the private provider. */
 	private static String withoutTrailingPeriod(String text) {

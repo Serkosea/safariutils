@@ -304,3 +304,24 @@ icebreakers. Both fit these bounds (29 quest-item reward observations each).
 Debug block/entity reports are included as DEBUG/REPORT records when automatic Safari logging is enabled (16 KiB per report). They retain block IDs/states and pairing IDs, so pedestal before/after samples no longer depend on latest.log or clipboard recovery.
 
 Contest diagnostics: opt-in CONTEST/server-result records changed tab score rows in Torrhus Canyon even during the estimated New Year scoring delay. CONTEST/score records accepted score, bracket, ticket state and remaining time. These belong to the launch log, not a saved Safari run. The first annual scoring boundary is currently estimated from an observed 8:40 remaining; diagnostics can validate it on a future rollover.
+
+
+### Solo biome-report dry runs
+
+In developer builds, enable Automatic Logging and Biome Reporting before the run.
+While confirmed solo, the selected mode uses the normal completion evaluator but
+never sends chat/network completion reports or consumes the actual report ledger.
+COORDINATION/BIOME_TEST logs changed ready/blocking reasons (including the first
+incomplete species), then `would-send=fd|cd|id|hd ... sent=false` after the normal
+1.5-second settling period. It logs once per continuous ready biome/mode; switching
+mode, losing readiness, leaving the biome, or resetting the visit allows a new test.
+Logging off disables the solo evaluator. Public builds never enable this diagnostic.
+
+Progress a biome through Sparkling checks, Unique catches, and Full Clear, switching
+modes while still in that biome. Switch briefly into a ready mode and back to an
+incomplete mode before 1.5 seconds to verify cancellation; then leave the ready mode
+selected for at least two seconds. Log from before entry and use `/safari debug save`
+to retain the run. This checks local eligibility/settling, not real party membership,
+command cooldowns, network delivery, or mixed-mod reception.
+
+Party Sync developer HUD: Connection is the local socket status; Party roster is expected membership; Connected players is server-confirmed current sockets; Received from is visit-local evidence of accepted peer snapshots, not current connection status. Activity retains eight bounded entries and rebuilds presentation only when state changes. No polling requests or world scans are added.

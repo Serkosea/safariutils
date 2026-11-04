@@ -27,7 +27,7 @@ public final class ChatParser {
 	private static final Pattern ENTERED =
 		Pattern.compile("^(?:\\[[^]]+]\\s*)?(\\w{1,16}) entered Critter Safari!$");
 	private static final Pattern SPARKLING_CAUGHT = Pattern.compile(
-		"^SPARKLING! (\\w{1,16}) caught a SPARKLING (.+)!$");
+		"^SPARKLING! (\\w{1,16}) (?:caught|found) a SPARKLING (.+)!$");
 	private static final Pattern FORMATTING = Pattern.compile("§.");
 	private static final Pattern DUPLICATE_SUFFIX = Pattern.compile(
 		"\\s*(?:\\(\\s*[x×]?\\s*\\d+\\s*\\)|\\[\\s*[x×]?\\s*\\d+\\s*])$");

@@ -24,7 +24,7 @@ final class SessionProfitSummary {
         nextRefresh=now+1000;
         var current=SessionManager.current();
         RunRecord live=null;
-        if(current!=null&&current.startedAtMillis()>=LAUNCH) {
+        if(current!=null&&!SessionManager.persistenceSuppressed()&&current.startedAtMillis()>=LAUNCH) {
             live=RunRecord.of(current); live.ended=live.started+current.elapsedMillis(System.currentTimeMillis());
         }
         List<RunRecord> runs=sessionRuns(RunHistory.runs(),live,LAUNCH);

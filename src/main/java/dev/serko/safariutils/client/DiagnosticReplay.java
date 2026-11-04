@@ -102,6 +102,9 @@ public final class DiagnosticReplay {
 				}
 				try {
 					String kind = text(json, "kind", "k");
+                    // Buffered samples retain the epoch they measured, even when flushed
+                    // after a connection transition. They cannot advance gameplay identity.
+                    if ("perf".equals(kind) || "er".equals(kind)) { diagnostics++; continue; }
 					long nextConnection = number(json, connection, "connection", "c");
 					long nextVisit = number(json, visit, "visit", "v");
 					long nextRun = number(json, run, "run", "r");
@@ -174,7 +177,8 @@ public final class DiagnosticReplay {
 							warnings++;
 							warningKinds.merge("diagnostic data gap", 1, Integer::sum);
 						}
-						if ("CAPTURE/REPLAY".equals(category) && "omitted".equals(text(json, "action", "a"))) {
+						if ("CAPTURE/REPLAY".equals(category) && "omitted".equals(text(json, "action", "a"))
+                            && !(captureInputs == 0 && "input journal awaits visit boundary".equals(text(json, "detail", "d")))) {
 							warnings++;
 							warningKinds.merge("capture trace omitted; replay incomplete", 1, Integer::sum);
 						}

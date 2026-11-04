@@ -36,6 +36,7 @@ public final class CoreRegressionSuite {
 		profiles();
 		checks += dev.serko.safariutils.client.ContestScheduleRegression.run();
         checks += dev.serko.safariutils.client.SafariGlowRegression.run();
+        checks += dev.serko.safariutils.client.SparklingTextureRegression.run();
 		checks += SparklingImportRegression.run();
         checks += dev.serko.safariutils.client.ShiningCoinRegression.run();
         checks += dev.serko.safariutils.session.EmeraldDyeRegression.run();
@@ -74,7 +75,7 @@ public final class CoreRegressionSuite {
 		checks += dev.serko.safariutils.client.ProfitRelevanceRegression.run();
 		checks += dev.serko.safariutils.client.RunModeRegression.run();
 		checks += dev.serko.safariutils.client.AlertTextRegression.run();
-        checks += dev.serko.safariutils.client.CoordinationRegression.run();
+        checks += dev.serko.safariutils.client.CoordinationRegression.run() + dev.serko.safariutils.client.RunPersistenceRegression.run();
 		checks += dev.serko.safariutils.client.BazaarMarketRegression.run();
 		checks += dev.serko.safariutils.backend.AuctionMarketRegression.run();
 		checks += dev.serko.safariutils.client.ChatQueueRegression.run();

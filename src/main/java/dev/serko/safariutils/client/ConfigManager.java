@@ -21,7 +21,7 @@ import java.nio.file.Path;
 /** Owns the dependency-free settings model, migration, persistence, and screen. */
 public final class ConfigManager {
 	/** Append one migration step whenever persisted setting structure changes. */
-	public static final int CURRENT_SETTINGS_SCHEMA = 9;
+	public static final int CURRENT_SETTINGS_SCHEMA = 10;
 	private static final Gson GSON = new GsonBuilder()
 		.excludeFieldsWithoutExposeAnnotation().setPrettyPrinting().create();
 	private static SafariConfig config;
@@ -45,6 +45,16 @@ public final class ConfigManager {
 		if (wasOpen && !open) save();
 		wasOpen = open;
 	}
+
+    /** Optional developer observers must never trigger configuration I/O during startup or replay. */
+    static boolean partySyncHudEnabled() {
+        return config != null && config.advanced.partySyncDebugHud;
+    }
+
+    /** Read-only guard usable during statistics loading without triggering config I/O. */
+    public static boolean testRunPersistenceDisabled() {
+        return config != null && config.advanced.testingDoNotSaveRun;
+    }
 
 	public static SafariConfig get() {
 		if (config == null) config = load();
@@ -178,12 +188,24 @@ public final class ConfigManager {
                 case 6 -> migrateFloorCategories(root);
                 case 7 -> migrateGroupedSafeMode(root);
                 case 8 -> migrateFloorToggles(root);
+                case 9 -> migratePartyCoordination(root);
 				default -> throw new IllegalStateException("Missing settings migration from schema " + version);
 			}
 			version++;
 			root.addProperty("settingsSchemaVersion", version);
 		}
 	}
+
+    private static void migratePartyCoordination(JsonObject root) {
+        if (!root.has("gameplay") || !root.get("gameplay").isJsonObject()) return;
+        JsonObject gameplay = root.getAsJsonObject("gameplay");
+        var previous = gameplay.remove("mutualsCompatibility");
+        if (previous == null) return;
+        if (!gameplay.has("biomeReports")) gameplay.add("biomeReports", previous.deepCopy());
+        // The old combined feature enabled hotspot assignment even when its own switch was off.
+        if (previous.isJsonPrimitive() && previous.getAsJsonPrimitive().isBoolean() && previous.getAsBoolean())
+            gameplay.addProperty("assignHotspots", true);
+    }
 
     private static void migrateFloorToggles(JsonObject root) {
         if (!root.has("display") || !root.get("display").isJsonObject()) return;

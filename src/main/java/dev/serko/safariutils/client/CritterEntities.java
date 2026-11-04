@@ -25,7 +25,8 @@ public final class CritterEntities {
 	private static int ticks;
 
 	/** A critter label and its paired body. The body may be missing for unusual mobs. */
-	public record Sighting(Critter critter, Entity label, Entity mob, boolean sparkling) {
+	public record Sighting(Critter critter, Entity label, Entity mob, boolean sparkling, java.util.Set<UUID> textureIds) {
+        public Sighting(Critter critter, Entity label, Entity mob, boolean sparkling) { this(critter, label, mob, sparkling, java.util.Set.of()); }
 		/** The entity to point at: the mob if there is one, otherwise the label itself. */
 		public Entity body() {
 			return mob != null ? mob : label;
@@ -297,21 +298,29 @@ public final class CritterEntities {
 		ballCandidates.clear();
 		ballCandidatePositions.clear();
 		lastPairFailureLogged.clear();
+        SparklingTextures.clear();
 	}
 
 	private static List<Sighting> scan() {
 		List<CritterScan.Sample> samples = new ArrayList<>();
 		for (Entity entity : WorldEntities.current()) {
+            if (SparklingWatch.resolvedEntity(entity.getUUID())) continue;
 			String name = entity.hasCustomName() ? SafariLocation.strip(entity.getCustomName().getString()) : null;
 			samples.add(new CritterScan.Sample(entity.getUUID(), EntityTypeIds.path(entity), name,
-				entity.getX(), entity.getY(), entity.getZ()));
+				entity.getX(), entity.getY(), entity.getZ(), SparklingTextures.identify(entity)));
 		}
 		Map<UUID, UUID> previousBodies = new HashMap<>();
 		for (Sighting sighting : previous) {
 			if (sighting.mob() != null) previousBodies.put(sighting.label().getUUID(), sighting.mob().getUUID());
 		}
-		List<CritterScan.Match> matches = CritterScan.scan(samples, previousBodies,
-			DebugLog.isEnabled() ? CritterEntities::logPairFailure : null);
+		List<CritterScan.Match> matches = new ArrayList<>(CritterScan.scan(samples, previousBodies,
+            DebugLog.isEnabled() ? CritterEntities::logPairFailure : null));
+        if (samples.stream().anyMatch(sample -> sample.textureSpecies() != null)) {
+            List<Sighting> bodyless = new ArrayList<>();
+            for (var match : matches) if (match.body() == null)
+                bodyless.add(new Sighting(match.critter(), WorldEntities.find(match.label().id()), null, match.sparkling()));
+            SparklingTextureEvidence.merge(samples, matches, capsuleLabels(bodyless));
+        }
 		List<Sighting> result = new ArrayList<>(matches.size());
 		for (var match : matches) {
 			if (match.conflict()) {
@@ -319,7 +328,7 @@ public final class CritterEntities {
 					"label=" + shortId(match.label().id()) + " species=" + match.critter().name());
 			}
 			result.add(new Sighting(match.critter(), WorldEntities.find(match.label().id()),
-				match.body() == null ? null : WorldEntities.find(match.body().id()), match.sparkling()));
+				match.body() == null ? null : WorldEntities.find(match.body().id()), match.sparkling(), match.textureIds()));
 		}
 		return result;
 	}

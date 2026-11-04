@@ -24,6 +24,7 @@ public final class FloorDropPatternRegression {
                     : ordinal < 20 + coins ? SafariBiome.HAUNTED : SafariBiome.ICY;
                 model.observe(base + ordinal * 3, biome);
             }
+            require(model.coinSupply() == coins, "coin supply must match observed ordering"); checks++;
             require(model.kind(base) == FloorDropPattern.Kind.LIME, "unordered arrival changed gem anchor"); checks++;
             require(model.kind(base + 18) == FloorDropPattern.Kind.WORM, "wrong bird feed"); checks++;
             require(model.kind(base + (20 + coins - 1) * 3) == FloorDropPattern.Kind.COIN, "coin boundary lost"); checks++;
@@ -36,6 +37,7 @@ public final class FloorDropPatternRegression {
             model.observe(base + 999, SafariBiome.FOREST);
             require(model.kind(base + 999) == FloorDropPattern.Kind.LOOT, "late gaps treated as quest ordinals"); checks++;
             model.reward(base, FloorDropPattern.Kind.COIN);
+            require(model.coinSupply() == -1, "contradictory coin supply must be unknown"); checks++;
             require(model.kind(base + 18) == FloorDropPattern.Kind.UNKNOWN, "contradiction left confident predictions"); checks++;
             model.reset();
             model.observe(base + 999, SafariBiome.FOREST);

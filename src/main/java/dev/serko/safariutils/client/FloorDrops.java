@@ -314,6 +314,18 @@ public final class FloorDrops {
 		return result;
 	}
 
+    static int knownCoinSupply() { return SafeMode.floorDropContents() ? -1 : pattern.coinSupply(); }
+    /** Unfiltered objective evidence: presentation settings must not hide unfinished work. */
+    static boolean coinsRemain() {
+        if (knownCoinSupply() < 0) return true;
+        for (BlockPos pos : confirmed.keySet()) {
+            if (confirmedBiome.get(pos) != dev.serko.safariutils.data.SafariBiome.HAUNTED) continue;
+            var kind = content(pos);
+            if (kind == FloorDropPattern.Kind.COIN || kind == FloorDropPattern.Kind.UNKNOWN) return true;
+        }
+        return false;
+    }
+
     /** Unknown contents cannot be filtered without revealing information. */
     static boolean markerEnabled(FloorDropPattern.Kind kind) {
         var display = ConfigManager.get().display;

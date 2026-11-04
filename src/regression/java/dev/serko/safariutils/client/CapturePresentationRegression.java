@@ -30,6 +30,7 @@ public final class CapturePresentationRegression {
 		try {
             checks += huntingModePolicy(settings);
             SparklingMode.clearShared();
+            settings.sparkling.sparklingMode = false; // Name-policy checks require visible ordinary markers.
             var solsnatcher = Critters.byName("Solsnatcher");
             UUID captured = new UUID(28, 1), untouched = new UUID(28, 2);
             for (int nameMode : new int[]{0, 1, 2, 3}) {

@@ -29,9 +29,10 @@ public final class HudPanel {
 	private static final String[] WORM_ICON = {"..........", "........h.", ".......#hs",
 		".......mms", "......h#s.", "......sss.", "....#mm...", ".m#hsss...",
 		"..sss....."};
-	private static final String[] SEED_BAG_ICON = {"..........", "...#ggg#..", "...shhh##.",
-		"...hh####.", "..s#######", ".s########", ".s###dd###", ".s##d####s",
-		"..s#####s."};
+	private static final String[] SEED_BAG_ICON = {"...dddd...", "..dgvlbd..", "..dvgldd..",
+		"...sgsd...", "..sgbbgs..", ".sglhbbbsd", ".sbhhgbbsd", ".sbbbbbsd.", "..sssssd.."};
+	private static final String[] COIN_ICON = {"....ddd...", "...shgod..", "..sbhhgod.",
+		"..sbhggod.", "..sbhggod.", "..sbhggod.", "..shhggod.", "...shgod..", "....ddd..."};
 	private static final String[] INCENSE_ICON = {".....t....", "....tc....", "...tc.....",
 		"....c.....", "..tcdhd...", "..d###ds..", ".d#####ds.", ".d#####ds.",
 		"..ddddds.."};
@@ -684,7 +685,7 @@ public final class HudPanel {
 	private static int iconWidth(HudIcon icon) {
 		return switch (icon) {
 			case BIRD, MOUNTAIN, SNOWFLAKE, SKULL, LEAF -> 11;
-			case BERRY, WORM, SEED_BAG, INCENSE, GEM -> 10;
+			case BERRY, WORM, SEED_BAG, COIN, INCENSE, GEM -> 10;
 		};
 	}
 
@@ -704,6 +705,7 @@ public final class HudPanel {
 			case BERRY -> BERRY_ICON;
 			case WORM -> WORM_ICON;
 			case SEED_BAG -> SEED_BAG_ICON;
+			case COIN -> COIN_ICON;
 			case INCENSE -> INCENSE_ICON;
 			case GEM -> GEM_ICON;
 			case MOUNTAIN -> MOUNTAIN_ICON;
@@ -756,6 +758,25 @@ public final class HudPanel {
 	/** Fixed semantic palettes keep objective symbols recognizable under every theme. */
 	private static int objectivePixel(HudIcon icon, char token) {
 		return switch (icon) {
+			case SEED_BAG -> switch (token) {
+				case 'd' -> 0xFF36271E;
+				case 's' -> 0xFF70523F;
+				case 'b' -> 0xFFAD8B68;
+				case 'h' -> 0xFFC9AC83;
+				case 'g' -> 0xFF729D3C;
+				case 'v' -> 0xFF3C6926;
+				case 'l' -> 0xFFB2BD48;
+				default -> 0;
+			};
+			case COIN -> switch (token) {
+				case 'd' -> 0xFF57351A;
+				case 's' -> 0xFF8E6041;
+				case 'b' -> 0xFFC48623;
+				case 'o' -> 0xFFED9514;
+				case 'g' -> 0xFFFFCF32;
+				case 'h' -> 0xFFFFED8B;
+				default -> 0;
+			};
 			case MOUNTAIN -> switch (token) {
 				case 'l' -> 0xFFFFD09A;
 				case 'o' -> 0xFFEF8A42;
@@ -802,7 +823,7 @@ public final class HudPanel {
 		return row.kind() == Kind.BOLD_PAIR ? value.copy().withStyle(ChatFormatting.BOLD) : value;
 	}
 
-	public enum HudIcon { BIRD, BERRY, WORM, SEED_BAG, INCENSE, GEM, MOUNTAIN, SNOWFLAKE, SKULL, LEAF }
+	public enum HudIcon { BIRD, BERRY, WORM, SEED_BAG, COIN, INCENSE, GEM, MOUNTAIN, SNOWFLAKE, SKULL, LEAF }
 	private record IconKey(HudIcon icon, int colour) { }
 	private record Layout(int width, int[] barQuads) { }
 

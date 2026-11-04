@@ -21,11 +21,21 @@ public interface PartySyncNetworkProvider {
 
 	default void tick(Context context, Consumer<Message> receiver) { }
 
+	default boolean coordinationSupported() { return false; }
+
+	/** Server-confirmed sockets in this party room, including this client. */
+	default java.util.Set<String> connectedPlayers() { return java.util.Set.of(); }
+
 	default boolean connected() {
 		return false;
 	}
 
 	default void send(long sequence, String type, String payload) { }
+
+	/** Store chat-derived state for catch-up without repeating it to current peers. */
+	default void sendSnapshot(long sequence, String payload, boolean catchUpOnly) {
+		send(sequence, "A", payload);
+	}
 
 	default void disconnect() { }
 

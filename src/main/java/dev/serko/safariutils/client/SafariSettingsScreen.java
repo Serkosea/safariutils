@@ -406,7 +406,7 @@ public final class SafariSettingsScreen extends Screen {
         addRootPage(gameplay, gameplaySource, "gameplay.ticket-trading", "Ticket Trading",
             "Configure trusted invites and timed party warps", "configureTicketTrading");
         addRootPage(gameplay, gameplaySource, "gameplay.coordination", "Party Coordination",
-            "Coordinate biomes and chat with other mods", "assignHotspots", "mutualsCompatibility");
+            "Assign party biomes and share completion", "assignHotspots", "biomeReports");
         addRootPage(gameplay, gameplaySource, "gameplay.personal-bests", "Personal Bests",
             "Unique-clear and personal biome-mob catch messages", "personalBestMessages", "biomeMobBestMessages");
 
@@ -616,15 +616,20 @@ public final class SafariSettingsScreen extends Screen {
             "safeDetectionHud", "safeCritterMarkers", "safeSparklingCritters", "safeWorldObjectives", "safePredictedInformation"));
 	}
 
-	private static void flattenDeveloperSettings(SettingsArea area) {
-		for (int index = 0; index < area.pages.size(); index++) {
-			SettingsPage page = area.pages.get(index);
-			if (!page.name.equals("Testing")) continue;
-			area.pages.set(index, new SettingsPage("developer.logging", "Automatic Logging", "",
-				"Developer  ›  Automatic Logging", page.owner, page.fields, 0));
-			return;
-		}
-	}
+    private static void flattenDeveloperSettings(SettingsArea area) {
+        for (int index=0;index<area.pages.size();index++) {
+            SettingsPage page=area.pages.get(index);
+            if (!page.name.equals("Testing")) continue;
+            var hudFields=page.fields.stream().filter(field->field.getName().equals("partySyncDebugHud")).toList();
+            var otherFields=page.fields.stream().filter(field->!field.getName().equals("partySyncDebugHud")).toList();
+            area.pages.remove(index);
+            if (!otherFields.isEmpty()) area.pages.add(index++, new SettingsPage("developer.logging","Automatic Logging","",
+                "Developer  ›  Automatic Logging",page.owner,otherFields,0));
+            if (!hudFields.isEmpty()) area.pages.add(index,new SettingsPage("developer.party-sync","Party Sync","",
+                "Developer  ›  Party Sync",page.owner,hudFields,0));
+            return;
+        }
+    }
 
 	/** Keeps the three top-level Sparkling alert groups in their intentional UI order. */
 	private static void organizeSparklingAlertSettings(SettingsArea area) {
@@ -1961,7 +1966,8 @@ public final class SafariSettingsScreen extends Screen {
 		int controlWidth = settingControlWidth(left, right, stacked);
 		int x = stacked ? left + 12 : right - controlWidth - 10;
 		int controlY = stacked ? y + height - 28 : y + (height - 22) / 2;
-        String locked = ChatTemplateFormats.lockedValue(owner, field.getName());
+        String locked = owner instanceof SafariConfig.AdvancedConfig && field.getName().equals("testingDoNotSaveRun")
+            && HypixelConnection.alpha() ? "On (Alpha)" : ChatTemplateFormats.lockedValue(owner, field.getName());
         if (locked != null) {
             drawTextValue(graphics, x, controlY, controlWidth, locked);
             return;
@@ -4490,8 +4496,10 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private void setBoolean(Object owner, Field field, boolean value) {
+        if (field.getName().equals("testingDoNotSaveRun") && HypixelConnection.alpha()) return;
 		try {
 			field.setBoolean(owner, value);
+            if (field.getName().equals("testingDoNotSaveRun")) dev.serko.safariutils.session.SessionManager.persistenceSuppressed();
 			SettingToggle toggle = field.getAnnotation(SettingToggle.class);
 			if (toggle.runnableId() >= 0) ConfigManager.get().executeRunnable(toggle.runnableId());
 			ConfigManager.save();

@@ -199,7 +199,98 @@ public final class CoordinationRegression {
             "non-overlapping Cavern areas retain confirmed coverage across movement");
         survey.clear();
         check(!survey.checked(fish, false) && !survey.checked(gemzie, true), "new run clears both coverage modes");
+        // Recorded Manager label from the 2026-11-04 failed debug run: ID 149735 at -51.5/68/21.5.
+        var managerLabel = new SafariManagerTarget.Candidate(149735, new net.minecraft.world.phys.Vec3(-51.5, 68, 21.5), "Safari Manager", false, false, false);
+        var npcBody = new SafariManagerTarget.Candidate(20, new net.minecraft.world.phys.Vec3(-51.5, 66.5, 21.5), "anonymous-npc", true, false, false);
+        var nearbyPlayer = new SafariManagerTarget.Candidate(21, npcBody.position(), "Party Member", true, false, true);
+        var proxy = new SafariManagerTarget.Candidate(22, npcBody.position(), "", false, true, false);
+        check(SafariManagerTarget.choose(List.of(managerLabel)) == null, "label-only snapshot waits for clickable body");
+        check(SafariManagerTarget.choose(List.of(npcBody)) == null, "body-only snapshot does not guess identity");
+        check(Objects.equals(SafariManagerTarget.choose(List.of(managerLabel, npcBody, nearbyPlayer)), 20), "separate label resolves unnamed NPC and excludes real player");
+        check(Objects.equals(SafariManagerTarget.choose(List.of(managerLabel, proxy)), 22), "interaction-only NPC supported");
+        check(Objects.equals(SafariManagerTarget.choose(List.of(managerLabel, npcBody, proxy)), 20), "player body preferred over duplicate interaction proxy");
+        check(SafariManagerTarget.choose(List.of(managerLabel, npcBody, new SafariManagerTarget.Candidate(23, npcBody.position(), "another-npc", true, false, false))) == null, "ambiguous bodies never clicked");
+        check(SafariManagerTarget.choose(List.of(managerLabel, new SafariManagerTarget.Candidate(24, npcBody.position().add(1,0,0), "other-npc", true, false, false))) == null, "adjacent NPC outside label column excluded");
+        var smoothTurn = new TicketTurnSmoother();
+        float referenceYaw = 0;
+        for (int fps : new int[]{30, 60, 144}) {
+            smoothTurn.reset(0, 0);
+            for (int frame = 0; frame < fps / 2; frame++) smoothTurn.update(120, -30, 1.0 / fps);
+            if (fps == 30) referenceYaw = smoothTurn.yaw();
+            else check(Math.abs(smoothTurn.yaw() - referenceYaw) < .001, "aim trajectory independent of frame rate");
+        }
+        smoothTurn.reset(0, 0);
+        float firstStep = 0, peakStep = 0, lastStep = 0, previousYaw = 0;
+        for (int frame = 0; frame < 120; frame++) {
+            smoothTurn.update(90, 25, 1.0 / 120);
+            float step = smoothTurn.yaw() - previousYaw;
+            check(step >= 0 && smoothTurn.yaw() <= 90 && smoothTurn.pitch() <= 25, "turn remains monotonic without overshoot");
+            if (frame == 0) firstStep = step;
+            peakStep = Math.max(peakStep, step); lastStep = step; previousYaw = smoothTurn.yaw();
+        }
+        check(peakStep > firstStep * 4 && lastStep < peakStep / 10, "turn accelerates and decelerates instead of fixed-speed steps");
+        check(smoothTurn.settled(90, 25), "normal turn settles within one second");
+        smoothTurn.reset(179, 0);
+        for (int frame = 0; frame < 60; frame++) smoothTurn.update(-179, 0, 1.0 / 60);
+        check(smoothTurn.yaw() > 179 && smoothTurn.yaw() < 181 && smoothTurn.settled(-179, 0), "yaw boundary takes shortest two-degree turn");
+        smoothTurn.reset(0, 0); smoothTurn.update(120, 30, 5);
+        check(smoothTurn.yaw() < 15, "stalled frame cannot jump to target");
+        float beforeInvalid = smoothTurn.yaw(); smoothTurn.update(Double.NaN, 0, .01);
+        check(smoothTurn.yaw() == beforeInvalid, "invalid target leaves aim intact");
+        check(!AutomaticTicketEntry.idleInput(null, net.minecraft.world.phys.Vec2.ZERO), "null input from another hook is not idle");
+        check(!AutomaticTicketEntry.idleInput(net.minecraft.world.entity.player.Input.EMPTY, null), "null movement is not idle");
+        check(!AutomaticTicketEntry.idleInput(net.minecraft.world.entity.player.Input.EMPTY, new net.minecraft.world.phys.Vec2(.1f, 0)), "analog movement from another mod wins");
+        check(!AutomaticTicketEntry.idleInput(net.minecraft.world.entity.player.Input.EMPTY, new net.minecraft.world.phys.Vec2(Float.NaN, 0)), "invalid movement is rejected");
+        check(AutomaticTicketEntry.idleInput(net.minecraft.world.entity.player.Input.EMPTY, net.minecraft.world.phys.Vec2.ZERO), "only intact idle input permits automation");
+        check(AutomaticTicketEntry.available() == !dev.serko.safariutils.BuildVersion.SAFE, "automatic entry is Extra only");
+        if (dev.serko.safariutils.BuildVersion.SAFE) {
+            var configField = ConfigManager.class.getDeclaredField("config");
+            configField.setAccessible(true);
+            Object previousConfig = configField.get(null);
+            var importedConfig = new SafariConfig();
+            configField.set(null, importedConfig);
+            importedConfig.gameplay.autoSparklingTicket = true; // Simulate importing an enabled Extra config into Normal.
+            try {
+                AutomaticTicketEntry.tick(); // Must return before accessing the live Minecraft client.
+                check(AutomaticTicketEntry.forwardInput(null, null) == 0, "Normal cannot inject movement");
+                check(AutomaticTicketEntry.requestedTier(4) == 4 && !AutomaticTicketEntry.blocksSelection(), "normal menu selection remains independent");
+            } finally { configField.set(null, previousConfig); }
+        }
+        check(!AutomaticTicketEntry.inWindow(-1) && !AutomaticTicketEntry.inWindow(0)
+            && !AutomaticTicketEntry.inWindow(1500) && AutomaticTicketEntry.inWindow(1501), "entry requires known time for submission");
+        check(AutomaticTicketEntry.approachSpeed(2, 0) == 0, "approach starts without a movement jump");
+        check(AutomaticTicketEntry.approachSpeed(2, 100) < AutomaticTicketEntry.approachSpeed(2, 200), "approach eases in promptly");
+        check(AutomaticTicketEntry.approachSpeed(.2, 500) < AutomaticTicketEntry.approachSpeed(2, 500), "approach slows near reach");
+        check(AutomaticTicketEntry.approachSpeed(99, 99999) == 1, "approach reaches normal walking speed without sprinting");
+        check(AutomaticTicketEntry.approachSpeed(0, 500) == 0, "approach stops at reach");
+        check(AutomaticTicketEntry.headingSpeed(0) == 1 && AutomaticTicketEntry.headingSpeed(30) > .5,
+            "walking overlaps turning before exact alignment");
+        check(AutomaticTicketEntry.headingSpeed(90) == 0 && AutomaticTicketEntry.headingSpeed(180) == 0,
+            "never walk sideways or away from Manager");
+        check(AutomaticTicketEntry.headingSpeed(-30) == AutomaticTicketEntry.headingSpeed(30), "heading response symmetric");
+        check(!AutomaticTicketEntry.retryDue(0, 999, false) && !AutomaticTicketEntry.retryDue(1, 449, false), "no premature NPC retries");
+        check(AutomaticTicketEntry.retryDue(1, 450, false) && AutomaticTicketEntry.retryDue(2, 450, false), "two paced NPC retries");
+        check(!AutomaticTicketEntry.retryDue(3, 999, false) && !AutomaticTicketEntry.retryDue(1, 999, true), "retry cap and menu arrival stop retries");
         var settings = new SafariConfig.GameplayConfig();
+        check(!settings.autoSparklingTicket, "full entry defaults off");
+        check(AutomaticTicketEntry.entryPreference(0) == 1 && AutomaticTicketEntry.entryPreference(4) == 4, "Manual entry starts with Basic; selected tier preserved");
+        for (int preferred = 1; preferred <= 4; preferred++) {
+            int[] order = switch (preferred) {
+                case 1 -> new int[]{1, 2, 3, 4}; case 2 -> new int[]{2, 1, 3, 4};
+                case 3 -> new int[]{3, 2, 1, 4}; default -> new int[]{4, 3, 2, 1};
+            };
+            for (int mask = 0; mask < 16; mask++) {
+                List<TicketSelection.Option> options = new ArrayList<>();
+                for (int candidate = 1; candidate <= 4; candidate++) options.add(new TicketSelection.Option(candidate + 10, candidate, (mask & (1 << (candidate - 1))) != 0));
+                var selected = TicketSelection.chooseAvailable(options, preferred);
+                int expected = 0;
+                for (int candidate : order) if ((mask & (1 << (candidate - 1))) != 0) { expected = candidate; break; }
+                check(selected != null && (expected == 0 ? !selected.usable() : selected.usable() && selected.tier() == expected), "all inventory combinations follow fallback priority");
+            }
+        }
+        check(TicketSelection.chooseAvailable(List.of(new TicketSelection.Option(11, 1, null), new TicketSelection.Option(12, 2, true)), 1) == null, "unknown preferred tier cannot trigger an upgrade");
+        check(TicketSelection.chooseAvailable(List.of(new TicketSelection.Option(14, 4, false), new TicketSelection.Option(11, 1, true)), 4) == null, "missing middle tiers wait for menu completion");
+        check(TicketSelection.chooseAvailable(List.of(new TicketSelection.Option(11, 1, false), new TicketSelection.Option(12, 1, false), new TicketSelection.Option(13, 2, true)), 1) == null, "ambiguous preferred tier cannot trigger fallback");
         for (var mode : RunMode.values()) check(TicketSelection.preference(settings, mode) == 0, "ticket default manual");
         settings.fullClearTicket = 4; settings.uniqueTicket = 2; settings.sparklingTicket = 1;
         check(TicketSelection.preference(settings, RunMode.FULL_CLEAR) == 4, "full clear selected ticket");

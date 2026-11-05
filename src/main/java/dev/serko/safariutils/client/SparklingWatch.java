@@ -66,7 +66,7 @@ public final class SparklingWatch {
 						+ " label=" + shortId(sighting.label().getUUID()));
 				continue;
 			}
-			if (sighting.mob() == null) {
+			if (sighting.mob() == null || sighting.mob() instanceof net.minecraft.world.entity.Display.ItemDisplay) {
 				UUID label = sighting.label().getUUID();
 				long firstSeen = pendingBodylessLabels.computeIfAbsent(label, ignored -> now);
 				// Metadata and the item display can arrive in different packets/scans.
@@ -245,6 +245,8 @@ public final class SparklingWatch {
 	/** Safe Mode waits for sight; Extra announces the first trustworthy remote detection. */
 	private static void postVisibleFoundAlerts(CritterEntities.Sighting sighting, UUID key) {
 		if (visuallyAnnounced.contains(key)) return;
+        // Keep discovery facts immediately; wait for the initial room state before alert ownership.
+        if (!dev.serko.safariutils.api.PartySyncNetworks.sparklingSnapshotReady()) return;
 		boolean visible = bodyVisible(sighting)
 			|| !SafeMode.hiddenSpecies(sighting.critter())
 				&& VisibilityCheck.canSeeVisibleName(sighting.label())
@@ -257,7 +259,7 @@ public final class SparklingWatch {
 		visuallyAnnounced.add(key);
 		boolean sharedFirst = !PartySparklingDiscoveries.claimLocalAlert(sighting.critter());
 		boolean ticketWindowClosed = dev.serko.safariutils.session.SessionManager.current() == null
-			&& dev.serko.safariutils.session.SessionManager.ticketWindowRemainingMillis() <= 0;
+            && dev.serko.safariutils.session.SessionManager.ticketWindowRemainingMillis() <= 0;
 		if (sharedFirst || ticketWindowClosed) {
 			StructuredDiagnostics.decision("party-sparkling", "local-alert-suppressed",
 				sighting.critter().name() + " reason=" + (sharedFirst ? "already-shared" : "ticket-window-closed"));

@@ -98,8 +98,12 @@ public final class PartySparklingRegression {
         room.acceptRoom(new int[]{1,0,0,0});
         check(room.active() == 2, "stale room state resurrected caught discovery"); checks++;
         check(!room.claimLocalAlert(2), "shared discovery repeated on local detection"); checks++;
-        room.clear(); room.discover(1); room.acceptRoom(new int[]{1,0,0,0});
+        room.clear(); room.discover(1); room.published(); room.acceptRoom(new int[]{1,0,0,0});
         check(room.claimLocalAlert(1), "own room echo stole discovery ownership"); checks++;
+        room.clear(); room.discover(1); room.acceptRoom(new int[]{1,0,0,0});
+        check(!room.claimLocalAlert(1), "fast local discovery beat initial shared snapshot"); checks++;
+        room.clear(); room.discover(1); room.acceptRoom(new int[]{0,0,0,0});
+        check(room.claimLocalAlert(1), "new local discovery lost after empty initial snapshot"); checks++;
         room.clear(); room.acceptRoom(new int[]{1,0,1,0});
         check(room.active() == 0 && room.reminder(true,false,1000) == 0,
             "already caught pre-warp discovery alerted late guest"); checks++;

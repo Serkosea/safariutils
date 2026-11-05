@@ -27,6 +27,10 @@ public final class PartySyncNetworks {
         return PROVIDER.read("presence", PartySyncNetworkProvider::connectedPlayers, java.util.Set.of());
     }
 
+	public static boolean sparklingSnapshotReady() {
+		return PROVIDER.read("sparklingSnapshot", PartySyncNetworkProvider::sparklingSnapshotReady, false);
+	}
+
 	public static boolean connected() {
 		return PROVIDER.read("connected", PartySyncNetworkProvider::connected, false);
 	}

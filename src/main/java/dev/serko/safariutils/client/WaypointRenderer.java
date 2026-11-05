@@ -696,6 +696,10 @@ public final class WaypointRenderer {
 			Entity body = sighting.mob();
 			if (body != null && RecatchSpots.isCaptureArtifact(sighting.critter(), body,
 				presentation.captureInProgress(sighting.critter()))) continue;
+			// Capture presentation owns this individual, including its beacon. Do not
+			// leave a live beacon above a guaranteed shrink or a replacement recatch pin.
+			if (body != null && capturePresentationSuppresses(sighting.critter(), body,
+				presentation)) continue;
 			if (body == null && !hideyho
 				&& (!SparklingWatch.provisionalMarkerAllowed(sighting.critter())
 					|| presentation.captureInProgress(sighting.critter()))) continue;
@@ -710,9 +714,7 @@ public final class WaypointRenderer {
 			double distanceSq = distanceSquared(box, camera);
 			int colour = sparklingColour();
 
-			if (!hideyho && display.enableHitboxes
-				&& (body == null || !capturePresentationSuppresses(sighting.critter(), body,
-					presentation))) {
+			if (!hideyho && display.enableHitboxes) {
 				boolean seeThrough = !SafeMode.critterHitboxes(true);
 				if (drawRainbowBox(poses, backend, seeThrough ? LINES : DEPTH_LINES,
 						box, camera)) {

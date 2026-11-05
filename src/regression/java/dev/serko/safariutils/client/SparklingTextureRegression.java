@@ -36,8 +36,21 @@ public final class SparklingTextureRegression {
         matches = new ArrayList<>(List.of(new CritterScan.Match(chuck, label, distantBody, false, false)));
         SparklingTextureEvidence.merge(List.of(skin), matches, Set.of());
         check(matches.size() == 2 && !matches.getFirst().sparkling(), "nearby independent body does not inherit skin evidence");
+        var areita = Critters.byName("Areita");
+        var status = new CritterScan.Sample(UUID.randomUUID(), "armor_stand", "CAPTURING", -4.15625, 85.875, -50.5);
+        var captureLabel = new CritterScan.Sample(UUID.randomUUID(), "armor_stand", "SPARKLING Areita", -4.15625, 85.5, -50.5);
+        var captureHead = new CritterScan.Sample(UUID.randomUUID(), "item_display", null, -4.15625, 87.40625, -50.5, areita);
+        matches = new ArrayList<>(List.of(new CritterScan.Match(areita, captureLabel, null, true, false)));
+        SparklingTextureEvidence.merge(List.of(status, captureLabel, captureHead), matches, Set.of());
+        check(matches.size() == 1 && matches.getFirst().body() == null, "recorded teammate capture retains label without false body");
+        var realPeer = new CritterScan.Sample(UUID.randomUUID(), "player", null, -4.15625, 85.5, -50.5, areita);
+        SparklingTextureEvidence.merge(List.of(status, captureLabel, captureHead, realPeer), matches, Set.of());
+        check(matches.size() == 2 && matches.getLast().body() == realPeer, "real same-species peer survives beside capture");
+        matches.clear();
+        SparklingTextureEvidence.merge(List.of(captureLabel, captureHead), matches, Set.of(captureLabel.id()));
+        check(matches.isEmpty(), "capsule metadata excludes its head before status arrives");
         SparklingTextures.clear();
-        return 12;
+        return 15;
     }
     private static String property(String url) {
         return Base64.getEncoder().encodeToString(("{\"textures\":{\"SKIN\":{\"url\":\"" + url + "\"}}}").getBytes(StandardCharsets.UTF_8));

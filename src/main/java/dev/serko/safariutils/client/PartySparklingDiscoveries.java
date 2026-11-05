@@ -26,6 +26,7 @@ public final class PartySparklingDiscoveries {
 	static long sharedMask() { return state.shared(); }
 	static boolean wasCaught(Critter critter) { return (state.caughtMask() & Critters.selectionMask(critter)) != 0; }
 	static long localRevision() { return state.localRevision; }
+	static void published() { state.published(); }
 	static String payload() { return state.payload(); }
 	static boolean accept(int[] values) { return accept(values, false); }
 	static boolean acceptRoom(int[] values) { return accept(values, true); }
@@ -34,9 +35,7 @@ public final class PartySparklingDiscoveries {
 		if (!(room ? state.acceptRoom(values) : state.accept(values))) return false;
 		// Species-only remote catch masks cannot erase individually observed local bodies.
 		long added = state.active() & ~before;
-		if (added != 0 && SessionManager.current() != null && SafariLocation.inside()
-			&& SparklingWatch.discoveryAllowed(dev.serko.safariutils.state.SafariRuntimeState.current().phase()))
-			EncounterAlerts.fireSparklingDetected(names(added));
+		// Shared discoveries update markers/reminders, not the finder's ordinary alert.
 		if (before != state.active()) StructuredDiagnostics.decision("party-sparkling", "received",
 			"active=" + Long.bitCount(state.active()) + " added=" + Long.bitCount(added));
 		return true;

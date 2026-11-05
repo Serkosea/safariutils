@@ -26,6 +26,9 @@ public interface PartySyncNetworkProvider {
 	/** Server-confirmed sockets in this party room, including this client. */
 	default java.util.Set<String> connectedPlayers() { return java.util.Set.of(); }
 
+	/** Initial atomic Sparkling snapshot has been applied on the client thread. */
+	default boolean sparklingSnapshotReady() { return false; }
+
 	default boolean connected() {
 		return false;
 	}

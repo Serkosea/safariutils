@@ -82,7 +82,7 @@ public final class RunModeRegression {
             }
             for (boolean debug : developer ? new boolean[]{false, true} : new boolean[]{false}) {
                 for (var entry : SafariCommandHelp.entries(debug)) {
-                    String command = entry.command().substring(1).replace("<note>", "test note").replace("<name>", "TestPlayer").replace("[name]", "TestPlayer");
+                    String command = entry.command().substring(1).replace("<note>", "test note").replace("<name>", "TestPlayer").replace("[name]", "TestPlayer").replace("<basic|economy|premium|firstclass>", "basic");
                     var parsed = commands.parse(command, null);
                     check(!parsed.getReader().canRead() && parsed.getContext().getCommand() != null,
                         "help lists an unavailable command: " + command); checks++;

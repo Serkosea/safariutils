@@ -15,6 +15,7 @@ public final class PartySyncDebugHud implements HudElement {
     private static String assignments = "Outside Safari";
     private static boolean connectedState;
     private static Set<String> connectedPlayers = Set.of();
+    private static Map<String, String> rosterNames = Map.of();
     private static final SyncActivityFeed feed = new SyncActivityFeed();
     private static final Map<String,int[]> previous = new LinkedHashMap<>();
     private static String transport="Inactive", lobby="";
@@ -33,9 +34,13 @@ public final class PartySyncDebugHud implements HudElement {
         return true;
     }
     public static void status(boolean connected, boolean engaged, int members) {
+        status(connected, engaged, members, Map.of());
+    }
+    public static void status(boolean connected, boolean engaged, int members, Map<String, String> names) {
         if (!active()) return;
         String nextLobby=Objects.toString(SafariLocation.lobbyId(), "Outside Safari");
         if (!nextLobby.equals(lobby)) { resetVisit(); lobby=nextLobby; }
+        if (!rosterNames.equals(names)) { rosterNames = Map.copyOf(names); dirty = true; }
         String nextTransport=connected ? "Connected" : engaged ? "Connecting / retrying" : "Inactive";
         var party=PartyState.snapshot();
         String nextAssignments=PartyHotspotSync.statusText();
@@ -106,7 +111,7 @@ public final class PartySyncDebugHud implements HudElement {
         };
     }
     public static void resetVisit() {
-        feed.clear(); previous.clear(); receivedPeers.clear(); lobby=""; transport="Inactive";
+        feed.clear(); previous.clear(); receivedPeers.clear(); rosterNames = Map.of(); lobby=""; transport="Inactive";
         assignments="Outside Safari"; connectedPlayers=Set.of(); connectedState=false; rosterCount=0; localLeader=false; cached=null; dirty=true;
         started=MonotonicTime.nowMillis();
     }
@@ -114,7 +119,8 @@ public final class PartySyncDebugHud implements HudElement {
         if (connectedPlayers.isEmpty()) return connectedState?"Awaiting confirmation":"None";
         var members=PartyState.snapshot().members();
         return connectedPlayers.stream().sorted().map(id -> members.stream()
-            .filter(member -> member.uuid().equals(id)).map(member -> member.name()).findFirst().orElse("Party member"))
+            .filter(member -> member.uuid().equals(id.replace("-", "").toLowerCase(Locale.ROOT))).map(member -> member.name()).findFirst()
+            .orElse(rosterNames.getOrDefault(id.replace("-", "").toLowerCase(Locale.ROOT), "Party member")))
             .collect(java.util.stream.Collectors.joining(", "));
     }
     static HudPanel buildPanel() {

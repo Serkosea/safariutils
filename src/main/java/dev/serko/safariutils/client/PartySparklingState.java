@@ -5,7 +5,8 @@ import dev.serko.safariutils.data.Critters;
 /** Visit-scoped, monotone discovery facts. Remote facts are never re-published as local facts. */
 final class PartySparklingState {
 	private long localFound, localCaught, remoteFound, found, caught;
-	private long locallyAlertedSpecies;
+	private long locallyAlertedSpecies, publishedFound;
+    void published() { publishedFound |= localFound; }
 	long localRevision;
 	long active() { return found & ~caught; }
 	long shared() { return remoteFound & ~caught; }
@@ -38,7 +39,7 @@ final class PartySparklingState {
 	private boolean accept(int[] values, boolean room) {
 		if (!valid(values)) return false;
 		long incomingFound = values[0] | ((long) values[1] << 30);
-		remoteFound |= room ? incomingFound & ~localFound : incomingFound;
+		remoteFound |= room ? incomingFound & ~publishedFound : incomingFound;
 		found |= incomingFound;
 		caught |= values[2] | ((long) values[3] << 30);
 		return true;
@@ -52,5 +53,5 @@ final class PartySparklingState {
 		}
 		return true;
 	}
-	void clear() { localFound = localCaught = remoteFound = found = caught = locallyAlertedSpecies = 0; localRevision++; }
+	void clear() { localFound = localCaught = remoteFound = found = caught = locallyAlertedSpecies = publishedFound = 0; localRevision++; }
 }

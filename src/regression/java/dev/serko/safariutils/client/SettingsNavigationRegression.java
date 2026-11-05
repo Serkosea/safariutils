@@ -44,8 +44,9 @@ public final class SettingsNavigationRegression {
             check(runTabs.stream().map(t -> value(t, "name")).toList()
                 .equals(List.of("General", "Tickets", "Party", "Visual", "Profit")), "run tab order without fallback More");
             List<?> ticketPages = list(find(runTabs, "key", "tickets"), "pages");
-            check(ticketPages.stream().map(p -> value(p, "key")).toList().equals(List.of(
-                "gameplay.ticket-protection", "gameplay.ticket-selection", "gameplay.ticket-trading")), "ticket card order");
+            check(ticketPages.stream().map(p -> value(p, "key")).toList().equals(dev.serko.safariutils.BuildVersion.SAFE
+                ? List.of("gameplay.ticket-protection", "gameplay.ticket-selection", "gameplay.ticket-trading")
+                : List.of("gameplay.ticket-protection", "gameplay.ticket-selection", "gameplay.ticket-sparkling-entry", "gameplay.ticket-trading")), "ticket card order");
             check(list(find(ticketPages, "key", "gameplay.ticket-selection"), "fields").stream()
                 .map(f -> ((Field) f).getName()).toList().equals(List.of("fullClearTicket", "uniqueTicket", "sparklingTicket")), "mode choices stay grouped");
             find(list(find(runTabs, "key", "party"), "pages"), "key", "gameplay.coordination");

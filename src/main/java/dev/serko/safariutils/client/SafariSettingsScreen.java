@@ -403,6 +403,8 @@ public final class SafariSettingsScreen extends Screen {
 			"Wait for your party before using a ticket", "protectSafariTicket");
         addRootPage(gameplay, gameplaySource, "gameplay.ticket-selection", "Automatic Tickets",
             "Choose a ticket for each run mode", "fullClearTicket", "uniqueTicket", "sparklingTicket");
+        if (AutomaticTicketEntry.available()) addRootPage(gameplay, gameplaySource, "gameplay.ticket-sparkling-entry", "Sparkling Entry",
+            "Use a ticket automatically for an uncaught Sparkling", "autoSparklingTicket");
         addRootPage(gameplay, gameplaySource, "gameplay.ticket-trading", "Ticket Trading",
             "Configure trusted invites and timed party warps", "configureTicketTrading");
         addRootPage(gameplay, gameplaySource, "gameplay.coordination", "Party Coordination",
@@ -1771,7 +1773,8 @@ public final class SafariSettingsScreen extends Screen {
 
 	/** Applies build-level availability for Safe Mode, private, and Developer settings. */
 	private static boolean visibleInThisBuild(Class<?> owner, Field field) {
-		if ((field.getName().equals("floorDropItemColours") || field.getName().equals("fullCandleTarget"))
+		if ((field.getName().equals("floorDropItemColours") || field.getName().equals("fullCandleTarget")
+                || field.getName().equals("autoSparklingTicket"))
                 && !BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS)) return false;
 		if (field.getName().startsWith("private")
 				&& !BuildVersion.has(BuildVersion.Capability.AUTHENTICATED_API)) return false;

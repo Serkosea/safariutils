@@ -17,9 +17,6 @@ import java.lang.reflect.Field;
 
 /** Stops a ticket submission while a known party member is missing from Safari. */
 public final class TicketProtection {
-	private static final double MANAGER_X = -51.5;
-	private static final double MANAGER_Y = 68.0;
-	private static final double MANAGER_Z = 21.5;
 	private static long lastBlockedMessageAt;
 	// Cache the field lookup, not its value: resizing the menu can change its origin.
 	private static final ClassValue<java.util.Map<String, Field>> SCREEN_FIELDS = new ClassValue<>() {
@@ -51,7 +48,7 @@ public final class TicketProtection {
 	public static boolean blockManagerInteraction(Entity entity) {
 		if (!SafariLocation.inside()) return false;
 		if (!(entity instanceof Player)) return false;
-		if (entity.distanceToSqr(MANAGER_X, MANAGER_Y, MANAGER_Z) > 9.0) return false;
+		if (entity.distanceToSqr(SafariManagerTarget.POSITION) > 9.0) return false;
 		// Only the leader can submit the party's Manager interaction, but members also
 		// interact with this NPC before choosing their own ticket. Arming both paths is
 		// harmless because capsule allocation remains the required activation signal.
@@ -78,6 +75,7 @@ public final class TicketProtection {
 
 	private static boolean allowKeyPress(Screen screen, KeyEvent event) {
 		int key = event.key();
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) TicketSelection.manualInteraction(screen);
 		if ((key < com.mojang.blaze3d.platform.InputConstants.KEY_1 || key > com.mojang.blaze3d.platform.InputConstants.KEY_9) && (key < com.mojang.blaze3d.platform.InputConstants.KEY_NUMPAD1 || key > com.mojang.blaze3d.platform.InputConstants.KEY_NUMPAD9)) return true;
         TicketSelection.manualInteraction(screen);
 		if (shouldBlock()) {
@@ -92,6 +90,7 @@ public final class TicketProtection {
 		PartySnapshot party = PartyState.snapshot();
 		return ConfigManager.get().gameplay.protectSafariTicket && SafariLocation.inside()
 			&& SessionManager.current() == null && party.known()
+			&& PartySparklingDiscoveries.activeMask() == 0L && !SparklingWatch.hasOutstanding()
 			&& SafariPartyWatch.joinedPlayers() < party.expectedPlayers();
 	}
 

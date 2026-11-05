@@ -7,7 +7,14 @@ final class SparklingTextureEvidence {
     private SparklingTextureEvidence() { }
 
     static void merge(List<CritterScan.Sample> samples, List<CritterScan.Match> matches, Set<UUID> capsuleLabels) {
-        List<CritterScan.Sample> skins = samples.stream().filter(sample -> sample.textureSpecies() != null).toList();
+        List<CritterScan.Sample> captureStatuses = samples.stream()
+            .filter(sample -> sample.type().equals("armor_stand") && "CAPTURING".equalsIgnoreCase(sample.name())).toList();
+        Set<UUID> captureLabels = new HashSet<>(capsuleLabels);
+        for (var match : matches) if (capturePart(match.label(), captureStatuses)) captureLabels.add(match.label().id());
+        List<CritterScan.Sample> skins = samples.stream().filter(sample -> sample.textureSpecies() != null
+            && !capturePart(sample, captureStatuses)
+            && !(sample.type().equals("item_display") && samples.stream().anyMatch(label ->
+                captureLabels.contains(label.id()) && sameColumn(sample, label)))).toList();
         if (skins.isEmpty()) return;
         int originalSize = matches.size();
         for (var skin : skins) {
@@ -22,14 +29,14 @@ final class SparklingTextureEvidence {
             if (exact >= 0) {
                 var match = matches.get(exact);
                 // An authoritative conflicting label wins over an appearance inference.
-                if (!capsuleLabels.contains(match.label().id()) && match.critter().equals(skin.textureSpecies())) matches.set(exact, sparkling(match, skin));
+                if (!captureLabels.contains(match.label().id()) && match.critter().equals(skin.textureSpecies())) matches.set(exact, sparkling(match, skin));
                 continue;
             }
             int candidate = -1;
             boolean ambiguous = false;
             for (int index = 0; index < originalSize; index++) {
                 var match = matches.get(index);
-                if (capsuleLabels.contains(match.label().id()) || !near(skin, match)) continue;
+                if (captureLabels.contains(match.label().id()) || !near(skin, match)) continue;
                 if (candidate >= 0) { ambiguous = true; break; }
                 candidate = index;
             }
@@ -45,6 +52,16 @@ final class SparklingTextureEvidence {
                 matches.add(new CritterScan.Match(skin.textureSpecies(), skin, skin, true, false, Set.of(skin.id())));
             }
         }
+    }
+
+    static boolean capturePart(CritterScan.Sample sample, List<CritterScan.Sample> statuses) {
+        if (!sample.type().equals("item_display") && !sample.type().equals("armor_stand")) return false;
+        return statuses.stream().anyMatch(status -> sameColumn(sample, status));
+    }
+
+    private static boolean sameColumn(CritterScan.Sample left, CritterScan.Sample right) {
+        double x = left.x() - right.x(), z = left.z() - right.z();
+        return x*x + z*z <= .5625 && Math.abs(left.y() - right.y()) < 3;
     }
 
     private static CritterScan.Match sparkling(CritterScan.Match match, CritterScan.Sample skin) {

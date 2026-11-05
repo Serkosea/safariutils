@@ -151,7 +151,9 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		} else {
 			disconnectNetwork();
 		}
-        PartySyncDebugHud.status(networkConnected, networkEngaged, roster.size());
+        if (PartySyncDebugHud.enabled()) PartySyncDebugHud.status(networkConnected, networkEngaged, roster.size(), roster.stream().collect(java.util.stream.Collectors.toMap(
+            member -> member.uuid().replace("-", ""), Member::name, (first, second) -> first)));
+        else PartySyncDebugHud.status(networkConnected, networkEngaged, roster.size());
         PartyHotspotSync.tick(roster.stream().map(Member::uuid).toList(), (type, payload) -> {
             PartySyncNetworks.send(++sequence, type, payload);
         }, !wasNetworkConnected && networkConnected);
@@ -174,8 +176,9 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			sendNests();
 			DebugLog.line("SYNC", "authenticated transport connected roster=" + roster.size());
 		}
-		if (networkConnected && sentSparklingRevision != PartySparklingDiscoveries.localRevision()) {
+		if (networkConnected && PartySyncNetworks.sparklingSnapshotReady() && sentSparklingRevision != PartySparklingDiscoveries.localRevision()) {
 			PartySyncNetworks.send(++sequence, "S", PartySparklingDiscoveries.payload());
+            PartySparklingDiscoveries.published();
 			sentSparklingRevision = PartySparklingDiscoveries.localRevision();
 			StructuredDiagnostics.decision("party-sparkling", "sent", "snapshot");
 		}

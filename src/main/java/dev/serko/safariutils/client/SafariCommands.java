@@ -147,6 +147,14 @@ public final class SafariCommands {
 					return 1;
 				}));
 
+                var useTicket = ClientCommands.literal("useticket");
+                String[] ticketNames = {"basic", "economy", "premium", "firstclass"};
+                for (int i = 0; i < ticketNames.length; i++) {
+                    final int tier = i + 1;
+                    useTicket.then(ClientCommands.literal(ticketNames[i]).executes(ctx -> AutomaticTicketEntry.test(tier)));
+                }
+                useTicket.then(ClientCommands.literal("cancel").executes(ctx -> { AutomaticTicketEntry.manualOverride(); return 1; }));
+                debugRoot.then(useTicket);
 				debugRoot.then(ClientCommands.literal("save").executes(ctx -> saveRunLog(ctx.getSource())));
                 debugRoot.then(ClientCommands.literal("performance").executes(ctx -> {
                     ctx.getSource().sendFeedback(ClientMessages.prefixed(PerformanceDiagnostics.status(), ClientMessages.Tone.INFO));

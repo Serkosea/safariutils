@@ -66,6 +66,7 @@ public final class TicketTrading {
 	private static long pendingAcceptAt;
 	private static long pendingAcceptDeadline;
 	private static boolean pendingLeave;
+    private static boolean pendingLeaveAttempted;
 	private static boolean pendingSwitch;
 	private static String directAcceptInviter = "";
 	private static long directAcceptAt;
@@ -126,9 +127,13 @@ public final class TicketTrading {
 					ConfiguredPlayer guest = configuredGuest(normalizeName(pendingAcceptInviter));
 					if (guest == null || guest.guestMode() != TicketTradingProfiles.GuestMode.SWITCH) {
 						clearPendingAccept();
-					} else if (sendCommand("party leave", CommandCoordinator.Category.TICKET_GUEST,
+					} else if (PartyState.snapshot().known() && !PartyState.snapshot().inParty()) {
+                        pendingLeave = false;
+                        pendingAcceptAt = now;
+                    } else if (sendCommand("party leave", CommandCoordinator.Category.TICKET_GUEST,
 							CommandCoordinator.Cooldown.PARTY_MEMBERSHIP, false, false)) {
 						pendingLeave = false;
+                        pendingLeaveAttempted = true;
 						pendingAcceptAt = now + GUEST_LEAVE_SETTLE_MILLIS;
 						PartyRosterWatch.deferRefreshUntil(pendingAcceptAt + GUEST_LEAVE_SETTLE_MILLIS);
 					}
@@ -136,7 +141,7 @@ public final class TicketTrading {
 						CommandCoordinator.Category.TICKET_GUEST,
 						CommandCoordinator.Cooldown.PARTY_MEMBERSHIP, false, false)) {
 					String inviter = pendingAcceptInviter;
-					boolean switchParty = pendingSwitch;
+					boolean switchParty = pendingSwitch && !pendingLeaveAttempted;
 					clearPendingAccept();
 					directAcceptInviter = switchParty ? inviter : "";
 					directAcceptAt = switchParty ? now : 0L;
@@ -266,7 +271,10 @@ public final class TicketTrading {
 			directAcceptAt = 0L;
 			OperationalLog.info("TICKET_TRADE", "Direct accept found an existing party; leaving and retrying");
 		}
-		if (lower.startsWith("you have joined ") && lower.endsWith("'s party!")) {
+		if (lower.equals("you are not in a party right now.") || lower.equals("you are not currently in a party.")
+                || lower.equals("you left the party.")) pendingLeave = false;
+        if (lower.startsWith("you have joined ") && lower.endsWith("'s party!")) {
+            clearPendingAccept();
 			directAcceptInviter = "";
 			directAcceptAt = 0L;
 		}
@@ -294,7 +302,7 @@ public final class TicketTrading {
 		}
 		boolean switchParty = trusted.guestMode() == TicketTradingProfiles.GuestMode.SWITCH;
 		TicketGuestPolicy.Action action = TicketGuestPolicy.invite(true, true, false,
-			normalized.equals(lastAccepted) && now - lastAcceptedAt < ACCEPT_DEDUPLICATION_MILLIS,
+			(pendingAcceptAt > 0L || normalized.equals(lastAccepted) && now - lastAcceptedAt < ACCEPT_DEDUPLICATION_MILLIS),
 			switchParty, PartyState.snapshot().inParty());
 		if (action == TicketGuestPolicy.Action.IGNORE) return;
 		if (action == TicketGuestPolicy.Action.LEAVE_THEN_ACCEPT) {
@@ -542,7 +550,7 @@ public final class TicketTrading {
 		pendingAcceptInviter = "";
 		pendingAcceptAt = 0L;
 		pendingAcceptDeadline = 0L;
-		pendingLeave = pendingSwitch = false;
+		pendingLeave = pendingSwitch = pendingLeaveAttempted = false;
 		directAcceptInviter = "";
 		directAcceptAt = 0L;
 	}
@@ -550,6 +558,7 @@ public final class TicketTrading {
 	private static void scheduleGuestAccept(String inviter, boolean leave, boolean switchParty, long now) {
 		pendingAcceptInviter = inviter;
 		pendingLeave = leave;
+        pendingLeaveAttempted = false;
 		pendingSwitch = switchParty;
 		pendingAcceptAt = now;
 		pendingAcceptDeadline = now + 10_000L;

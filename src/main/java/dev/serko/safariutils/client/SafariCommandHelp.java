@@ -25,7 +25,9 @@ final class SafariCommandHelp {
                 {"block", "Targeted entity or block details"}, {"catalogs", "Detection catalog summary"},
                 {"tablist", "Server tab-list details"}, {"jointimer", "Ticket connection window"},
                 {"room", "Party-sync room status"}, {"replay", "Replay capture diagnostics"},
-                {"testalert", "Preview Safari alerts"}
+                {"testalert", "Preview Safari alerts"},
+                {"useticket <basic|economy|premium|firstclass>", "Test automatic entry (consumes a real ticket)"},
+                {"useticket cancel", "Cancel automatic entry"}
             };
             for (String[] command : commands)
                 entries.add(new Entry("/safari debug " + command[0], "", command[1]));

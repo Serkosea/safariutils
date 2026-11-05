@@ -14,6 +14,7 @@ import java.util.UUID;
 
 /** Scans loaded critter labels once and shares the paired bodies with every tracker. */
 public final class CritterEntities {
+    private static final java.util.Set<UUID> captureVisuals = new java.util.HashSet<>();
 
 	/** Spawns do not appear fast enough to be worth scanning every tick. */
 	private static final int SCAN_INTERVAL_TICKS = 5;
@@ -82,17 +83,21 @@ public final class CritterEntities {
 
 	/** Capsule labels are visual scaffolding regardless of who threw the capsule. */
 	private static java.util.Set<UUID> capsuleLabels(List<Sighting> sightings) {
-		if (sightings.stream().noneMatch(sighting -> sighting.mob() == null
+		if (sightings.stream().noneMatch(sighting -> captureVisuals.contains(sighting.label().getUUID()) || sighting.mob() == null
 			&& !"Hideyho".equals(sighting.critter().name()))) return java.util.Set.of();
 		List<Vec3> capsules = new ArrayList<>();
 		for (Entity entity : WorldEntities.current()) {
 			if (entity instanceof net.minecraft.world.entity.Display.ItemDisplay display
 					&& CritterCapsules.matches(display)) capsules.add(entity.position());
 		}
-		if (capsules.isEmpty()) return java.util.Set.of();
+		if (capsules.isEmpty() && captureVisuals.isEmpty()) return java.util.Set.of();
 		java.util.Set<UUID> labels = new java.util.HashSet<>();
 		for (Sighting sighting : sightings) {
-			// A real paired body is independent evidence: never hide a nearby peer.
+			if (captureVisuals.contains(sighting.label().getUUID())) {
+                labels.add(sighting.label().getUUID());
+                continue;
+            }
+            // A real paired body is independent evidence: never hide a nearby peer.
 			if (sighting.mob() != null || "Hideyho".equals(sighting.critter().name())) continue;
 			for (Vec3 capsule : capsules) {
 				Vec3 offset = sighting.label().position().subtract(capsule);
@@ -106,8 +111,8 @@ public final class CritterEntities {
 	}
 
 	static boolean capsuleLabelOffset(double x, double y, double z) {
-		// Name stands sit above the capsule; this is not a species/body ownership match.
-		return x * x + z * z <= 0.75 * 0.75 && y >= -0.5 && y <= 3.0;
+		// Name stands can sit below or above the capsule; this is not a species/body ownership match.
+		return x * x + z * z <= 0.75 * 0.75 && y >= -3.0 && y <= 3.0;
 	}
 
 	static boolean isRemoteCaptureLabel(Sighting sighting) {
@@ -299,6 +304,7 @@ public final class CritterEntities {
 		ballCandidatePositions.clear();
 		lastPairFailureLogged.clear();
         SparklingTextures.clear();
+        captureVisuals.clear();
 	}
 
 	private static List<Sighting> scan() {
@@ -309,12 +315,30 @@ public final class CritterEntities {
 			samples.add(new CritterScan.Sample(entity.getUUID(), EntityTypeIds.path(entity), name,
 				entity.getX(), entity.getY(), entity.getZ(), SparklingTextures.identify(entity)));
 		}
-		Map<UUID, UUID> previousBodies = new HashMap<>();
+        var statuses = samples.stream().filter(sample -> sample.type().equals("armor_stand")
+            && "CAPTURING".equalsIgnoreCase(sample.name())).toList();
+        if (!statuses.isEmpty() || !captureVisuals.isEmpty()) {
+            var loaded = new java.util.HashSet<UUID>();
+            for (var sample : samples) {
+                loaded.add(sample.id());
+                if (SparklingTextureEvidence.capturePart(sample, statuses)) captureVisuals.add(sample.id());
+            }
+            captureVisuals.retainAll(loaded);
+            samples.removeIf(sample -> sample.type().equals("item_display") && captureVisuals.contains(sample.id()));
+        }
+        Map<UUID, UUID> previousBodies = new HashMap<>();
 		for (Sighting sighting : previous) {
 			if (sighting.mob() != null) previousBodies.put(sighting.label().getUUID(), sighting.mob().getUUID());
 		}
-		List<CritterScan.Match> matches = new ArrayList<>(CritterScan.scan(samples, previousBodies,
+		List<CritterScan.Match> matches = new ArrayList<>(CritterScan.scan(captureVisuals.isEmpty() ? samples
+            : samples.stream().filter(sample -> !captureVisuals.contains(sample.id())).toList(), previousBodies,
             DebugLog.isEnabled() ? CritterEntities::logPairFailure : null));
+        // Keep capture labels available to nametag hiding and capture diagnostics,
+        // but never let them claim a nearby live body or texture carrier.
+        for (var sample : samples) if (captureVisuals.contains(sample.id())) {
+            var label = CritterScan.parseLabel(sample.name());
+            if (label != null) matches.add(new CritterScan.Match(label.critter(), sample, null, label.sparkling(), false));
+        }
         if (samples.stream().anyMatch(sample -> sample.textureSpecies() != null)) {
             List<Sighting> bodyless = new ArrayList<>();
             for (var match : matches) if (match.body() == null)

@@ -96,7 +96,7 @@ visit needs reconciliation, not an automatic reset of displayed assignments.
 Each notification is `{"id":"<run>:<player>","player":"<UUID>","biome":"ICY"}`.
 The server supplies them only while the leader is connected and the target lacks an
 active assignment display and has not already received its assignment through a display
-in this run. Ticketless/departed targets are excluded. A two-second display grace avoids racing hello messages.
+in this run. Ticketless/departed targets are excluded. A two-second display grace after each player's assignment avoids racing delayed hello messages, including late arrivals.
 Snapshots are broadcast to all matching clients. Gate announcements on **both** local
 party leadership and `snapshot.leader == self`; receiving a notification is not permission
 for a non-leader to send it. Only the current leader sends the instruction, using either mod's wording and the

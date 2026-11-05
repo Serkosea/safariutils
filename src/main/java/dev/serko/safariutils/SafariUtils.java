@@ -199,6 +199,7 @@ public class SafariUtils implements ClientModInitializer {
 			tickSafely("session", SessionManager::tick);
 			tickSafely("ticket-trading", TicketTrading::tick);
             tickSafely("hotspot-assignment", HotspotWatch::tick);
+            tickSafely("automatic-ticket-entry", dev.serko.safariutils.client.AutomaticTicketEntry::tick);
             tickSafely("ticket-selection", dev.serko.safariutils.client.TicketSelection::tick);
 			tickSafely("critter-spotter", CritterSpotter::tick);
 			tickSafely("nests", NestTracker::tick);

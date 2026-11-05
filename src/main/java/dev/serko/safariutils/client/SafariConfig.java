@@ -141,6 +141,8 @@ public class SafariConfig {
         @SettingInfo(name = "Sparkling Mode Ticket", desc = "Ticket to select automatically in Sparkling mode; never substitutes another ticket")
         @SettingChoice(values = {"Manual", "Basic", "Economy", "Premium", "First Class"}) @Expose
         public int sparklingTicket = 0;
+        @SettingInfo(name = "Automatically Use Ticket for Sparklings", desc = "Uses your mode’s preferred ticket for an uncaught Sparkling, falling back to available tiers; Manual starts with Basic")
+        @SettingToggle @Expose public boolean autoSparklingTicket = false;
         @SettingInfo(name = "Assign Hotspots", desc = "Fairly assigns separate biomes to party members, preserving each finalized assignment")
         @SettingToggle @Expose public boolean assignHotspots = false;
         @SettingInfo(name = "Biome Reports", desc = "Shares biome completion for your run mode; uses party sync when available and chat otherwise")

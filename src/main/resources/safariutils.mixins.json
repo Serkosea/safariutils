@@ -5,6 +5,8 @@
   "client": [
     "ArmorStandRendererMixin",
     "CandleTargetMixin",
+    "TicketApproachInputMixin",
+    "TicketApproachViewMixin",
     "WaterFogMixin",
     "WaterSurfaceMixin",
     "SodiumWaterMixin",

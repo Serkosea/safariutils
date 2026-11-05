@@ -37,6 +37,8 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 	private volatile WebSocket socket;
 	private volatile WebSocketOutbox outbox;
 	private volatile boolean connected;
+    private volatile boolean sparklingSnapshotReady;
+    @Override public boolean sparklingSnapshotReady() { return connected && sparklingSnapshotReady; }
     private volatile java.util.Set<String> connectedPlayers = java.util.Set.of();
     @Override public java.util.Set<String> connectedPlayers() { return connected ? connectedPlayers : java.util.Set.of(); }
     private synchronized void presence(long attempt, java.util.Set<String> players) {
@@ -69,7 +71,11 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		if (!valid(next)) return;
 		Delivery delivery;
 		while ((delivery = incoming.poll()) != null) {
-			if (delivery.generation() == generation.get()) receiver.accept(delivery.message());
+			if (delivery.generation() == generation.get()) {
+                receiver.accept(delivery.message());
+                if (delivery.generation() == generation.get() && "S_ROOM".equals(delivery.message().type()))
+                    sparklingSnapshotReady = true;
+            }
 		}
 		long now = System.currentTimeMillis();
 		WebSocket current = socket;
@@ -120,7 +126,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 	@Override
 	public synchronized void disconnect() {
 		generation.incrementAndGet();
-		connected = false; coordination = false; connectedPlayers = java.util.Set.of();
+		connected = false; sparklingSnapshotReady = false; coordination = false; connectedPlayers = java.util.Set.of();
 		connecting = false;
 		incoming.clear();
 		WebSocket current = socket;
@@ -162,7 +168,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		}
 		socket = value;
         outbox = new WebSocketOutbox(value);
-		connected = false; coordination = false; connectedPlayers = java.util.Set.of();
+		connected = false; sparklingSnapshotReady = false; coordination = false; connectedPlayers = java.util.Set.of();
 		connecting = false;
 		failures = 0;
 		nextPingAt = System.currentTimeMillis() + PING_INTERVAL_MILLIS;
@@ -186,7 +192,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		generation.incrementAndGet();
 		incoming.clear();
 		socket = null;
-		connected = false; coordination = false; connectedPlayers = java.util.Set.of();
+		connected = false; sparklingSnapshotReady = false; coordination = false; connectedPlayers = java.util.Set.of();
 		connecting = false;
 		scheduleRetry();
 		DebugLog.line("SYNC_NET", "closed status=" + statusCode + " retryMs="
@@ -205,7 +211,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		WebSocket current = socket;
 		socket = null;
 		if (current != null) current.abort();
-		connected = false; coordination = false; connectedPlayers = java.util.Set.of();
+		connected = false; sparklingSnapshotReady = false; coordination = false; connectedPlayers = java.util.Set.of();
 		connecting = false;
 		scheduleRetry();
 		OperationalLog.error("SYNC/NETWORK", unwrap(error));

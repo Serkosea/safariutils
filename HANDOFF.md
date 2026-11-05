@@ -1,5 +1,33 @@
 # SafariUtils developer handoff
 
+## Pending party capture fixes (2026-11-04)
+
+Saved run 05-11-23 V58 proves John's Areita capsule head (item_display149320)
+was rediscovered beside CAPTURING149318 / Sparkling label149319, making the shared
+catch ambiguous. Capture props are excluded from live-body/texture pairing, retained
+by exact UUID until unload, while bodyless labels remain for nametag hiding and capture
+tracking. Appearance-only item displays use the existing 500ms metadata settling gate.
+Clarification: local discoveries retain data immediately, but ordinary alerts wait for
+the initial atomic party snapshot. Previously shared finds use only shared tracking and
+ticket reminders; genuinely new local finds can alert before or after ticket use. Local
+S publication waits for initial snapshot consumption; published ownership distinguishes
+own echoes from discoveries that predate our connection. Active local or shared
+Sparklings bypass ticket protection. Debug connected names use the frozen
+visit roster. Guest trading rechecks solo state and bounds leave/retry transactions.
+Regression fixture includes the recorded positions plus a real same-species neighbour.
+Final BuildAllArtifacts passed all nine standalone variants and SerkoAddons26.2, with
+633 byte-identical shared classes. Deployed SHA256-verified jars to Skyblock26.2 and
+Ticket Collecting. Saved run has no ci capture inputs, so full capture replay is unavailable;
+the regression instead uses its recorded entity layout. Live teammate-catch retest remains.
+Changes are pending a future release; do not replace 3.5.0 public assets automatically.
+
+
+Mutuals 4.1.0 review: docs/integrations/MUTUALS_4_1_REVIEW.md (local integration docs).
+The document now contains ONLY the confirmed held-coin payload issue: its count
+incorrectly depends on the starting-item chat toggle. John controls his own alert UI;
+our alert deduplication must preserve shared discovery facts and ticket reminders. Relevant sync
+and detector classes are identical across all three supplied Minecraft builds.
+
 ## SafariUtils 3.5.0 release review (2026-11-03)
 
 Latest 17H31M live session: 26,160 records, no warn/error or rejected sync decisions;
@@ -979,3 +1007,159 @@ cannot discover/announce, and expired ticket windows suppress new local found al
 A aggregate feeder snapshots can clear zero when consumption advances or the same
 reporter empties its known fill; unrelated unknown zero snapshots do not clear a fill.
 SYNC_OBJECTIVES diagnostics record received/applied feeder values and mound words.
+
+
+## Automatic Sparkling ticket entry (2026-11-04)
+
+Restored backend assignment-chat grace to 2 seconds per assigned player; allocation
+and late-arrival timing are unchanged. Backend timing suite: 91 passing tests.
+Deployed Worker version 91a2de74-7218-43c7-ab5d-1f32eb9e4680.
+
+Safari Runs > Tickets has an opt-in Automatically Use Ticket for Sparklings card.
+It uses the selected run mode’s ticket preference; Manual starts with Basic. AutomaticTicketEntry owns one
+bounded attempt per visit, including pre-ticket local or shared active discoveries.
+It reuses TicketSelection's availability checks and single submission, trying the
+preferred tier, then lower tiers descending, then higher tiers ascending. Unknown or
+ambiguous menu availability never triggers a fallback. Nearby Manager identity, normal reach, line of sight, safe
+floor, focus, manual input, active discovery and ticket-window checks govern entry.
+Approach input is injected only after vanilla physical input is read; it never
+sets movement keys, teleports, expands reach or changes player velocity. Movement
+eases and slows near reach, capped at three blocks and six seconds. Cancelled entry
+blocks delayed menu auto-selection, while manual ticket use remains possible.
+
+Developer-only /safari debug useticket basic|economy|premium|firstclass arms the same
+flow without needing a Sparkling, but still requires a live pre-ticket Safari visit
+and normal protection. It consumes a real ticket. /safari debug useticket cancel
+cancels; moving, turning, clicking, opening another screen or losing focus also
+cancels an active approach. TICKET/AUTO and TICKET/SELECT explain phase transitions
+and fallbacks through centralized logging. In-game approach/selection testing remains
+necessary; use Automatic Logging for success, cancellation and unavailable-tier tests.
+
+Validation: BuildAllArtifacts passed all nine standalone variants and integrated checks,
+including loader/mixin verification and 636 byte-identical shared classes. Collected
+SerkoAddons 26.2 jar deployed with matching hashes to Skyblock 26.2 and Ticket Collecting.
+No release assets, version numbers, website or GitHub pushes changed.
+
+Automatic ticket entry is Extra/Developer ONLY (user clarification). Both settings
+are hidden in Normal, and entry eligibility, tick, movement injection and selection
+overrides are capability-gated. Imported enabled Extra configs cannot activate it
+in Normal. Existing automatic ticket-menu selection remains in every edition.
+Normal-edition regression exercises the imported-config runtime boundary without
+a live Minecraft client, and navigation tests assert edition-specific card order.
+
+
+## Mixin compatibility review (2026-11-04)
+
+Automatic entry now requires both intact idle Input and zero movement vector before
+injecting forward input. Null, invalid and foreign analog movement cancels the
+approach instead of being overwritten or dereferenced. The Normal edition still
+returns before touching client input. Regressions cover these boundary cases.
+
+Integrated chat history replaces its exclusive Predicate.test redirect with a
+composable ModifyExpressionValue hook. The optional drop-effect name overlay uses
+require=0 if another renderer removes its invocation target; 26.3 also accepts a
+missing player render state. Existing darkness null-effect guard, nullable entity
+render-state handling, optional Sodium/water hooks and mod-ownership plugin retained.
+Static inspection of installed Noamm 1.3.4 legit found its KeyboardInput transformer
+returns its argument unchanged; installed Sodium 0.9.2 retains the expected single
+FluidState argument on updateQuad. This is static inspection, not live pack validation.
+
+Compatibility validation passed: all nine standalone variants, integrated 26.2 and
+26.3 checks, Fabric Loader 0.19.5/0.20.0/0.20.1 transformation tests, and 636-class
+standalone/integrated parity for 26.2. Deployed verified 26.2 collected artifact to
+Skyblock 26.2 and Ticket Collecting. No public release or website changes.
+
+
+## Mode-based automatic entry ticket fallback (2026-11-04)
+
+Removed autoSparklingTicketTier (old saved values are ignored). autoSparklingTicket
+still defaults false, is now titled Automatically Use Ticket for Sparklings, and
+remains Extra/Developer only. Full auto uses the current mode's ticket choice; Manual
+means Basic-first for this explicitly enabled full-auto path. Normal menu selection
+retains its existing exact-preference/manual behavior. Developer useticket commands
+set a preferred tier and exercise the same fallback rules.
+
+Fallback order: Basic/Economy/Premium/First Class; Economy/Basic/Premium/First Class;
+Premium/Economy/Basic/First Class; First Class/Premium/Economy/Basic. Availability
+must be confirmed for each higher-priority choice before moving on; two polls must
+agree on the full selected option. All tiers unavailable stops without a click.
+Diagnostics record the actual submitted tier, preferred tier and fallback flag.
+Regression covers all 64 preference/inventory combinations plus incomplete, unknown
+and ambiguous menu data. Existing protected, single-click submission stays shared.
+
+
+## Debug automatic-entry no-op fix (2026-11-04)
+
+Latest 17H-38M log and latest.log showed debug armed, no approach, then ticket lockout.
+The Manager name was armor-stand ID 149735 at -51.5/68/21.5, not the clickable player
+body. The previous resolver required a Player named Safari Manager; the pending test
+was also cleared before successful resolution, silently returning to Sparkling gating.
+
+SafariManagerTarget now pairs the separate label with a nearby unnamed player body
+(or interaction proxy), excluding self, listed players and party members, rejecting
+ambiguous bodies and preferring one player body over its interaction proxy. It uses
+EntityTypeIds and shares the spawn anchor with TicketProtection. Regression uses the
+recorded label plus delayed body, participant, proxy and ambiguity fixtures.
+
+Debug intent remains armed through NPC loading; it is consumed only when approach
+starts. Ticket expiry/visit changes now explain cancellation of queued tests. Central
+TICKET/AUTO diagnostics log arm, changed waiting reasons, lookup failure counts,
+approach and stop. Still no Sparkling or enabled automatic-entry toggle required for
+the developer test; live Safari/pre-ticket safety checks remain.
+
+
+## Automatic-entry motion smoothing (2026-11-04)
+
+Latest 17H-46M log confirms both debug approaches interacted with the Manager and
+activated tickets (~700 ms from approach); party-leader preselection meant no in-run
+ticket menu. This confirms the label/body and pending-debug fixes in those tests.
+
+Replaced capped 20 Hz yaw/pitch steps with TicketTurnSmoother, an analytical critically
+damped trajectory evaluated after vanilla mouse handling each frame. It eases in/out,
+takes the shortest yaw path, caps stalled-frame catch-up and rejects non-finite targets.
+No random offsets, target scanning, network work or interaction calls in the frame hook.
+Normal builds return immediately. Mouse/input/context safeguards remain; interactions
+stay on the tick. Walking eases in from its own start time; the follow-up below replaces
+the initial settled-aim requirement.
+
+The non-cancelling optional MouseHandler RETURN hook uses no local capture/redirect.
+Verified handleAccumulatedMovement exists on all three supported profiles. Regressions
+cover frame-rate equivalence, acceleration/deceleration, no overshoot, yaw wraparound,
+settling and stall limits. Live feel remains subjective and requires another test.
+
+## Overlapping automatic-entry approach (2026-11-04)
+
+Turn response increased from 9 to 14 with the same critically damped, frame-rate
+independent motion. Stalled-frame integration is capped at 1/30 second. Walking now
+ramps over 200 ms up to ordinary walking speed (no sprint), overlaps turns within a
+60-degree forward cone, and scales down smoothly near reach or poor alignment.
+Collision checks cover the swept box in the actual facing direction, not the target
+direction. Normal reach and a valid unobstructed view ray trigger interaction without
+waiting for settled camera velocity or the NPC center to enter reach.
+
+Manager interaction may retry twice, at least 450 ms apart, only while no screen or
+ticket activation has arrived. Each attempt rechecks normal reach, target, occlusion,
+party protection and player safety. Focus, movement and camera changes cancel pending
+retries. The approach stops walking on the first successful ray interaction; ticket
+menu submission remains single-shot. Diagnostics include attempt number and approach
+elapsed time. Existing Extra-only/default-off and mode-based tier fallback remain.
+Regression coverage includes concurrent heading control, walking ramp/cap, retry
+spacing/cap/menu arrival, alongside the existing selection and cancellation checks.
+Release remains pending in-game testing; no publishing is part of this change.
+
+Validation: standalone 26.2 Developer check and BuildAllArtifacts passed (all nine
+standalone variants, integrated 26.2 checks, 640 byte-identical shared classes).
+Integrated 26.3 loaderCompatibilityTest also passed. The tested 26.2 integrated jar
+was deployed and hash-verified in Skyblock 26.2 and Ticket Collecting; restart required.
+Logs: build/ticket-overlap.log here; build/ticket-overlap-matrix.log and
+build/ticket-overlap-26.3.log in SerkoAddons. No public release or GitHub push.
+
+## 3.6.0 release preparation (2026-11-04)
+
+User reports solo automatic entry and Alpha Sparkling tests working. New party testing
+was unavailable. Fixed Sparkling live beacon rendering bypassing exact capture ownership:
+the same immutable suppression snapshot now gates both live marker and beacon, including
+guaranteed Driftling catches. Other individuals remain visible; capture completion and
+Sparkling discovery state are unchanged. Capture/edition regressions passed before version
+bump. Release includes the accumulated detection, party alert, ticket entry and compatibility
+changes above. Keep public downloads Normal x3 then Extra x3; private developer jars stay private.

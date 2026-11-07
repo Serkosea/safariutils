@@ -7,6 +7,17 @@ final class SparklingTextureEvidence {
     private SparklingTextureEvidence() { }
 
     static void merge(List<CritterScan.Sample> samples, List<CritterScan.Match> matches, Set<UUID> capsuleLabels) {
+        merge(samples, matches, capsuleLabels, new HashMap<>(), new HashMap<>(), ignored -> false);
+    }
+
+    static void merge(List<CritterScan.Sample> samples, List<CritterScan.Match> matches, Set<UUID> capsuleLabels,
+                      Map<UUID, UUID> owners, Map<UUID, Set<UUID>> capturedSkins, java.util.function.Predicate<UUID> capturing) {
+        Set<UUID> loaded = new HashSet<>();
+        for (var sample : samples) loaded.add(sample.id());
+        owners.keySet().retainAll(loaded);
+        capturedSkins.keySet().retainAll(loaded);
+        Set<UUID> presentBodies = new HashSet<>();
+        for (var match : matches) if (match.body() != null) presentBodies.add(match.body().id());
         List<CritterScan.Sample> captureStatuses = samples.stream()
             .filter(sample -> sample.type().equals("armor_stand") && "CAPTURING".equalsIgnoreCase(sample.name())).toList();
         Set<UUID> captureLabels = new HashSet<>(capsuleLabels);
@@ -18,6 +29,20 @@ final class SparklingTextureEvidence {
         if (skins.isEmpty()) return;
         int originalSize = matches.size();
         for (var skin : skins) {
+            UUID owner = owners.get(skin.id());
+            // Retain an established owner when peers crowd together; never transfer its skin by proximity.
+            int retained = -1;
+            if (owner != null) for (int index = 0; index < originalSize; index++) {
+                var match = matches.get(index);
+                if (match.body() != null && owner.equals(match.body().id()) && near(skin, match)
+                    && !captureLabels.contains(match.label().id())) { retained = index; break; }
+            }
+            if (retained >= 0) {
+                matches.set(retained, sparkling(matches.get(retained), skin));
+                capturedSkins.remove(skin.id());
+                continue;
+            }
+            if (owner != null && capturing.test(owner)) capturedSkins.computeIfAbsent(skin.id(), ignored -> Set.copyOf(presentBodies));
             int exact = -1;
             for (int index = 0; index < originalSize; index++) {
                 var match = matches.get(index);
@@ -42,12 +67,21 @@ final class SparklingTextureEvidence {
             }
             if (candidate >= 0 && !ambiguous) {
                 var match = matches.get(candidate);
+                // A peer that was already alive when the owner vanished is not its breakout.
+                if (capturedSkins.containsKey(skin.id()) && (match.body() == null
+                    || capturedSkins.get(skin.id()).contains(match.body().id()))) continue;
                 // A label equidistant from two distinct skins cannot choose an individual.
                 for (var other : skins) {
                     if (!other.id().equals(skin.id()) && near(other, match)) { ambiguous = true; break; }
                 }
-                if (!ambiguous) matches.set(candidate, sparkling(match, skin));
-            } else if (candidate < 0) {
+                if (!ambiguous) {
+                    matches.set(candidate, sparkling(match, skin));
+                    if (match.body() != null && !match.body().id().equals(skin.id())) {
+                        owners.put(skin.id(), match.body().id());
+                        capturedSkins.remove(skin.id());
+                    }
+                }
+            } else if (candidate < 0 && !capturedSkins.containsKey(skin.id())) {
                 // No named representation yet: the appearance carrier is its own stable anchor.
                 matches.add(new CritterScan.Match(skin.textureSpecies(), skin, skin, skin.textureSparkling(), false, Set.of(skin.id())));
             }

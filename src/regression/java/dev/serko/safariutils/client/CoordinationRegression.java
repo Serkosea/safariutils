@@ -285,6 +285,9 @@ public final class CoordinationRegression {
         }
         check(!AutomaticTicketEntry.inWindow(-1) && !AutomaticTicketEntry.inWindow(0)
             && !AutomaticTicketEntry.inWindow(1500) && AutomaticTicketEntry.inWindow(1501), "entry requires known time for submission");
+        check(!AutomaticTicketEntry.movementStalled(0), "unfocused frames without input cannot trip movement guard");
+        check(!AutomaticTicketEntry.movementStalled(13.99f), "partial turning input gets its actual movement allowance");
+        check(AutomaticTicketEntry.movementStalled(14), "fourteen blocked full movement ticks stop approach");
         check(AutomaticTicketEntry.approachSpeed(2, 0) == 0, "approach starts without a movement jump");
         check(AutomaticTicketEntry.approachSpeed(2, 100) < AutomaticTicketEntry.approachSpeed(2, 200), "approach eases in promptly");
         check(AutomaticTicketEntry.approachSpeed(.2, 500) < AutomaticTicketEntry.approachSpeed(2, 500), "approach slows near reach");

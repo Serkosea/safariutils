@@ -19,12 +19,15 @@ public final class AutomaticTicketEntry {
     private static long visit, started, menuStarted, candidateSince, lastProgress;
     private static Entity manager;
     private static String waitingReason = "";
-    private static Vec3 origin, progressPosition;
+    private static Vec3 progressPosition;
     private static float expectedYaw, expectedPitch, forward;
     private static final TicketTurnSmoother turn = new TicketTurnSmoother();
     private static long lastViewUpdate, walkingSince, lastInteraction;
     private static int tier, pendingTest, interactionAttempts;
     private static boolean testing, blockSelection, menuSeen;
+    private static int appliedMovementTicks;
+    private static long lastMovementInput;
+    private static float appliedMovementEffort;
     private AutomaticTicketEntry() { }
 
     static boolean available() { return BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS); }
@@ -68,12 +71,23 @@ public final class AutomaticTicketEntry {
     }
     static boolean blocksSelection() { return available() && blockSelection; }
     static boolean choosingTicket() { return available() && phase == Phase.MENU; }
+    /** Only suppress automatic focus-loss menus; never change the user's pause setting or Escape handling. */
+    public static boolean keepsBackgroundEntryActive() {
+        if (!available() || phase == Phase.FINISHED) return false;
+        if (phase == Phase.IDLE && pendingTest == 0
+            && (!ConfigManager.get().gameplay.autoSparklingTicket || !sparkling())) return false;
+        Minecraft client = Minecraft.getInstance();
+        return client != null && eligible(client);
+    }
     static int entryPreference(int modePreference) { return modePreference >= 1 && modePreference <= 4 ? modePreference : 1; }
     static int requestedTier(int normal) { return choosingTicket() ? testing ? tier : entryPreference(normal) : normal; }
     static void unavailable() { if (choosingTicket()) stop("no tickets available"); }
     static void submitting() { if (phase == Phase.MENU) stop("ticket submitted"); }
     public static void manualOverride() { stop("manual input"); }
     private static void stop(String reason) {
+        Minecraft client = Minecraft.getInstance();
+        if (phase == Phase.APPROACH && client != null && client.player != null)
+            logMovement(client, MonotonicTime.nowMillis(), "approach ended: " + reason);
         forward = 0;
         if (phase == Phase.MENU && !reason.equals("ticket submitted")) blockSelection = true;
         if (phase == Phase.APPROACH || phase == Phase.MENU || pendingTest != 0) {
@@ -137,10 +151,11 @@ public final class AutomaticTicketEntry {
                 return;
             }
             pendingTest = 0; waitingReason = "";
-            origin = progressPosition = client.player.position();
+            progressPosition = client.player.position();
             started = lastProgress = now; expectedYaw = client.player.getYRot(); expectedPitch = client.player.getXRot();
             turn.reset(expectedYaw, expectedPitch); lastViewUpdate = System.nanoTime(); walkingSince = 0;
             interactionAttempts = 0; lastInteraction = 0;
+            appliedMovementTicks = 0; appliedMovementEffort = 0; lastMovementInput = 0;
             phase = Phase.APPROACH;
             if (TicketProtection.isEntryScreen(ClientCompat.screen())) {
                 phase = Phase.MENU; menuSeen = true; menuStarted = now;
@@ -150,9 +165,10 @@ public final class AutomaticTicketEntry {
         if (!testing && (!ConfigManager.get().gameplay.autoSparklingTicket || !sparkling())) { stop("Sparkling entry changed"); return; }
         if (manualKeys(client)) { stop("manual input"); return; }
         client.player.setSprinting(false);
+        if (phase == Phase.APPROACH && now - started >= 3000) { stop("Manager approach timed out after 3 seconds"); return; }
         if (phase == Phase.APPROACH && ClientCompat.screen() != null) {
             forward = 0;
-            if (now - started > 6000) { stop("menu interrupted approach"); return; }
+            walkingSince = 0; appliedMovementEffort = 0; lastProgress = now;
             if (!client.player.containerMenu.getCarried().isEmpty()) { waitFor("held cursor item to be placed"); return; }
             ClientCompat.screen().onClose();
             return;
@@ -169,8 +185,8 @@ public final class AutomaticTicketEntry {
             if (retryDue(interactionAttempts, now - lastInteraction, ClientCompat.screen() != null)) interactWithManager(client, now);
             return;
         }
-        if (ClientCompat.screen() != null || !safePlayer(client) || manager == null || manager.isRemoved()
-            || now - started > 6000 || client.player.position().distanceTo(origin) > 3) { stop("approach interrupted or limit reached"); return; }
+        if (manager == null || manager.isRemoved()) { stop("Manager no longer loaded"); return; }
+        if (!validPlayerState(client)) { stop("player is dead, riding, flying or in liquid"); return; }
         if (Math.abs(net.minecraft.util.Mth.wrapDegrees(client.player.getYRot() - expectedYaw)) > 1.5
             || Math.abs(client.player.getXRot() - expectedPitch) > 1.5) { stop("camera moved"); return; }
         Vec3 eye = client.player.getEyePosition(), aim = manager.getBoundingBox().getCenter(), delta = aim.subtract(eye);
@@ -189,13 +205,14 @@ public final class AutomaticTicketEntry {
             // Walking overlaps turning, so validate where the player is actually facing.
             double radians = Math.toRadians(client.player.getYRot());
             Vec3 direction = new Vec3(-Math.sin(radians), 0, Math.cos(radians));
-            var nextBox = client.player.getBoundingBox().move(direction.scale(.45));
             var sweptBox = client.player.getBoundingBox().expandTowards(direction.scale(.45));
-            var supportBox = nextBox.deflate(.08, 0, .08).move(0, -.15, 0);
-            if (!client.level.noCollision(client.player, sweptBox) || client.level.noCollision(client.player, supportBox)) { stop("unsafe ground ahead"); return; }
-            if (client.player.position().distanceTo(progressPosition) > .04) { progressPosition = client.player.position(); lastProgress = now; }
-            else if (now - lastProgress > 700) { stop("no movement progress"); return; }
-        } else lastProgress = now;
+            if (!client.level.noCollision(client.player, sweptBox)) { stop("walking path is obstructed"); return; }
+            if (client.player.position().distanceTo(progressPosition) > .04) {
+                progressPosition = client.player.position(); lastProgress = now; appliedMovementEffort = 0;
+            } else if (movementStalled(appliedMovementEffort)) {
+                stop("no movement progress"); return;
+            }
+        } else { lastProgress = now; appliedMovementEffort = 0; }
     }
     /** Bounded retries target only the NPC; TicketSelection still submits at most once. */
     private static boolean interactWithManager(Minecraft client, long now) {
@@ -245,8 +262,11 @@ public final class AutomaticTicketEntry {
         client.player.setYRot(expectedYaw); client.player.setXRot(expectedPitch);
     }
     private static boolean safePlayer(Minecraft client) {
+        return validPlayerState(client);
+    }
+    private static boolean validPlayerState(Minecraft client) {
         var player = client.player;
-        return player != null && player.isAlive() && player.onGround() && !player.isPassenger()
+        return player != null && player.isAlive() && !player.isPassenger()
             && !player.isInWater() && !player.isInLava() && !player.getAbilities().flying;
     }
     private static boolean manualKeys(Minecraft client) {
@@ -260,6 +280,17 @@ public final class AutomaticTicketEntry {
         return physical != null && !physical.forward() && !physical.backward() && !physical.left() && !physical.right()
             && !physical.jump() && !physical.shift() && movement != null && movement.x == 0 && movement.y == 0;
     }
+    // Count actual movement ticks, not background frame delays or barely-aligned turning.
+    static boolean movementStalled(float effort) { return effort >= 14; }
+    private static void logMovement(Minecraft client, long now, String reason) {
+        var input = client.player.input;
+        var movement = input.getMoveVector();
+        DebugLog.line("TICKET/AUTO", reason + " focused=" + client.isWindowActive()
+            + " input=" + input.getClass().getSimpleName() + " requested=" + forward
+            + " actual=" + movement.x + "," + movement.y + " appliedTicks=" + appliedMovementTicks
+            + " effort=" + appliedMovementEffort + " inputAgeMs=" + (lastMovementInput == 0 ? -1 : now - lastMovementInput)
+            + " progressAgeMs=" + (now - lastProgress));
+    }
     public static float forwardInput(Input physical, Vec2 movement) {
         if (!available()) return 0;
         Minecraft client = Minecraft.getInstance();
@@ -267,6 +298,9 @@ public final class AutomaticTicketEntry {
         if (!idleInput(physical, movement) || client == null || ClientCompat.screen() != null || !eligible(client)) {
             stop("manual input or context changed"); return 0;
         }
+        lastMovementInput = MonotonicTime.nowMillis();
+        appliedMovementEffort += forward;
+        if (appliedMovementTicks++ == 0) logMovement(client, lastMovementInput, "movement input started");
         return forward;
     }
 }

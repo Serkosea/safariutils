@@ -6,6 +6,7 @@
     "ArmorStandRendererMixin",
     "CandleTargetMixin",
     "TicketApproachInputMixin",
+    "TicketApproachFocusMixin",
     "TicketApproachViewMixin",
     "WaterFogMixin",
     "WaterSurfaceMixin",

@@ -1282,3 +1282,35 @@ build/texture-unification.log (public), build/texture-unification-matrix.log (pr
 - Version prepared as 3.7.0; concise release notes, all Normal downloads before all Extra. Website only changes version/asset URLs, preserving existing layout and text. Integration reviews ignored rather than published.
 - Backend existing protocol suite: 103/103 passed. Full matrix and integrated gates running; release/push results follow.
 - Final release gates passed: nine standalone variants, integrated SerkoAddons checks, 645 byte-identical shared classes, and 103 backend tests. Publishing six Normal/Extra jars only; developer artifacts remain local.
+
+## 2026-11-07 background automatic ticket test
+- Latest 15H-59M log: debug Basic armed, approach started, Alt-Tab opened PauseScreen, automation closed it, then stopped for no movement progress at ~1.3 seconds. Background renderer ~10 FPS; log lacks actual input state, so the underlying movement failure is not conclusively identified.
+- Corrected watchdog to count applied forward-input effort (14 full walking ticks) instead of 700ms wall time, excluding screen interruption, turn alignment and background scheduling delays. Six-second approach cap, collision/reach/manual cancellation unchanged.
+- Added first movement-hook and approach-end diagnostics: focus, input class/vector, requested forward, applied ticks/effort and input/progress ages. Next tabbed-out debug test required; do not claim confirmed in-game resolution.
+- 26.2 developer check/regressions/artifact boundaries passed. Integrated build and deployment pending. No public release changes authorized for this fix yet.
+- Integrated checks and 645-class parity passed; deployed and SHA256 verified to Skyblock 26.2 and Ticket Collecting. Restart and repeat debug command while unfocused with automatic logs.
+
+## 2026-11-07 confirmed unfocused ticket blocker
+- 16H-09M log: two focused attempts activated tickets; unfocused attempt timed out after six seconds with appliedTicks=0, requested=0, no input hook calls. PauseScreen opened after focus loss and reappeared after stopping.
+- Verified vanilla Minecraft.pauseIfInactive bytecode: after 500ms unfocused it calls pauseGame every frame. Closing the menu alone therefore produces a reopen/reclose loop that resets forward movement before input runs.
+- Added TicketApproachFocusMixin on pauseIfInactive HEAD, narrowly cancelled while an eligible Extra automatic/debug ticket entry is pending/approaching/in its ticket menu. No options mutation, no changes to manual pause invocation; immediately inactive on finish/cancellation/ticket activation/outside entry context. Method verified present on all three supported Minecraft versions.
+- Prior watchdog/input diagnostics retained. Cross-profile checks/build and integrated deployment pending; no public release or GitHub push.
+- All three developer profile checks passed; integrated mixin/loader checks and 646-class parity passed. SHA256-verified deployment completed to Skyblock 26.2 and Ticket Collecting. Restart required, then repeat unfocused debug Basic entry with logging; runtime confirmation still pending.
+
+## 2026-11-07 remove approach travel/time caps
+- 16H-16M log: first two attempts succeeded (second unfocused), third unfocused attempt stopped after 1.297s with the old combined interruption/limit reason. Six-second timer ruled out; prior diagnostics cannot distinguish three-block displacement vs transient ground/player/manager state.
+- User requests no arbitrary limit. Removed six-second approach and three-block displacement caps. Brief airborne states now pause movement and resume on landing, bounded by actual Safari entry window. Manager loss and invalid player state have distinct reasons; manual input, obstruction, actual stuck detection and menu submission bounds retained.
+- 26.2 checks/build and integrated deployment pending. No publishing.
+- User correction supersedes preceding limit behavior: restore approach timeout at 3 seconds (specific stop reason); remove onGround requirement and support-under-next-step check entirely, along with three-block travel cap. Normal interaction reach, collision/manual/state checks remain. Earlier build was not deployed; rebuilding corrected behavior.
+- Revised 26.2 regression/artifact checks and integrated 646-class parity passed. SHA256-verified deployment to Skyblock 26.2 and Ticket Collecting complete; restart required. No release or pushes.
+
+## 2026-11-07 16H-24M sparkling and shrimp observations
+- Visits 3/4: same Driftling b24550dc and Mantis texture bdd025e0 are scanned pre-ticket as sparkling=false (ci body snapshots). First true evidence appears after ticket activation: Driftling ~150ms, Mantis ~1.2s. Scan/watch are visit-enabled and no ticket gate found; evidence is consistent with alpha changing appearances after admission, not delayed announcement. Logs do not contain raw profile changes, so avoid claiming universal server requirement. Added first-sighting sparkle/source and appearance-transition logging.
+- Static shrimp texture carriers cc4d4106 and 6d6f781d remained after their tropical-fish bodies vanished during A5/A6 capture, becoming new texture-only sightings at the bottom. Added per-visit loaded texture ownership, retaining known owners amid crowded peers. Missing capture-associated owner suppresses independent texture fallback until a genuine unambiguous new body returns; existing peer bodies cannot inherit residue. Unloaded textures prune ownership; ordinary noncapture body unloading still permits distant detection.
+- New regression cases cover ownership, crowding, capture residue, peer rejection, breakout recovery and normal distant fallback. 26.2 checks/build then integrated deployment pending. No release/push.
+- Final 26.2 regression/artifact checks and integrated mixin/loader/parity checks passed (646 shared classes). Deployed with SHA256 verification to both 26.2 instances. User should retest clustered Mantis catches; no live confirmation yet.
+
+## 2026-11-07 v3.7.1 release
+- Reviewed texture capture ownership and grouped rebindings; retained conservative unique matching and distant noncapture fallback. Avoided repeated captured-peer set allocation with lazy insertion.
+- Full nine-variant standalone matrix passed regression and artifact boundaries; integrated SerkoAddons mixin/loader checks and 646 byte-identical shared classes passed. Matrix log: private backend/release-3.7.1-matrix.log.
+- Version 3.7.1, concise fixes-only notes, existing Normal-then-Extra six-download ordering. Website changes only version labels/asset links; existing layout and descriptions retained. Publishing and deployments follow.

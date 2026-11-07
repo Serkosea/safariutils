@@ -385,6 +385,13 @@ public final class CritterState {
 		return logical != null && logical.life == Life.CAUGHT;
 	}
 
+    /** Exact ownership only: a retained appearance part must not become a new critter during capture. */
+    static boolean isCaptureAssociated(UUID entityId) {
+        Long id = logicalByEntity.get(entityId);
+        Logical logical = id == null ? null : logicals.get(id);
+        return logical != null && (logical.life == Life.CAUGHT || logical.activeAttempt != 0L);
+    }
+
 	private static AttemptView view(Attempt attempt) {
 		return new AttemptView(attempt.id, attempt.logicalId, attempt.critter,
 			attempt.targetEntityId, attempt.capsuleEntityId, attempt.anchor,

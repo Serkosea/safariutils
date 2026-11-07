@@ -34,9 +34,9 @@ Choose the jar that matches your Minecraft version.
 
 | Minecraft | Safe Mode | Extra |
 |---|---|---|
-| 26.1.2 | `safariutils-3.7.0+mc26.1.2.jar` | `safariutils-3.7.0-extra+mc26.1.2.jar` |
-| 26.2 | `safariutils-3.7.0+mc26.2.jar` | `safariutils-3.7.0-extra+mc26.2.jar` |
-| 26.3 | `safariutils-3.7.0+mc26.3.jar` | `safariutils-3.7.0-extra+mc26.3.jar` |
+| 26.1.2 | `safariutils-3.7.1+mc26.1.2.jar` | `safariutils-3.7.1-extra+mc26.1.2.jar` |
+| 26.2 | `safariutils-3.7.1+mc26.2.jar` | `safariutils-3.7.1-extra+mc26.2.jar` |
+| 26.3 | `safariutils-3.7.1+mc26.3.jar` | `safariutils-3.7.1-extra+mc26.3.jar` |
 
 The Safe Mode edition is the recommended download. Extra includes features that may provide information the player cannot directly see and may not be safe to use.
 

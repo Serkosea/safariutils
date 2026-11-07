@@ -15,6 +15,8 @@ import java.util.UUID;
 /** Scans loaded critter labels once and shares the paired bodies with every tracker. */
 public final class CritterEntities {
     private static final java.util.Set<UUID> captureVisuals = new java.util.HashSet<>();
+    private static final Map<UUID, UUID> textureOwners = new HashMap<>();
+    private static final Map<UUID, java.util.Set<UUID>> capturedTextures = new HashMap<>();
 
 	/** Spawns do not appear fast enough to be worth scanning every tick. */
 	private static final int SCAN_INTERVAL_TICKS = 5;
@@ -173,10 +175,16 @@ public final class CritterEntities {
 			java.util.UUID labelId = s.label().getUUID();
 			nextLabelIds.add(labelId);
 			Sighting was = prevByLabel.get(labelId);
+            if (was != null && was.sparkling() != s.sparkling())
+                DebugLog.line("SIGHTING/APPEARANCE", s.critter().name() + " label=" + shortId(labelId)
+                    + " sparkling=" + was.sparkling() + " -> " + s.sparkling()
+                    + " texture=" + !s.textureIds().isEmpty()
+                    + " ticket=" + (dev.serko.safariutils.session.SessionManager.current() != null));
 
 			if (was == null) {
 				DebugLog.line("SIGHTING+", s.critter().name() + " label=" + shortId(labelId)
-					+ " mob=" + shortId(mobId(s)) + mobInfo(s.mob()) + " pos=" + pos(s.body()));
+					+ " mob=" + shortId(mobId(s)) + mobInfo(s.mob()) + " pos=" + pos(s.body())
+                    + " sparkling=" + s.sparkling() + " texture=" + !s.textureIds().isEmpty());
 
 				// Capture capsules keep the critter label but have no paired mob. Log
 				// their player-relative position to help trace entity ID changes.
@@ -305,6 +313,8 @@ public final class CritterEntities {
 		lastPairFailureLogged.clear();
         SparklingTextures.clear();
         captureVisuals.clear();
+        textureOwners.clear();
+        capturedTextures.clear();
 	}
 
 	private static List<Sighting> scan() {
@@ -345,7 +355,8 @@ public final class CritterEntities {
             List<Sighting> bodyless = new ArrayList<>();
             for (var match : matches) if (match.body() == null)
                 bodyless.add(new Sighting(match.critter(), WorldEntities.find(match.label().id()), null, match.sparkling()));
-            SparklingTextureEvidence.merge(samples, matches, capsuleLabels(bodyless));
+            SparklingTextureEvidence.merge(samples, matches, capsuleLabels(bodyless), textureOwners, capturedTextures,
+                CritterState::isCaptureAssociated);
         }
 		List<Sighting> result = new ArrayList<>(matches.size());
 		for (var match : matches) {

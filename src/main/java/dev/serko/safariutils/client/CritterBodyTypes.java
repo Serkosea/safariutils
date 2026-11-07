@@ -53,6 +53,10 @@ final class CritterBodyTypes {
 		Map.entry("Doomspiral", Set.of("warden"))
 	);
 
+    static String preferredBody(Critter critter) {
+        if (critter.name().equals("Shyworm")) return "zombie";
+        return EXPECTED_BODY_TYPES.getOrDefault(critter.name(), Set.of("player")).stream().sorted().findFirst().orElse("player");
+    }
 	static boolean known(Critter critter) { return EXPECTED_BODY_TYPES.containsKey(critter.name()); }
 	static boolean mobileConcealedBody(Critter critter, String type) {
 		return type.equals("silverfish") && switch (critter.name()) {

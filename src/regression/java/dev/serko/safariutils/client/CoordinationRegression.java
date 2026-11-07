@@ -7,6 +7,9 @@ import java.util.*;
 public final class CoordinationRegression {
     private static int checks;
     public static int run() throws Exception {
+        check(BiomeCoordination.electedReporter("a", Set.of("b", "c")), "lowest simultaneous reporter sends chat");
+        check(!BiomeCoordination.electedReporter("b", Set.of("a", "c")), "other simultaneous reporters suppress duplicate chat");
+        check(BiomeCoordination.electedReporter("b", Set.of()), "sole reporter sends chat for nonmod members");
         var soloProbe = new BiomeCoordination.SoloDiagnostic();
         check(!soloProbe.poll(SafariBiome.FOREST, RunMode.SPARKLING, true, 1000), "solo diagnostic waits for settling");
         check(!soloProbe.poll(SafariBiome.FOREST, RunMode.SPARKLING, true, 2499), "solo diagnostic cannot report early");
@@ -32,6 +35,20 @@ public final class CoordinationRegression {
             check(waitingField.getLong(null) == -1, "solo latched network fallback");
             rosterField.set(null, List.of(a,b));
             check(PartyHotspotSync.controlsAssignments(), "resolved party lost backend grace period");
+            var authorityField = PartyHotspotSync.class.getDeclaredField("authority"); authorityField.setAccessible(true);
+            Object backend = java.util.Arrays.stream(authorityField.getType().getEnumConstants())
+                .filter(value -> value.toString().equals("BACKEND")).findFirst().orElseThrow();
+            var unavailableField = PartyHotspotSync.class.getDeclaredField("unavailableSince"); unavailableField.setAccessible(true);
+            authorityField.set(null, backend);
+            unavailableField.setLong(null, 1);
+            check(!PartyHotspotSync.controlsAssignments(9000), "lost backend before allocation must fall back");
+            var lockedField = PartyHotspotSync.class.getDeclaredField("locked"); lockedField.setAccessible(true);
+            @SuppressWarnings("unchecked") var fixed = (Map<String, SafariBiome>) lockedField.get(null);
+            fixed.put(a, SafariBiome.HAUNTED);
+            authorityField.set(null, backend);
+            unavailableField.setLong(null, 1);
+            check(PartyHotspotSync.controlsAssignments(9000) && fixed.get(a) == SafariBiome.HAUNTED,
+                "disconnect must never reshuffle locked assignments");
             var self = new dev.serko.safariutils.state.PartySnapshot.Member("Self",a);
             var foreign = new dev.serko.safariutils.state.PartySnapshot.Member("Other",outsider);
             var solo = new dev.serko.safariutils.state.PartySnapshot(1,1,
@@ -212,6 +229,12 @@ public final class CoordinationRegression {
         check(SafariManagerTarget.choose(List.of(managerLabel, npcBody, new SafariManagerTarget.Candidate(23, npcBody.position(), "another-npc", true, false, false))) == null, "ambiguous bodies never clicked");
         check(SafariManagerTarget.choose(List.of(managerLabel, new SafariManagerTarget.Candidate(24, npcBody.position().add(1,0,0), "other-npc", true, false, false))) == null, "adjacent NPC outside label column excluded");
         var smoothTurn = new TicketTurnSmoother();
+        check(TicketTrading.arrivingPlayer("⚔ [MVP++] Stuffy warped to your instance").equals("stuffy"), "ranked warp arrival parsed");
+        check(TicketTrading.arrivingPlayer("ᛜ _cj joined the Critter Safari.").equals("_cj"), "non-sync Safari arrival parsed");
+        check(TicketTrading.arrivingPlayer("[MVP+] _cj joined the party.").isEmpty(), "party join is not Safari arrival");
+        check(TicketTrading.arrivingPlayer("Party > Someone: _cj joined the Critter Safari.").isEmpty(), "party chat cannot confirm arrival");
+        check(!TicketTrading.guestsArrived(java.util.Set.of("stuffy", "_cj"), java.util.Set.of("stuffy")), "one synced guest does not release mixed-party announcement");
+        check(TicketTrading.guestsArrived(java.util.Set.of("stuffy", "_cj"), java.util.Set.of("stuffy", "_cj")), "all guests release announcement regardless of sync");
         float referenceYaw = 0;
         for (int fps : new int[]{30, 60, 144}) {
             smoothTurn.reset(0, 0);
@@ -241,6 +264,10 @@ public final class CoordinationRegression {
         check(!AutomaticTicketEntry.idleInput(net.minecraft.world.entity.player.Input.EMPTY, null), "null movement is not idle");
         check(!AutomaticTicketEntry.idleInput(net.minecraft.world.entity.player.Input.EMPTY, new net.minecraft.world.phys.Vec2(.1f, 0)), "analog movement from another mod wins");
         check(!AutomaticTicketEntry.idleInput(net.minecraft.world.entity.player.Input.EMPTY, new net.minecraft.world.phys.Vec2(Float.NaN, 0)), "invalid movement is rejected");
+        check(AutomaticTicketEntry.idleInput(new net.minecraft.world.entity.player.Input(false,false,false,false,false,false,true),
+            net.minecraft.world.phys.Vec2.ZERO), "toggle sprint alone does not cancel entry");
+        check(!AutomaticTicketEntry.idleInput(new net.minecraft.world.entity.player.Input(true,false,false,false,false,false,true),
+            net.minecraft.world.phys.Vec2.ZERO), "real directional input still cancels with toggle sprint");
         check(AutomaticTicketEntry.idleInput(net.minecraft.world.entity.player.Input.EMPTY, net.minecraft.world.phys.Vec2.ZERO), "only intact idle input permits automation");
         check(AutomaticTicketEntry.available() == !dev.serko.safariutils.BuildVersion.SAFE, "automatic entry is Extra only");
         if (dev.serko.safariutils.BuildVersion.SAFE) {

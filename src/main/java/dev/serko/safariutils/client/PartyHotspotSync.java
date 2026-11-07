@@ -12,6 +12,7 @@ import net.minecraft.client.Minecraft;
 public final class PartyHotspotSync {
     private enum Authority { WAITING, BACKEND, FALLBACK }
     private static Authority authority = Authority.WAITING;
+    private static long unavailableSince = -1;
     private static long waitingSince = -1, nextHello, revision = -1;
     private static String run = "", lastHello = "";
     private static boolean conflict;
@@ -25,13 +26,23 @@ public final class PartyHotspotSync {
         var player = Minecraft.getInstance().player;
         return player == null ? "" : player.getUUID().toString().replace("-", "");
     }
-    public static boolean controlsAssignments() {
+    public static boolean controlsAssignments() { return controlsAssignments(MonotonicTime.nowMillis()); }
+    static boolean controlsAssignments(long now) {
         // Unknown membership must not start the fallback clock; solo allocation is local.
         if (roster.isEmpty()) return true;
         if (roster.size() == 1) return false;
-        if (authority == Authority.BACKEND) return true;
+        if (authority == Authority.BACKEND) {
+            if (PartySyncNetworks.coordinationSupported() || !locked.isEmpty()) {
+                unavailableSince = -1;
+                return true; // Never reshuffle an already allocated party after disconnect.
+            }
+            if (unavailableSince < 0) unavailableSince = now;
+            if (now - unavailableSince < 7000) return true;
+            authority = Authority.FALLBACK;
+            DebugLog.line("HOTSPOT/NETWORK", "fallback after disconnect before any assignment");
+            return false;
+        }
         if (authority == Authority.FALLBACK) return false;
-        long now = MonotonicTime.nowMillis();
         if (waitingSince < 0) waitingSince = now;
         if (now - waitingSince < 7000) return true;
         authority = Authority.FALLBACK;
@@ -72,6 +83,10 @@ public final class PartyHotspotSync {
         // A fallback already in progress must finish and upload its immutable choices first.
         if (authority == Authority.FALLBACK && locked.isEmpty() && ConfigManager.get().gameplay.assignHotspots) return;
         var party = PartyState.snapshot();
+        // Keep the frozen room and assignments during disbands, but do not coordinate
+        // a different actual party against the previous party's room.
+        if (party.inParty() && (!party.completeRoster()
+                || party.members().stream().anyMatch(member -> !roster.contains(member.uuid())))) return;
         long now = MonotonicTime.nowMillis();
         JsonObject hello = hello(party, assignmentEligible(), ConfigManager.get().gameplay.assignHotspots);
         String text = hello.toString();
@@ -158,7 +173,7 @@ public final class PartyHotspotSync {
     }
     public static void reset() {
         PartySyncDebugHud.resetVisit();
-        authority = Authority.WAITING; waitingSince = -1; nextHello = 0; revision = -1; run = ""; lastHello = "";
+        authority = Authority.WAITING; unavailableSince = -1; waitingSince = -1; nextHello = 0; revision = -1; run = ""; lastHello = "";
         conflict = false; sender = null; latest = null; roster = List.of(); reports.clear(); locked.clear(); reported.clear(); sentNotices.clear(); acknowledged.clear();
     }
 }

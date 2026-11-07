@@ -928,6 +928,12 @@ public class SafariConfig {
 		@Expose
 		public boolean enableHitboxes = true;
 
+        @SettingInfo(name = "Litterbug Timers", desc = "Shows the earliest expected return time at a hiding Litterbug's surface location")
+        @SettingToggle
+        @SettingGroup(id = HITBOXES)
+        @Expose
+        public boolean litterbugTimers = true;
+
 		@SettingInfo(name = "Pity Title", desc = "Shows pity counts on critter and recatch markers")
 		@SettingToggle
 		@SettingGroup(id = HITBOXES)

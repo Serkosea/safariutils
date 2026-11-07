@@ -7,11 +7,12 @@ import dev.serko.safariutils.api.PartySyncNetworkProvider;
 import dev.serko.safariutils.api.PartySyncProtocol;
 import dev.serko.safariutils.client.DebugLog;
 import dev.serko.safariutils.client.NetworkRuntime;
-import dev.serko.safariutils.client.OperationalLog;
 import dev.serko.safariutils.client.StructuredDiagnostics;
 
 import java.net.URI;
 import java.net.http.WebSocket;
+import java.net.http.WebSocketHandshakeException;
+import dev.serko.safariutils.state.MonotonicTime;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.HashMap;
@@ -38,6 +39,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 	private volatile WebSocketOutbox outbox;
 	private volatile boolean connected;
     private volatile boolean sparklingSnapshotReady;
+    private volatile boolean snapshotExpected;
     @Override public boolean sparklingSnapshotReady() { return connected && sparklingSnapshotReady; }
     private volatile java.util.Set<String> connectedPlayers = java.util.Set.of();
     @Override public java.util.Set<String> connectedPlayers() { return connected ? connectedPlayers : java.util.Set.of(); }
@@ -50,6 +52,8 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 	private volatile long retryAt;
 	private volatile int failures;
 	private volatile long nextPingAt;
+    private volatile long openedAt, lastInboundAt, connectingAt;
+    private volatile String attemptToken;
 	private Context context;
 	private String signature = "";
 
@@ -65,8 +69,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 			disconnect();
 			context = next;
 			signature = nextSignature;
-			retryAt = 0L;
-			failures = 0;
+			// Retain service backoff across roster changes; a new room cannot bypass a quota delay.
 		}
 		if (!valid(next)) return;
 		Delivery delivery;
@@ -74,13 +77,18 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 			if (delivery.generation() == generation.get()) {
                 receiver.accept(delivery.message());
                 if (delivery.generation() == generation.get() && "S_ROOM".equals(delivery.message().type()))
-                    sparklingSnapshotReady = true;
+                    { sparklingSnapshotReady = true; failures = 0; }
             }
 		}
-		long now = System.currentTimeMillis();
+		long now = MonotonicTime.nowMillis();
 		WebSocket current = socket;
 		long operationGeneration = generation.get();
 		if (current != null) {
+            if ((!connected || snapshotExpected && !sparklingSnapshotReady) && now - openedAt >= 12_000L
+                    || connected && now - lastInboundAt >= 75_000L) {
+                failed(operationGeneration, new java.io.IOException("Party sync response timeout"));
+                return;
+            }
 			if (now >= nextPingAt) {
 				nextPingAt = now + PING_INTERVAL_MILLIS;
 				current.sendPing(ByteBuffer.wrap(new byte[] {0x53, 0x55}))
@@ -88,7 +96,11 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 			}
 			return;
 		}
-		if (connecting || now < retryAt) return;
+		if (connecting && now - connectingAt >= 45_000L) {
+            failed(operationGeneration, new java.io.IOException("Party sync connection timeout"));
+            return;
+        }
+        if (connecting || now < retryAt) return;
 		connect(next, generation.incrementAndGet());
 	}
 
@@ -143,10 +155,11 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 
 	private void connect(Context desired, long attempt) {
 		connecting = true;
+        connectingAt = MonotonicTime.nowMillis();
 		if (!NetworkRuntime.execute(() -> {
 			try {
 				String token = RemoteSession.instance().token();
-				if (generation.get() != attempt) return;
+				if (!rememberToken(attempt, token)) return;
 				NetworkRuntime.authenticatedHttp().newWebSocketBuilder()
 					.connectTimeout(Duration.ofSeconds(10))
 					.header("Authorization", "Bearer " + token)
@@ -158,7 +171,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 			} catch (Exception error) {
 				failed(attempt, error);
 			}
-		})) connecting = false;
+		})) { connecting = false; scheduleRetry(); }
 	}
 
 	private synchronized void opened(long attempt, WebSocket value) {
@@ -166,19 +179,21 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 			value.abort();
 			return;
 		}
-		socket = value;
         outbox = new WebSocketOutbox(value);
 		connected = false; sparklingSnapshotReady = false; coordination = false; connectedPlayers = java.util.Set.of();
 		connecting = false;
-		failures = 0;
-		nextPingAt = System.currentTimeMillis() + PING_INTERVAL_MILLIS;
+		openedAt = lastInboundAt = MonotonicTime.nowMillis();
+		nextPingAt = MonotonicTime.nowMillis() + PING_INTERVAL_MILLIS;
+        socket = value; // Publish only after watchdog timestamps and queue are initialized.
 		DebugLog.line("SYNC_NET", "socket authenticated; awaiting room roster="
 			+ (context == null ? 0 : context.roster().size()));
 	}
 
-	private synchronized void ready(long attempt, Map<String, String> next) {
+	private synchronized void ready(long attempt, Map<String, String> next, boolean expectsSnapshot) {
 		if (generation.get() != attempt || socket == null) return;
 		connected = true;
+        snapshotExpected = expectsSnapshot;
+        if (!expectsSnapshot) failures = 0;
 		mappingReady(next.size());
 	}
 
@@ -191,12 +206,14 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		if (generation.get() != attempt) return;
 		generation.incrementAndGet();
 		incoming.clear();
+        WebSocketOutbox queue = outbox; outbox = null;
+        if (queue != null) queue.close();
 		socket = null;
 		connected = false; sparklingSnapshotReady = false; coordination = false; connectedPlayers = java.util.Set.of();
 		connecting = false;
 		scheduleRetry();
 		DebugLog.line("SYNC_NET", "closed status=" + statusCode + " retryMs="
-			+ Math.max(0L, retryAt - System.currentTimeMillis()));
+			+ Math.max(0L, retryAt - MonotonicTime.nowMillis()));
 		StructuredDiagnostics.decision("party-network", "closed", "status=" + statusCode);
 	}
 
@@ -210,18 +227,34 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		incoming.clear();
 		WebSocket current = socket;
 		socket = null;
+        WebSocketOutbox queue = outbox; outbox = null;
+        if (queue != null) queue.close();
 		if (current != null) current.abort();
 		connected = false; sparklingSnapshotReady = false; coordination = false; connectedPlayers = java.util.Set.of();
 		connecting = false;
-		scheduleRetry();
-		OperationalLog.error("SYNC/NETWORK", unwrap(error));
+        Throwable cause = unwrap(error);
+        long serverDelay = 0;
+        int status = 0;
+        if (cause instanceof WebSocketHandshakeException handshake) {
+            status = handshake.getResponse().statusCode();
+            serverDelay = RemoteSession.retryAfterMillis(handshake.getResponse().headers().firstValue("Retry-After").orElse(""));
+        } else if (cause instanceof dev.serko.safariutils.api.ServiceRequestException service) {
+            status = service.status(); serverDelay = Math.min(86_400L, service.retrySeconds()) * 1000L;
+        }
+        if (status == 401 && attemptToken != null) RemoteSession.instance().invalidate(attemptToken);
+        attemptToken = null;
+        scheduleRetry();
+        retryAt = Math.max(retryAt, MonotonicTime.nowMillis() + serverDelay);
+        // HTTP status and bounded timing are enough; never log handshake response headers.
+        DebugLog.line("SYNC_NET", "retry status=" + status + " delayMs=" + Math.max(0, retryAt - MonotonicTime.nowMillis()));
 		StructuredDiagnostics.decision("party-network", "retry",
 			"attempt=" + failures);
 	}
 
 	private void scheduleRetry() {
-		long delay = Math.min(MAX_RETRY_MILLIS, BASE_RETRY_MILLIS << Math.min(4, failures++));
-		retryAt = System.currentTimeMillis() + delay;
+		long delay = Math.min(MAX_RETRY_MILLIS, BASE_RETRY_MILLIS << Math.min(4, failures));
+		failures = Math.min(5, failures + 1);
+		retryAt = MonotonicTime.nowMillis() + delay;
 	}
 
 	private final class Listener implements WebSocket.Listener {
@@ -244,6 +277,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 
 		@Override
 		public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+            inbound(attempt);
 			if (text.length() + data.length() > MAX_RELAY_TEXT) {
 				text.setLength(0);
 				webSocket.abort();
@@ -288,7 +322,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
                     roomSparklings = root.has("features") && root.getAsJsonArray("features").asList().stream()
                         .anyMatch(feature -> "room-sparklings-v1".equals(feature.getAsString()));
                     mapping = Map.copyOf(next);
-					ready(attempt, mapping);
+					ready(attempt, mapping, roomSparklings);
 					return;
 				}
                 if ("sparklings".equals(type) && roomSparklings && !mapping.isEmpty()) {
@@ -347,6 +381,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 
 		@Override
 		public CompletionStage<?> onPong(WebSocket webSocket, ByteBuffer message) {
+            inbound(attempt);
 			webSocket.request(1);
 			return null;
 		}
@@ -390,7 +425,19 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 			+ String.join(",", value.roster());
 	}
 
+    private synchronized boolean rememberToken(long attempt, String token) {
+        if (generation.get() != attempt) return false;
+        attemptToken = token;
+        return true;
+    }
+
+    private synchronized void inbound(long attempt) {
+        if (generation.get() == attempt) lastInboundAt = MonotonicTime.nowMillis();
+    }
+
 	private static Throwable unwrap(Throwable error) {
-		return error.getCause() == null ? error : error.getCause();
+        while ((error instanceof java.util.concurrent.CompletionException || error instanceof java.util.concurrent.ExecutionException)
+                && error.getCause() != null) error = error.getCause();
+        return error;
 	}
 }

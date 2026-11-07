@@ -32,7 +32,9 @@ public final class PartySparklingDiscoveries {
 	static boolean acceptRoom(int[] values) { return accept(values, true); }
 	private static boolean accept(int[] values, boolean room) {
 		long before = state.active();
+        long previouslyCaught = state.caughtMask();
 		if (!(room ? state.acceptRoom(values) : state.accept(values))) return false;
+        SparklingWatch.remoteCaught(state.caughtMask() & ~previouslyCaught);
 		// Species-only remote catch masks cannot erase individually observed local bodies.
 		long added = state.active() & ~before;
 		// Shared discoveries update markers/reminders, not the finder's ordinary alert.

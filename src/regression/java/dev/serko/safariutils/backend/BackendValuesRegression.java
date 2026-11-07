@@ -7,6 +7,14 @@ import java.util.List;
 public final class BackendValuesRegression {
 	public static int run() throws Exception {
 		int checks = 0;
+        check(RemoteSession.retryAfterMillis("120") == 120000, "Retry-After seconds"); checks++;
+        check(RemoteSession.retryAfterMillis("-10") == 0, "negative retry delay rejected"); checks++;
+        check(RemoteSession.retryAfterMillis("999999999") == 86400000, "retry delay bounded"); checks++;
+        check(RemoteSession.retryAfterMillis("invalid") == 0, "malformed retry falls back"); checks++;
+        String date = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC).plusSeconds(120)
+            .format(java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME);
+        long delay = RemoteSession.retryAfterMillis(date);
+        check(delay > 118000 && delay <= 120000, "Retry-After HTTP date"); checks++;
         var client = new HypixelApiClient();
         var lastRequest = HypixelApiClient.class.getDeclaredField("lastManualProfileRequestAt");
         lastRequest.setAccessible(true);

@@ -10,7 +10,7 @@ import java.util.Set;
 
 /**
  * Tracks Hideyho through START, PENDING, END and DONE using exact chat transitions.
- * START and stable END positions come from live sightings and remain known after the
+ * START and END positions come from live sightings and remain known after the
  * entity unloads. PENDING intentionally shows no marker; DONE stops tracking.
  */
 public final class HideyhoSolver {
@@ -40,8 +40,6 @@ public final class HideyhoSolver {
 	 */
 	private static final String CAUGHT = "Aah! You found me!";
 
-	/** How long a candidate end-position must hold still before it is shown. */
-	private static final long STABLE_MILLIS = 1000;
 	/** Lets the teleport finish before showing the final candidate set. */
 	private static final long END_CANDIDATE_DELAY_MILLIS = 3_250;
 
@@ -62,10 +60,6 @@ public final class HideyhoSolver {
 	/** Where START was confirmed — END never reuses this spot, so a repeat is discarded. */
 	private static BlockPos startPosition;
 
-	/** A not-yet-confirmed end-phase sighting, held back until it repeats in place. */
-	private static BlockPos candidate;
-	private static Vec3 candidateExact;
-	private static long candidateSinceMillis;
 	private static long endPhaseSinceMillis;
 
 	private HideyhoSolver() {
@@ -80,11 +74,8 @@ public final class HideyhoSolver {
 		if (seen == null) {
 			pruneVisibleEmptyCandidates();
 			// Out of range does not mean gone: a confirmed position is still good until
-			// its own chat line says otherwise. An unconfirmed candidate has nothing
-			// worth keeping — start fresh next time it is sighted.
+			// its own chat line says otherwise.
 			live = false;
-			candidate = null;
-			candidateExact = null;
 			return;
 		}
 
@@ -110,35 +101,11 @@ public final class HideyhoSolver {
 			return;
 		}
 
-		// Phase.END: held back until the position repeats, so a sighting mid-teleport
-		// is not mistaken for where it settles. A sighting matching the START spot is
-		// discarded outright rather than buffered — it is never where this phase ends.
-		if (seen.equals(startPosition)) {
-			if (candidate != null) DebugLog.line("HIDEYHO", "DISCARD matches START pos=" + pos(seen));
-			candidate = null;
-			candidateExact = null;
-			return;
-		}
-		// A location inspected earlier may become the real end spot after teleporting.
-		// Restore that one candidate until the stable final marker replaces it.
-		unchecked.add(seen);
-
-		long now = System.currentTimeMillis();
-		if (!seen.equals(candidate) || candidateExact == null
-			|| candidateExact.distanceToSqr(lastSightingExact) > 1.0 / 256.0) {
-			DebugLog.line("HIDEYHO", "CANDIDATE pos=" + pos(seen)
-				+ (candidate == null ? " (first sighting)" : " (was " + pos(candidate) + ")"));
-			candidate = seen;
-			candidateExact = lastSightingExact;
-			candidateSinceMillis = now;
-			return;
-		}
-		if (now - candidateSinceMillis < STABLE_MILLIS) return;
-
-		DebugLog.line("HIDEYHO", "END held " + (now - candidateSinceMillis) + "ms");
-		confirm(candidate, candidateExact);
-		candidate = null;
-		candidateExact = null;
+        // The server's hiding transition and a new location are sufficient evidence.
+        // Do not add an artificial timer once a valid END sighting is available.
+        if (!newEndLocation(startPosition, seen)) return;
+        unchecked.add(seen);
+        confirm(seen, lastSightingExact);
 	}
 
 	private static void confirm(BlockPos pos, Vec3 exact) {
@@ -204,7 +171,8 @@ public final class HideyhoSolver {
 		if (!SafeMode.hideyho() || client.level == null) return;
 		Set<BlockPos> loaded = new LinkedHashSet<>();
 		for (CritterEntities.Sighting sighting : CritterEntities.all(CRITTER)) {
-			loaded.add(sighting.label().blockPosition());
+			var entity = target(sighting);
+            loaded.add(BlockPos.containing(CritterMarkerGeometry.hideyhoUpper(entity.position(), EntityTypeIds.is(entity, "player"))));
 		}
 		unchecked.removeIf(pos -> client.level.isLoaded(pos)
 			&& VisibilityCheck.canInspectCandidate(pos)
@@ -230,8 +198,6 @@ public final class HideyhoSolver {
 			positionExact = null;
 			live = false;
 			visiblyConfirmed = false;
-			candidate = null;
-			candidateExact = null;
 			alertedThisPhase = false;
 			return;
 		}
@@ -243,8 +209,6 @@ public final class HideyhoSolver {
 			positionExact = null;
 			live = false;
 			visiblyConfirmed = false;
-			candidate = null;
-			candidateExact = null;
 			alertedThisPhase = false;
 			endPhaseSinceMillis = System.currentTimeMillis();
 			restoreCandidates();
@@ -260,8 +224,6 @@ public final class HideyhoSolver {
 			positionExact = null;
 			live = false;
 			visiblyConfirmed = false;
-			candidate = null;
-			candidateExact = null;
 			startPosition = null;
 			alertedThisPhase = false;
 			unchecked.clear();
@@ -280,8 +242,6 @@ public final class HideyhoSolver {
 		seenSparkling = false;
 		visiblyConfirmed = false;
 		lastSightingVisible = false;
-		candidate = null;
-		candidateExact = null;
 		alertedThisPhase = false;
 		startPosition = null;
 		endPhaseSinceMillis = 0;
@@ -293,13 +253,28 @@ public final class HideyhoSolver {
 		clear();
 	}
 
+    static boolean newEndLocation(BlockPos start, BlockPos seen) {
+        // Hideyho is parked near Y=0 and moved upward during its teleport. The
+        // Haunted play area is above Y=60; these transit positions are not finds.
+        return seen != null && seen.getY() >= 60 && (start == null
+            || seen.getX() != start.getX() || seen.getZ() != start.getZ()
+            || Math.abs(seen.getY() - start.getY()) > 3);
+    }
+    /** The same verified skin body anchors START, END, safe visibility and beacon rendering. */
+    static net.minecraft.world.entity.Entity target(CritterEntities.Sighting sighting) {
+        for (var id : sighting.textureIds()) {
+            var body = WorldEntities.find(id);
+            if (body != null && !body.isRemoved() && EntityTypeIds.is(body, "player")) return body;
+        }
+        return sighting.label();
+    }
 	private static BlockPos fromSightings() {
 		lastSightingVisible = false;
 		lastSightingExact = null;
 		for (CritterEntities.Sighting sighting : CritterEntities.all(CRITTER)) {
 			// Hideyho's named entity is Hideyho itself. Generic body pairing can select
 			// an unrelated nearby critter and would poison the learned location catalog.
-			var target = sighting.label();
+			var target = target(sighting);
 			// Under Safe Mode, in range is not enough — the doc above already
 			// explains why the entity is loaded well before it is ever seen; this is
 			// what stops that gap from being used to find it before it is genuinely
@@ -309,8 +284,11 @@ public final class HideyhoSolver {
 			if (SafeMode.hiddenCritter(sighting.critter(), sparkling)
 				&& !lastSightingVisible) continue;
 			seenSparkling = sparkling;
-			lastSightingExact = target.position();
-			return target.blockPosition();
+            Vec3 exact = CritterMarkerGeometry.hideyhoUpper(target.position(), EntityTypeIds.is(target, "player"));
+            BlockPos observed = BlockPos.containing(exact);
+            if (observed.getY() < 60 || phase == Phase.END && !newEndLocation(startPosition, observed)) continue;
+            lastSightingExact = exact;
+            return observed;
 		}
 		return null;
 	}

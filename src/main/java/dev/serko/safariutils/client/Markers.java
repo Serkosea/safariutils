@@ -73,6 +73,7 @@ public final class Markers {
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
 		SafariBiome biome = SafariLocation.biome();
 		SafariSession session = SessionManager.current();
+        LitterbugTimers.addMarkers(markers);
 
 		if (biome == SafariBiome.CAVERN && SparklingMode.showGemPedestals()) {
 			addGemPedestals(markers, SafariObjectives.placedGemMask()
@@ -126,6 +127,7 @@ public final class Markers {
 		// just one — several can be open at once when more than one capsule is out.
 		if (display.recatchHelper) {
 			for (RecatchSpots.ActivePin pin : recatchPins) {
+                if (!CritterMarkerGeometry.visibleInBiome(pin.critter(), pin.sparkling(), biome)) continue;
 				if (!pin.sparkling() && SparklingMode.hideOrdinarySpecies(pin.critter(), session)) continue;
 				int colour = display.recatchRarityColour
 					? WaypointRenderer.critterHitboxColour(pin.critter(), pin.sparkling())
@@ -161,7 +163,7 @@ public final class Markers {
 					colour, Style.WAYPOINT, seeThrough));
 				if (seeThrough) shown++;
 			}
-			logRenderDiagnostic("FLOOR", drops.size(), shown, biome, SafeMode.floorDrops());
+			logFloorRenderDiagnostic(drops, shown, biome, session);
 		}
 		addLearnedCandidates(markers);
 		return markers;
@@ -177,6 +179,38 @@ public final class Markers {
 				LEARNED_CANDIDATE_COLOUR, Style.WAYPOINT, true, true, true));
 		}
 	}
+
+    /** Explain filtering without recording every position or doing work with logging off. */
+    private static void logFloorRenderDiagnostic(List<BlockPos> drops, int shown,
+            SafariBiome biome, SafariSession session) {
+        if (!DebugLog.isEnabled()) return;
+        long now = System.currentTimeMillis();
+        Long last = lastDiagnosticLog.get("FLOOR");
+        if (last != null && now - last < 1000) return;
+        lastDiagnosticLog.put("FLOOR", now);
+        var counts = new java.util.EnumMap<FloorDropPattern.Kind, int[]>(FloorDropPattern.Kind.class);
+        var config = ConfigManager.get();
+        for (BlockPos pos : drops) {
+            boolean possible = SafeMode.floorDrops() && !FloorDrops.isConfirmedVisible(pos);
+            var kind = possible ? FloorDropPattern.Kind.UNKNOWN : FloorDrops.content(pos);
+            int reason = possible && config.display.hidePossibleWaypoints ? 3
+                : !FloorDrops.markerEnabled(kind) ? 1
+                : SparklingMode.hideFloorDrop(biome, session, kind) ? 2 : 0;
+            counts.computeIfAbsent(kind, ignored -> new int[4])[reason]++;
+        }
+        StringBuilder detail = new StringBuilder();
+        counts.forEach((kind, values) -> detail.append(' ').append(kind).append('=')
+            .append(java.util.Arrays.toString(values)));
+        DebugLog.line("FLOOR", "render biome=" + biome + " safeMode=" + SafeMode.floorDrops()
+            + " known=" + drops.size() + " shown=" + shown + " mode=" + RunMode.current()
+            + " lootEnabled=" + config.display.floorDropLoot + " questEnabled=" + config.display.floorDropQuestItems
+            + " alwaysCritters=" + config.sparkling.sparklingAlwaysActiveCritters
+            + " alwaysMarkers=" + config.sparkling.sparklingAlwaysActiveWaypoints
+            + " incense=" + SafariObjectives.incenseHeld() + " candles=" + SafariObjectives.incenseUsed()
+            + " ordinaryDoomHidden=" + SparklingMode.hideOrdinarySpecies(dev.serko.safariutils.data.Critters.byName("Doomspiral"), session)
+            + " partyObjectiveSatisfied=" + dev.serko.safariutils.api.PartyItemSyncProviders.objectiveAllowsFloorDropHide(biome)
+            + " counts[shown,disabled,unneeded,possibleHidden]=" + detail);
+    }
 
 	/** Logs marker eligibility once per second while output logging is enabled. */
 	private static final java.util.Map<String, Long> lastDiagnosticLog = new java.util.HashMap<>();
@@ -245,6 +279,7 @@ public final class Markers {
 	private static void addWalls(List<Marker> markers, WallTracker walls, SafariBiome biome, int colour) {
 		if (biome != walls.biome()) return;
 		SafariSession session = SessionManager.current();
+        LitterbugTimers.addMarkers(markers);
 		if (walls == WallTracker.SNOOPER && SparklingMode.hideSnoozleWalls(session)) return;
 		if (walls == WallTracker.TROODON && SparklingMode.hideTroodonWalls(session)) return;
 		for (WallTracker.Wall wall : walls.walls()) {

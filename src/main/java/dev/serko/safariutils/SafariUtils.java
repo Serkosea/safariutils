@@ -187,6 +187,7 @@ public class SafariUtils implements ClientModInitializer {
 			tickSafely("contest", ContestTracker::tick);
 			// One sweep of the world's critters, for everything below that wants them.
 			tickSafely("critter-entities", CritterEntities::tick);
+        tickSafely("litterbug-timers", dev.serko.safariutils.client.LitterbugTimers::tick);
             tickSafely("capsule-prediction", dev.serko.safariutils.client.CapsulePrediction::tick);
 			tickSafely("critter-state", CritterState::tick);
 			tickSafely("particle-diagnostics", ParticleDiagnostics::tick);

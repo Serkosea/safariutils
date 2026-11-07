@@ -63,7 +63,7 @@ public final class AutomaticTicketEntry {
         world = client.level; visit = SafariLocation.insideSinceMillis();
         blockSelection = false; pendingTest = requested; phase = Phase.IDLE; candidateSince = 0; waitingReason = "";
         DebugLog.line("TICKET/AUTO", "debug armed preferred=" + requested + " remaining=" + SessionManager.ticketWindowRemainingMillis());
-        ClientMessages.send("Automatic entry test armed; this consumes a real ticket. Close chat and release movement keys", ClientMessages.Tone.INFO);
+        ClientMessages.send("Automatic entry test armed; this consumes a real ticket. Release movement/action keys", ClientMessages.Tone.INFO);
         return 1;
     }
     static boolean blocksSelection() { return available() && blockSelection; }
@@ -110,8 +110,15 @@ public final class AutomaticTicketEntry {
         if (phase == Phase.IDLE) {
             boolean test = pendingTest != 0;
             if (!test && (!ConfigManager.get().gameplay.autoSparklingTicket || !sparkling())) { candidateSince = 0; return; }
-            if (!client.isWindowActive() || ClientCompat.screen() != null || manualKeys(client)) {
-                waitFor(!client.isWindowActive() ? "game focus" : ClientCompat.screen() != null ? "screen to close" : "movement/action keys to be released");
+            if (ClientCompat.screen() != null && !TicketProtection.isEntryScreen(ClientCompat.screen())) {
+                // Close through the screen's own lifecycle so server containers are notified.
+                // Never close a container while an item is attached to the cursor.
+                if (!client.player.containerMenu.getCarried().isEmpty()) { waitFor("held cursor item to be placed"); return; }
+                ClientCompat.screen().onClose();
+                candidateSince = 0; return;
+            }
+            if (manualKeys(client)) {
+                waitFor("movement/action keys to be released");
                 candidateSince = 0; return;
             }
             if (candidateSince == 0) { candidateSince = now; return; }
@@ -135,10 +142,22 @@ public final class AutomaticTicketEntry {
             turn.reset(expectedYaw, expectedPitch); lastViewUpdate = System.nanoTime(); walkingSince = 0;
             interactionAttempts = 0; lastInteraction = 0;
             phase = Phase.APPROACH;
+            if (TicketProtection.isEntryScreen(ClientCompat.screen())) {
+                phase = Phase.MENU; menuSeen = true; menuStarted = now;
+            }
             DebugLog.line("TICKET/AUTO", "approach tier=" + tier + " test=" + testing);
         }
-        if (!client.isWindowActive() || (!testing && (!ConfigManager.get().gameplay.autoSparklingTicket || !sparkling()))) { stop("focus or Sparkling entry changed"); return; }
+        if (!testing && (!ConfigManager.get().gameplay.autoSparklingTicket || !sparkling())) { stop("Sparkling entry changed"); return; }
         if (manualKeys(client)) { stop("manual input"); return; }
+        client.player.setSprinting(false);
+        if (phase == Phase.APPROACH && ClientCompat.screen() != null) {
+            forward = 0;
+            if (now - started > 6000) { stop("menu interrupted approach"); return; }
+            if (!client.player.containerMenu.getCarried().isEmpty()) { waitFor("held cursor item to be placed"); return; }
+            ClientCompat.screen().onClose();
+            return;
+        }
+        if (phase == Phase.APPROACH) updateView();
         if (phase == Phase.MENU) {
             forward = 0;
             if (TicketProtection.isEntryScreen(ClientCompat.screen())) menuSeen = true;
@@ -190,10 +209,10 @@ public final class AutomaticTicketEntry {
         if (obstruction.getType() != HitResult.Type.MISS) { stop("Manager is obstructed"); return false; }
         if (TicketProtection.shouldBlock()) { stop("waiting for party"); return false; }
         for (var entity : client.level.getEntities(client.player, new AABB(eye, hit).inflate(.05))) {
-            if (entity == manager || !entity.isPickable()) continue;
+            if (entity == manager || entity instanceof net.minecraft.world.entity.player.Player || !entity.isPickable()) continue;
             var blockingHit = entity.getBoundingBox().clip(eye, hit);
             if (blockingHit.isPresent() && eye.distanceToSqr(blockingHit.get()) < eye.distanceToSqr(hit)) {
-                stop("another entity blocks the Manager"); return false;
+                waitFor("entity in front of the Manager to move"); return false;
             }
         }
         forward = 0;
@@ -207,9 +226,9 @@ public final class AutomaticTicketEntry {
     }
     /** Smooth view motion after vanilla processes the mouse, independent of the 20 Hz action tick. */
     public static void updateView() {
-        if (!available() || phase != Phase.APPROACH) return;
+        if (!available() || phase != Phase.APPROACH || ClientCompat.screen() != null) return;
         Minecraft client = Minecraft.getInstance();
-        if (client == null || client.level != world || !eligible(client) || !client.isWindowActive()
+        if (client == null || client.level != world || !eligible(client)
             || ClientCompat.screen() != null || manager == null || manager.isRemoved() || manualKeys(client)) {
             stop("view input or context changed"); return;
         }
@@ -228,23 +247,24 @@ public final class AutomaticTicketEntry {
     private static boolean safePlayer(Minecraft client) {
         var player = client.player;
         return player != null && player.isAlive() && player.onGround() && !player.isPassenger()
-            && !player.isInWater() && !player.isInLava() && !player.getAbilities().flying && !player.horizontalCollision;
+            && !player.isInWater() && !player.isInLava() && !player.getAbilities().flying;
     }
     private static boolean manualKeys(Minecraft client) {
         var options = client.options;
         return options.keyUp.isDown() || options.keyDown.isDown() || options.keyLeft.isDown() || options.keyRight.isDown()
-            || options.keyJump.isDown() || options.keyShift.isDown() || options.keySprint.isDown()
+            || options.keyJump.isDown() || options.keyShift.isDown()
             || options.keyAttack.isDown() || options.keyUse.isDown();
     }
     /** Called after vanilla reads physical keys; never overwrites a player's own input. */
     static boolean idleInput(Input physical, Vec2 movement) {
-        return Input.EMPTY.equals(physical) && movement != null && movement.x == 0 && movement.y == 0;
+        return physical != null && !physical.forward() && !physical.backward() && !physical.left() && !physical.right()
+            && !physical.jump() && !physical.shift() && movement != null && movement.x == 0 && movement.y == 0;
     }
     public static float forwardInput(Input physical, Vec2 movement) {
         if (!available()) return 0;
         Minecraft client = Minecraft.getInstance();
-        if (phase != Phase.APPROACH || forward <= 0) return 0;
-        if (!idleInput(physical, movement) || client == null || !client.isWindowActive() || ClientCompat.screen() != null || !eligible(client)) {
+        if (phase != Phase.APPROACH || forward <= 0 || ClientCompat.screen() != null) return 0;
+        if (!idleInput(physical, movement) || client == null || ClientCompat.screen() != null || !eligible(client)) {
             stop("manual input or context changed"); return 0;
         }
         return forward;

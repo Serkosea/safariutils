@@ -31,6 +31,8 @@ public interface PartyItemSyncProvider {
 		return active();
 	}
 
+    default boolean heldObjectivesPending(SafariBiome biome) { return false; }
+
 	default int feedRemaining() {
 		return -1;
 	}

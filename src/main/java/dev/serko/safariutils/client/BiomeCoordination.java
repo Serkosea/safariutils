@@ -17,6 +17,10 @@ public final class BiomeCoordination {
     private static final Set<String> UNIQUE_CHECKS = Set.of("Honeybug", "Rockmite", "Snoozle", "Gazer", "Gimmiegold");
     private static final Set<String> BIRDS = Set.of("Bluebird", "Parakeet", "Macaw");
     private static final Set<SafariBiome> sent = EnumSet.noneOf(SafariBiome.class);
+    private record Pending(RunMode mode, long due) { }
+    private static final Map<SafariBiome, Pending> pendingChat = new EnumMap<>(SafariBiome.class);
+    private static final Map<SafariBiome, Set<String>> reporters = new EnumMap<>(SafariBiome.class);
+    private static final Set<SafariBiome> chatReceived = EnumSet.noneOf(SafariBiome.class);
     private static final Set<SafariBiome> received = EnumSet.noneOf(SafariBiome.class);
     private static final Map<Critter, Integer> population = new HashMap<>();
     private static final Survey survey = new Survey();
@@ -64,7 +68,7 @@ public final class BiomeCoordination {
     public static void tick() {
         SafariSession current = SessionManager.current();
         if (current != session) {
-            session = current; sent.clear(); population.clear(); survey.clear();
+            session = current; sent.clear(); pendingChat.clear(); population.clear(); survey.clear();
             nextCheck = 0; candidate = null; lastSent = 0; lastDecision = ""; partyGeneration = -1; soloDiagnostic.clear();
         }
         if (session == null || !SafariLocation.inside() || !ConfigManager.get().gameplay.biomeReports) {
@@ -95,6 +99,7 @@ public final class BiomeCoordination {
             partyGeneration = party.generation(); candidate = null; soloDiagnostic.clear();
         }
         RunMode mode = RunMode.current();
+        flushReports(now, mode, sparklings, player.getX(), player.getZ());
         boolean ready;
         if (sent.contains(biome)) { blocker = "already-reported"; ready = false; }
         else if (!reportAllowed(biome, mode,
@@ -129,13 +134,47 @@ public final class BiomeCoordination {
         if (now - candidateAt < SETTLE_MILLIS || now - lastSent < 3000) return;
         var request = CommandCoordinator.request("pc " + word(biome), CommandCoordinator.Category.PARTY_CHAT,
             CommandCoordinator.Cooldown.CHAT, CommandCoordinator.Scope.RUN, false, true);
-        if (PartyHotspotSync.networkAuthority() ? PartyHotspotSync.sendBiome(word(biome)) : CommandCoordinator.trySend(request)) {
+        boolean network = PartyHotspotSync.networkAuthority()
+            && dev.serko.safariutils.api.PartySyncNetworks.coordinationSupported();
+        if (network ? PartyHotspotSync.sendBiome(word(biome)) : CommandCoordinator.trySend(request)) {
             sent.add(biome); lastSent = now; candidate = null;
+            if (network) pendingChat.put(biome, new Pending(mode, now + 1500));
             DebugLog.line("COORDINATION/BIOME", "sent=" + word(biome) + " mode=" + mode + " evidence=local");
         }
     }
 
+
+    static boolean electedReporter(String self, Set<String> peers) {
+        return peers.stream().noneMatch(peer -> peer.compareTo(self) < 0);
+    }
+
+    private static void flushReports(long now, RunMode mode, Map<Critter, Integer> outstanding, double x, double z) {
+        var player = Minecraft.getInstance().player;
+        if (player == null) return;
+        String self = player.getUUID().toString().replace("-", "");
+        for (var iterator = pendingChat.entrySet().iterator(); iterator.hasNext();) {
+            var entry = iterator.next();
+            SafariBiome biome = entry.getKey();
+            Pending pending = entry.getValue();
+            if (chatReceived.contains(biome) || pending.mode() != mode) { iterator.remove(); continue; }
+            if (now < pending.due()) continue;
+            // Same stable UUID election as Mutuals for concurrently submitted reports.
+            if (!electedReporter(self, reporters.getOrDefault(biome, Set.of()))) { iterator.remove(); continue; }
+            if (!complete(biome, mode, outstanding, x, z)) continue;
+            var request = CommandCoordinator.request("pc " + word(biome), CommandCoordinator.Category.PARTY_CHAT,
+                CommandCoordinator.Cooldown.CHAT, CommandCoordinator.Scope.RUN, false, true);
+            if (CommandCoordinator.trySend(request)) {
+                DebugLog.line("COORDINATION/BIOME", "chat=" + word(biome) + " elected=true");
+                iterator.remove();
+            }
+        }
+    }
+
     private static boolean complete(SafariBiome biome, RunMode mode, Map<Critter, Integer> outstanding, double x, double z) {
+        if (dev.serko.safariutils.api.PartyItemSyncProviders.heldObjectivesPending(biome)
+                && (biome != SafariBiome.HAUNTED || mode == RunMode.FULL_CLEAR || needs(Critters.byName("Gimmiegold")))) {
+            blocker = "shared-supplies-pending"; return false;
+        }
         // A failed/incomplete collection fetch must not mean 'everyone owns everything'.
         boolean collectionReady = SharedSparklingProviders.partySnapshot().apiManaged();
         if (mode == RunMode.SPARKLING && !collectionReady) { blocker = "party-collection-pending"; return false; }
@@ -258,16 +297,19 @@ public final class BiomeCoordination {
         }
         return Double.isFinite(x) && Double.isFinite(z) && (x-cx)*(x-cx)+(z-cz)*(z-cz) <= radius*radius;
     }
-    public static void resetVisit() { received.clear(); soloDiagnostic.clear(); lastDecision = ""; }
-    public static void onNetworkReport(String code) {
+    public static void resetVisit() { received.clear(); reporters.clear(); pendingChat.clear(); chatReceived.clear(); soloDiagnostic.clear(); lastDecision = ""; }
+    public static void onNetworkReport(String code, String sender) {
         if (!SafariLocation.inside()) return;
-        for (SafariBiome biome : SafariBiome.values()) if (word(biome).equals(code)) received.add(biome);
+        for (SafariBiome biome : SafariBiome.values()) if (word(biome).equals(code)) {
+            received.add(biome);
+            reporters.computeIfAbsent(biome, ignored -> new TreeSet<>()).add(sender);
+        }
     }
     public static void onChatMessage(String line) {
         if (SessionManager.current() == null || !SafariLocation.inside()) return;
         var matcher = REPORT.matcher(line);
         if (!matcher.matches() || !PartyState.snapshot().containsName(matcher.group(1))) return;
         // Chat supplies coordination only; never a fabricated catch, PB, or collection entry.
-        for (SafariBiome biome : SafariBiome.values()) if (word(biome).equalsIgnoreCase(matcher.group(2) + "d")) received.add(biome);
+        for (SafariBiome biome : SafariBiome.values()) if (word(biome).equalsIgnoreCase(matcher.group(2) + "d")) { received.add(biome); chatReceived.add(biome); }
     }
 }

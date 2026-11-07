@@ -312,8 +312,10 @@ public final class CritterEntities {
 		for (Entity entity : WorldEntities.current()) {
             if (SparklingWatch.resolvedEntity(entity.getUUID())) continue;
 			String name = entity.hasCustomName() ? SafariLocation.strip(entity.getCustomName().getString()) : null;
-			samples.add(new CritterScan.Sample(entity.getUUID(), EntityTypeIds.path(entity), name,
-				entity.getX(), entity.getY(), entity.getZ(), SparklingTextures.identify(entity)));
+			var appearance = SparklingTextures.identify(entity);
+            if (appearance != null && appearance.mound()) continue; // Objective, never a live Rockmite.
+            samples.add(new CritterScan.Sample(entity.getUUID(), EntityTypeIds.path(entity), name,
+				entity.getX(), entity.getY(), entity.getZ(), appearance == null ? null : appearance.species(), appearance != null && appearance.sparkling()));
 		}
         var statuses = samples.stream().filter(sample -> sample.type().equals("armor_stand")
             && "CAPTURING".equalsIgnoreCase(sample.name())).toList();

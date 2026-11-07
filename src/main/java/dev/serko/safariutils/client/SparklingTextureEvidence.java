@@ -49,7 +49,7 @@ final class SparklingTextureEvidence {
                 if (!ambiguous) matches.set(candidate, sparkling(match, skin));
             } else if (candidate < 0) {
                 // No named representation yet: the appearance carrier is its own stable anchor.
-                matches.add(new CritterScan.Match(skin.textureSpecies(), skin, skin, true, false, Set.of(skin.id())));
+                matches.add(new CritterScan.Match(skin.textureSpecies(), skin, skin, skin.textureSparkling(), false, Set.of(skin.id())));
             }
         }
     }
@@ -67,7 +67,7 @@ final class SparklingTextureEvidence {
     private static CritterScan.Match sparkling(CritterScan.Match match, CritterScan.Sample skin) {
         Set<UUID> aliases = new HashSet<>(match.textureIds());
         aliases.add(skin.id());
-        return new CritterScan.Match(match.critter(), match.label(), match.body() == null ? skin : match.body(), true, match.conflict(), Set.copyOf(aliases));
+        return new CritterScan.Match(match.critter(), match.label(), match.body() == null ? skin : match.body(), match.sparkling() || skin.textureSparkling(), match.conflict(), Set.copyOf(aliases));
     }
 
     private static boolean near(CritterScan.Sample skin, CritterScan.Match match) {

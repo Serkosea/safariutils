@@ -110,6 +110,7 @@ public final class WaypointRenderer {
         SafariGlows.clear();
 		LABEL_CACHE.clear();
 		PROVISIONAL_SHAPES.clear();
+        CritterMarkerGeometry.clearObservedShapes();
 		BOUNDS_TRANSITIONS.clear();
 		lastWaypointState.clear();
 		replacedVanillaNames.clear();
@@ -330,6 +331,7 @@ public final class WaypointRenderer {
 		Critter critter = sighting.critter();
 		Entity body = sighting.mob();
 		boolean sparkling = SparklingWatch.presentsAsSparkling(sighting);
+        if (!CritterMarkerGeometry.visibleInBiome(critter, sparkling, SafariLocation.biome())) return false;
 
 		if (body != null && RecatchSpots.isCaptureArtifact(critter, body,
 			presentation.captureInProgress(critter))) return false;
@@ -537,8 +539,10 @@ public final class WaypointRenderer {
 		List<Found> drawn = new java.util.ArrayList<>();
 
 		for (CritterEntities.Sighting sighting : snapshot.sightings()) {
+            if (LitterbugTimers.replaces(sighting)) continue;
 			String name = sighting.critter().name();
 			boolean sparkling = SparklingWatch.presentsAsSparkling(sighting);
+            if (!CritterMarkerGeometry.visibleInBiome(sighting.critter(), sparkling, SafariLocation.biome())) continue;
 			// Outstanding Sparklings use the dedicated renderer below so their box,
 			// name, and beacon remain one continuous marker.
 			if (sparkling && SparklingWatch.isOutstanding(sighting)) continue;
@@ -578,7 +582,7 @@ public final class WaypointRenderer {
 			}
 			if (EXCLUDED_FROM_HITBOXES.contains(name)) continue;
 			if (EntityTypeIds.is(entity, "player")) continue;
-			rememberProvisionalShape(sighting.label(), entity);
+			rememberProvisionalShape(sighting.critter(), sighting.label(), entity);
 
 			// A recatch pin replaces only that individual's ordinary hitbox.
 			if (capturePresentationSuppresses(sighting.critter(), entity, presentation)) continue;
@@ -705,9 +709,9 @@ public final class WaypointRenderer {
 					|| presentation.captureInProgress(sighting.critter()))) continue;
 			// Safe Mode retains a confirmed marker but depth-tests its beacon; Extra Mode
 			// may continue using the beacon as a through-terrain guide.
-			if (body != null) rememberProvisionalShape(sighting.label(), body);
+			if (body != null) rememberProvisionalShape(sighting.critter(), sighting.label(), body);
 			AABB box = hideyho
-				? hideyhoHitbox(renderPosition(sighting.label()), sighting.label().blockPosition())
+				? hideyhoHitbox(HideyhoSolver.target(sighting))
 				: "Duplico".equals(sighting.critter().name()) ? duplicoHitbox(sighting.label())
 				: body != null ? presentedHitbox(sighting.critter(), body)
 				: provisionalCritterHitbox(sighting.critter(), sighting.label());
@@ -772,7 +776,8 @@ public final class WaypointRenderer {
 		if (shape == null) {
 			// First-scan fallback only. Once paired, this label retains the body's exact
 			// dimensions and offset through short wake/movement transitions.
-			shape = new ProvisionalShape(new Vec3(0.0, -1.25, 0.0), 1.0, 1.0);
+			var dimensions = CritterMarkerGeometry.appearance(critter, Vec3.ZERO);
+            shape = new ProvisionalShape(new Vec3(0.0, -1.25, 0.0), dimensions.getXsize(), dimensions.getYsize());
 		}
 		Vec3 pos = renderPosition(label).add(shape.bodyOffset());
 		if (CritterMarkerGeometry.usesBlockSize(critter)) {
@@ -783,7 +788,8 @@ public final class WaypointRenderer {
 			pos.x + halfWidth, pos.y + shape.height(), pos.z + halfWidth);
 	}
 
-	private static void rememberProvisionalShape(Entity label, Entity body) {
+	private static void rememberProvisionalShape(Critter critter, Entity label, Entity body) {
+        if (!CritterBodyTypes.verified(critter, EntityTypeIds.path(body)) || EntityTypeIds.is(body, "item_display") || body.getBbWidth() < .05 || body.getBbHeight() < .05) return;
 		Vec3 labelPos = renderPosition(label);
 		Vec3 bodyPos = renderPosition(body);
 		PROVISIONAL_SHAPES.put(label.getUUID(), new ProvisionalShape(
@@ -867,6 +873,11 @@ public final class WaypointRenderer {
 
 	/** Applies presentation geometry consistently in ordinary and Sparkling paths. */
 	private static AABB presentedHitbox(Critter critter, Entity entity) {
+        if (EntityTypeIds.is(entity, "item_display")
+                || CritterBodyTypes.known(critter) && !CritterBodyTypes.verified(critter, EntityTypeIds.path(entity))
+                || entity.getBbWidth() < .05 || entity.getBbHeight() < .05)
+            return CritterMarkerGeometry.appearance(critter, renderPosition(entity));
+        CritterMarkerGeometry.rememberBody(critter, entity);
 		return CritterMarkerGeometry.usesBlockSize(critter)
 			? scaledBlockHitbox(critter, entity, renderPosition(entity))
 			: hitboxFor(entity);
@@ -886,7 +897,7 @@ public final class WaypointRenderer {
 	private static AABB trackedHitboxFor(TrackedWaypoint tracked,
 			CritterEntities.Sighting sighting) {
 		Entity body = sighting.mob();
-		if (tracked.useRealHitbox()) return hitboxFor(body);
+		if (tracked.useRealHitbox()) return presentedHitbox(sighting.critter(), body);
 		if ("Duplico".equals(tracked.critterName())) {
 			// Duplico's label is centred above its disguised body. Preserve the same
 			// vertical anchor used by its normal live marker while applying capture
@@ -1173,6 +1184,7 @@ public final class WaypointRenderer {
 		record Found(Markers.Marker marker, double distance, boolean seeThrough) { }
 		List<Found> labels = new java.util.ArrayList<>(shrinks.size());
 		for (RecatchSpots.ActiveShrink shrink : shrinks) {
+            if (!CritterMarkerGeometry.visibleInBiome(shrink.critter(), shrink.sparkling(), SafariLocation.biome())) continue;
 			if (!shrink.sparkling()
 				&& SparklingMode.hideOrdinaryHitbox(shrink.critter(), false)) continue;
 			boolean diagnostic = BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)
@@ -1204,6 +1216,10 @@ public final class WaypointRenderer {
 	}
 
 	/** Hideyho's label is its body, but its entity box is not the desired 1x2 solver box. */
+    private static AABB hideyhoHitbox(Entity entity) {
+        Vec3 upper = CritterMarkerGeometry.hideyhoUpper(renderPosition(entity), EntityTypeIds.is(entity, "player"));
+        return hideyhoHitbox(upper, BlockPos.containing(upper));
+    }
 	private static AABB hideyhoHitbox(Vec3 exact, BlockPos upperBlock) {
 		double centreX = exact == null ? upperBlock.getX() + 0.5 : exact.x;
 		double centreZ = exact == null ? upperBlock.getZ() + 0.5 : exact.z;

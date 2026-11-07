@@ -15,9 +15,9 @@ import java.util.Set;
 import java.util.TreeMap;
 
 /**
- * Detects Rockmite mound interaction entities across the loaded Cavern. Candidates
- * must match the measured size range, sit on the floor and a block center, and contain
- * no mob. {@link #describeAll()} provides diagnostics for recalibrating these rules.
+ * Identifies mounds from their distinct texture across the loaded Cavern. Interaction
+ * geometry remains a fallback while appearance metadata is unavailable. Presence is
+ * remembered; absence requires reliable local evidence or an authoritative break.
  */
 public final class MoundSpotter {
 	private record Column(int x, int z) {
@@ -69,6 +69,7 @@ public final class MoundSpotter {
 	private static final Map<BlockPos, Long> pendingHits = new java.util.HashMap<>();
     private static final Map<BlockPos, Integer> confirmedHits = new java.util.HashMap<>();
 	private static final Map<BlockPos, Vec3> exactMounds = new java.util.HashMap<>();
+    private static final Map<BlockPos, Vec3> rememberedMounds = new java.util.HashMap<>();
 
 	/** Loads the Cavern bounds once; a failed load is not retried every call. */
 	private static int[] loadCavernBounds() {
@@ -166,7 +167,7 @@ public final class MoundSpotter {
 
 	/** Latest interaction-entity position; the catalog key may be its supporting block. */
 	public static Vec3 exactMound(BlockPos catalogPos) {
-		return exactMounds.get(catalogPos);
+		return rememberedMounds.get(catalogPos);
 	}
 
 	/** Refreshes mound state once per scheduled tick for every display consumer. */
@@ -219,7 +220,7 @@ public final class MoundSpotter {
 		// completed itself for why this check exists at all.
 		int beforeSize = everSeen.size();
 		for (BlockPos pos : liveNow) {
-			if (breakSuppressedUntil.containsKey(pos)) continue;
+			if (breakSuppressedUntil.containsKey(pos) || hits(pos) >= 5) continue;
 			// Entity loading can trail the terrain by a few scans. A genuine live mound
 			// overrides an earlier visible-empty decision once its interaction arrives.
 			completed.remove(pos);
@@ -297,6 +298,7 @@ public final class MoundSpotter {
 	public static void reset() {
         confirmedHits.clear();
         pendingHits.clear();
+        rememberedMounds.clear();
 		exactMounds.clear();
 		everSeen.clear();
 		everSeen.addAll(StaticWaypointCatalog.mounds());
@@ -436,11 +438,17 @@ public final class MoundSpotter {
 		if (client.level == null || client.player == null) return found;
 
 		List<Entity> candidates = new ArrayList<>();
+        List<Entity> texturedMounds = new ArrayList<>();
 		List<Entity> creatures = new ArrayList<>();
 		Set<BlockPos> catalog = StaticWaypointCatalog.mounds();
 		for (Entity entity : WorldEntities.current()) {
 			if (!inCavern(entity.getX(), entity.getY(), entity.getZ())) continue;
 			if (!EntityTypeIds.is(entity, "interaction")) {
+                if (EntityTypeIds.is(entity, "item_display")) {
+                    var appearance = SparklingTextures.identify(entity);
+                    if (appearance != null && appearance.mound() && entity.getY() <= MAX_Y
+                        && isDry(client, entity.blockPosition())) texturedMounds.add(entity);
+                }
 				if (isCreature(entity)) creatures.add(entity);
 				continue;
 			}
@@ -463,13 +471,22 @@ public final class MoundSpotter {
 			candidates.add(entity);
 		}
 
+        // Appearance identity is authoritative and is not subject to the interaction
+        // hitbox's smaller tracking range or size/centering heuristics.
+        for (Entity texture : texturedMounds) {
+            BlockPos added = mergeTextureMound(texture.position(), catalog, exactMounds);
+            if (added != null) found.add(added);
+        }
+        Set<BlockPos> texturePositions = Set.copyOf(exactMounds.keySet());
+
 		// Resolve the strongest catalog matches first and let each live interaction
 		// claim only one position. Without this, two close mounds can both snap to the
 		// same catalog entry and breaking either one appears to remove its neighbour.
 		candidates.sort(java.util.Comparator.comparingDouble(
 			candidate -> nearestCatalogDistance(candidate.blockPosition(), catalog)));
-		Set<BlockPos> claimedCatalogPositions = new HashSet<>();
+		Set<BlockPos> claimedCatalogPositions = new HashSet<>(texturePositions);
 		for (Entity candidate : candidates) {
+            if (coveredByTexture(candidate.position(), catalog, exactMounds, texturePositions)) continue;
 			// Fish and other creatures can carry a mound-sized interaction box. A
 			// learned position normally strengthens only the location match. An exact,
 			// dry bundled position is authoritative, though: a Flavor Packed Fish can
@@ -483,8 +500,39 @@ public final class MoundSpotter {
 			found.add(foundPos);
 			exactMounds.putIfAbsent(foundPos, candidate.position());
 		}
+        for (BlockPos pos : found) {
+            if (hits(pos) < 5) rememberedMounds.put(pos, exactMounds.get(pos));
+        }
+
 		return found;
 	}
+
+    /** A weaker interaction must not be redirected to a neighbouring catalog slot. */
+    static boolean coveredByTexture(Vec3 interaction, Set<BlockPos> catalog,
+            Map<BlockPos, Vec3> detected, Set<BlockPos> textured) {
+        BlockPos canonical = nearestCatalog(BlockPos.containing(interaction), catalog);
+        if (textured.contains(canonical == null ? BlockPos.containing(interaction) : canonical)) return true;
+        for (BlockPos pos : textured) {
+            Vec3 exact = detected.get(pos);
+            if (exact != null && Math.abs(exact.x - interaction.x) <= .5
+                && Math.abs(exact.z - interaction.z) <= .5 && Math.abs(exact.y - interaction.y) <= 1.5) return true;
+        }
+        return false;
+    }
+
+    /** Coalesce visual/interaction carriers before assigning any additional objective slot. */
+    static BlockPos mergeTextureMound(Vec3 texture, Set<BlockPos> catalog, Map<BlockPos, Vec3> detected) {
+        BlockPos raw = BlockPos.containing(texture);
+        BlockPos canonical = nearestCatalog(raw, catalog);
+        BlockPos position = canonical == null ? raw : canonical;
+        if (detected.containsKey(position)) return null;
+        for (Vec3 exact : detected.values()) {
+            if (Math.abs(exact.x - texture.x) <= .5 && Math.abs(exact.z - texture.z) <= .5
+                && Math.abs(exact.y - texture.y) <= 1.5) return null;
+        }
+        detected.put(position, texture);
+        return position;
+    }
 
 	/** Interaction boxes can report the block above or below their learned mound. */
 	private static BlockPos nearestCatalog(BlockPos entityPos, Set<BlockPos> catalog) {

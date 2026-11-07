@@ -89,14 +89,7 @@ final class RemoteSession {
 	}
 
 	static IOException backendError(HttpResponse<String> response) {
-        long retrySeconds = 0;
-        String retry = response.headers().firstValue("Retry-After").orElse("");
-        try { retrySeconds = Long.parseLong(retry); }
-        catch (NumberFormatException ignored) {
-            try { retrySeconds = Math.max(0, java.time.Duration.between(java.time.Instant.now(),
-                java.time.ZonedDateTime.parse(retry, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant()).toSeconds() + 1); }
-            catch (java.time.DateTimeException invalid) { }
-        }
+        long retrySeconds = (retryAfterMillis(response.headers().firstValue("Retry-After").orElse("")) + 999) / 1000;
         String detail = "SafariUtils API request failed with HTTP " + response.statusCode();
         try {
             JsonObject root = JsonParser.parseString(response.body()).getAsJsonObject();
@@ -104,4 +97,14 @@ final class RemoteSession {
         } catch (RuntimeException ignored) { }
         return new dev.serko.safariutils.api.ServiceRequestException(detail, response.statusCode(), retrySeconds);
     }
+    /** Shared HTTP and WebSocket backoff parsing; bounded to one day. */
+    static long retryAfterMillis(String value) {
+        try { return Math.clamp(Long.parseLong(value.trim()), 0L, 86_400L) * 1000L; }
+        catch (NumberFormatException ignored) {
+            try { return Math.clamp(java.time.Duration.between(java.time.Instant.now(),
+                java.time.ZonedDateTime.parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant()).toMillis(), 0L, 86_400_000L); }
+            catch (java.time.DateTimeException | ArithmeticException invalid) { return 0L; }
+        }
+    }
+
 }

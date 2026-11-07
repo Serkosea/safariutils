@@ -53,6 +53,10 @@ public final class PartyItemSyncProviders {
 		return PROVIDER.read("suppressStartingItems", PartyItemSyncProvider::suppressStartingItems, false);
 	}
 
+    public static boolean heldObjectivesPending(SafariBiome biome) {
+        return PROVIDER.read("held-objectives", provider -> provider.heldObjectivesPending(biome), false);
+    }
+
 	public static int feedRemaining() {
 		return PROVIDER.read("feedRemaining", PartyItemSyncProvider::feedRemaining, -1);
 	}

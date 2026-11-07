@@ -16,7 +16,7 @@ import java.nio.charset.StandardCharsets;
 
 /** Local appearance evidence only: never resolves profiles or downloads skins. */
 final class SparklingTextures {
-    // Texture identifiers from Sparkling Mutuals 4.0.0 (CC0-1.0); see third-party notices.
+    // Sparkling identifiers from Mutuals 4.0.0; ordinary typed identifiers verified in 4.2.1 (CC0-1.0).
     private static final Map<String, String> SPECIES = Map.ofEntries(
         Map.entry("bd22408eaeec1a63165074827d29f5e81d370930875a0e4bd1ec532f524b41c0", "Areita"),
         Map.entry("d410c03e8ad671b282c9934723ac889051bad3779d2523e2d6f4a077ab14ae0", "Billygoat"),
@@ -55,16 +55,36 @@ final class SparklingTextures {
         Map.entry("f18086a7f9676353040ee3946019b7c68aaa1137b7d03aa3d185466cef6593d6", "Woodchucker"),
         Map.entry("14ee5220dfeb845e495883241908ff8dea380f23a74522b673db3ae2523367ff", "Wumpa")
     );
-    private static final Map<String, Optional<Critter>> cache = new LinkedHashMap<>(128, .75f, true) {
-        @Override protected boolean removeEldestEntry(Map.Entry<String, Optional<Critter>> entry) { return size() > 512; }
+    record Appearance(Critter species, boolean sparkling, String type) {
+        // A mound is objective evidence: deliberately has no critter species.
+        boolean mound() { return species == null && "item_display".equals(type); }
+    }
+    private static final Map<String, Appearance> ORDINARY = Map.ofEntries(
+        Map.entry("a89a76deedd42b410344100df2fa79b6eeac7e6f287745d656179368340ffade", new Appearance(Critters.byName("Flitter"), false, "item_display")),
+        Map.entry("b4287b8a0a642dac535a6ee29459efd17d5cee1eb359e436bc8e7abba3da14b7", new Appearance(Critters.byName("Shyworm"), false, "armor_stand")),
+        Map.entry("f4c4f8e5fce1ec2d299cb8a395792ecddc497a1d8af86faaa5e20373016c7225", new Appearance(Critters.byName("Driftling"), false, "armor_stand")),
+        Map.entry("fc63cd0d480971a7beae5fd503e5d51658cd906330843cbad92018f5b98b4fe5", new Appearance(Critters.byName("Chuckwalla"), false, "item_display")),
+        Map.entry("5dbaab74d1acd0abe9d04abe9928725de5d4495fcb63b647228caf6944c20800", new Appearance(null, false, "item_display")),
+        Map.entry("407b3c3d2c3fe259d69207a14ca5cd99713c7096ba122bb40326f3489e5d0d6c", new Appearance(Critters.byName("Gazer"), false, "armor_stand")),
+        Map.entry("8b329e108ac28b0bec8d47b7cdce253df1db80b46052b5915d963e1bcbab0db4", new Appearance(Critters.byName("Gimmiegold"), false, "item_display")),
+        Map.entry("3504f1f2327a5110e643bb8667082512815fa434a29ed37f4ca83bb16d2db533", new Appearance(Critters.byName("Hideyho"), false, "player")),
+        Map.entry("9924c105aa431dabd47952dc1dddd6f751f883423f4db1487d9bacc2cfe99c7a", new Appearance(Critters.byName("Mantis Shrimp"), false, "item_display")),
+        Map.entry("53de4135a3b19a2187029c86a0020e58c907c7bdd4e37b7643f120e16a0aa9ab", new Appearance(Critters.byName("Troodon"), false, "item_display"))
+    );
+    private static final Map<String, Optional<Appearance>> cache = new LinkedHashMap<>(128, .75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, Optional<Appearance>> entry) { return size() > 512; }
     };
     private SparklingTextures() { }
     static void clear() { cache.clear(); }
     static Critter fromProperty(String encoded) {
+        Appearance result = appearance(encoded);
+        return result != null && result.sparkling() ? result.species() : null;
+    }
+    static Appearance appearance(String encoded) {
         if (encoded == null || encoded.length() > 8192) return null;
         return cache.computeIfAbsent(encoded, key -> Optional.ofNullable(decode(key))).orElse(null);
     }
-    private static Critter decode(String encoded) {
+    private static Appearance decode(String encoded) {
         try {
             var root = JsonParser.parseString(new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8)).getAsJsonObject();
             String url = root.getAsJsonObject("textures").getAsJsonObject("SKIN").get("url").getAsString();
@@ -72,17 +92,19 @@ final class SparklingTextures {
             if (!"textures.minecraft.net".equalsIgnoreCase(uri.getHost()) || uri.getQuery() != null || uri.getFragment() != null) return null;
             String path = uri.getPath();
             if (path == null || !path.startsWith("/texture/")) return null;
-            return Critters.byName(SPECIES.getOrDefault(path.substring(9), ""));
+            String hash = path.substring(9);
+            Critter species = Critters.byName(SPECIES.getOrDefault(hash, ""));
+            return species == null ? ORDINARY.get(hash) : new Appearance(species, true, null);
         } catch (RuntimeException malformed) { return null; }
     }
-    static Critter identify(Entity entity) {
-        Critter species = null;
+    static Appearance identify(Entity entity) {
+        Appearance species = null;
         if (entity instanceof Player player) {
             var client = Minecraft.getInstance();
-            if (player == client.player || client.getConnection() != null && client.getConnection().getPlayerInfo(player.getUUID()) != null
+            if (player == client.player || client.getConnection() != null && client.getConnection().getListedOnlinePlayers().stream().anyMatch(info -> info.getProfile().id().equals(player.getUUID()))
                 || dev.serko.safariutils.state.PartyState.snapshot().containsName(player.getGameProfile().name())) return null;
             for (var property : player.getGameProfile().properties().get("textures")) {
-                if (property != null && (species = fromProperty(property.value())) != null) break;
+                if (property != null && (species = appearance(property.value())) != null) break;
             }
         } else {
             ItemStack stack;
@@ -92,9 +114,9 @@ final class SparklingTextures {
             var profile = stack.get(DataComponents.PROFILE);
             if (profile == null) return null;
             for (var property : profile.partialProfile().properties().get("textures")) {
-                if (property != null && (species = fromProperty(property.value())) != null) break;
+                if (property != null && (species = appearance(property.value())) != null) break;
             }
         }
-        return species;
+        return species != null && (species.type() == null || species.type().equals(EntityTypeIds.path(entity))) ? species : null;
     }
 }

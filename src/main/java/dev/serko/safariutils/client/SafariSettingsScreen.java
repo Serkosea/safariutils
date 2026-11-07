@@ -681,7 +681,7 @@ public final class SafariSettingsScreen extends Screen {
 				"enableHitboxes", "hitboxPityTitle", "eagleRarity", "hitboxColour", "uniqueHitboxColours",
 				"hitboxRarityColour"),
 			settingsPage(source.value, "display.marker-settings.critters", "Special Critters", 1,
-				"hitboxEntityColorOverride",
+				"hitboxEntityColorOverride", "litterbugTimers",
 				"hideyhoSolver", "hideyhoColour", "highlightHideonwalls", "hideonwallColour",
 				"highlightDuplico", "duplicoColour", "highlightBloodbat", "bloodbatColour",
 				"highlightHideonfloor", "hideonfloorColour"),

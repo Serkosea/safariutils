@@ -14,7 +14,10 @@ final class CritterScan {
 	static final double BODY_RADIUS = 4.0;
 	static final double GAZER_RADIUS = 3.0;
 	private static final String SPARKLING = "Sparkling";
-	record Sample(UUID id, String type, String name, double x, double y, double z, Critter textureSpecies) {
+	record Sample(UUID id, String type, String name, double x, double y, double z, Critter textureSpecies, boolean textureSparkling) {
+        Sample(UUID id, String type, String name, double x, double y, double z, Critter textureSpecies) {
+            this(id, type, name, x, y, z, textureSpecies, textureSpecies != null);
+        }
         Sample(UUID id, String type, String name, double x, double y, double z) { this(id, type, name, x, y, z, null); }
     }
 	record Match(Critter critter, Sample label, Sample body, boolean sparkling, boolean conflict, Set<UUID> textureIds) {

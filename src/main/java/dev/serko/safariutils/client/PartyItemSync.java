@@ -687,7 +687,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			DebugLog.line("SYNC", "ignored network state from outside frozen roster");
 			return;
 		}
-		if ("B".equals(message.type())) { BiomeCoordination.onNetworkReport(message.payload());
+		if ("B".equals(message.type())) { BiomeCoordination.onNetworkReport(message.payload(), member.uuid());
             if (PartySyncDebugHud.enabled()) PartySyncDebugHud.event(member.name()+": biome report "+message.payload(), 0xFF65DDEC); return; }
 		String body = member.uuid() + "-" + message.sequence() + ":"
 			+ message.type() + ":" + message.payload();
@@ -1088,6 +1088,13 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		// complete lower bound even if the frozen run-start snapshot missed one item.
 		return Math.max(reported, used + totalHeld() + feederCount);
 	}
+
+    @Override public boolean heldObjectivesPending(SafariBiome biome) {
+        if (!active()) return false;
+        return displayRoster().stream().map(member -> states.get(member.uuid())).filter(java.util.Objects::nonNull)
+            .anyMatch(state -> biome == SafariBiome.FOREST ? state.heldFeed() > 0
+                : biome == SafariBiome.HAUNTED && state.coins > 0);
+    }
 
 	private int totalHeld() {
 		return states.values().stream().mapToInt(State::heldFeed).sum();

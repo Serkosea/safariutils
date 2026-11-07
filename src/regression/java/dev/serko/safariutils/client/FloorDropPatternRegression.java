@@ -6,6 +6,23 @@ import java.util.*;
 public final class FloorDropPatternRegression {
     public static int run() throws Exception {
         int checks = 0;
+        require(FloorDrops.observationLobby(null, null).equals("pending"), "early visit must collect before lobby metadata arrives"); checks++;
+        require(FloorDrops.observationLobby("m123", null).equals("m123"), "scoreboard gap must not reset pre-ticket evidence"); checks++;
+        require(FloorDrops.observationLobby("m123", "").equals("m123"), "blank lobby metadata must preserve evidence"); checks++;
+        require(FloorDrops.observationLobby("pending", "m123").equals("m123"), "initial lobby ID must attach to pending visit"); checks++;
+        require(FloorDrops.observationLobby("m123", "m456").equals("m456"), "new lobby must reset old patterns"); checks++;
+        var mound = new net.minecraft.core.BlockPos(-80, 57, 61);
+        var neighbour = new net.minecraft.core.BlockPos(-80, 59, 61);
+        var moundBodies = new HashMap<net.minecraft.core.BlockPos, net.minecraft.world.phys.Vec3>();
+        var texture = new net.minecraft.world.phys.Vec3(-79.5, 58, 61.5);
+        require(mound.equals(MoundSpotter.mergeTextureMound(texture, Set.of(mound), moundBodies)), "texture-only mound must use canonical objective slot"); checks++;
+        require(MoundSpotter.mergeTextureMound(texture, Set.of(mound, neighbour), moundBodies) == null && moundBodies.size() == 1, "duplicate visual cannot claim neighbouring slot"); checks++;
+        moundBodies.clear();
+        moundBodies.put(mound, new net.minecraft.world.phys.Vec3(-79.5, 57, 61.5));
+        require(MoundSpotter.mergeTextureMound(texture, Set.of(mound), moundBodies) == null, "texture and interaction doubled mound"); checks++;
+        require(MoundSpotter.mergeTextureMound(new net.minecraft.world.phys.Vec3(-69.5, 56, 58.5), Set.of(mound), moundBodies) != null && moundBodies.size() == 2, "independent textured mound lost"); checks++;
+        require(MoundSpotter.coveredByTexture(texture, Set.of(mound), moundBodies, Set.of(mound)), "interaction must not duplicate textured mound"); checks++;
+        require(!MoundSpotter.coveredByTexture(new net.minecraft.world.phys.Vec3(-60, 45, 57), Set.of(mound), moundBodies, Set.of(mound)), "unrelated interaction fallback suppressed"); checks++;
         String[] moundLines = {"Small cracks begin to form in the mound...", "The cracks seem to be getting larger, keep hitting it!",
             "Chunks of the mound begin falling away...", "The mound is about to fall to pieces! Keep going!",
             "The mound fell apart, revealing a Rockmite hidden inside!"};

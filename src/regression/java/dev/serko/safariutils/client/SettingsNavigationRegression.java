@@ -24,7 +24,13 @@ public final class SettingsNavigationRegression {
             check(list(borderPages.getFirst(), "fields").stream().anyMatch(f -> ((Field) f).getName().equals("personalBestsTabBorderColour")), "PB border remains accessible");
             check(list(borderPages.getFirst(), "fields").stream().map(f -> ((Field) f).getName()).toList()
                 .equals(List.of("statsTabBorderColour","historyTabBorderColour","profitTabBorderColour","personalBestsTabBorderColour","currentRunTabBorderColour")), "screen border ordering");
-            int checks = 5;
+            Map<?, ?> cards = (Map<?, ?>) value(screen, "normalSettingCardCache");
+            var pityCard = (List<?>) cards.get(SafariConfig.DisplayConfig.class.getField("hitboxPityTitle"));
+            check(pityCard.stream().map(f -> ((Field)f).getName()).toList().equals(List.of("hitboxPityTitle", "eagleRarity")), "pity and Eagle rarity share their card");
+            var timerCard = (List<?>) cards.get(SafariConfig.DisplayConfig.class.getField("litterbugTimers"));
+            check(timerCard.size() == 1, "Litterbug timer has its own card");
+            check(cards.containsKey(SafariConfig.DisplayConfig.class.getField("hitboxRarityColour")), "marker colors must not be dropped by card slicing");
+            int checks = 8;
             for (String name : List.of("Progress HUD", "Missing HUD", "Contest HUD", "Party Objective HUD")) {
                 List<?> pages = list(find(tabs, "name", name), "pages");
                 Object options = find(pages, "name", name + " Options");

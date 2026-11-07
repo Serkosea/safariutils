@@ -92,11 +92,11 @@ public final class FloorDrops {
 	}
 
 	private static void prepareLobby() {
-		if (!SafariLocation.inSafari()) {
+		if (!SafariLocation.inside()) {
 			preparedLobby = null;
 			return;
 		}
-		String lobby = SafariLocation.lobbyId() == null ? "pending" : SafariLocation.lobbyId();
+		String lobby = observationLobby(preparedLobby, SafariLocation.lobbyId());
 		if (lobby.equals(preparedLobby)) return;
 		if ("pending".equals(preparedLobby)) {
 			preparedLobby = lobby;
@@ -105,6 +105,12 @@ public final class FloorDrops {
 		preparedLobby = lobby;
 		reset();
 	}
+
+    /** Delayed/missing scoreboard metadata must not erase already observed spawn IDs. */
+    static String observationLobby(String prepared, String reported) {
+        if (reported == null || reported.isBlank()) return prepared == null ? "pending" : prepared;
+        return reported;
+    }
 
 	/** Fires once when all known drops are collected or mode objectives no longer need them. */
 	private static void checkDoneAlert() {
@@ -125,7 +131,7 @@ public final class FloorDrops {
 	}
 
 	private static void scan() {
-		if (!SafariLocation.inSafari()) {
+		if (!SafariLocation.inside()) {
 			confirmed.clear();
 			confirmedBiome.clear();
 			suppressed.clear();
@@ -193,7 +199,7 @@ public final class FloorDrops {
 		int candidateCount = pattern.candidateCount();
         if (StructuredDiagnostics.enabled() && candidateCount != loggedCandidates) {
             loggedCandidates = candidateCount;
-            DebugLog.line("FLOOR_PATTERN", "candidates=" + candidateCount + " observed=" + patternIds.size());
+            DebugLog.line("FLOOR_PATTERN", "candidates=" + candidateCount + " observed=" + patternIds.size() + " ticket=" + (SessionManager.current() != null));
         }
         // In Safe Mode, a missing drop is only cleared once its empty spot can be seen.
 		if (SafeMode.floorDrops()) {

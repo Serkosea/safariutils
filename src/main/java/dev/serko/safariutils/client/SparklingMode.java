@@ -160,20 +160,21 @@ public final class SparklingMode {
                 int gemBit = kind == FloorDropPattern.Kind.LIME ? 1 : kind == FloorDropPattern.Kind.ORANGE ? 2 : 4;
                 int held = kind == FloorDropPattern.Kind.LIME ? SafariObjectives.limeGemsHeld()
                     : kind == FloorDropPattern.Kind.ORANGE ? SafariObjectives.orangeGemsHeld() : SafariObjectives.purpleGemsHeld();
-                yield ordinaryGoalFinished(session, "Gemzie") || held > 0
+                yield questGoalFinished(session, "Gemzie") || held > 0
                     || (SafariObjectives.placedGemMask() & gemBit) != 0
                     || dev.serko.safariutils.api.PartyItemSyncProviders.objectiveAllowsFloorDropHide(biome);
             }
-            case INCENSE -> ordinaryGoalFinished(session, "Doomspiral")
+            case INCENSE -> questGoalFinished(session, "Doomspiral")
                 || dev.serko.safariutils.api.PartyItemSyncProviders.objectiveAllowsFloorDropHide(biome)
                 || SafariObjectives.canPersonallyFinishDoomspiral(SafariObjectives.incenseUsed());
             // Each coin and feed can spawn another critter. A held item alone cannot
             // prove that all outstanding spawns (including Sparklings) are unnecessary.
-            case COIN -> ordinaryGoalFinished(session, "Gimmiegold")
+            case COIN -> questGoalFinished(session, "Gimmiegold")
                 || enabled()
+                    && !missingQuestSparkling(Critters.byName("Gimmiegold"))
                     && !RunRelevance.retainOverride(Critters.byName("Gimmiegold"), session) && SafariObjectives.shiningCoinsHeld() >= 1;
             case WORM, BERRY, SEEDS -> forestFloorDropsExhausted()
-                || allOrdinaryGoalsFinished(session, "Bluebird", "Parakeet", "Macaw");
+                || allQuestGoalsFinished(session, "Bluebird", "Parakeet", "Macaw");
             case ICE -> icyFloorDropsExhausted(session);
             default -> false;
         };
@@ -189,7 +190,7 @@ public final class SparklingMode {
 		if (sparklingNeeded > 0 && !RunRelevance.profitable(troodon) && !alwaysActive(troodon)
 			&& !RunRelevance.prerequisite(troodon, session))
 			return SafariObjectives.icebreakersHeld() >= sparklingNeeded;
-		if (ordinaryGoalFinished(session, "Troodon")) return true;
+		if (questGoalFinished(session, "Troodon")) return true;
         var walls = WallTracker.TROODON.walls();
         if (walls.isEmpty()) return false;
         // Empty catalog slots are not completed critters. Count the actual remaining
@@ -204,13 +205,14 @@ public final class SparklingMode {
     }
 
 	public static boolean hideBirdFeed(SafariSession session) {
-		return enabled() && allOrdinaryGoalsFinished(session, "Bluebird", "Parakeet", "Macaw");
+		return enabled() && allQuestGoalsFinished(session, "Bluebird", "Parakeet", "Macaw");
 	}
 
 	/** Fixed, publicly visible objective locations use Gemzie's ordinary marker policy. */
 	public static boolean showGemPedestals() {
 		return ConfigManager.get().display.enableHitboxes
 			&& (alwaysActiveWaypoint(WaypointKind.GEM_PEDESTALS)
+				|| missingQuestSparkling(Critters.byName("Gemzie"))
 				|| !hideOrdinaryHitbox(Critters.byName("Gemzie"), false));
 	}
 
@@ -230,18 +232,26 @@ public final class SparklingMode {
 		return !alwaysActiveWaypoint(WaypointKind.TROODON_WALLS) && ordinaryGoalFinished(session, "Troodon");
 	}
 
+    /** Quest items create new chances; ordinary spawned mobs can still remain hidden. */
+    private static boolean missingQuestSparkling(Critter critter) {
+        return ignoreUniques() && critter != null && SparklingStats.count(critter) == 0;
+    }
+
+    private static boolean questGoalFinished(SafariSession session, String name) {
+        return !missingQuestSparkling(Critters.byName(name)) && ordinaryGoalFinished(session, name);
+    }
+
+    private static boolean allQuestGoalsFinished(SafariSession session, String... names) {
+        for (String name : names) if (!questGoalFinished(session, name)) return false;
+        return true;
+    }
+
 	private static boolean ordinaryGoalFinished(SafariSession session, String name) {
 		Critter critter = Critters.byName(name);
 		return enabled() && critter != null && !RunRelevance.retainOverride(critter, session)
 			&& (ignoreUniques() || session != null && session.caughtByParty(critter));
 	}
 
-	private static boolean allOrdinaryGoalsFinished(SafariSession session, String... names) {
-		for (String name : names) {
-			if (!ordinaryGoalFinished(session, name)) return false;
-		}
-		return true;
-	}
 
 	public static String describeShared() {
 		if (shared.isEmpty()) return "None";

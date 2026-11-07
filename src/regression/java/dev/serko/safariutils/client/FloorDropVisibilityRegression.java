@@ -46,6 +46,30 @@ public final class FloorDropVisibilityRegression {
             config.sparkling.sparklingAlwaysActiveWaypoints = 1 << 9;
             check(!hidden(FloorDropPattern.Kind.LIME) && hidden(FloorDropPattern.Kind.PURPLE)); checks++;
             check(!hidden(FloorDropPattern.Kind.UNKNOWN)); checks++;
+            // Sparkling mode must retain incense needed for an explicitly retained Doomspiral.
+            config.sparkling.sparklingIgnoreUniques = true;
+            config.sparkling.sparklingAlwaysActiveCritters = dev.serko.safariutils.data.Critters.selectionMask(
+                dev.serko.safariutils.data.Critters.byName("Doomspiral"));
+            config.sparkling.sparklingAlwaysActiveWaypoints = 0;
+            var inventoryField = SafariObjectives.class.getDeclaredField("currentInventory");
+            inventoryField.setAccessible(true);
+            int[] inventory = (int[]) inventoryField.get(null);
+            for (int held = 0; held <= 4; held++) {
+                inventory[4] = held;
+                check(SparklingMode.hideFloorDrop(SafariBiome.HAUNTED, null, FloorDropPattern.Kind.INCENSE)
+                    == (held == 4)); checks++;
+            }
+            config.sparkling.sparklingAlwaysActiveCritters = 0;
+            config.sparkling.alwaysShowProfitableCritters = false;
+            inventory[4] = 0;
+            check(dev.serko.safariutils.session.SparklingStats.count(dev.serko.safariutils.data.Critters.byName("Doomspiral")) == 0); checks++;
+            check(!SparklingMode.hideFloorDrop(SafariBiome.HAUNTED, null, FloorDropPattern.Kind.INCENSE)); checks++;
+            check(!SparklingMode.hideFloorDrop(SafariBiome.HAUNTED, null, FloorDropPattern.Kind.UNKNOWN)); checks++;
+            check(!SparklingMode.hideFloorDrop(SafariBiome.HAUNTED, null, FloorDropPattern.Kind.COIN)); checks++;
+            check(!SparklingMode.hideFloorDrop(SafariBiome.FOREST, null, FloorDropPattern.Kind.BERRY)); checks++;
+            check(!SparklingMode.hideFloorDrop(SafariBiome.FOREST, null, FloorDropPattern.Kind.WORM)); checks++;
+            check(!SparklingMode.hideFloorDrop(SafariBiome.FOREST, null, FloorDropPattern.Kind.SEEDS)); checks++;
+            check(SparklingMode.hideFloorDrop(SafariBiome.HAUNTED, null, FloorDropPattern.Kind.LOOT)); checks++;
             config.sparkling.sparklingAlwaysActiveWaypoints = 1;
             check(!hidden(FloorDropPattern.Kind.LOOT)); checks++;
         } finally { SafariObjectives.reset(); field.set(null, previous); }

@@ -17,6 +17,35 @@ final class CritterMarkerGeometry {
 		"Hideonfloor", BLOCK,
 		"Driftling", new Shape(0.9, 0.9, -0.25));
 
+    static boolean visibleInBiome(Critter critter, boolean sparkling, dev.serko.safariutils.data.SafariBiome current) {
+        return sparkling || critter.biome() == current;
+    }
+    static Vec3 hideyhoUpper(Vec3 position, boolean playerBody) {
+        return playerBody ? position.add(0, 2, 0) : position;
+    }
+    private static final Map<Critter, Shape> appearanceShapes = new java.util.HashMap<>();
+    static void clearObservedShapes() { appearanceShapes.clear(); }
+    static void rememberBody(Critter critter, net.minecraft.world.entity.Entity body) {
+        if (!CritterBodyTypes.verified(critter, EntityTypeIds.path(body)) || body.getBbWidth() <= 0 || body.getBbHeight() <= 0) return;
+        Shape previous = appearanceShapes.get(critter);
+        if (previous == null || previous.width() != body.getBbWidth() || previous.height() != body.getBbHeight())
+            appearanceShapes.put(critter, new Shape(body.getBbWidth(), body.getBbHeight(), 0));
+    }
+    /** Use observed body dimensions, or its native species dimensions until paired. */
+    static AABB appearance(Critter critter, Vec3 position) {
+        if (usesBlockSize(critter)) return presented(critter, position);
+        Shape dimensions = appearanceShapes.computeIfAbsent(critter, species -> {
+            var type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getValue(
+                net.minecraft.resources.Identifier.withDefaultNamespace(CritterBodyTypes.preferredBody(species)));
+            if (type == null) return new Shape(.6, 1.8, 0);
+            var size = type.getDimensions();
+            return new Shape(size.width(), size.height(), 0);
+        });
+        double halfWidth = dimensions.width() / 2;
+        return new AABB(position.x-halfWidth, position.y, position.z-halfWidth,
+            position.x+halfWidth, position.y+dimensions.height(), position.z+halfWidth);
+    }
+
 	private CritterMarkerGeometry() {
 	}
 
@@ -58,7 +87,10 @@ final class CritterMarkerGeometry {
 
 	/** Applies the same presentation dimensions after a moving body becomes a fixed pin. */
 	static AABB recatch(Critter critter, AABB nativeBox) {
-		if (!usesBlockSize(critter)) return nativeBox;
+		if (!usesBlockSize(critter)) {
+            if (nativeBox.getXsize() > .05 && nativeBox.getYsize() > .05) return nativeBox;
+            return appearance(critter, new Vec3((nativeBox.minX+nativeBox.maxX)*.5, nativeBox.minY, (nativeBox.minZ+nativeBox.maxZ)*.5));
+        }
 		return presented(critter, new Vec3(
 			(nativeBox.minX + nativeBox.maxX) * 0.5,
 			nativeBox.minY,

@@ -1163,3 +1163,122 @@ guaranteed Driftling catches. Other individuals remain visible; capture completi
 Sparkling discovery state are unchanged. Capture/edition regressions passed before version
 bump. Release includes the accumulated detection, party alert, ticket entry and compatibility
 changes above. Keep public downloads Normal x3 then Extra x3; private developer jars stay private.
+
+## Trading Sparkling Found chat timing (2026-11-05, pending next release)
+
+Latest.log confirms Stuffy and _cj warped at 14:43:55 and both joined the Safari at
+14:43:56; only the user's manual Sparkling line followed. User clarified that the
+configured Sparkling Found chat alert must wait for trading guests to arrive.
+SparklingWatch now retains that chat per individual while TicketTrading is preparing
+the warp or awaiting invited guests. Local banner and sync publication stay immediate.
+Arrival uses exact server notifications or SafariPartyWatch's in-run names, independent
+of mod/network presence. Retain expected guest names despite stale/rate-limited party
+refreshes. Caught individuals discard pending chat; body rekeys transfer it; visit reset
+clears it. Released chat uses the existing destination/template and scoped ChatQueue.
+Regression includes ranked arrivals, non-sync guests, partial arrivals, and rejecting
+ordinary party joins or party-chat imitations. Public 3.6.0 assets are unchanged.
+
+Finished 2026-11-07: standalone Developer 26.2 checks and integrated build/checks
+passed; VerifySafariParity confirmed 640 byte-identical shared classes. Deployed
+the tested integrated jar to Skyblock 26.2 and Ticket Collecting with matching hashes.
+Restart required; mixed-party in-game verification remains pending. No release/push.
+
+## Shared ordinary appearance and remote capture reconciliation (2026-11-07)
+
+Shared appearance decoding now returns species, Sparkling status, and required entity
+type. Ten ordinary texture identifiers were verified from Mutuals 4.2.1 bytecode:
+Flitter, Shyworm, Driftling, Chuckwalla, Rockmite, Gazer, Gimmiegold, Hideyho,
+Mantis Shrimp, Troodon. The existing bounded decode cache and scan/alias merge serve
+both kinds; ordinary evidence cannot mark an individual Sparkling. Player-profile
+filter now checks listed players rather than all player-info entries (NPCs need those
+too), still excluding self and known party members. Capture visuals remain excluded.
+
+New remote caught bits reconcile one unambiguous remembered individual after its
+live representation disappears. Retire its known aliases without echoing remote data
+as a local catch. Ambiguous same-species pairs consume no individual; discard that
+pending inference so a later local catch cannot accidentally remove the survivor.
+Regression covers ordinary classification/late-label alias merging and distant shared
+catch cleanup without echo. No public release or backend protocol change.
+
+Validation: focused Developer 26.2 check and BuildAllArtifacts passed all nine standalone
+variants and integrated 26.2 checks; 641 byte-identical shared classes. Deployed and
+hash-verified the integrated jar in Skyblock 26.2 and Ticket Collecting. Live ordinary
+Hideyho range and cross-biome teammate-catch testing remain needed. Build logs:
+build/texture-unification.log (public), build/texture-unification-matrix.log (private).
+
+### 2026-11-07 sync visit expiry and live error attribution
+- PartyItemSync now ends networking ten minutes after visit entry, latched until a new visit. Roster changes and socket reconnects cannot renew it. Retains learned objectives/assignments; no wire protocol change.
+- Cloudflare current-day analytics showed 465 runtime exceptions on old worker, 16 on first reduced-write deploy and 5 on current deploy at query time. Bounded live tail positively classified current exceptions as storage-quota errors, with uuid-session/session-limit HTTP500s. Daily cap still exhausted; improvements cannot restore allowance before Nov8 00:00UTC. Do not claim all historic exceptions diagnosed or post-reset savings verified.
+
+
+### 2026-11-07 renewal rollback / floor-marker investigation
+- User requested reverting the client ten-minute cutoff; PartyItemSync restored to original renewal behavior. Backend write optimizations retained.
+- Inspected latest three saved-run logs: Nov7 09:21 V28, 08:35 V3, 08:28 V41 UTC. Older two report Haunted known19/10 shown0 even before sufficient incense; latest reports shown5->4->3->2->0 with incense reaching4, expected eligibility. All33 pickup predictions match actual. No logged warning/error entries. Cannot determine older filter cause without historical config/per-kind reasons; do not claim fixed.
+- Added throttled FLOOR diagnostics with per-kind shown/disabled/unneeded/possibleHidden counts, mode, toggles, always masks, incense/candles and party objective status. No work when logging disabled. Added regression retaining incense for Always Active Doomspiral until four held.
+
+- User clarified Doomspiral was missing from own collection, not Always Active; profit enabled. Found policy mismatch: quest filtering reused ordinary-species suppression. SparklingMode now preserves spawn quest items for own missing Sparkling species independently of price freshness/ordinary-marker suppression. Still hides sufficient supplies/completed objectives and preserves profit overrides. Ordinary mob visibility and party-shared policy unchanged. Added incense, coin, bird-feed regressions; detailed diagnostics retained.
+
+
+## 2026-11-07 connection recovery, Mutuals coordination, Litterbug timer
+- RemotePartySyncProvider now uses monotonic deadlines: 12s welcome/atomic snapshot, 75s inbound silence, 45s connecting guard; 25s pings unchanged. Retry-After seconds/HTTP dates honored, 401 invalidates the rejected cached session, 2-30s backoff survives roster/context changes and resets after a usable snapshot. Generation checks isolate stale callbacks; old outboxes close. No new backend polling/writes.
+- BiomeCoordination now emits delayed elected party-chat completion reports after network B reports (Mutuals-compatible UUID election), suppresses chat duplicates and rechecks mode/completion/shared held supplies. Forest feed and Haunted coin inventory consulted through the existing provider facade. Existing mode evidence/zone gates retained.
+- Hotspot assignments remain immutable across reconnects/disbands; coordination pauses when actual party includes outsiders to the frozen room. Backend timing/protocol unchanged.
+- LitterbugTimers consumes the existing paired-body scan. Timer starts only on continuously observed surface->underground transition, labels initial ~10s as estimate, learns bounded median of uninterrupted 4-30s observed cycles, shows Returning... when overdue, expires missing bodies after 1s, excludes capture artifacts. Initial underground sighting cannot invent a timer. Safe marker policy requires a visible prior surface observation. Markers > Critters > Litterbug Timers defaults on. Ordinary underground hitbox replaced by surface timer when tracked. Sparkling discovery/beacon lifecycle unchanged.
+- Recent ci logs verify Litterbugs at Y=1 and surface Y=69, but measured continuous snapshot intervals range roughly 7.7-16s, so exact fixed ten seconds is NOT established. Needs in-game observation of several full cycles with logging.
+- New regressions: PartyRecoveryRegression, LitterbugTimersRegression; Retry-After cases in BackendValuesRegression and elected reporter cases in CoordinationRegression.
+- No public release or GitHub push authorized for this task.
+- Final checks: 26.2 developer core/ticket regressions passed; standalone safe checks passed on 26.1.2 and 26.3. Integrated BuildSerkoAddons and VerifySafariParity passed (645 identical SafariUtils classes); final jar deployed with SHA-256 verification to Skyblock 26.2 and Ticket Collecting. No release/push.
+
+
+## 2026-11-07 ordinary marker / entry follow-up
+- Latest 14H-18M/P2 logs: 41 Litterbug hiding intervals ~7.9-16s, variable within each body UUID (not a fixed per-individual period); keep estimate, new duration diagnostics include body network ID. One API/PARTY_REFRESH temporary-unavailable event; no logged renderer/timer errors.
+- Central CritterMarkerGeometry.visibleInBiome applies ordinary live/provisional markers, recatch pins, shrinking markers and Litterbug timers; Sparkling bypass retained. Existing tracked species already biome-gated.
+- Texture-only item displays have zero collision bounds; presentedHitbox now uses stable visible appearance geometry (preserves custom Driftling/concealed shapes, Wumpa-sized fallback). Never cache zero/display geometry as a real provisional body shape.
+- Hideyho player-skin anchor is feet while named label anchor is upper body; normalize player +2 blocks in solver and live Sparkling rendering before existing upper-anchor geometry. Regression checks both forms agree.
+- AutomaticTicketEntry removes focus gating, advances view smoothing on tick as well as frame hook, closes menus through onClose while never closing a cursor-held item; background/focus-opened menus can resume approach. Toggle sprint alone no longer cancels; owned approach suppresses sprint without editing user toggle preferences. Known Manager targeting ignores overlapping players but preserves block obstruction/reach checks and bounded time/distance/retries. Real directional/action input still cancels.
+- Sleeping Wumpa label recognition already covers ordinary/Sparkling zZz forms. Added full scan+texture regression for texture-first detection and merging ordinary sleep label + ravager + Sparkling skin as one individual.
+- No new mixins, backend changes, push or release. Build/deploy test artifacts only.
+
+
+## 2026-11-07 minimum Litterbug timers / complete geometry follow-up
+- Litterbug timer now always estimates the earliest observed return (~8 seconds), never learns a longer interval. Returning... persists after zero until the hidden body returns. First-observed underground bodies have Hidden labels, not invented elapsed time. Extra can project their X/Z onto the recorded Haunted room Y=69 floor only when supporting terrain and clearance are loaded/verified. Safe visibility knowledge is separate from Extra projection.
+- Native species dimensions replace generic square fallback in appearance, provisional-label, tracked-real-body and zero-sized recatch geometry. Existing custom sizes remain unchanged. Uses central verified body types plus cached native/observed dimensions; cache clears with renderer world state. Actual bodies retain their own geometry.
+- Hideyho START/END and Sparkling visibility/beacons share a verified texture-player target when available. Candidate stability ignores harmless vertical label bobbing within the same block, preserving horizontal/teleport checks. Latest 14H-40M log already shows texture END detection 500ms before label, but label anchor swap restarted confirmation; no evidence that the server delivered END body much earlier.
+- Pity Title/Eagle Rarity card restored; Litterbug Timers moved to a separate Special Critters card immediately below Critter Color Override. Existing fixed-size card slicing had also hidden Rarity Color when the extra field was inserted; removing that insertion restores it. Regression verifies all these cards.
+- Tests extended for minimum countdown after long cycles, native bat dimensions, shared Hideyho anchors, settings membership. No release/push/backend changes.
+- Final validation/deployment: all three profile checks passed; integrated build and 645-class parity passed. SHA-256-verified deployment to Skyblock 26.2 and Ticket Collecting completed; private component snapshot synchronized.
+
+## 2026-11-07 Flitter alert outage / objective texture classification
+- Reviewed saved run 22:10:48 V1. Flitter discovered by texture at 68 blocks with ticket active; no discovery alert because unconditional initial-room snapshot gate waited during unavailable backend. Solo run roster=1. Local confirmed-solo alerts now bypass optional transport; unknown/party waits for initial snapshot up to transport welcome timeout (12s), then falls back locally. Existing shared-first ownership suppresses duplicates when a snapshot arrives; identity replacements preserve wait start. Added fallback diagnostics and bounded visit-local wait state.
+- Ordinary Rockmite item_display hash identifies unopened mounds, not live critters. It now has objective-only appearance identity, excluded from CritterEntities; shared scheduled MoundSpotter scan consumes it alongside interactions. Canonical mapping and coalescing prevent two carriers claiming two mound slots. Existing safe visibility, completion ledger, hits and party protocol remain authoritative. Sparkling Rockmite skin and actual body/name recognition preserved.
+- Hideyho END texture sighting precedes label by ~752ms in this log; confirmation at 1002ms uses existing stability rule. No evidence of earlier available END body, so no speculative range/timing change.
+- Regressions added for snapshot fallback/solo/ready, mound texture classification vs Sparkling Rockmite, canonical slot and duplicate-carrier merging.
+- All three Minecraft profile checks passed. Integrated build/parity/deployment tracked below. No public release or push requested.
+- Integrated build succeeded; 645 Safari classes byte-identical. Deployed and SHA-256 verified to Skyblock 26.2 and Ticket Collecting. Restart required to load updated jar.
+
+## 2026-11-07 texture-first mound follow-up
+- Mound texture identification now precedes interaction heuristics; weaker interaction carriers cannot claim neighbouring slots when they represent an already textured mound. Geometry fallback retained for delayed appearance metadata.
+- Confirmed exact positions retained for the visit, avoiding marker anchor loss on entity unload. Local authoritative fifth-hit completion cannot be resurrected by lingering carriers beyond the short despawn suppression window.
+- Positive texture detections remain unrestricted by the 48-block interaction absence radius. Distant missing textures are still unknown: no invented wider reliable absence radius, no false party completion/survey from unload. Existing safe inspection rules retained. Textures are server-sent item-display entities, not a way to inspect unloaded entities.
+- Added texture-first duplicate/fallback regression coverage. No backend protocol changes or public release.
+- Validation: all three profile checks passed (26.1.2 required clean regression recompilation after a missing test class during concurrent builds). Integrated 645-class parity passed. SHA256-verified deployment to both Skyblock 26.2 and Ticket Collecting.
+
+## 2026-11-07 pre-ticket floor-drop evidence
+- Verified FloorDrops ticks before ticket use and reset already schedules an immediate scan. SessionManager resets it at beginVisit only, not ticket submission; renderer remains session-gated.
+- Restricted discovery to Safari proper instead of canyon entrance. Preserve prepared lobby identity through missing/blank sidebar ID so inferred patterns cannot reset mid-visit. Pending-to-known lobby attaches without clearing observations; real lobby changes/new visit still reset.
+- Added ticket-used flag to candidate-count diagnostics and regression coverage for early/missing/changed lobby metadata. Existing pattern retains observed IDs after pickups; ambiguous late-arrival evidence remains Unknown, never guesses missing quest items.
+- 26.2 developer regression/artifact check passed; integrated build/parity follows. No release/push.
+- Integrated build and 645-class parity passed; SHA256-verified deployment to Skyblock 26.2 and Ticket Collecting completed.
+
+## 2026-11-07 immediate Hideyho END detection
+- Removed the one-second END position stability timer and its obsolete candidate state. First valid live END sighting is confirmed immediately after the server's hiding phase transition; the old START location remains excluded. Existing Safe Mode visibility and remembered-position behavior retained.
+- The separate delay for speculative Safe Mode candidate locations is unchanged; it does not delay actual detected Hideyho.
+- Regression checks pass for START rejection/new END acceptance/missing evidence. Existing debug command `/safari debug useticket basic` immediately arms full entry without requiring Sparkling discovery; user can Alt-Tab after sending it while pre-ticket at Safari spawn on alpha. Uses real ticket, existing cancel command supported.
+- 26.2 checks and integrated 645-class parity passed; deployed and SHA256 verified to both test instances.
+
+## 2026-11-07 v3.7.0 release review
+- Latest 15H-33M log: both automatic ticket debug attempts reached ticket activated. Only two API/PARTY_REFRESH service-unavailable errors. Hideyho in both runs was falsely confirmed at upper Y=2.92 during the underground teleport, before actual final upper Y=70/87. Reject under-map sightings and old START anchor variations before any position update/alert; valid END detection remains immediate.
+- Biome completion reports now use chat when the previously authoritative backend is disconnected. An empty backend allocation can fall back after seven seconds disconnected; any existing assignments remain immutable. Added deterministic-clock outage tests (negative process-relative test timestamps initially triggered unset handling; corrected fixture).
+- Version prepared as 3.7.0; concise release notes, all Normal downloads before all Extra. Website only changes version/asset URLs, preserving existing layout and text. Integration reviews ignored rather than published.
+- Backend existing protocol suite: 103/103 passed. Full matrix and integrated gates running; release/push results follow.
+- Final release gates passed: nine standalone variants, integrated SerkoAddons checks, 645 byte-identical shared classes, and 103 backend tests. Publishing six Normal/Extra jars only; developer artifacts remain local.

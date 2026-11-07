@@ -31,6 +31,11 @@ public final class SparklingWatch {
 	private static final Set<UUID> visuallyAnnounced = new HashSet<>();
 	/** Detected individuals retained until an authoritative catch removes each one. */
 	private static final Map<UUID, Outstanding> outstanding = new LinkedHashMap<>();
+    private static final Map<UUID, String> pendingFoundChat = new LinkedHashMap<>();
+    private static final Map<UUID, Long> awaitingSnapshot = new LinkedHashMap<>();
+    static boolean alertSnapshotReady(boolean ready, boolean solo, boolean supported, long elapsed) {
+        return ready || solo || !supported || elapsed >= 12_000L;
+    }
     /** Exact captured body/appearance aliases, retained only for this visit. */
     private static final Set<UUID> resolvedIndividuals = new HashSet<>();
 	/** A throw/breakout commonly replaces the same critter's entity IDs. */
@@ -38,6 +43,27 @@ public final class SparklingWatch {
 	/** Current scan only; retained discoveries must not imply a nearby entity. */
 	private static final Map<UUID, Critter> nearbyIndividuals = new LinkedHashMap<>();
 	private static long caughtThemeUntil;
+    private static long pendingRemoteCatches;
+    static void remoteCaught(long mask) { pendingRemoteCatches |= mask; }
+    private static void reconcileRemoteCatches() {
+        if (pendingRemoteCatches == 0) return;
+        for (Critter species : dev.serko.safariutils.data.Critters.selectionOrder()) {
+            long bit = dev.serko.safariutils.data.Critters.selectionMask(species);
+            if ((pendingRemoteCatches & bit) == 0) continue;
+            var entries = outstanding.entrySet().stream().filter(e -> e.getValue().critter() == species).toList();
+            if (entries.isEmpty()) { pendingRemoteCatches &= ~bit; continue; }
+            // Species-only reports cannot select among distinct observed individuals.
+            if (entries.size() != 1) { pendingRemoteCatches &= ~bit; continue; }
+            UUID owner = entries.getFirst().getKey();
+            boolean live = CritterEntities.all(species).stream().anyMatch(s -> keyOf(s).equals(owner)
+                && !CritterEntities.isCaptureScaffolding(s) && !CritterEntities.isRemoteCaptureLabel(s)
+                && !s.body().isRemoved());
+            if (live) continue;
+            onCaptureResolved(species, owner, owner, CritterState.Outcome.CAUGHT, false);
+            pendingRemoteCatches &= ~bit;
+            DebugLog.line("SPARKLING", "remote catch retired remembered individual " + species.name());
+        }
+    }
 	private static long lastScan = Long.MIN_VALUE;
 	private static long lastConfigRevision = Long.MIN_VALUE;
 	private record Outstanding(Critter critter, BlockPos pos, boolean visiblyConfirmed) {}
@@ -50,6 +76,9 @@ public final class SparklingWatch {
 		// The shared entity scan can still contain the last visit until its next sweep.
 		if (!SafariLocation.inside() || !discoveryAllowed(dev.serko.safariutils.state.SafariRuntimeState.current().phase())) return;
 		long now = dev.serko.safariutils.state.MonotonicTime.nowMillis();
+        reconcileRemoteCatches();
+        awaitingSnapshot.keySet().retainAll(outstanding.keySet());
+        flushFoundChat();
 		replacementExpectedUntil.entrySet().removeIf(entry -> now > entry.getValue());
 		long scan = CritterEntities.scanRevision();
 		long configRevision = ConfigManager.revision();
@@ -166,7 +195,7 @@ public final class SparklingWatch {
 	/** Direct evidence retained independently from whichever mode is currently displayed. */
 	private static boolean visuallyConfirmed(CritterEntities.Sighting sighting) {
 		if ("Hideyho".equals(sighting.critter().name())) {
-			return VisibilityCheck.canSee(sighting.label());
+			return VisibilityCheck.canSee(HideyhoSolver.target(sighting));
 		}
 		boolean mobVisible = bodyVisible(sighting);
 		return SafeMode.hiddenSpecies(sighting.critter())
@@ -245,8 +274,14 @@ public final class SparklingWatch {
 	/** Safe Mode waits for sight; Extra announces the first trustworthy remote detection. */
 	private static void postVisibleFoundAlerts(CritterEntities.Sighting sighting, UUID key) {
 		if (visuallyAnnounced.contains(key)) return;
-        // Keep discovery facts immediately; wait for the initial room state before alert ownership.
-        if (!dev.serko.safariutils.api.PartySyncNetworks.sparklingSnapshotReady()) return;
+        // Give shared discoveries precedence, without making local alerts depend
+        // indefinitely on an optional service during an outage.
+        long now = dev.serko.safariutils.state.MonotonicTime.nowMillis();
+        long since = awaitingSnapshot.computeIfAbsent(key, ignored -> now);
+        boolean ready = dev.serko.safariutils.api.PartySyncNetworks.sparklingSnapshotReady();
+        boolean solo = dev.serko.safariutils.state.PartyState.snapshot().status()
+            == dev.serko.safariutils.state.PartySnapshot.Status.SOLO;
+        if (!alertSnapshotReady(ready, solo, dev.serko.safariutils.api.PartySyncNetworks.supported(), now - since)) return;
 		boolean visible = bodyVisible(sighting)
 			|| !SafeMode.hiddenSpecies(sighting.critter())
 				&& VisibilityCheck.canSeeVisibleName(sighting.label())
@@ -256,6 +291,8 @@ public final class SparklingWatch {
 				&& VisibilityCheck.canSee(sighting.label());
 		if (SafeMode.sparklingCritters() && !visible) return;
 		SafariConfig config = ConfigManager.get();
+        awaitingSnapshot.remove(key);
+        if (!ready && !solo) DebugLog.line("SPARKLING", "local alert fallback without room snapshot " + sighting.critter().name());
 		visuallyAnnounced.add(key);
 		boolean sharedFirst = !PartySparklingDiscoveries.claimLocalAlert(sighting.critter());
 		boolean ticketWindowClosed = dev.serko.safariutils.session.SessionManager.current() == null
@@ -270,9 +307,21 @@ public final class SparklingWatch {
 			+ " key=" + shortId(key) + " biome=" + SafariLocation.biome());
 		var position = sighting.body().position();
 		EncounterAlerts.fireSparklingDetected(sighting.critter().name(), position);
-		EncounterAlerts.post(config.sparkling.detected(),
-			AlertText.spawn(config.sparkling.sparklingDetectedChatText, sighting.critter().name(), position));
+        String message = AlertText.spawn(config.sparkling.sparklingDetectedChatText, sighting.critter().name(), position);
+        if (config.sparkling.detected() != SafariConfig.Broadcast.NONE && TicketTrading.waitingForWarpGuests()) {
+            pendingFoundChat.put(key, message);
+            DebugLog.line("SPARKLING", "found chat deferred until trading guests arrive: " + sighting.critter().name());
+        } else EncounterAlerts.post(config.sparkling.detected(), message);
 	}
+
+    private static void flushFoundChat() {
+        if (pendingFoundChat.isEmpty()) return;
+        pendingFoundChat.keySet().removeIf(key -> !outstanding.containsKey(key));
+        if (pendingFoundChat.isEmpty() || TicketTrading.waitingForWarpGuests()) return;
+        for (String message : pendingFoundChat.values()) EncounterAlerts.post(ConfigManager.get().sparkling.detected(), message);
+        DebugLog.line("SPARKLING", "released deferred found chat count=" + pendingFoundChat.size());
+        pendingFoundChat.clear();
+    }
 
 	/** Sends the lifetime-aware catch line through its independently selected chat. */
 	public static void postCaught(String message) {
@@ -324,11 +373,18 @@ public final class SparklingWatch {
     }
 
     private static void transferAliases(UUID before, UUID after) {
+        Long waitingSince = awaitingSnapshot.remove(before);
+        if (waitingSince != null) awaitingSnapshot.merge(after, waitingSince, Math::min);
+        String pending = pendingFoundChat.remove(before);
+        if (pending != null) pendingFoundChat.put(after, pending);
         individualByLabel.replaceAll((alias, owner) -> owner.equals(before) ? after : owner);
         individualByLabel.put(before, after);
     }
 
     static void onCaptureResolved(Critter species, UUID before, UUID after, CritterState.Outcome outcome) {
+        onCaptureResolved(species, before, after, outcome, true);
+    }
+    private static void onCaptureResolved(Critter species, UUID before, UUID after, CritterState.Outcome outcome, boolean publish) {
         if(outcome!=CritterState.Outcome.CAUGHT) return;
         boolean removed=false;
         for (UUID id : new UUID[]{before, after}) {
@@ -347,7 +403,7 @@ public final class SparklingWatch {
         }
         if(removed) {
             DebugLog.line("SPARKLING", "resolved individual " + species.name()+" body="+shortId(before)+" remaining="+outstanding.size());
-            if(outstanding.values().stream().noneMatch(entry -> entry.critter()==species))
+            if(publish && outstanding.values().stream().noneMatch(entry -> entry.critter()==species))
                 PartySparklingDiscoveries.caught(species);
         }
     }
@@ -441,7 +497,18 @@ public final class SparklingWatch {
             nearbyIndividuals.clear();
             if (!nearbyCounts().isEmpty() || outstandingCounts().getOrDefault(species, 0) != 2)
                 throw new AssertionError("Losing detection range lost retained discoveries");
-            outstanding.remove(remoteId);
+            long revision = PartySparklingDiscoveries.localRevision();
+            remoteCaught(dev.serko.safariutils.data.Critters.selectionMask(remote));
+            reconcileRemoteCatches();
+        awaitingSnapshot.keySet().retainAll(outstanding.keySet());
+            if (outstanding.containsKey(remoteId) || !resolvedEntity(remoteId)
+                || PartySparklingDiscoveries.localRevision() != revision)
+                throw new AssertionError("Remote catch must retire distant identity without echoing local evidence");
+            remoteCaught(dev.serko.safariutils.data.Critters.selectionMask(species));
+            reconcileRemoteCatches();
+        awaitingSnapshot.keySet().retainAll(outstanding.keySet());
+            if (outstanding.size() != 2 || pendingRemoteCatches != 0)
+                throw new AssertionError("Ambiguous remote catch must not guess or later consume a survivor");
             UUID texture = new UUID(3,1);
             if (rememberTextureAliases(Set.of(texture), first)) throw new AssertionError("First appearance suppressed as duplicate");
             if (!rememberTextureAliases(Set.of(texture), first)) throw new AssertionError("Repeated appearance lost deduplication");
@@ -504,7 +571,7 @@ public final class SparklingWatch {
                 throw new AssertionError("Post-run discoveries suppressed while pre-ticket detection remains enabled");
 
         } finally {
-            outstanding.clear();resolvedIndividuals.clear();nearbyIndividuals.clear();announcedBodies.clear();announcedLabels.clear();visuallyAnnounced.clear();individualByLabel.clear();
+            pendingRemoteCatches = 0; outstanding.clear();resolvedIndividuals.clear();nearbyIndividuals.clear();announcedBodies.clear();announcedLabels.clear();visuallyAnnounced.clear();individualByLabel.clear();
         }
     }
 
@@ -518,11 +585,14 @@ public final class SparklingWatch {
 		announcedBodies.clear();
 		visuallyAnnounced.clear();
 		outstanding.clear();
+        pendingFoundChat.clear();
+        awaitingSnapshot.clear();
         resolvedIndividuals.clear();
 		nearbyIndividuals.clear();
 		replacementExpectedUntil.clear();
 		ParticleDiagnostics.reset();
 		caughtThemeUntil = 0;
+        pendingRemoteCatches = 0;
 		lastScan = Long.MIN_VALUE;
 		lastConfigRevision = Long.MIN_VALUE;
 		FullScreenAlert.clear();

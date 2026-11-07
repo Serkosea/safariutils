@@ -40,6 +40,10 @@ public final class TicketTrading {
 		Pattern.CASE_INSENSITIVE);
 
 	private static final Set<String> joinedTargets = new HashSet<>();
+    private static final Set<String> arrivedTargets = new HashSet<>();
+    private static final Pattern SAFARI_ARRIVAL = Pattern.compile(
+        "^(?:[^A-Za-z0-9_\\[]*\\s*)?(?:\\[[^]]+]\\s*)?([A-Za-z0-9_]{1,16}) (?:warped to your instance|joined the Critter Safari)\\.?$",
+        Pattern.CASE_INSENSITIVE);
 	private static final Set<String> confirmedRunMembers = new HashSet<>();
 	private static final Set<String> activeTargets = new LinkedHashSet<>();
 	private static final Set<String> invitedTargets = new LinkedHashSet<>();
@@ -86,6 +90,27 @@ public final class TicketTrading {
 	}
 
 	private TicketTrading() { }
+
+    static String arrivingPlayer(String line) {
+        Matcher match = SAFARI_ARRIVAL.matcher(line.replaceAll("§.", "").trim());
+        return match.matches() ? match.group(1).toLowerCase(Locale.ROOT) : "";
+    }
+
+    static boolean guestsArrived(Set<String> expected, Set<String> present) {
+        return !expected.isEmpty() && present.containsAll(expected);
+    }
+
+    /** Arrival evidence is independent of whether guests use a compatible mod. */
+    static boolean waitingForWarpGuests() {
+        if (!ConfigManager.get().sparkling.ticketTradingEnabled || !SafariLocation.inside()) return false;
+        if (hostQualificationPending) return true;
+        if (!hostScheduled) return false;
+        if (!warpSent) return true;
+        for (String name : SafariPartyWatch.presentPlayerNames()) arrivedTargets.add(normalizeName(name));
+        // A rate-limited party refresh may omit newly joined guests; retain the
+        // names confirmed by the invite flow instead of treating that as arrival.
+        return !joinedTargets.isEmpty() && !guestsArrived(joinedTargets, arrivedTargets);
+    }
 
 	public static void sanitizeSettings(SafariConfig.SparklingConfig config) {
 		TicketTradingProfiles.sanitize(config);
@@ -230,6 +255,11 @@ public final class TicketTrading {
 		if (line == null || line.isBlank()) return;
 		long now = System.currentTimeMillis();
 		String lower = line.toLowerCase(Locale.ROOT);
+        if (hostScheduled && warpSent) {
+            String arriving = arrivingPlayer(line);
+            if (joinedTargets.contains(arriving) && arrivedTargets.add(arriving))
+                DebugLog.line("TICKET_TRADE", "Guest arrived for Sparkling announcement: " + arriving);
+        }
         String transferred = TicketInvitePolicy.transferredPlayer(line);
         if (hostScheduled && !warpSent && transferred != null
                 && PartyState.snapshot().containsName(transferred)
@@ -464,6 +494,7 @@ public final class TicketTrading {
 
 	private static void resetRunAutomation() {
 		joinedTargets.clear();
+        arrivedTargets.clear();
         warpReadySince = 0L;
         lastGuestTransferAt = 0L;
 		hostScheduled = false;

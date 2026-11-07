@@ -8,6 +8,11 @@ public final class PartySparklingRegression {
 	public static int run() {
 		SparklingWatch.verifyIndividualTracking();
 		int checks = 4;
+        check(SparklingWatch.alertSnapshotReady(false, true, true, 0), "solo alerts must survive sync outage"); checks++;
+        check(!SparklingWatch.alertSnapshotReady(false, false, true, 11999), "party awaits initial snapshot"); checks++;
+        check(SparklingWatch.alertSnapshotReady(false, false, true, 12000), "outage cannot silence discovery forever"); checks++;
+        check(SparklingWatch.alertSnapshotReady(true, false, true, 0), "ready snapshot releases alert immediately"); checks++;
+        check(SparklingWatch.alertSnapshotReady(false, false, false, 0), "optional transport must not disable alerts"); checks++;
         var batch = new PartySnapshotBatch();
         batch.schedule(1000, 500, true);
         check(!batch.due(1499) && batch.due(1500) && batch.catchUpOnly(), "chat snapshot batching"); checks++;

@@ -8,6 +8,29 @@ import net.minecraft.world.phys.AABB;
 public final class CritterMarkerGeometryRegression {
 	public static int run() {
 		int checks = 0;
+        var batBox = CritterMarkerGeometry.appearance(dev.serko.safariutils.data.Critters.byName("Flitter"), net.minecraft.world.phys.Vec3.ZERO);
+        check(close(batBox.getXsize(), net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getValue(net.minecraft.resources.Identifier.withDefaultNamespace("bat")).getDimensions().width())
+            && close(batBox.getYsize(), net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getValue(net.minecraft.resources.Identifier.withDefaultNamespace("bat")).getDimensions().height()), "texture marker uses native bat dimensions"); checks++;
+        var start = new net.minecraft.core.BlockPos(0, 71, -56);
+        check(!HideyhoSolver.newEndLocation(start, start), "old Hideyho start is not final hiding location"); checks++;
+        check(HideyhoSolver.newEndLocation(start, new net.minecraft.core.BlockPos(13, 79, -50)), "first valid end sighting is immediately eligible"); checks++;
+        check(!HideyhoSolver.newEndLocation(start, new net.minecraft.core.BlockPos(13, 2, -88)), "recorded underground transit must not alert"); checks++;
+        check(!HideyhoSolver.newEndLocation(start, new net.minecraft.core.BlockPos(-6, 44, -63)), "recorded rising transit must not alert"); checks++;
+        check(!HideyhoSolver.newEndLocation(start, start.below()), "old label anchor must not trigger end"); checks++;
+        check(!HideyhoSolver.newEndLocation(start, null), "missing sighting cannot confirm end"); checks++;
+        var at = new net.minecraft.world.phys.Vec3(13.5, 69, -87.5);
+        check(CritterMarkerGeometry.hideyhoUpper(at, true).y == 71, "Hideyho player feet normalize to solver upper anchor"); checks++;
+        check(CritterMarkerGeometry.hideyhoUpper(at.add(0, 2, 0), false).y == 71, "Hideyho label and player share geometry"); checks++;
+        for (var species : dev.serko.safariutils.data.Critters.all()) {
+            check(CritterMarkerGeometry.visibleInBiome(species, false, species.biome()), "ordinary visible in own biome"); checks++;
+            check(!CritterMarkerGeometry.visibleInBiome(species, false, null), "ordinary hidden at central spawn"); checks++;
+            for (var biome : SafariBiome.values()) {
+                check(CritterMarkerGeometry.visibleInBiome(species, true, biome), "Sparkling remains cross-biome"); checks++;
+                check(CritterMarkerGeometry.visibleInBiome(species, false, biome) == (biome == species.biome()), "ordinary biome policy consistent"); checks++;
+            }
+            var appearance = CritterMarkerGeometry.appearance(species, at);
+            check(appearance.getXsize() > 0 && appearance.getYsize() > 0, "display-only carrier cannot produce miniscule marker"); checks++;
+        }
 		for (String name : new String[] {"Driftling", "Duplico", "Hideonfloor", "Hideonwall", "Bloodbat"}) {
 			Critter critter = new Critter(name, SafariBiome.CAVERN, Critter.Rarity.RARE, 1);
 			AABB body = new AABB(-0.7, 10, -0.4, 0.7, 12, 0.4);

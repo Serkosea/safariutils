@@ -9,7 +9,7 @@ public final class CritterCatchEstimates {
 
     public static double perRun(Critter critter) {
         return switch (critter.name()) {
-            // Mutuals 3.6.4 spreadsheet estimate; implies 16.5 mounds at 25%.
+            // Provisional estimate: 16.5 mounds at a 25% spawn chance.
             // The source does not establish a mound range. Keep this provisional.
             case "Rockmite" -> 4.125;
             case "Snoozle" -> 5 * 0.5;

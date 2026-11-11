@@ -5,7 +5,7 @@ import java.time.*;
 import java.util.*;
 import java.util.function.ToLongFunction;
 
-/** Daily historical projection, matching Mutuals' grouping without a second persistence store. */
+/** Daily historical projection without a second persistence store. */
 final class SavedProfitSummary {
     record Day(LocalDate date,int runs,long millis,long value,long best,boolean incomplete) {
         long perHour() { return millis>0?Math.round(value*3600000d/millis):0; }

@@ -67,10 +67,10 @@ public final class HotspotWatch {
             EncounterAlerts.post(SafariConfig.Broadcast.PARTY,
                 ChatTemplateFormats.HOTSPOT.format(ConfigManager.get().party, "<BIOME>", hotspot.displayName()));
         }
-        if (allocation.finished()) return;
+
         SafariBiome next = allocation.assignment(names, uuids, party.expectedPlayers(), now);
+        if(next!=null)PartyHotspotSync.lockFallback(allocation.finalizedAssignments(), uuids);
         if (next != null && next != assigned) {
-            PartyHotspotSync.lockFallback(allocation.finalizedAssignments(), uuids);
             assigned = next;
             showBanner();
             ClientMessages.sendLines(java.util.List.of(assignmentMessage(next, hotspot)));
@@ -87,7 +87,7 @@ public final class HotspotWatch {
     public static void acceptAssignment(SafariBiome destination) {
         if (assigned != null || destination == null || !PartyHotspotSync.assignmentEligible()) return;
         assigned = destination; showBanner();
-        if (hotspot != null) ClientMessages.sendLines(java.util.List.of(assignmentMessage(destination, hotspot)));
+        ClientMessages.sendLines(java.util.List.of(assignmentMessage(destination, hotspot)));
         DebugLog.line("HOTSPOT/ASSIGN", "backend assigned=" + destination);
     }
     static java.util.Set<String> rosterIdentity(java.util.Set<String> names, java.util.Map<String, String> uuids) {
@@ -100,9 +100,10 @@ public final class HotspotWatch {
         return java.util.Set.copyOf(result);
     }
     static net.minecraft.network.chat.Component assignmentMessage(SafariBiome destination, SafariBiome actual) {
-        return net.minecraft.network.chat.Component.literal("Assigned Biome: ").withColor(StatColours.INFO)
-            .append(net.minecraft.network.chat.Component.literal(destination.displayName()).withColor(destination.colour()).withStyle(net.minecraft.ChatFormatting.BOLD))
-            .append(net.minecraft.network.chat.Component.literal("  \u2502  ").withColor(0xFFFFFF))
+        var title = net.minecraft.network.chat.Component.literal("Assigned Biome: ").withColor(StatColours.INFO)
+            .append(net.minecraft.network.chat.Component.literal(destination.displayName()).withColor(destination.colour()).withStyle(net.minecraft.ChatFormatting.BOLD));
+        if(actual==null)return title;
+        return title.append(net.minecraft.network.chat.Component.literal("  \u2502  ").withColor(0xFFFFFF))
             .append(net.minecraft.network.chat.Component.literal("Your Hotspot: ").withColor(StatColours.INFO))
             .append(net.minecraft.network.chat.Component.literal(actual.displayName()).withColor(actual.colour()));
     }
@@ -124,7 +125,9 @@ public final class HotspotWatch {
 	public static void onChatMessage(String line) {
 		if (enabled() && SafariLocation.inside()) {
             PartyReport shared = parsePartyReport(line);
-            if (shared != null && dev.serko.safariutils.state.PartyState.snapshot().containsName(shared.name())) {
+            if (shared != null && (PARTY_HOTSPOT.matcher(line).matches() || (dev.serko.safariutils.session.SessionManager.current()==null
+                    ? System.currentTimeMillis()-SafariLocation.insideSinceMillis()<=30000
+                    : dev.serko.safariutils.session.SessionManager.current().personalBestElapsed()<=30000)) && dev.serko.safariutils.state.PartyState.snapshot().containsName(shared.name())) {
                 PartyHotspotSync.report(shared.name(), shared.biome());
                 allocation.report(shared.name(), shared.biome(), dev.serko.safariutils.state.MonotonicTime.nowMillis());
                 return;
@@ -146,7 +149,13 @@ public final class HotspotWatch {
     static PartyReport parsePartyReport(String line) {
         if (line == null) return null;
         Matcher matcher = PARTY_HOTSPOT.matcher(line);
-        if (!matcher.matches()) return null;
+        if (!matcher.matches()) {
+            var manual=Pattern.compile("^Party\\s*>\\s*(?:\\[[^\\]]+]\\s*)*([A-Za-z0-9_]{1,16}):\\s*(?:HOTSPOT! Your Hunting Hotspot is the )?(Forest|fprest|for|Cavern|cav|Icy|Ice|Haunted|haunt|haunte|hvant|f|c|i|h)(?: Biome!)?$",Pattern.CASE_INSENSITIVE).matcher(line);
+            if(!manual.matches())return null;
+            String name=manual.group(2).toLowerCase(java.util.Locale.ROOT);
+            SafariBiome biome=switch(name) {case "f","forest","fprest","for"->SafariBiome.FOREST;case "c","cavern","cav"->SafariBiome.CAVERN;case "i","ice","icy"->SafariBiome.ICY;default->SafariBiome.HAUNTED;};
+            return new PartyReport(manual.group(1),biome);
+        }
         return new PartyReport(matcher.group(1), SafariBiome.fromDisplayName(
             matcher.group(2).equalsIgnoreCase("Ice") ? "Icy" : matcher.group(2)));
     }

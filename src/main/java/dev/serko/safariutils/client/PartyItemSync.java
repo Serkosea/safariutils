@@ -72,6 +72,8 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 	private boolean feedDoneAnnounced;
 	private boolean insideVisit;
 	private String visitLobby;
+    private String visitId=java.util.UUID.randomUUID().toString();
+    private boolean replayWasReady;
 	private long visitEnteredAt;
 	private String lastDebugTransport = "";
 	private long sentSparklingRevision = -1;
@@ -145,7 +147,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		if (!roster.isEmpty() && remoteSupported && lobby != null && !lobby.isBlank()) {
 			networkEngaged = true;
 			PartySyncNetworks.tick(new PartySyncNetworkProvider.Context(lobby, localUuid(),
-				roster.stream().map(Member::uuid).toList()),
+				roster.stream().map(Member::uuid).toList(),visitId),
 				this::applyNetworkMessage);
 			networkConnected = PartySyncNetworks.connected();
 		} else {
@@ -167,7 +169,8 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 				lastDebugTransport = transportState;
 			}
 		} else lastDebugTransport = "";
-		if (!wasNetworkConnected && networkConnected) {
+        boolean replayReady=networkConnected && PartySyncNetworks.replayReady();
+		if (replayReady && !replayWasReady) {
 			lastPublishedAggregate = null;
 			sentSparklingRevision = -1;
 			snapshotBatch.clear();
@@ -176,6 +179,8 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			sendNests();
 			DebugLog.line("SYNC", "authenticated transport connected roster=" + roster.size());
 		}
+        replayWasReady=replayReady;
+        PartyCompletionSync.tick((type,payload)->PartySyncNetworks.send(++sequence,type,payload),this::localCompletionSources);
 		if (networkConnected && PartySyncNetworks.sparklingSnapshotReady() && sentSparklingRevision != PartySparklingDiscoveries.localRevision()) {
 			PartySyncNetworks.send(++sequence, "S", PartySparklingDiscoveries.payload());
             PartySparklingDiscoveries.published();
@@ -578,6 +583,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 	private void sendState() { sendState(false); }
 
 	private void sendState(boolean catchUpOnly) {
+        if (PartySyncNetworks.runSyncSupported() && !PartySyncNetworks.replayReady()) return;
 		String counts = Arrays.stream(localFound)
 			.mapToObj(String::valueOf)
 			.reduce((left, right) -> left + "," + right)
@@ -667,6 +673,8 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 	}
 
 	private void applyNetworkMessage(PartySyncNetworkProvider.Message message) {
+        if(message!=null && "RECONCILE".equals(message.type())) { PartyCompletionSync.reconcile(message.payload()); return; }
+        if(message!=null && "C".equals(message.type())) { PartyCompletionSync.accept(message); return; }
 		if (message != null && "H".equals(message.type())) { PartyHotspotSync.accept(message.payload()); return; }
         if (message != null && "S_ROOM".equals(message.type())) {
             if (!SafariLocation.inside() || !SparklingWatch.discoveryAllowed(
@@ -687,6 +695,18 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			DebugLog.line("SYNC", "ignored network state from outside frozen roster");
 			return;
 		}
+        if("A_RETAINED".equals(message.type())) {
+            try {
+                int[] values=Arrays.stream(message.payload().split(",",-1)).mapToInt(Integer::parseInt).toArray();
+                if(values.length!=PartySyncProtocol.AGGREGATE_VALUES && values.length!=PartySyncProtocol.LEGACY_AGGREGATE_VALUES)return;
+                for(int index:new int[]{10,11,12,19,20,21,22})values[index]=0;
+                if(values.length>38)values[38]=0;
+                values[17]=feederType;values[18]=feederCount;
+                State state=states.computeIfAbsent(member.uuid(),ignored->new State());
+                if(applyAggregate(state,values))state.reported=false;
+            } catch(NumberFormatException ignored) { }
+            return;
+        }
 		if ("B".equals(message.type())) { BiomeCoordination.onNetworkReport(message.payload(), member.uuid());
             if (PartySyncDebugHud.enabled()) PartySyncDebugHud.event(member.name()+": biome report "+message.payload(), 0xFF65DDEC); return; }
 		String body = member.uuid() + "-" + message.sequence() + ":"
@@ -1175,7 +1195,21 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 			String.CASE_INSENSITIVE_ORDER)).toList();
 	}
 
+    private boolean localCompletionSources(dev.serko.safariutils.data.Critter critter) {
+        return switch(critter.name()) {
+            case "Bluebird", "Parakeet", "Macaw" -> BirdfeederWatch.allForestFeedUsed();
+            case "Honeybug" -> !StaticWaypointCatalog.nests().isEmpty() && confirmedNests.containsAll(StaticWaypointCatalog.nests());
+            case "Rockmite" -> MoundSpotter.localSourcesExhausted();
+            case "Snoozle" -> WallTracker.SNOOPER.localCompletionMask()==31;
+            case "Troodon" -> WallTracker.TROODON.localCompletionMask()==7;
+            case "Gemzie" -> localGemzieOpen;
+            case "Gimmiegold" -> ShiningCoinWatch.ownCoinsUsed() && localCoins==0 && !FloorDrops.coinsRemain() && FloorDrops.knownCoinSupply()>=0;
+            default -> true;
+        };
+    }
+
 	private void clearRun() {
+        visitId=java.util.UUID.randomUUID().toString(); replayWasReady=false; PartyCompletionSync.reset();
 		if (insideVisit) DebugLog.line("SYNC", "visit cleared roster=" + roster.size()
 			+ " knownNests=" + confirmedNests.size());
 		disconnectNetwork();

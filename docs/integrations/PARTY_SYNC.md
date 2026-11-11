@@ -1,10 +1,12 @@
 # Shared Safari party sync — implementation guide
 
+Current negotiated run/completion changes: [3.8.0 implementation guide](PARTY_SYNC_3.8_IMPLEMENTATION.md). This supersedes older lifecycle/timing descriptions below where they differ.
+
 Current lifecycle/replay additions: [concise 3 November update](PARTY_SYNC_UPDATE_2026-11-03.md).
 
-Agreed with JohnCEO on 2026-11-02. Both mods keep their own UI and trackers.
+Agreed with protocol partner on 2026-11-02. Both mods keep their own UI and trackers.
 The service is `https://api-dev.serkosea.dev`; no hosting, API secret, or SafariUtils
-library is needed by Mutuals. Mixed-mod in-game validation is still required.
+library is needed by peer client. Mixed-mod in-game validation is still required.
 
 ## Connect once, share existing observations
 
@@ -121,7 +123,7 @@ Missing advertised capabilities or `{"type":"hotspots-unavailable"}` means coord
 is unavailable. Keep finalized choices, use bounded reconnect/backoff, and only start
 chat fallback if backend authority was never adopted. Ignore unknown extension frames.
 
-Older Mutuals builds that calculate independently have not adopted this contract.
+Older peer client builds that calculate independently have not adopted this contract.
 Do not assume their local assignment display obeys the backend just because they send
 `[SM]` or `[SU]` chat messages. Test the new adapter in both mods together.
 

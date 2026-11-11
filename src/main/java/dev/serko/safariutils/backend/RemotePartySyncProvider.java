@@ -32,7 +32,15 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 	private static final int MAX_INCOMING_MESSAGES = 128;
 	private static final int MAX_RELAY_TEXT = 8_192;
 	private static final Pattern NUMERIC_PAYLOAD = Pattern.compile("[\\d,-]*");
-	private record Delivery(long generation, Message message) { }
+	private record Delivery(long generation, Message message, long queuedAt) {
+        Delivery(long generation, Message message) { this(generation, message, MonotonicTime.nowMillis()); }
+    }
+    private volatile boolean runSync, completion, replayReady;
+    private volatile String runId = "";
+    @Override public boolean runSyncSupported() { return connected && runSync; }
+    @Override public boolean completionSupported() { return connected && completion && replayReady; }
+    @Override public boolean replayReady() { return connected && (!runSync || replayReady); }
+    @Override public String runId() { return runId; }
 	private final ArrayBlockingQueue<Delivery> incoming = new ArrayBlockingQueue<>(MAX_INCOMING_MESSAGES);
 	private final AtomicLong generation = new AtomicLong();
 	private volatile WebSocket socket;
@@ -40,7 +48,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 	private volatile boolean connected;
     private volatile boolean sparklingSnapshotReady;
     private volatile boolean snapshotExpected;
-    @Override public boolean sparklingSnapshotReady() { return connected && sparklingSnapshotReady; }
+    @Override public boolean sparklingSnapshotReady() { return connected && sparklingSnapshotReady && (!runSync || replayReady); }
     private volatile java.util.Set<String> connectedPlayers = java.util.Set.of();
     @Override public java.util.Set<String> connectedPlayers() { return connected ? connectedPlayers : java.util.Set.of(); }
     private synchronized void presence(long attempt, java.util.Set<String> players) {
@@ -66,7 +74,9 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 	public void tick(Context next, Consumer<Message> receiver) {
 		String nextSignature = signature(next);
 		if (!nextSignature.equals(signature)) {
+            boolean differentVisit = context == null || next == null || !java.util.Objects.equals(context.visitId(), next.visitId());
 			disconnect();
+            if (differentVisit) runId = "";
 			context = next;
 			signature = nextSignature;
 			// Retain service backoff across roster changes; a new room cannot bypass a quota delay.
@@ -75,7 +85,21 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		Delivery delivery;
 		while ((delivery = incoming.poll()) != null) {
 			if (delivery.generation() == generation.get()) {
-                receiver.accept(delivery.message());
+                Message message = delivery.message();
+                if ("RECONCILE".equals(message.type())) {
+                    var value=JsonParser.parseString(message.payload()).getAsJsonObject();
+                    String status=value.get("status").getAsString();
+                    replayReady=false;
+                    if (!"pending".equals(status)) runId=value.get("runId").getAsString();
+                    DebugLog.line("SYNC_NET", "run reconciliation="+status);
+                    receiver.accept(message);
+                } else if ("REPLAY_END".equals(message.type())) {
+                    if (message.payload().equals(runId)) { replayReady=true; sparklingSnapshotReady=true; failures=0; }
+                } else {
+                    if ("C".equals(message.type())) message=new Message(message.senderUuid(),message.sequence(),message.type(),message.payload(),
+                        message.ageMillis()+Math.max(0,MonotonicTime.nowMillis()-delivery.queuedAt()));
+                    receiver.accept(message);
+                }
                 if (delivery.generation() == generation.get() && "S_ROOM".equals(delivery.message().type()))
                     { sparklingSnapshotReady = true; failures = 0; }
             }
@@ -84,7 +108,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		WebSocket current = socket;
 		long operationGeneration = generation.get();
 		if (current != null) {
-            if ((!connected || snapshotExpected && !sparklingSnapshotReady) && now - openedAt >= 12_000L
+            if ((!connected || snapshotExpected && !runSync && !sparklingSnapshotReady) && now - openedAt >= 12_000L
                     || connected && now - lastInboundAt >= 75_000L) {
                 failed(operationGeneration, new java.io.IOException("Party sync response timeout"));
                 return;
@@ -127,6 +151,20 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		JsonObject state = new JsonObject();
 		state.addProperty("sequence", sequence);
 		state.addProperty("kind", type);
+        if (runSync) {
+            if ("H".equals(type)) {
+                JsonObject hello=JsonParser.parseString(payload).getAsJsonObject();
+                hello.addProperty("visitId",context.visitId());
+                if ("hello".equals(hello.get("action").getAsString())) {
+                    JsonArray capabilities=new JsonArray();capabilities.add("run-reconciliation-v1");capabilities.add("critter-completion-v1");hello.add("capabilities",capabilities);
+                    if(runId.isEmpty())hello.add("resumeRunId",com.google.gson.JsonNull.INSTANCE);else hello.addProperty("resumeRunId",runId);
+                } else { if(runId.isEmpty())hello.add("runId",com.google.gson.JsonNull.INSTANCE);else hello.addProperty("runId",runId); }
+                payload=hello.toString();
+            } else {
+                if(!replayReady || runId.isEmpty())return;
+                if("C".equals(type)) { var value=JsonParser.parseString(payload).getAsJsonObject();value.addProperty("runId",runId);value.addProperty("visitId",context.visitId());payload=value.toString(); }
+            }
+        }
 		state.addProperty("payload", payload);
 		if (catchUpOnly) state.addProperty("catchUpOnly", true);
 		queue.send(state.toString()).exceptionally(error -> {
@@ -138,7 +176,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 	@Override
 	public synchronized void disconnect() {
 		generation.incrementAndGet();
-		connected = false; sparklingSnapshotReady = false; coordination = false; connectedPlayers = java.util.Set.of();
+		connected = false; sparklingSnapshotReady = false; coordination = false; runSync=false; completion=false; replayReady=false; connectedPlayers = java.util.Set.of();
 		connecting = false;
 		incoming.clear();
 		WebSocket current = socket;
@@ -164,7 +202,8 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 					.connectTimeout(Duration.ofSeconds(10))
 					.header("Authorization", "Bearer " + token)
 					.header("X-SafariUtils-Lobby", desired.lobbyId())
-					.header("X-SafariUtils-Player", desired.localUuid())
+					.header("X-SafariUtils-Sync-Protocol", "2")
+                    .header("X-SafariUtils-Player", desired.localUuid())
 					.header("X-SafariUtils-Roster", String.join(",", desired.roster()))
 					.buildAsync(ENDPOINT, new Listener(attempt, desired))
 					.exceptionally(error -> { failed(attempt, error); return null; });
@@ -180,7 +219,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 			return;
 		}
         outbox = new WebSocketOutbox(value);
-		connected = false; sparklingSnapshotReady = false; coordination = false; connectedPlayers = java.util.Set.of();
+		connected = false; sparklingSnapshotReady = false; coordination = false; runSync=false; completion=false; replayReady=false; connectedPlayers = java.util.Set.of();
 		connecting = false;
 		openedAt = lastInboundAt = MonotonicTime.nowMillis();
 		nextPingAt = MonotonicTime.nowMillis() + PING_INTERVAL_MILLIS;
@@ -209,7 +248,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
         WebSocketOutbox queue = outbox; outbox = null;
         if (queue != null) queue.close();
 		socket = null;
-		connected = false; sparklingSnapshotReady = false; coordination = false; connectedPlayers = java.util.Set.of();
+		connected = false; sparklingSnapshotReady = false; coordination = false; runSync=false; completion=false; replayReady=false; connectedPlayers = java.util.Set.of();
 		connecting = false;
 		scheduleRetry();
 		DebugLog.line("SYNC_NET", "closed status=" + statusCode + " retryMs="
@@ -230,7 +269,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
         WebSocketOutbox queue = outbox; outbox = null;
         if (queue != null) queue.close();
 		if (current != null) current.abort();
-		connected = false; sparklingSnapshotReady = false; coordination = false; connectedPlayers = java.util.Set.of();
+		connected = false; sparklingSnapshotReady = false; coordination = false; runSync=false; completion=false; replayReady=false; connectedPlayers = java.util.Set.of();
 		connecting = false;
         Throwable cause = unwrap(error);
         long serverDelay = 0;
@@ -263,6 +302,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		private final StringBuilder text = new StringBuilder();
 		private Map<String, String> mapping = Map.of();
 		private boolean roomSparklings;
+        private String connectionId="", reconciledRun="";
 
 		private Listener(long attempt, Context desired) {
 			this.attempt = attempt;
@@ -321,15 +361,33 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
                         .anyMatch(feature -> "hotspots-v1".equals(feature.getAsString()));
                     roomSparklings = root.has("features") && root.getAsJsonArray("features").asList().stream()
                         .anyMatch(feature -> "room-sparklings-v1".equals(feature.getAsString()));
+                    runSync = root.has("features") && root.getAsJsonArray("features").asList().stream().anyMatch(f -> "run-reconciliation-v1".equals(f.getAsString()));
+                    completion = runSync && root.getAsJsonArray("features").asList().stream().anyMatch(f -> "critter-completion-v1".equals(f.getAsString()));
+                    if(runSync)connectionId=root.get("connectionId").getAsString();
                     mapping = Map.copyOf(next);
 					ready(attempt, mapping, roomSparklings);
 					return;
 				}
+                if (runSync && ("reconcile".equals(type) || "replay-complete".equals(type))) {
+                    if (!connectionId.equals(root.get("connectionId").getAsString()) || !desired.visitId().equals(root.get("visitId").getAsString())) return;
+                    if("reconcile".equals(type)) {
+                        String status=root.get("status").getAsString();
+                        if(!java.util.Set.of("pending","resumed","joined","new").contains(status))return;
+                        reconciledRun="pending".equals(status)?"":root.get("runId").getAsString();
+                        enqueue(new Message("",1,"RECONCILE",root.toString()));
+                    } else if(!reconciledRun.isEmpty() && reconciledRun.equals(root.get("runId").getAsString())) enqueue(new Message("",1,"REPLAY_END",reconciledRun));
+                    return;
+                }
+                if(runSync && java.util.Set.of("sparklings","state","hotspots").contains(type)) {
+                    String frameRun="hotspots".equals(type) ? root.getAsJsonObject("payload").get("run").getAsString()
+                        : root.has("runId")?root.get("runId").getAsString():"";
+                    if(reconciledRun.isEmpty() || !reconciledRun.equals(frameRun))return;
+                }
                 if ("sparklings".equals(type) && roomSparklings && !mapping.isEmpty()) {
                     String payload = root.get("payload").getAsString();
                     if (validRelay(1, "S", payload)
                         && !incoming.offer(new Delivery(attempt, new Message("", 1, "S_ROOM", payload))))
-                        StructuredDiagnostics.decision("party-network", "rejected", "queueFull");
+                        failed(attempt,new java.io.IOException("Party replay queue overflow"));
                     return;
                 }
                 if ("presence".equals(type)) {
@@ -347,7 +405,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
                 if ("hotspots".equals(type) && coordination) {
                     JsonObject payload = root.getAsJsonObject("payload");
                     if (payload != null && payload.toString().length() <= 4096)
-                        incoming.offer(new Delivery(attempt, new Message("", 1, "H", payload.toString())));
+                        enqueue(new Message("", 1, "H", payload.toString()));
                     return;
                 }
                 if (!"state".equals(type)) return;
@@ -357,12 +415,18 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 				String kind = root.get("kind").getAsString();
 				if (roomSparklings && "S".equals(kind)) return;
 				String payload = root.get("payload").getAsString();
+                if ("C".equals(kind)) {
+                    if(!completion || sequence<=0 || !root.has("ageMillis"))return;
+                    long age=root.get("ageMillis").getAsLong();
+                    if(age<0 || age>=45000 || dev.serko.safariutils.state.CompletionSnapshot.parse(payload,reconciledRun)==null)return;
+                    enqueue(new Message(uuid,sequence,kind,payload,age)); return;
+                }
 				if (!validRelay(sequence, kind, payload)) {
 					StructuredDiagnostics.decision("party-network", "rejected", "relayShape");
 					return;
 				}
-				if (!incoming.offer(new Delivery(attempt, new Message(uuid, sequence, kind, payload)))) {
-					StructuredDiagnostics.decision("party-network", "rejected", "queueFull");
+				if (!incoming.offer(new Delivery(attempt, new Message(uuid, sequence, "A".equals(kind) && root.has("inventoryFresh") && !root.get("inventoryFresh").getAsBoolean()?"A_RETAINED":kind, payload)))) {
+                    failed(attempt,new java.io.IOException("Party replay queue overflow"));
 					return;
 				}
 				DebugLog.line("SYNC_NET", "relay received type="
@@ -373,6 +437,9 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 			}
 		}
 
+        private void enqueue(Message message) {
+            if(!incoming.offer(new Delivery(attempt,message))) failed(attempt,new java.io.IOException("Party replay queue overflow"));
+        }
 		private void rejectWelcome(String reason) {
 			DebugLog.line("SYNC_NET", "discarded invalid room welcome reason=" + reason);
 			StructuredDiagnostics.decision("party-network", "rejected", "welcome=" + reason);
@@ -421,7 +488,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 	}
 
 	private static String signature(Context value) {
-		return value == null ? "" : value.lobbyId() + "|" + value.localUuid() + "|"
+		return value == null ? "" : value.lobbyId() + "|" + value.visitId() + "|" + value.localUuid() + "|"
 			+ String.join(",", value.roster());
 	}
 

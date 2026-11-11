@@ -18,6 +18,7 @@ public final class PartySyncDebugHud implements HudElement {
     private static Map<String, String> rosterNames = Map.of();
     private static final SyncActivityFeed feed = new SyncActivityFeed();
     private static final Map<String,int[]> previous = new LinkedHashMap<>();
+    private static String lastCompletionStatus="";
     private static String transport="Inactive", lobby="";
     private static long started;
     private static int rosterCount;
@@ -54,6 +55,8 @@ public final class PartySyncDebugHud implements HudElement {
             connectedPlayers=Set.copyOf(nextPlayers);
             event("Connected players: " + connectedNames(), connectedPlayers.isEmpty()?GOLD:GREEN);
         }
+        String completionStatus=PartyCompletionSync.status()+" \u00b7 "+(dev.serko.safariutils.api.PartySyncNetworks.replayReady()?"Replay applied":"Awaiting replay");
+        if(!completionStatus.equals(lastCompletionStatus)) {event(completionStatus,CYAN);lastCompletionStatus=completionStatus;}
         transport=nextTransport; connectedState=connected;
         rosterCount=members; localLeader=party.localLeader(); assignments=nextAssignments;
 

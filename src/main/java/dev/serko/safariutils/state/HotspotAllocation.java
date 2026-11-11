@@ -3,7 +3,7 @@ package dev.serko.safariutils.state;
 import dev.serko.safariutils.data.SafariBiome;
 import java.util.*;
 
-/** Mutuals 4 allocation: fewest retained hotspots, UUID hash tie-break, shared report window. */
+/** Shared hotspot allocation: fewest retained hotspots, UUID hash tie-break, shared report window. */
 public final class HotspotAllocation {
     private final Map<String, SafariBiome> reports = new LinkedHashMap<>();
     private final Map<String, Integer> wins;
@@ -13,6 +13,7 @@ public final class HotspotAllocation {
     public Map<String, SafariBiome> finalizedAssignments() { return finalized; }
     private long started;
     private Long firstReport;
+    private long lateAt;
     public HotspotAllocation() { this(new HashMap<>()); }
     /** The owner retains wins across runs, clearing them when the roster changes. */
     public HotspotAllocation(Map<String, Integer> wins) { this.wins = wins; }
@@ -21,15 +22,31 @@ public final class HotspotAllocation {
         self = name.toLowerCase(Locale.ROOT); actual = hotspot; started = now;
     }
     public void report(String name, SafariBiome biome, long now) {
-        if (name == null || biome == null || finished != null || self != null && now - started > 10_000) return;
+        if (name == null || biome == null) return;
         String key = name.toLowerCase(Locale.ROOT);
         if (reports.size() >= 4 && !reports.containsKey(key)) return;
         if (firstReport == null) firstReport = now;
         reports.putIfAbsent(key, biome);
+        if(finished!=null && !finalized.containsKey(key) && lateAt==0)lateAt=now+250;
     }
     public SafariBiome assignment(Set<String> members, Map<String, String> uuids, int expected, long now) {
         if (self == null) return null;
-        if (finished != null) return finished;
+        if (finished != null) {
+            if(lateAt!=0 && now>=lateAt) {
+                Map<String,SafariBiome> fixed=new LinkedHashMap<>(finalized);
+                Set<String> attendees=new HashSet<>();members.forEach(n->attendees.add(n.toLowerCase(Locale.ROOT)));
+                List<String> late=reports.keySet().stream().filter(n->attendees.contains(n) && !fixed.containsKey(n)).sorted(
+                    Comparator.comparingInt((String n)->wins.getOrDefault(n,0)).thenComparingInt(n->identity(n,uuids).hashCode()).thenComparing(n->identity(n,uuids))).collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+                for(SafariBiome biome:SafariBiome.values())if(!fixed.containsValue(biome)) {
+                    String winner=late.stream().filter(n->reports.get(n)==biome).findFirst().orElse(null);
+                    if(winner!=null) {fixed.put(winner,biome);late.remove(winner);wins.merge(winner,1,Integer::sum);}
+                }
+                late.sort(Comparator.comparingInt((String n)->identity(n,uuids).hashCode()).thenComparing(n->identity(n,uuids)));
+                for(SafariBiome biome:SafariBiome.values())if(!fixed.containsValue(biome) && !late.isEmpty())fixed.put(late.removeFirst(),biome);
+                finalized=Map.copyOf(fixed);lateAt=0;
+            }
+            return finished;
+        }
         if (expected <= 1) { finalized = Map.of(self, actual); return finished = actual; }
         if (firstReport == null) return null;
         Set<String> names = new HashSet<>();
@@ -37,7 +54,7 @@ public final class HotspotAllocation {
         names.add(self);
         boolean complete = names.size() >= expected && reports.keySet().containsAll(names);
         long elapsed = now - firstReport;
-        if (elapsed < 2000 || !complete && elapsed < 5000) return null;
+        if (!complete && elapsed < 30000) return null;
         Map<String, SafariBiome> known = new LinkedHashMap<>();
         reports.forEach((name, biome) -> { if (names.contains(name)) known.put(name, biome); });
         known.putIfAbsent(self, actual);

@@ -10,8 +10,8 @@
 - `gradle/regressions.gradle`, `provenance.gradle`, `distribution.gradle`: verification,
   component fingerprints, and artifact/deployment tasks
 - `tools`: source-asset generation utilities
-- `docs`: development documentation; `HANDOFF.md` and `IMPLEMENTATION_V3.md` remain the
-  root entry points while the v3 migration is in progress
+- `docs`: development documentation; `HANDOFF.md` and `docs/README.md` are the
+  current entry points; historical migration notes are archived
 
 ## Local-only files
 

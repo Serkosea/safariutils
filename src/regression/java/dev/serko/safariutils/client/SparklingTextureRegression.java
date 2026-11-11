@@ -107,7 +107,80 @@ public final class SparklingTextureRegression {
         matches.clear();
         SparklingTextureEvidence.merge(List.of(),matches,Set.of(),owners,captured,id -> false);
         check(owners.isEmpty() && captured.isEmpty(), "unloaded texture releases ownership memory");
-        return 30;
+        var mantis = Critters.byName("Mantis Shrimp");
+        var distantHead = new CritterScan.Sample(UUID.randomUUID(), "item_display", null, -69.8125, 35, -41.625, mantis);
+        var unnamedUpper = new CritterScan.Sample(UUID.randomUUID(), "armor_stand", null, -69.8125, 33.46875, -41.625);
+        var unnamedLower = new CritterScan.Sample(UUID.randomUUID(), "armor_stand", null, -69.8125, 33.09375, -41.625);
+        var originalMantis = new CritterScan.Sample(UUID.randomUUID(), "item_display", null, -69.65, 30.45, -43.1265, mantis);
+        matches.clear();
+        SparklingTextureEvidence.merge(List.of(distantHead, unnamedUpper, unnamedLower, originalMantis), matches, Set.of());
+        check(matches.size() == 1 && matches.getFirst().body() == originalMantis,
+            "distant unnamed teammate capture does not duplicate Sparkling Mantis");
+        var normalHead = new CritterScan.Sample(UUID.randomUUID(), "item_display", null, -69.8125, 35, -41.625, mantis, false);
+        matches.clear();
+        SparklingTextureEvidence.merge(List.of(normalHead, unnamedUpper, unnamedLower), matches, Set.of());
+        check(matches.isEmpty(), "ordinary distant capsule head is not a live Mantis");
+        matches.clear();
+        SparklingTextureEvidence.merge(List.of(distantHead, unnamedUpper), matches, Set.of());
+        check(matches.size() == 1, "single nearby stand is insufficient capture evidence");
+        var secondMantis = new CritterScan.Sample(UUID.randomUUID(), "item_display", null, -72, 30.45, -43, mantis);
+        matches.clear();
+        SparklingTextureEvidence.merge(List.of(distantHead, unnamedUpper, unnamedLower, originalMantis, secondMantis), matches, Set.of());
+        check(matches.size() == 2 && matches.stream().noneMatch(match -> match.body() == distantHead),
+            "two genuine Sparkling Mantis survive capture assembly filtering");
+        check(CritterDisplayState.collapsed(0, 0, 0), "zero-scale carrier is hidden");
+        check(!CritterDisplayState.collapsed(0, 1, 1), "flat carrier is still visible");
+        check(!CritterDisplayState.collapsed(-1, -1, -1), "mirrored carrier is still visible");
+        check(!CritterDisplayState.collapsed(.01f, .01f, .01f), "small carrier is not retired as hidden");
+        var paper = new CritterScan.Sample(UUID.randomUUID(), "item_display", null,
+            -68.810546875,35.22265625,-46.953857421875,null,false,true);
+        var effect = new CritterScan.Sample(UUID.randomUUID(), "item_display", null,
+            -68.8125,35.25,-46.96875,mantis);
+        matches.clear();
+        SparklingTextureEvidence.merge(List.of(paper,effect,originalMantis,secondMantis),matches,Set.of());
+        check(matches.size() == 2 && matches.stream().noneMatch(m -> m.body() == effect), "paper/head assembly excluded without stands");
+        var old = new CritterScan.Sample(UUID.randomUUID(), "item_display", null,
+            -70.0283203125,30.449951171875,-47.651611328125,mantis);
+        var breakoutSkin = new CritterScan.Sample(UUID.randomUUID(), "item_display", null,
+            -70.03125,30,-47.65625,mantis);
+        var lineage = new TextureLineage();
+        lineage.observe(List.of(old),List.of(),0);
+        lineage.observe(List.of(),List.of(old),250);
+        lineage.observe(List.of(breakoutSkin),List.of(old),1750);
+        matches.clear();
+        SparklingTextureEvidence.merge(List.of(breakoutSkin),matches,Set.of());
+        lineage.enrich(matches);
+        check(matches.size() == 1 && matches.getFirst().textureIds().contains(old.id()), "recorded distant breakout retains original discovery identity");
+        var again = new CritterScan.Sample(UUID.randomUUID(), "item_display", null, breakoutSkin.x(),breakoutSkin.y(),breakoutSkin.z(),mantis);
+        lineage.observe(List.of(),List.of(old,breakoutSkin),2000);
+        lineage.observe(List.of(again),List.of(old,breakoutSkin),3500);
+        matches.clear();
+        SparklingTextureEvidence.merge(List.of(again),matches,Set.of());
+        lineage.enrich(matches);
+        check(matches.getFirst().textureIds().contains(old.id()), "second breakout retains original root");
+        lineage.clear();
+        lineage.observe(List.of(),List.of(old),0);
+        lineage.observe(List.of(breakoutSkin),List.of(old),500);
+        matches.clear();
+        SparklingTextureEvidence.merge(List.of(breakoutSkin),matches,Set.of());
+        lineage.enrich(matches);
+        check(!matches.getFirst().textureIds().contains(old.id()), "previously unseen hidden model cannot merge a new discovery");
+        lineage.clear();
+        lineage.observe(List.of(old),List.of(),0);
+        lineage.observe(List.of(breakoutSkin,again),List.of(old),500);
+        matches.clear();
+        SparklingTextureEvidence.merge(List.of(breakoutSkin,again),matches,Set.of());
+        lineage.enrich(matches);
+        check(matches.size() == 2 && matches.stream().noneMatch(m -> m.textureIds().contains(old.id())), "ambiguous peers remain distinct");
+        lineage.clear();
+        lineage.observe(List.of(old),List.of(),0);
+        lineage.observe(List.of(),List.of(old),250);
+        lineage.observe(List.of(breakoutSkin),List.of(old),11000);
+        matches.clear();
+        SparklingTextureEvidence.merge(List.of(breakoutSkin),matches,Set.of());
+        lineage.enrich(matches);
+        check(!matches.getFirst().textureIds().contains(old.id()), "expired transition does not absorb a later discovery");
+        return 44;
     }
     private static String property(String url) {
         return Base64.getEncoder().encodeToString(("{\"textures\":{\"SKIN\":{\"url\":\"" + url + "\"}}}").getBytes(StandardCharsets.UTF_8));

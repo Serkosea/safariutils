@@ -71,7 +71,7 @@ public final class BiomeCoordination {
             session = current; sent.clear(); pendingChat.clear(); population.clear(); survey.clear();
             nextCheck = 0; candidate = null; lastSent = 0; lastDecision = ""; partyGeneration = -1; soloDiagnostic.clear();
         }
-        if (session == null || !SafariLocation.inside() || !ConfigManager.get().gameplay.biomeReports) {
+        if (session == null || !SafariLocation.inside()) {
             candidate = null; soloDiagnostic.clear(); lastDecision = ""; return;
         }
         long now = MonotonicTime.nowMillis();
@@ -88,6 +88,7 @@ public final class BiomeCoordination {
             population.merge(critter, Math.min(CritterSpawnRanges.maximum(critter), caught + live), Math::max);
             survey.observe(critter, player.getX(), player.getZ(), caught + live);
         }
+        if (!ConfigManager.get().gameplay.biomeReports) return;
         var party = PartyState.snapshot();
         boolean soloTest = dev.serko.safariutils.BuildVersion.has(dev.serko.safariutils.BuildVersion.Capability.DEVELOPER_TOOLS)
             && DebugLog.isEnabled() && party.known() && !party.inParty();
@@ -158,7 +159,7 @@ public final class BiomeCoordination {
             Pending pending = entry.getValue();
             if (chatReceived.contains(biome) || pending.mode() != mode) { iterator.remove(); continue; }
             if (now < pending.due()) continue;
-            // Same stable UUID election as Mutuals for concurrently submitted reports.
+            // Stable UUID election for concurrently submitted reports.
             if (!electedReporter(self, reporters.getOrDefault(biome, Set.of()))) { iterator.remove(); continue; }
             if (!complete(biome, mode, outstanding, x, z)) continue;
             var request = CommandCoordinator.request("pc " + word(biome), CommandCoordinator.Category.PARTY_CHAT,
@@ -190,11 +191,47 @@ public final class BiomeCoordination {
             boolean checkRequired = mode == RunMode.SPARKLING || mode == RunMode.UNIQUE
                 && (BIRDS.contains(critter.name()) || needed && UNIQUE_CHECKS.contains(critter.name()));
             boolean check = checkRequired && sparklingChecked(critter, x, z);
-            if (!speciesComplete(mode, capture, full, check, needed, critter.name())) { blocker = "incomplete:" + critter.name(); return false; }
+            boolean shared = !localContradiction(critter,mode) && PartyCompletionSync.completes(critter,mode,capture);
+            if (!shared && !speciesComplete(mode, capture, full, check, needed, critter.name())) { blocker = "incomplete:" + critter.name(); return false; }
         }
         // No missing species is a valid empty target set, but entering the biome alone
         // before any entity/catch data arrives must not announce it as surveyed.
         return target || population.entrySet().stream().anyMatch(e -> e.getKey().biome() == biome && e.getValue() > 0);
+    }
+
+    static CompletionSnapshot localCompletionSnapshot(java.util.function.Predicate<Critter> localSources) {
+        int[][] rows=new int[37][3];
+        var player=Minecraft.getInstance().player;
+        if(session==null || player==null || session!=SessionManager.current())return new CompletionSnapshot(rows);
+        var order=Critters.selectionOrder();
+        for(int i=0;i<order.size();i++) {
+            Critter critter=order.get(i);
+            int captures=Math.min(256,session.partyCatches(critter));
+            rows[i][2]=captures;
+            rows[i][1]=Math.min(256,population.getOrDefault(critter,0));
+            if(!localSources.test(critter) || SparklingWatch.outstandingCount(critter)>0)continue;
+            boolean checked=sparklingChecked(critter,player.getX(),player.getZ());
+            boolean unique=captures>0 || exemptUnspawned(critter);
+            // Export the stricter qualified Unique proof, independent of the sender's collection/mode.
+            if(unique && ((!BIRDS.contains(critter.name()) && !UNIQUE_CHECKS.contains(critter.name())) || checked))rows[i][0]|=1;
+            if(checked)rows[i][0]|=2;
+            if(fullCaught(critter,player.getX(),player.getZ()))rows[i][0]|=4;
+        }
+        return new CompletionSnapshot(rows);
+    }
+    static boolean localContradiction(Critter critter,RunMode mode) {
+        if(SparklingWatch.outstandingCount(critter)>0)return true;
+        if(mode==RunMode.FULL_CLEAR && DetectedCritters.currentConcurrent(critter)>0)return true;
+        // Visible unresolved sources are positive evidence; an unvisited catalog slot is not.
+        return switch(critter.name()) {
+            case "Bluebird", "Parakeet", "Macaw" -> SafariObjectives.birdFeedHeld()>0;
+            case "Gimmiegold" -> SafariObjectives.shiningCoinsHeld()>0;
+            case "Snoozle" -> WallTracker.SNOOPER.walls().stream().anyMatch(w->w.state()==WallTracker.State.INTACT);
+            case "Troodon" -> WallTracker.TROODON.walls().stream().anyMatch(w->w.state()==WallTracker.State.INTACT);
+            case "Rockmite" -> SafariLocation.biome()==critter.biome() && !MoundSpotter.mounds().isEmpty();
+            case "Honeybug" -> SafariLocation.biome()==critter.biome() && NestTracker.nests().stream().anyMatch(NestTracker.Nest::unpunched);
+            default -> false;
+        };
     }
 
     static boolean speciesComplete(RunMode mode, boolean unique, boolean full, boolean checked,
@@ -219,7 +256,7 @@ public final class BiomeCoordination {
     private static int minimum(Critter critter) { return CritterSpawnRanges.forCritter(critter).minimum(); }
 
     private static boolean sparklingChecked(Critter critter, double x, double z) {
-        if (!BIRDS.contains(critter.name()) && session.sparklings().contains(critter)) return true;
+        if (!BIRDS.contains(critter.name()) && PartySparklingDiscoveries.locallyFound(critter)) return true;
         if (critter.biome() == SafariBiome.ICY && session.caughtByParty(Critters.byName("Wumpa"))) return true;
         if (!sourcesReady(critter)) return false;
         return switch (critter.name()) {
@@ -275,7 +312,7 @@ public final class BiomeCoordination {
         };
     }
 
-    /** Mutuals 4 survey radii; being outside entity range is never a completed check. */
+    /** Shared-protocol survey radii; being outside entity range is never a completed check. */
     static boolean inZone(Critter critter, double x, double z, boolean sparkling) {
         double cx, cz, radius = sparkling ? 40 : 30;
         switch (critter.name()) {

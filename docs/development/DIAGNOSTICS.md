@@ -290,7 +290,7 @@ server-verified prediction rules:
 | Shining Coin | 3 | 6 |
 | Icebreaker | 4 | 5 |
 
-Total floor quest items: 27–31. Each player may additionally start with up to two
+Total floor quest items: 27â€“31. Each player may additionally start with up to two
 random quest items; these must never be counted as floor-drop observations. Use the
 explicit FLOOR DROP reward journal for this analysis, not inventory totals or changes.
 A partial route, missed reward, or logging gap can yield fewer observations than the

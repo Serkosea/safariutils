@@ -13,7 +13,7 @@ public final class PartyHotspotSync {
     private enum Authority { WAITING, BACKEND, FALLBACK }
     private static Authority authority = Authority.WAITING;
     private static long unavailableSince = -1;
-    private static long waitingSince = -1, nextHello, revision = -1;
+    private static long waitingSince = -1, nextHello, nextReports, revision = -1;
     private static String run = "", lastHello = "";
     private static boolean conflict;
     private static BiConsumer<String, String> sender;
@@ -52,6 +52,7 @@ public final class PartyHotspotSync {
     public static boolean conflicted() { return conflict; }
     public static String statusText() {
         if (!SafariLocation.inside()) return "Outside Safari";
+        if (PartySyncNetworks.runSyncSupported() && !PartySyncNetworks.replayReady()) return "Reconciling run / replay";
         return conflict ? "Conflict · choices preserved" : switch(authority) {
             case WAITING -> "Waiting for authority";
             case BACKEND -> locked.isEmpty()?"Backend · awaiting allocation":"Backend · "+locked.size()+" locked";
@@ -77,11 +78,11 @@ public final class PartyHotspotSync {
     }
     public static void tick(List<String> members, BiConsumer<String, String> output, boolean reconnected) {
         sender = output; roster = List.copyOf(members);
-        if (members.size() <= 1) return;
+        if (members.isEmpty()) return;
         if (!SafariLocation.inside() || !visitEligible() || !PartySyncNetworks.coordinationSupported()) return;
         if (reconnected) { reported.clear(); acknowledged.clear(); lastHello = ""; }
         // A fallback already in progress must finish and upload its immutable choices first.
-        if (authority == Authority.FALLBACK && locked.isEmpty() && ConfigManager.get().gameplay.assignHotspots) return;
+        // A recovering authority can still reconcile before fallback choices finalize.
         var party = PartyState.snapshot();
         // Keep the frozen room and assignments during disbands, but do not coordinate
         // a different actual party against the previous party's room.
@@ -91,13 +92,15 @@ public final class PartyHotspotSync {
         JsonObject hello = hello(party, assignmentEligible(), ConfigManager.get().gameplay.assignHotspots);
         String text = hello.toString();
         if (!text.equals(lastHello) || now >= nextHello) {
-            output.accept("H", text); lastHello = text; nextHello = now + 15000;
+            output.accept("H", text); lastHello = text; nextHello = now + (PartySyncNetworks.runSyncSupported() && !PartySyncNetworks.replayReady()?2000:15000);
         }
+        if (PartySyncNetworks.runSyncSupported() && !PartySyncNetworks.replayReady()) return;
         if (assignmentEligible() && locked.containsKey(self()) && ConfigManager.get().gameplay.assignHotspots)
             HotspotWatch.acceptAssignment(locked.get(self()));
         SafariBiome actual = assignmentEligible() ? HotspotWatch.biome() : null;
         if (actual != null) reports.putIfAbsent(self(), actual);
-        for (var entry : reports.entrySet()) if (roster.contains(entry.getKey()) && reported.add(entry.getKey())) {
+        if(now>=nextReports) {reported.clear();nextReports=now+2000;}
+        for (var entry : reports.entrySet()) if (roster.contains(entry.getKey()) && !locked.containsKey(entry.getKey()) && reported.add(entry.getKey())) {
             JsonObject report = message("report"); report.addProperty("player", entry.getKey()); report.addProperty("biome", entry.getValue().name());
             output.accept("H", report.toString());
         }

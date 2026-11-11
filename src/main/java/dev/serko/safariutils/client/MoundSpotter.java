@@ -280,6 +280,11 @@ public final class MoundSpotter {
 	}
 
     /** A surveyed empty catalog, not merely zero nearby entities. */
+    static boolean localSourcesExhausted() {
+        var catalog=StaticWaypointCatalog.mounds();
+        return !catalog.isEmpty() && (SafeMode.mounds()?safeCompleted:surveyed).containsAll(catalog)
+            && shareableCompleted.containsAll(detectedLive);
+    }
     static boolean sourcesExhausted() {
         var catalog = StaticWaypointCatalog.mounds();
         return !catalog.isEmpty() && (SafeMode.mounds() ? safeCompleted : surveyed).containsAll(catalog)

@@ -10,6 +10,10 @@ public final class PartySyncNetworks {
 
 	private PartySyncNetworks() { }
 
+    public static boolean runSyncSupported() { return PROVIDER.read("runSync", PartySyncNetworkProvider::runSyncSupported, false); }
+    public static boolean replayReady() { return PROVIDER.read("replay", PartySyncNetworkProvider::replayReady, false); }
+    public static boolean completionSupported() { return PROVIDER.read("completion", PartySyncNetworkProvider::completionSupported, false); }
+    public static String runId() { return PROVIDER.read("runId", PartySyncNetworkProvider::runId, ""); }
 	public static boolean supported() {
 		return PROVIDER.read("supported", PartySyncNetworkProvider::supported, false);
 	}

@@ -144,8 +144,8 @@ public final class CoordinationRegression {
         var partial = new HotspotAllocation(wins);
         partial.report("friend", SafariBiome.ICY, 50);
         partial.begin("Self", SafariBiome.ICY, 100);
-        check(partial.assignment(Set.of("self", "friend"), Map.of(), 2, 5049) == null, "incomplete roster waits five seconds from first report");
-        SafariBiome result = partial.assignment(Set.of("self", "friend"), Map.of(), 2, 5050);
+        check(partial.assignment(Set.of("self", "friend"), Map.of(), 2, 30049) == null, "incomplete roster waits thirty seconds from first report");
+        SafariBiome result = partial.assignment(Set.of("self", "friend"), Map.of(), 2, 30050);
         check(result != null && partial.finished(), "partial assignment finalizes once after timeout");
         var winSnapshot = Map.copyOf(wins);
         partial.report("self", SafariBiome.ICY, 5100);
@@ -153,8 +153,8 @@ public final class CoordinationRegression {
             "late reports and repeated ticks neither churn assignments nor increment wins");
         var complete = new HotspotAllocation(); complete.begin("self", SafariBiome.CAVERN, 0);
         complete.report("self", SafariBiome.CAVERN, 100); complete.report("friend", SafariBiome.CAVERN, 150);
-        check(complete.assignment(Set.of("self", "friend"), Map.of(), 2, 2099) == null, "complete roster still waits two seconds");
-        check(complete.assignment(Set.of("self", "friend"), Map.of(), 2, 2100) != null, "complete roster resolves after two seconds");
+        check(complete.assignment(Set.of("self", "friend"), Map.of(), 2, 150) != null, "complete admitted roster resolves immediately");
+        check(complete.assignment(Set.of("self", "friend"), Map.of(), 2, 2100) != null, "completed assignment stays fixed");
         var silent = new HotspotAllocation(); silent.begin("self", SafariBiome.ICY, 0);
         check(silent.assignment(Set.of("self", "friend"), Map.of(), 2, 20000) == null, "no shared report means no speculative assignment");
         check(!BiomeCoordination.speciesComplete(RunMode.FULL_CLEAR, true, false, true, true, "Foxtrot"), "unique catch cannot send full-clear report");
@@ -401,5 +401,24 @@ public final class CoordinationRegression {
         } finally { configField.set(null, original); }
         return checks;
     }
+    private static void completionContracts() {
+        var store=new dev.serko.safariutils.state.CompletionSnapshot.Store();
+        int[][] rows=new int[37][3];rows[14]=new int[]{7,4,3};
+        var populated=new dev.serko.safariutils.state.CompletionSnapshot(rows);
+        store.accept("a",populated,5000,10000);
+        store.accept("b",populated,0,10000);
+        check(store.value(14,2,10000)==3,"overlapping catches use max, not sum");
+        store.accept("b",new dev.serko.safariutils.state.CompletionSnapshot(new int[37][3]),0,11000);
+        check(store.value(14,0,49999)==7,"uncleared reporter remains valid until its own expiry");
+        check(store.value(14,0,50000)==0,"expiry removes flags; lower replacement does not preserve OR history");
+        check(store.size(56000)==0,"all expired reporter state pruned");
+        String run=java.util.UUID.randomUUID().toString(),visit=java.util.UUID.randomUUID().toString();
+        var json=com.google.gson.JsonParser.parseString(populated.payload()).getAsJsonObject();json.addProperty("runId",run);json.addProperty("visitId",visit);
+        check(dev.serko.safariutils.state.CompletionSnapshot.parse(json.toString(),run)!=null,"matching complete wire snapshot accepted");
+        check(dev.serko.safariutils.state.CompletionSnapshot.parse(json.toString(),visit)==null,"wrong run rejected");
+        json.getAsJsonArray("rows").get(14).getAsJsonArray().set(1,new com.google.gson.JsonPrimitive(1.5));
+        check(dev.serko.safariutils.state.CompletionSnapshot.parse(json.toString(),run)==null,"fractional count rejected");
+    }
+
     private static void check(boolean valid, String why) { checks++; if (!valid) throw new AssertionError(why); }
 }

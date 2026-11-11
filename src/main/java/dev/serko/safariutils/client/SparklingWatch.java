@@ -294,19 +294,26 @@ public final class SparklingWatch {
         awaitingSnapshot.remove(key);
         if (!ready && !solo) DebugLog.line("SPARKLING", "local alert fallback without room snapshot " + sighting.critter().name());
 		visuallyAnnounced.add(key);
-		boolean sharedFirst = !PartySparklingDiscoveries.claimLocalAlert(sighting.critter());
+		boolean sharedFirst = !PartySparklingDiscoveries.claimFoundChat(sighting.critter());
 		boolean ticketWindowClosed = dev.serko.safariutils.session.SessionManager.current() == null
             && dev.serko.safariutils.session.SessionManager.ticketWindowRemainingMillis() <= 0;
-		if (sharedFirst || ticketWindowClosed) {
+		if (ticketWindowClosed) {
 			StructuredDiagnostics.decision("party-sparkling", "local-alert-suppressed",
-				sighting.critter().name() + " reason=" + (sharedFirst ? "already-shared" : "ticket-window-closed"));
+				sighting.critter().name() + " reason=ticket-window-closed");
 			return;
 		}
+        var position = sighting.body().position();
+        PartySparklingDiscoveries.presentLocal(sighting.critter(), position);
+        // A teammate's find still needs a banner on this client, but only its
+        // originator sends the party-chat Found message.
+        if (sharedFirst) {
+            StructuredDiagnostics.decision("party-sparkling", "found-chat-suppressed",
+                sighting.critter().name() + " reason=already-shared");
+            return;
+        }
 		DebugLog.line("SPARKLING", (visible ? "visually announced " : "remotely announced ")
 			+ sighting.critter().name()
 			+ " key=" + shortId(key) + " biome=" + SafariLocation.biome());
-		var position = sighting.body().position();
-		EncounterAlerts.fireSparklingDetected(sighting.critter().name(), position);
         String message = AlertText.spawn(config.sparkling.sparklingDetectedChatText, sighting.critter().name(), position);
         if (config.sparkling.detected() != SafariConfig.Broadcast.NONE && TicketTrading.waitingForWarpGuests()) {
             pendingFoundChat.put(key, message);

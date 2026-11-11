@@ -28,7 +28,8 @@ final class RunRelevance {
     }
 
     static int reasons(Critter critter, SafariSession session) {
-        boolean caught = session != null && session.caughtByParty(critter);
+        boolean caught = session != null && session.caughtByParty(critter)
+            || !BiomeCoordination.localContradiction(critter,RunMode.UNIQUE) && PartyCompletionSync.completes(critter,RunMode.UNIQUE,false);
         boolean unavailable = session != null && session.isUnavailable(critter) && session.nearby(critter) == 0;
         int reasons = 0;
         RunMode mode = RunMode.current();
@@ -70,6 +71,7 @@ final class RunRelevance {
 
     static boolean fullClearHud(Critter critter, SafariSession session) {
         if (session == null) return true;
+        if (!BiomeCoordination.localContradiction(critter,RunMode.FULL_CLEAR) && PartyCompletionSync.completes(critter,RunMode.FULL_CLEAR,session.caughtByParty(critter))) return false;
         if (ConfigManager.get().display.missingUniqueOnly && session.caughtByParty(critter)) return false;
         // A remaining live critter is stronger evidence than a nominal quota.
         return !critter.hasQuota() || !session.isComplete(critter) || session.nearby(critter) > 0;

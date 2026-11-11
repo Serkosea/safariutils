@@ -15,6 +15,7 @@ import java.util.UUID;
 /** Scans loaded critter labels once and shares the paired bodies with every tracker. */
 public final class CritterEntities {
     private static final java.util.Set<UUID> captureVisuals = new java.util.HashSet<>();
+    private static final TextureLineage textureLineage = new TextureLineage();
     private static final Map<UUID, UUID> textureOwners = new HashMap<>();
     private static final Map<UUID, java.util.Set<UUID>> capturedTextures = new HashMap<>();
 
@@ -314,21 +315,27 @@ public final class CritterEntities {
         SparklingTextures.clear();
         captureVisuals.clear();
         textureOwners.clear();
+        textureLineage.clear();
         capturedTextures.clear();
 	}
 
 	private static List<Sighting> scan() {
 		List<CritterScan.Sample> samples = new ArrayList<>();
+        List<CritterScan.Sample> hiddenTextures = new ArrayList<>();
 		for (Entity entity : WorldEntities.current()) {
             if (SparklingWatch.resolvedEntity(entity.getUUID())) continue;
 			String name = entity.hasCustomName() ? SafariLocation.strip(entity.getCustomName().getString()) : null;
 			var appearance = SparklingTextures.identify(entity);
             if (appearance != null && appearance.mound()) continue; // Objective, never a live Rockmite.
-            samples.add(new CritterScan.Sample(entity.getUUID(), EntityTypeIds.path(entity), name,
-				entity.getX(), entity.getY(), entity.getZ(), appearance == null ? null : appearance.species(), appearance != null && appearance.sparkling()));
+            var sample = new CritterScan.Sample(entity.getUUID(), EntityTypeIds.path(entity), name,
+                entity.getX(), entity.getY(), entity.getZ(), appearance == null ? null : appearance.species(), appearance != null && appearance.sparkling(),
+                entity instanceof net.minecraft.world.entity.Display.ItemDisplay display
+                    && display.getItemStack().is(net.minecraft.world.item.Items.PAPER));
+            if (appearance != null && entity instanceof net.minecraft.world.entity.Display.ItemDisplay display
+                && CritterDisplayState.hidden(display)) hiddenTextures.add(sample);
+            else samples.add(sample);
 		}
-        var statuses = samples.stream().filter(sample -> sample.type().equals("armor_stand")
-            && "CAPTURING".equalsIgnoreCase(sample.name())).toList();
+        var statuses = SparklingTextureEvidence.captureStatuses(samples);
         if (!statuses.isEmpty() || !captureVisuals.isEmpty()) {
             var loaded = new java.util.HashSet<UUID>();
             for (var sample : samples) {
@@ -338,6 +345,7 @@ public final class CritterEntities {
             captureVisuals.retainAll(loaded);
             samples.removeIf(sample -> sample.type().equals("item_display") && captureVisuals.contains(sample.id()));
         }
+        textureLineage.observe(samples, hiddenTextures, dev.serko.safariutils.state.MonotonicTime.nowMillis());
         Map<UUID, UUID> previousBodies = new HashMap<>();
 		for (Sighting sighting : previous) {
 			if (sighting.mob() != null) previousBodies.put(sighting.label().getUUID(), sighting.mob().getUUID());
@@ -358,6 +366,7 @@ public final class CritterEntities {
             SparklingTextureEvidence.merge(samples, matches, capsuleLabels(bodyless), textureOwners, capturedTextures,
                 CritterState::isCaptureAssociated);
         }
+        textureLineage.enrich(matches);
 		List<Sighting> result = new ArrayList<>(matches.size());
 		for (var match : matches) {
 			if (match.conflict()) {

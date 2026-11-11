@@ -98,7 +98,10 @@ public final class EntityResearchLog {
         String name = entity.getCustomName() == null ? "" : bounded(entity.getCustomName().getString());
         return new Body(entity.getId(), entity.getUUID(), EntityTypeIds.key(entity), name, item,
             stack.getCount(), entity.getX(), entity.getY(), entity.getZ(), entity.getBbWidth(), entity.getBbHeight(),
-            entity instanceof net.minecraft.world.entity.animal.armadillo.Armadillo armadillo ? armadillo.getState().name() : "");
+            entity instanceof net.minecraft.world.entity.animal.armadillo.Armadillo armadillo ? armadillo.getState().name()
+                : entity instanceof Display.ItemDisplay display && item.equals("minecraft:player_head")
+                    ? (CritterDisplayState.hidden(display) ? "display-zero-scale" : "display-visible")
+                        + (display.isInvisible() ? " invisible-flag" : "") : "");
     }
 
     private static void observe(Entity entity, String reason) {

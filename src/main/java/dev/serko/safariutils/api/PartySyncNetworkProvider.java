@@ -5,7 +5,8 @@ import java.util.function.Consumer;
 
 /** Optional authenticated transport for party objective synchronization. */
 public interface PartySyncNetworkProvider {
-	record Context(String lobbyId, String localUuid, List<String> roster) {
+	record Context(String lobbyId, String localUuid, List<String> roster, String visitId) {
+        public Context(String lobbyId, String localUuid, List<String> roster) { this(lobbyId, localUuid, roster, ""); }
 		public Context {
 			lobbyId = lobbyId == null ? "" : lobbyId;
 			localUuid = localUuid == null ? "" : localUuid;
@@ -13,7 +14,13 @@ public interface PartySyncNetworkProvider {
 		}
 	}
 
-	record Message(String senderUuid, long sequence, String type, String payload) { }
+	record Message(String senderUuid, long sequence, String type, String payload, long ageMillis) {
+        public Message(String senderUuid, long sequence, String type, String payload) { this(senderUuid, sequence, type, payload, 0); }
+    }
+    default boolean runSyncSupported() { return false; }
+    default boolean replayReady() { return connected(); }
+    default boolean completionSupported() { return false; }
+    default String runId() { return ""; }
 
 	default boolean supported() {
 		return false;

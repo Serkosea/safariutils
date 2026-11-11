@@ -38,7 +38,7 @@ Starting-item alerts remain independent. Schema 10 migrates the old combined set
 into both switches when it was enabled. The formats are:
 
 - Hotspot: `[SU] Hotspot: <BIOME>` in Party chat. Accepted incoming prefixes are
-  SU, SafariUtils, SM, CritterMod and CM, plus the unprefixed Mutuals forms.
+  SU, SafariUtils, SM, CritterMod and CM, plus the unprefixed peer client forms.
 - Biome completion: bare `fd`, `cd`, `hd`, `id` in Party chat. `BiomeCoordination`
   evaluates the effective RunMode independently of unique/PB announcements.
 - Starting-item alerts are **not** managed by either feature. Their saved toggle,
@@ -73,7 +73,7 @@ population evidence is intentionally conservative when coverage is incomplete; a
 out-of-range entities alone never imply a clear. `COORDINATION/BIOME` logs changing blockers
 and sends only while automatic logging is enabled.
 
-References: Mutuals 4.0 HotspotAssignments, HotspotAssignmentAlert, SafariCompletionEvents,
+References: peer client 4.0 HotspotAssignments, HotspotAssignmentAlert, SafariCompletionEvents,
 SparklingChecks and completion zones. Mixed-mod live testing remains required, especially
 when a client joins/restarts mid-session and has different hotspot fairness history.
 
@@ -85,7 +85,7 @@ templates. No runtime/player lookup is performed. Coordinates are formatted only
 text cache is retained. `AlertTextRegression` covers all biome codes, precedence, legacy
 replacements, literal/unknown tags, malformed input, laziness and exact recorded wire formats.
 
-JohnCEO's supplied compatibility.md (2026-11-02) is the protocol reference. Forest
+protocol partner's supplied compatibility.md (2026-11-02) is the protocol reference. Forest
 requirements use nine floor feeds plus personal starting feed. Confirmed bird spawn
 counts inform full-clear targets. Coin requirements use known floor supply plus
 personal starting coins, independent of other players' starting-item messages.

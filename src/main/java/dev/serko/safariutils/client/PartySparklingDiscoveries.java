@@ -19,12 +19,21 @@ public final class PartySparklingDiscoveries {
         long before=state.localRevision; state.caught(Critters.selectionMask(critter));
         if(before!=state.localRevision && PartySyncDebugHud.enabled()) PartySyncDebugHud.event("Local: caught Sparkling "+critter.name(),0xFF77E59E);
     }
-	static boolean claimLocalAlert(Critter critter) {
-		return state.claimLocalAlert(Critters.selectionMask(critter));
+	static boolean claimFoundChat(Critter critter) {
+		return state.claimFoundChat(Critters.selectionMask(critter));
 	}
+    static void presentLocal(Critter critter, net.minecraft.world.phys.Vec3 position) {
+        // Render the reminder immediately, before automatic ticket entry can submit.
+        if (SessionManager.current() == null && SessionManager.ticketWindowRemainingMillis() > 0) tick();
+        if (state.claimLocalPresentation(Critters.selectionMask(critter)) && SessionManager.current() != null) {
+            EncounterAlerts.fireSparklingDetected(critter.name(), position);
+            StructuredDiagnostics.decision("party-sparkling", "discovery-presented", "local " + critter.name());
+        }
+    }
 	static long activeMask() { return state.active(); }
 	static long sharedMask() { return state.shared(); }
 	static boolean wasCaught(Critter critter) { return (state.caughtMask() & Critters.selectionMask(critter)) != 0; }
+	static boolean locallyFound(dev.serko.safariutils.data.Critter critter) { return state.locallyFound(Critters.selectionMask(critter)); }
 	static long localRevision() { return state.localRevision; }
 	static void published() { state.published(); }
 	static String payload() { return state.payload(); }
@@ -37,7 +46,7 @@ public final class PartySparklingDiscoveries {
         SparklingWatch.remoteCaught(state.caughtMask() & ~previouslyCaught);
 		// Species-only remote catch masks cannot erase individually observed local bodies.
 		long added = state.active() & ~before;
-		// Shared discoveries update markers/reminders, not the finder's ordinary alert.
+		// tick() presents new shared discoveries without rebroadcasting Found chat.
 		if (before != state.active()) StructuredDiagnostics.decision("party-sparkling", "received",
 			"active=" + Long.bitCount(state.active()) + " added=" + Long.bitCount(added));
 		return true;
@@ -51,7 +60,10 @@ public final class PartySparklingDiscoveries {
 		long now = MonotonicTime.nowMillis();
 		if (eligible != displayed) {
 			if (eligible == 0) EncounterAlerts.clearSparklingTicketReminder();
-			else EncounterAlerts.showSparklingTicketReminder(names(eligible), Long.MAX_VALUE, true, displayed == 0);
+			else {
+                state.claimSharedPresentation(eligible);
+                EncounterAlerts.showSparklingTicketReminder(names(eligible), Long.MAX_VALUE, true, displayed == 0);
+            }
 			StructuredDiagnostics.decision("party-sparkling", eligible == 0 ? "reminder-stopped" : "reminder-started",
 				"species=" + Long.bitCount(eligible) + " reason="
 					+ (!inside ? "outside" : ticketed ? "ticket-used" : remaining <= 0 ? "window-closed"
@@ -63,6 +75,13 @@ public final class PartySparklingDiscoveries {
 			EncounterAlerts.playSparklingTicketSound();
 			nextSound = now + 8_000;
 		}
+        if (inside && ticketed) {
+            long unseen = state.claimSharedPresentation(state.shared());
+            if (unseen != 0) {
+                EncounterAlerts.fireSparklingDetected(names(unseen));
+                StructuredDiagnostics.decision("party-sparkling", "discovery-presented", "shared " + names(unseen));
+            }
+        }
 	}
 	static String names(long mask) {
 		return Critters.selectionOrder().stream().filter(c -> (mask & Critters.selectionMask(c)) != 0)

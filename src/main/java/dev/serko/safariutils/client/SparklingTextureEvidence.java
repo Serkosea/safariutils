@@ -18,8 +18,7 @@ final class SparklingTextureEvidence {
         capturedSkins.keySet().retainAll(loaded);
         Set<UUID> presentBodies = new HashSet<>();
         for (var match : matches) if (match.body() != null) presentBodies.add(match.body().id());
-        List<CritterScan.Sample> captureStatuses = samples.stream()
-            .filter(sample -> sample.type().equals("armor_stand") && "CAPTURING".equalsIgnoreCase(sample.name())).toList();
+        List<CritterScan.Sample> captureStatuses = captureStatuses(samples);
         Set<UUID> captureLabels = new HashSet<>(capsuleLabels);
         for (var match : matches) if (capturePart(match.label(), captureStatuses)) captureLabels.add(match.label().id());
         List<CritterScan.Sample> skins = samples.stream().filter(sample -> sample.textureSpecies() != null
@@ -90,7 +89,40 @@ final class SparklingTextureEvidence {
 
     static boolean capturePart(CritterScan.Sample sample, List<CritterScan.Sample> statuses) {
         if (!sample.type().equals("item_display") && !sample.type().equals("armor_stand")) return false;
-        return statuses.stream().anyMatch(status -> sameColumn(sample, status));
+        return statuses.stream().anyMatch(status -> status.capsulePaper() ? capsuleNeighbour(sample, status) : sameColumn(sample, status));
+    }
+
+    /** Distant capsule stands arrive without their custom names. Recognize the complete
+     * two-label/head assembly rather than treating its copied skin as another critter. */
+    static List<CritterScan.Sample> captureStatuses(List<CritterScan.Sample> samples) {
+        List<CritterScan.Sample> result = new ArrayList<>();
+        // Paper capsule and copied head are delivered farther away than their label stands.
+        for (var paper : samples) if (paper.capsulePaper() && samples.stream().anyMatch(head ->
+            head.type().equals("item_display") && head.textureSpecies() != null && capsuleNeighbour(head, paper))) result.add(paper);
+        List<CritterScan.Sample> stands = samples.stream()
+            .filter(sample -> sample.type().equals("armor_stand")).toList();
+        for (var stand : stands) if ("CAPTURING".equalsIgnoreCase(stand.name())) result.add(stand);
+        for (var head : samples) {
+            if (!head.type().equals("item_display") || head.textureSpecies() == null) continue;
+            CritterScan.Sample upper = null, lower = null;
+            for (var stand : stands) {
+                // Named non-capture entities cannot qualify merely by proximity.
+                if (stand.name() != null && !stand.name().isBlank()
+                    && !"CAPTURING".equalsIgnoreCase(stand.name())
+                    && CritterScan.parseLabel(stand.name()) == null) continue;
+                if (Math.abs(head.x() - stand.x()) > .03125 || Math.abs(head.z() - stand.z()) > .03125) continue;
+                double offset = head.y() - stand.y();
+                if (Math.abs(offset - 1.53125) <= .03125) upper = stand;
+                if (Math.abs(offset - 1.90625) <= .03125) lower = stand;
+            }
+            if (upper != null && lower != null && !result.contains(upper)) result.add(upper);
+        }
+        return result;
+    }
+
+    private static boolean capsuleNeighbour(CritterScan.Sample left, CritterScan.Sample right) {
+        double x = left.x() - right.x(), y = left.y() - right.y(), z = left.z() - right.z();
+        return x*x + y*y + z*z <= .0625;
     }
 
     private static boolean sameColumn(CritterScan.Sample left, CritterScan.Sample right) {

@@ -6,8 +6,25 @@ import dev.serko.safariutils.data.Critters;
 final class PartySparklingState {
 	private long localFound, localCaught, remoteFound, found, caught;
 	private long locallyAlertedSpecies, publishedFound;
+    private long presentedSpecies, locallyPresentedSpecies;
+    /** Presentation is local to this client, independent of who may broadcast the find. */
+    long claimSharedPresentation(long mask) {
+        long added = mask & ~presentedSpecies;
+        presentedSpecies |= mask;
+        return added;
+    }
+    /** Called once per real individual by SparklingWatch; a shared first sighting is
+     * already presented, but a second genuine individual still deserves an alert. */
+    boolean claimLocalPresentation(long bit) {
+        boolean firstLocal = (locallyPresentedSpecies & bit) == 0;
+        locallyPresentedSpecies |= bit;
+        boolean fresh = (presentedSpecies & bit) == 0;
+        presentedSpecies |= bit;
+        return fresh || !firstLocal;
+    }
     void published() { publishedFound |= localFound; }
 	long localRevision;
+    boolean locallyFound(long bit) { return (localFound & bit)!=0; }
 	long active() { return found & ~caught; }
 	long shared() { return remoteFound & ~caught; }
 	long caughtMask() { return caught; }
@@ -15,7 +32,7 @@ final class PartySparklingState {
 		return inside && !ticketed && remainingMillis > 0 ? active() : 0;
 	}
 	/** Suppress the first local counterpart of a previously shared find, not a second individual. */
-	boolean claimLocalAlert(long bit) {
+	boolean claimFoundChat(long bit) {
 		boolean sharedFirst = (remoteFound & bit) != 0 && (locallyAlertedSpecies & bit) == 0;
 		locallyAlertedSpecies |= bit;
 		return !sharedFirst;
@@ -53,5 +70,5 @@ final class PartySparklingState {
 		}
 		return true;
 	}
-	void clear() { localFound = localCaught = remoteFound = found = caught = locallyAlertedSpecies = publishedFound = 0; localRevision++; }
+	void clear() { localFound = localCaught = remoteFound = found = caught = locallyAlertedSpecies = publishedFound = presentedSpecies = locallyPresentedSpecies = 0; localRevision++; }
 }

@@ -76,7 +76,7 @@ Omit `[name]` to look up yourself. Fresh cached profiles are reused automaticall
 
 The `/su`, `/safari`, and `/safariutils` aliases support the same subcommands.
 
-Configurable alert text supports [message tags](docs/development/MESSAGE_TEMPLATES.md), including biome letters, run mode, elapsed time and player coordinates.
+Configurable alert text supports [message tags](docs/development/MESSAGE_TEMPLATES.md), including biome letters and critter positions where relevant to the alert.
 
 ## License
 

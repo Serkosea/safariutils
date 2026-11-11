@@ -1,11 +1,13 @@
 # SafariUtils shared-party protocol — objective wire reference
 
+Current negotiated run/completion changes: [3.8.0 implementation guide](PARTY_SYNC_3.8_IMPLEMENTATION.md). This supersedes older lifecycle/timing descriptions below where they differ.
+
 Current lifecycle/replay additions: [concise 3 November update](PARTY_SYNC_UPDATE_2026-11-03.md).
 
 Updated 2026-11-03. Wire protocol: aggregate version **3**, with optional
 `catchUpOnly` delivery hint. This describes implemented behavior, not a requirement
 to copy SafariUtils's UI, architecture, or run-mode logic. Backend delivery support was deployed on 2026-11-02. Mixed-mod live testing
-with Mutuals has begun; lifecycle fixes still need a mixed-mod retest. No backend credentials are needed in either mod.
+with peer client has begun; lifecycle fixes still need a mixed-mod retest. No backend credentials are needed in either mod.
 
 ## What adopting this would provide
 
@@ -468,7 +470,7 @@ Within the SafariUtils source tree:
 - `.../data/Critters.java`: species-bit ordering (this document lists the current order).
 
 The hosted service implements validation, exact-roster room separation, admission,
-retention, deduplication, and relay delivery. John does not need its private source or
+retention, deduplication, and relay delivery. peer does not need its private source or
 any service secret to implement a client. The optional delivery hint must remain
 backward compatible; field reordering or changed mask semantics require a coordinated
 protocol revision and tests on both implementations.
@@ -480,8 +482,8 @@ The implementation has backend regression and local Cloudflare Durable
 Object/WebSocket runtime coverage for live delivery, silent catch-up retention,
 reconnect replay, and authoritative hotspot coordination. All nine standalone build variants and SerkoAddons checks
 passed, including shared-class parity. These checks do not replace a mixed-party
-in-game test with Mutuals; this document is an invitation to review and integrate,
-not a claim that Mutuals already implements this protocol.
+in-game test with peer client; this document is an invitation to review and integrate,
+not a claim that peer client already implements this protocol.
 
 ## Optional room presence (2026-11-03)
 

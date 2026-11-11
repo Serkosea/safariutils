@@ -1,6 +1,6 @@
 # Party sync update — 3 November 2026
 
-For John / Safari Mutuals. Same endpoint, authentication, roster rules and outbound
+For peer / Safari peer client. Same endpoint, authentication, roster rules and outbound
 `A/N/U/S/H/B` envelopes. These are additions to the existing two protocol documents.
 
 ## 1. Lobby identity

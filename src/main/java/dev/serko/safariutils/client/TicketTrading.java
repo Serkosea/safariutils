@@ -192,10 +192,10 @@ public final class TicketTrading {
 			}
 		}
 		if (!hostScheduled) return;
-		// Once warped, keep the promised cleanup armed even if HUD/location state briefly
-		// resets during a transfer. Before warp, either condition safely cancels the plan.
+		// Joined trading guests need cleanup even if the host leaves before the warp.
 		if ((!ConfigManager.get().sparkling.ticketTradingEnabled || !SafariLocation.inside())
 				&& !warpSent) {
+            if (ownsCleanup()) armCleanup();
 			resetRunAutomation();
 			return;
 		}
@@ -358,22 +358,27 @@ public final class TicketTrading {
 		}
 	}
 
-	/** Leaving the host's ticketed instance closes a successfully warped trading party. */
+	static boolean ownsCleanup() {
+        return hostOwnedRun && tradeRunActive && (warpSent
+            || joinedTargets.stream().anyMatch(name -> !baselineMembers.contains(name)));
+    }
+
+    /** Leaving also cleans up guests who joined before an interrupted warp. */
 	public static void onConnectionJoin() {
 		if (testMode) {
 			resetRunAutomation();
 			clearPendingAccept();
 			return;
 		}
-		if (hostOwnedRun && tradeRunActive && warpSent) armCleanup();
+		if (ownsCleanup()) armCleanup();
 		resetRunAutomation();
 	}
 
 	public static void onDisconnect() {
 		// A Hypixel server transfer emits a disconnect before the destination join.
-		// Preserve a warped host operation so onConnectionJoin can perform its promised
+		// Preserve an owned trading party so onConnectionJoin can perform its promised
 		// cleanup; a confirmed non-Hypixel destination clears it through the method below.
-		if (hostOwnedRun && tradeRunActive && warpSent) return;
+		if (ownsCleanup()) return;
 		resetRunAutomation();
 		clearPendingAccept();
 	}

@@ -34,7 +34,7 @@ public final class SparklingWatch {
     private static final Map<UUID, String> pendingFoundChat = new LinkedHashMap<>();
     private static final Map<UUID, Long> awaitingSnapshot = new LinkedHashMap<>();
     static boolean alertSnapshotReady(boolean ready, boolean solo, boolean supported, long elapsed) {
-        return ready || solo || !supported || elapsed >= 12_000L;
+        return ready || solo || !supported || elapsed >= 3_000L;
     }
     /** Exact captured body/appearance aliases, retained only for this visit. */
     private static final Set<UUID> resolvedIndividuals = new HashSet<>();

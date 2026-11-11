@@ -445,7 +445,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 				catches >= 8 ? 0xFF55FF55 : 0xFFFFFFFF);
 		}
 		if (config.partyObjectiveShowPlacement) {
-			String value = wumpaCaught() ? "Caught" : wumpaSpawned() ? "Started"
+			String value = wumpaCaught() ? "Caught" : wumpaSpawned() ? "Spawned"
 				: catches >= 8 ? "Waiting" : "Locked";
 			panel.pair("Wumpa", value, PartyObjectiveHud.ICY_LINE_COLOUR,
 				wumpaSpawned() ? PartyObjectiveHud.INTERMEDIATE_COLOUR : 0xFFFFFFFF);
@@ -460,7 +460,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		int found = active ? totalFound() : localFeedFound();
 		boolean done = found > 0 && used >= found && drops >= 9;
 		if (done) {
-			if (config.partyObjectiveShowProgress) panel.pair("All Feed Done", found + "/" + found,
+			if (config.partyObjectiveShowProgress) panel.pair("All Feed Used", found + "/" + found,
 				PartyObjectiveHud.FOREST_LINE_COLOUR, 0xFF55FF55);
 			HudPanel.IconValue[] birds = birds(active);
 			if (config.partyObjectiveShowBirdCounts && birds != null) {
@@ -485,7 +485,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		panel.pair("Forest Drops", drops >= 9 ? "✔" : Math.min(9, drops) + "/9",
 			PartyObjectiveHud.FOREST_LINE_COLOUR, drops >= 9 ? 0xFF55FF55 : 0xFFFFFFFF);
 		if (config.partyObjectiveShowProgress) {
-			panel.pair("Feed Done", Math.min(used, found) + "/" + found,
+			panel.pair("Feed Used", Math.min(used, found) + "/" + found,
 				PartyObjectiveHud.FOREST_LINE_COLOUR, done ? 0xFF55FF55 : 0xFFFFFFFF);
 		}
 		if (config.partyObjectiveShowPlacement) {
@@ -540,8 +540,10 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 				State state = states.get(member.uuid());
 				boolean local = member.uuid().equals(localUuid());
 				boolean known = inventoryKnown(active, local, state != null && state.reported);
-				if (!known || state == null || !PartyObjectiveHud.hasHauntedItems(state.incense, state.coins)) continue;
-				HudPanel.IconValue[] values = PartyObjectiveHud.hauntedValues(String.valueOf(state.incense), state.coins < 0 ? "?" : String.valueOf(state.coins));
+				if (!known || state == null) continue;
+                int incense = doomspiralComplete() ? 0 : state.incense;
+                if (!PartyObjectiveHud.hasHauntedItems(incense, state.coins)) continue;
+				HudPanel.IconValue[] values = PartyObjectiveHud.hauntedValues(String.valueOf(incense), state.coins < 0 ? "?" : String.valueOf(state.coins));
 				PartyObjectiveHud.addPlayerRow(panel, member.name(), values);
 				showedPlayer = true;
 			}
@@ -562,7 +564,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 		if (config.partyObjectiveShowPlacement) {
 			String value = doomspiralCaught() ? "Caught"
 				: doomspiralRetreated() ? "Retreated"
-				: doomspiralSpawned() ? "Started" : candles >= 4 ? "Complete" : candles + "/4";
+				: doomspiralSpawned() ? "Spawned" : candles >= 4 ? "Candles Lit" : candles + "/4";
 			panel.pair("Doomspiral", value, PartyObjectiveHud.HAUNTED_LINE_COLOUR,
 				doomspiralSpawned() ? PartyObjectiveHud.INTERMEDIATE_COLOUR : 0xFFFFFFFF);
 		}
@@ -673,7 +675,7 @@ public final class PartyItemSync implements PartyItemSyncProvider {
 	}
 
 	private void applyNetworkMessage(PartySyncNetworkProvider.Message message) {
-        if(message!=null && "RECONCILE".equals(message.type())) { PartyCompletionSync.reconcile(message.payload()); return; }
+        if(message!=null && "RECONCILE".equals(message.type())) { PartyCompletionSync.reconcile(message.payload()); PartyHotspotSync.reconcile(message.payload()); return; }
         if(message!=null && "C".equals(message.type())) { PartyCompletionSync.accept(message); return; }
 		if (message != null && "H".equals(message.type())) { PartyHotspotSync.accept(message.payload()); return; }
         if (message != null && "S_ROOM".equals(message.type())) {

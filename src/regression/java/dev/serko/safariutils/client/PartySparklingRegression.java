@@ -9,8 +9,8 @@ public final class PartySparklingRegression {
 		SparklingWatch.verifyIndividualTracking();
 		int checks = 4;
         check(SparklingWatch.alertSnapshotReady(false, true, true, 0), "solo alerts must survive sync outage"); checks++;
-        check(!SparklingWatch.alertSnapshotReady(false, false, true, 11999), "party awaits initial snapshot"); checks++;
-        check(SparklingWatch.alertSnapshotReady(false, false, true, 12000), "outage cannot silence discovery forever"); checks++;
+        check(!SparklingWatch.alertSnapshotReady(false, false, true, 2999), "party awaits initial snapshot"); checks++;
+        check(SparklingWatch.alertSnapshotReady(false, false, true, 3000), "outage cannot silence discovery forever"); checks++;
         check(SparklingWatch.alertSnapshotReady(true, false, true, 0), "ready snapshot releases alert immediately"); checks++;
         check(SparklingWatch.alertSnapshotReady(false, false, false, 0), "optional transport must not disable alerts"); checks++;
         var batch = new PartySnapshotBatch();
@@ -52,6 +52,14 @@ public final class PartySparklingRegression {
 			&& PartyObjectiveHud.hasHauntedItems(1, -1)
 			&& !PartyObjectiveHud.hasHauntedItems(0, -1)
 			&& !PartyObjectiveHud.hasHauntedItems(0, 0), "Haunted known-positive row eligibility"); checks++;
+        var heldGems=PartyObjectiveHud.heldPlayerValues(PartyObjectiveHud.gemValues("1","0","1"));
+        check(heldGems.length==2 && heldGems[0].colour()==PartyObjectiveHud.gemValues("1","0","1")[0].colour()
+            && heldGems[1].colour()==PartyObjectiveHud.gemValues("1","0","1")[2].colour(),"held gems omit lime without changing purple/orange order");checks++;
+        var heldFeed=PartyObjectiveHud.heldPlayerValues(PartyObjectiveHud.feedValues("0","2","0"));
+        check(heldFeed.length==1 && heldFeed[0].icon()==HudPanel.HudIcon.WORM,"player feed hides empty item icons");checks++;
+        check(PartyObjectiveHud.heldPlayerValues(PartyObjectiveHud.hauntedValues("0","?")).length==0,"empty or unknown inventory cannot create a player row");checks++;
+        var coinsOnly=PartyObjectiveHud.heldPlayerValues(PartyObjectiveHud.hauntedValues("0","3"));
+        check(coinsOnly.length==1 && coinsOnly[0].icon()==HudPanel.HudIcon.COIN,"completed Haunted objective retains only held coins");checks++;
 		var haunted = PartyObjectiveHud.hauntedValues("2", "3");
 		check(haunted.length == 2 && haunted[0].icon() == HudPanel.HudIcon.INCENSE
 			&& haunted[1].icon() == HudPanel.HudIcon.COIN && haunted[1].text().equals("3"), "Haunted item order"); checks++;

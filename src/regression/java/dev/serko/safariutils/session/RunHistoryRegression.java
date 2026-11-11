@@ -49,6 +49,56 @@ public final class RunHistoryRegression {
 			catch (IllegalArgumentException expected) { checks++; }
 			check(Files.readString(path).equals(valid), "invalid save cannot drop records");
 		} finally { Files.deleteIfExists(path); }
+        // Isolated in-memory production lifecycle: no installed files or backup paths.
+        check(RunHistory.runs().isEmpty(), "history test starts isolated");
+        try {
+            var empty = new SafariSession("Test", 100);
+            empty.finishInterrupted(200);
+            RunHistory.record(empty);
+            check(RunHistory.runs().size() == 1 && RunHistory.runs().getFirst().partyTotal() == 0,
+                "paid zero-catch run survives disconnect");
+            var tail = new RunRewardTail();
+            tail.close(empty, false, 200);
+            check(tail.get(201) == empty, "reward tail targets closed run");
+            var doom = dev.serko.safariutils.data.Critters.byName("Doomspiral");
+            empty.record(new dev.serko.safariutils.parse.CritterEvent(
+                dev.serko.safariutils.parse.CritterEvent.Type.OWN_CATCH, doom, null, 2, false), 201);
+            empty.confirmSafariEssence(85, 202);
+            RunHistory.updateFinished(empty);
+            check(RunHistory.runs().size() == 1 && RunHistory.runs().getFirst().own.get("Doomspiral") == 1,
+                "late catch amends existing history without duplicate");
+            check(RunHistory.runs().getFirst().shards.get("Doomspiral") == 2
+                && RunHistory.runs().getFirst().safariEssence == 85, "late rewards survive");
+            check(RunHistory.runs().getFirst().ended == 200, "late delivery does not inflate duration");
+            var lateRecorder = SessionManager.class.getDeclaredMethod("recordLateReward", String.class,
+                dev.serko.safariutils.parse.CritterEvent.class, long.class);
+            lateRecorder.setAccessible(true);
+            var tailField = SessionManager.class.getDeclaredField("rewardTail"); tailField.setAccessible(true);
+            var managerTail = (RunRewardTail) tailField.get(null);
+            try {
+                managerTail.close(empty, false, 200);
+                String line = "CAPTURE! You caught a Gazer and gained a Gazer Shard!";
+                check((boolean) lateRecorder.invoke(null, line,
+                    dev.serko.safariutils.parse.ChatParser.parse(line, "Test"), 203L), "production late reward route accepts catch");
+                check(RunHistory.runs().getFirst().own.get("Gazer") == 1, "late reward route updates history");
+                managerTail.close(empty, true, 200);
+                int saved = RunHistory.runs().getFirst().own.get("Gazer");
+                lateRecorder.invoke(null, line, dev.serko.safariutils.parse.ChatParser.parse(line, "Test"), 204L);
+                check(RunHistory.runs().getFirst().own.get("Gazer") == saved, "suppressed tail never updates saved stats");
+            } finally { managerTail.clear(); }
+
+            check(tail.get(3201) == null, "old reward tail expires");
+            tail.close(empty, false, 5000); tail.clear();
+            check(tail.get(5001) == null, "next visit clears old reward target");
+            var alpha = new SafariSession("Test", 6000);
+            alpha.excludeFromHistory(); alpha.finishInterrupted(7000);
+            RunHistory.record(alpha); RunHistory.updateFinished(alpha);
+            check(RunHistory.runs().size() == 1, "Alpha session cannot enter history in any edition");
+            var stranger = new SafariSession("Test", 8000);
+            RunHistory.updateFinished(stranger);
+            check(RunHistory.runs().size() == 1, "late update cannot manufacture a run");
+        } finally { RunHistory.load(null); }
+
 		return checks;
 	}
 	private static void check(boolean value, String message) {

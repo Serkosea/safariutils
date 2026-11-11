@@ -68,6 +68,7 @@ public final class SessionManager {
 
 	private static SafariSession current;
 	private static SafariSession lastSession;
+	private static final RunRewardTail rewardTail = new RunRewardTail();
 
 	private static final java.util.EnumSet<SafariBiome> announcedBiomes =
 		java.util.EnumSet.noneOf(SafariBiome.class);
@@ -118,7 +119,7 @@ public final class SessionManager {
 			&& !lobbyId.equals(runLobbyId)) {
 			DebugLog.line("ACTIVATE", "lobby changed " + runLobbyId + " -> " + lobbyId
 				+ ", ending active run");
-			endSession();
+			endSession(true);
 		}
 
 		if (!SafariLocation.inside()) {
@@ -219,6 +220,7 @@ public final class SessionManager {
 		if (line.isEmpty()) return;
 		long now = System.currentTimeMillis();
 		observeJoinSignal(line, now);
+		if (current == null && recordLateReward(line, parsedEvent, now)) return;
 		if (line.equals("SAFARI REWARD SUMMARY")) {
 			rewardSummaryOpen = true;
 			DebugLog.line("RUN", "Safari reward summary opened");
@@ -252,10 +254,12 @@ public final class SessionManager {
 				+ " raw=\"" + line + "\"");
 		}
 
-		// A Manager confirmation is useful early evidence, but capsule allocation is the
-		// authoritative server-side acceptance signal and owns actual run activation.
+		// Either an explicit Manager acceptance or capsule allocation proves a paid run.
+		// Keep the confirmation even when the player leaves before the inventory tick.
 		if (isRunStart(line)) {
-			if (current == null) StartingItemsWatch.onTicketSubmitted("Safari Manager");
+			if (current == null && SafariLocation.inside() && completedSummaryLobbyId == null) {
+				startSession("Safari Manager confirmation");
+			} else if (current == null) StartingItemsWatch.onTicketSubmitted("Safari Manager");
 			else DebugLog.line("ACTIVATE", "Manager confirmation arrived with a run already active");
 			return;
 		}
@@ -318,6 +322,56 @@ public final class SessionManager {
 
 		recordEvent(event, now);
 	}
+
+    /** Late messages amend the same saved record, never reopen gameplay or revive alerts. */
+    private static boolean recordLateReward(String line, CritterEvent event, long now) {
+        SafariSession finished = rewardTail.get(now);
+        if (finished == null) return false;
+        boolean changed = false;
+        if (event != null && event.isCatch()) {
+            finished.record(event, now);
+            // The message arrived after the timing boundary: retain catches without inventing a PB.
+            if (event.sparkling() && !rewardTail.suppressed()) SparklingStats.recordRainbowFeather();
+            changed = true;
+        } else if (ChatParser.ownEmeraldDye(line, finished.selfName())) {
+            finished.recordRareDrop("DYE_EMERALD");
+            dev.serko.safariutils.backend.AuctionMarketClient.quote("DYE_EMERALD").ifPresent(q ->
+                finished.recordRareDropValue("DYE_EMERALD", q.price(), q.source(), q.observedAt(), now));
+            changed = true;
+        } else if (ChatParser.bonusRainbowFeather(line)) {
+            finished.recordBonusRainbowFeather(now);
+            if (!rewardTail.suppressed()) SparklingStats.recordRainbowFeather();
+            changed = true;
+        } else if (ChatParser.floorDropShard(line) != null) {
+            var shard = ChatParser.floorDropShard(line);
+            finished.recordShardReward(shard.critter(), shard.amount(), now);
+            changed = true;
+        } else if (ChatParser.receivedShard(line) != null) {
+            finished.recordShardReward(ChatParser.receivedShard(line), 1, now);
+            changed = true;
+        } else {
+            var sparkling = ChatParser.sparklingCatch(line);
+            if (sparkling != null) {
+                finished.recordSparkling(sparkling.critter(), sparkling.catcher(), now);
+                if (!rewardTail.suppressed()) {
+                    if (SparklingStats.count(sparkling.critter()) == 0) finished.recordNewSparkling(sparkling.critter());
+                    SparklingStats.recordSparkling(sparkling.critter());
+                }
+                changed = true;
+            } else if (rewardSummaryOpen) {
+                var essence = SUMMARY_ESSENCE.matcher(line);
+                if (essence.matches()) {
+                    finished.confirmSafariEssence(Integer.parseInt(essence.group(1).replace(",", "")), now);
+                    changed = true;
+                }
+            }
+        }
+        if (!changed) return false;
+        if (!rewardTail.suppressed()) RunHistory.updateFinished(finished);
+        DebugLog.line("RUN/LATE_REWARD", "reconciled started=" + finished.startedAtMillis()
+            + " suppressed=" + rewardTail.suppressed());
+        return true;
+    }
 
 	/** Uses the earliest server-visible party entry or local queue notice for this attempt. */
 	private static void observeJoinSignal(String line, long now) {
@@ -449,6 +503,7 @@ public final class SessionManager {
 
 	/** Opens a fresh run, then safely files the previous one. */
 	public static void startSession(String trigger) {
+		rewardTail.clear();
 		if (!visitPrepared) beginVisit(SafariLocation.lobbyId());
 		if (BuildVersion.has(BuildVersion.Capability.DEVELOPER_TOOLS)) {
 			JoinWindowDiagnostics.onRunStarted(trigger);
@@ -462,6 +517,7 @@ public final class SessionManager {
 		current = new SafariSession(selfName(), System.currentTimeMillis());
 		SafariRuntimeState.runStarted(SafariLocation.lobbyId());
 		suppressCurrentRunPersistence = suppressionRequested();
+		if (suppressCurrentRunPersistence) current.excludeFromHistory();
 		runExpectedPlayers = Math.max(visitExpectedPlayers, visitPeakPlayers);
         current.startPersonalBests(!catchBeforeTicket && !suppressCurrentRunPersistence);
         DebugLog.line("PB/START", "rules="+PersonalBestTracker.RULES+" partial="+catchBeforeTicket+" testing="+suppressCurrentRunPersistence);
@@ -475,7 +531,8 @@ public final class SessionManager {
 		startedAt = System.currentTimeMillis();
 		rewardSummaryOpen = false;
 		completedSummaryLobbyId = null;
-		if (finished != null && !finished.isEmpty()) {
+		if (finished != null) {
+			finished.finishInterrupted(System.currentTimeMillis());
 			try {
 				archive(finished, finishedSuppressed);
 			} catch (RuntimeException failed) {
@@ -489,6 +546,7 @@ public final class SessionManager {
 
 	/** Clears one Safari instance's transient trackers before any ticket is submitted. */
 	private static void beginVisit(String lobbyId) {
+		rewardTail.clear();
 		long now = System.currentTimeMillis();
 		visitPrepared = true;
 		visitLobbyId = lobbyId;
@@ -601,7 +659,7 @@ public final class SessionManager {
 
 	private static void endSession(boolean interrupted) {
 		SafariSession finished = current;
-		boolean suppressed = persistenceSuppressed();
+		boolean suppressed = persistenceSuppressed() || finished != null && finished.historyExcluded();
 		current = null;
 		SafariRuntimeState.runClosed();
 		suppressCurrentRunPersistence = false;
@@ -611,7 +669,8 @@ public final class SessionManager {
 		// Clear unresolved pins immediately instead of retaining them until timeout or
 		// the next Safari visit.
 		RecatchSpots.clear();
-		if (finished == null || finished.isEmpty()) return;
+		if (finished == null) return;
+		rewardTail.close(finished, suppressed, System.currentTimeMillis());
 		if (interrupted) finished.finishInterrupted(System.currentTimeMillis());
 		else finished.finish(System.currentTimeMillis());
 		OperationalLog.info("RUN", "Finished Safari run");
@@ -622,10 +681,10 @@ public final class SessionManager {
 		}
 	}
 
-	/** Notes a server transfer; the next lobby id decides whether the run ended. */
+	/** Saves the paid visit at the world boundary, including empty and disconnected runs. */
 	public static void onWorldChange() {
-		// A connection change also happens during Safari-to-Safari transfers. The next
-		// valid scoreboard lobby id decides whether the run truly ended.
+		// A paid visit ends when its world is left, even if no destination ever loads.
+		if (current != null) endSession(true);
 	}
 
 	/** Discards server-derived state once a destination is known not to be Hypixel. */
@@ -678,8 +737,8 @@ public final class SessionManager {
 
 	/** Retains the latest summary and delegates all historical storage to RunHistory. */
 	private static void archive(SafariSession session, boolean suppressed) {
-		if (suppressed) {
-			OperationalLog.info("RUN", "Discarded developer test run without saving");
+		if (suppressed || session.historyExcluded()) {
+			OperationalLog.info("RUN", "Excluded Alpha/developer test run without saving");
 			return;
 		}
 		lastSession = session;
@@ -695,7 +754,10 @@ public final class SessionManager {
     /** Shared write guard; a test run stays excluded even after toggling off or disconnecting. */
     public static boolean persistenceSuppressed() {
         boolean requested = suppressionRequested();
-        if (current != null && requested) suppressCurrentRunPersistence = true;
+        if (current != null && requested) {
+            suppressCurrentRunPersistence = true;
+            current.excludeFromHistory();
+        }
         return requested || suppressCurrentRunPersistence;
     }
 

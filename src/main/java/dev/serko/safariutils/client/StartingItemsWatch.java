@@ -8,8 +8,8 @@ import net.minecraft.world.item.ItemStack;
 
 /**
  * Activates a run and credits starting items from the full inventory.
- * Any normal Critter Capsule appearing during a fresh Safari visit is authoritative
- * proof that the server accepted a ticket. The run starts immediately, then one
+ * Alongside explicit Manager acceptance, a normal Critter Capsule in a fresh visit is
+ * proof that the server accepted a ticket. The run starts once, then one
  * inventory snapshot is taken 250 ms later so the rest of the allocation can settle.
  * Keeping that snapshot immutable prevents later floor drops or manual inventory
  * changes from changing the Starting Items message while party chat becomes ready.

@@ -79,15 +79,15 @@ public final class PartyHotspotSync {
     public static void tick(List<String> members, BiConsumer<String, String> output, boolean reconnected) {
         sender = output; roster = List.copyOf(members);
         if (members.isEmpty()) return;
-        if (!SafariLocation.inside() || !visitEligible() || !PartySyncNetworks.coordinationSupported()) return;
+        if (!SafariLocation.inside() || !visitEligible() || !(PartySyncNetworks.coordinationSupported() || PartySyncNetworks.runSyncSupported())) return;
         if (reconnected) { reported.clear(); acknowledged.clear(); lastHello = ""; }
         // A fallback already in progress must finish and upload its immutable choices first.
         // A recovering authority can still reconcile before fallback choices finalize.
         var party = PartyState.snapshot();
         // Keep the frozen room and assignments during disbands, but do not coordinate
         // a different actual party against the previous party's room.
-        if (party.inParty() && (!party.completeRoster()
-                || party.members().stream().anyMatch(member -> !roster.contains(member.uuid())))) return;
+        boolean matchingParty = !party.inParty() || party.completeRoster()
+            && party.members().stream().allMatch(member -> roster.contains(member.uuid()));
         long now = MonotonicTime.nowMillis();
         JsonObject hello = hello(party, assignmentEligible(), ConfigManager.get().gameplay.assignHotspots);
         String text = hello.toString();
@@ -95,6 +95,9 @@ public final class PartyHotspotSync {
             output.accept("H", text); lastHello = text; nextHello = now + (PartySyncNetworks.runSyncSupported() && !PartySyncNetworks.replayReady()?2000:15000);
         }
         if (PartySyncNetworks.runSyncSupported() && !PartySyncNetworks.replayReady()) return;
+        // Run reconciliation is transport lifecycle, not assignment participation.
+        // Incomplete party identities must not prevent hello/replay or leave handling.
+        if (!matchingParty || !PartySyncNetworks.coordinationSupported()) return;
         if (assignmentEligible() && locked.containsKey(self()) && ConfigManager.get().gameplay.assignHotspots)
             HotspotWatch.acceptAssignment(locked.get(self()));
         SafariBiome actual = assignmentEligible() ? HotspotWatch.biome() : null;
@@ -119,6 +122,15 @@ public final class PartyHotspotSync {
                 if (PartySyncDebugHud.enabled()) PartySyncDebugHud.event("Sent assignment to "+target.name(),0xFFFFCE63);
             }
             if (acknowledged.add(id)) { JsonObject ack = message("ack"); ack.addProperty("id", id); output.accept("H", ack.toString()); }
+        }
+    }
+    static void reconcile(String text) {
+        var value=JsonParser.parseString(text).getAsJsonObject();
+        if ("pending".equals(value.get("status").getAsString())) return;
+        String next=value.get("runId").getAsString();
+        if (!next.equals(run)) {
+            run=next; revision=-1; latest=null; reported.clear(); acknowledged.clear();
+            // Keep finalized choices; the next snapshot still checks them for conflicts.
         }
     }
     public static void accept(String text) {
@@ -172,7 +184,7 @@ public final class PartyHotspotSync {
     }
     private static JsonObject message(String action) { JsonObject value = new JsonObject(); value.addProperty("version",1); value.addProperty("action", action); return value; }
     public static void leave() {
-        if (sender != null && PartySyncNetworks.coordinationSupported()) sender.accept("H", message("leave").toString());
+        if (sender != null && (PartySyncNetworks.coordinationSupported() || PartySyncNetworks.runSyncSupported())) sender.accept("H", message("leave").toString());
     }
     public static void reset() {
         PartySyncDebugHud.resetVisit();

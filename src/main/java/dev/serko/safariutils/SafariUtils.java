@@ -264,6 +264,7 @@ public class SafariUtils implements ClientModInitializer {
 		}));
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> OperationalLog.run("CONNECTION/DISCONNECT", () -> {
 			OperationalLog.info("LIFECYCLE", "Disconnected from Hypixel/server world");
+			SessionManager.onWorldChange();
 			HypixelConnection.onDisconnect();
 			CommandCoordinator.resetConnection();
 			leaveHypixel();

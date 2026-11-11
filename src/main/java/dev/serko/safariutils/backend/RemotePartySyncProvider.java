@@ -94,7 +94,10 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
                     DebugLog.line("SYNC_NET", "run reconciliation="+status);
                     receiver.accept(message);
                 } else if ("REPLAY_END".equals(message.type())) {
-                    if (message.payload().equals(runId)) { replayReady=true; sparklingSnapshotReady=true; failures=0; }
+                    if (message.payload().equals(runId)) {
+                        if (!replayReady) DebugLog.line("SYNC_NET", "run replay complete");
+                        replayReady=true; sparklingSnapshotReady=true; failures=0;
+                    }
                 } else {
                     if ("C".equals(message.type())) message=new Message(message.senderUuid(),message.sequence(),message.type(),message.payload(),
                         message.ageMillis()+Math.max(0,MonotonicTime.nowMillis()-delivery.queuedAt()));
@@ -401,8 +404,12 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
                     presence(attempt, players);
                     return;
                 }
-				if ("hotspots-unavailable".equals(type)) { coordination = false; return; }
-                if ("hotspots".equals(type) && coordination) {
+				if ("hotspots-unavailable".equals(type)) {
+                    if (coordination) DebugLog.line("SYNC_NET", "coordination temporarily unavailable; preserving run reconciliation");
+                    coordination = false; return;
+                }
+                if ("hotspots".equals(type) && (coordination || runSync)) {
+                    coordination = true;
                     JsonObject payload = root.getAsJsonObject("payload");
                     if (payload != null && payload.toString().length() <= 4096)
                         enqueue(new Message("", 1, "H", payload.toString()));

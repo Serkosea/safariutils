@@ -101,7 +101,7 @@ public final class PartyObjectiveHud implements HudElement {
 		int used = Math.min(Math.max(0, BirdfeederWatch.feedUsed()), found);
 		boolean done = BirdfeederWatch.allForestFeedUsed();
 		if (done) {
-			if (config.partyObjectiveShowProgress) panel.pair("All Feed Done", found + "/" + found,
+			if (config.partyObjectiveShowProgress) panel.pair("All Feed Used", found + "/" + found,
 				FOREST_LINE_COLOUR, 0xFF55FF55);
 			if (config.partyObjectiveShowBirdCounts) panel.iconPair("Birds", FOREST_LINE_COLOUR, visibleBirds());
 			return panel;
@@ -109,7 +109,7 @@ public final class PartyObjectiveHud implements HudElement {
 		if (config.partyObjectiveShowPlayers) addUnsynchronizedForestPlayers(panel, client);
 		panel.pair("Forest Drops", drops >= 9 ? "✔" : drops + "/9",
 			FOREST_LINE_COLOUR, drops >= 9 ? 0xFF55FF55 : 0xFFFFFFFF);
-		if (config.partyObjectiveShowProgress) panel.pair("Feed Done", used + "/" + found,
+		if (config.partyObjectiveShowProgress) panel.pair("Feed Used", used + "/" + found,
 			FOREST_LINE_COLOUR, done ? 0xFF55FF55 : 0xFFFFFFFF);
 		if (config.partyObjectiveShowPlacement) addFeederRow(panel,
 			BirdfeederWatch.feederType(), BirdfeederWatch.feederCount());
@@ -155,7 +155,7 @@ public final class PartyObjectiveHud implements HudElement {
 		}
 		if (config.partyObjectiveShowPlacement) {
 			String value = SafariObjectives.wumpaCaught() ? "Caught"
-				: SafariObjectives.wumpaSpawned() ? "Started"
+				: SafariObjectives.wumpaSpawned() ? "Spawned"
 				: catches >= 8 ? "Waiting" : "Locked";
 			panel.pair("Wumpa", value, ICY_LINE_COLOUR,
 				SafariObjectives.wumpaSpawned() ? INTERMEDIATE_COLOUR : 0xFFFFFFFF);
@@ -192,8 +192,8 @@ public final class PartyObjectiveHud implements HudElement {
 		if (config.partyObjectiveShowPlacement) {
 			String value = SafariObjectives.doomspiralCaught() ? "Caught"
 				: SafariObjectives.doomspiralRetreated() ? "Retreated"
-				: SafariObjectives.doomspiralSpawned() ? "Started"
-				: candles >= 4 ? "Complete" : candles + "/4";
+				: SafariObjectives.doomspiralSpawned() ? "Spawned"
+				: candles >= 4 ? "Candles Lit" : candles + "/4";
 			panel.pair("Doomspiral", value, HAUNTED_LINE_COLOUR,
 				SafariObjectives.doomspiralSpawned() ? INTERMEDIATE_COLOUR : 0xFFFFFFFF);
 		}
@@ -232,16 +232,17 @@ public final class PartyObjectiveHud implements HudElement {
 	private static void addUnsynchronizedObjectivePlayers(HudPanel panel, Minecraft client, SafariBiome biome) {
 		String localName = client.player.getGameProfile().name();
 		boolean showed = false;
+		int incense = SafariObjectives.doomspiralComplete() ? 0 : SafariObjectives.incenseHeld();
 		int localItems = biome == SafariBiome.CAVERN
 			? SafariObjectives.purpleGemsHeld() + SafariObjectives.limeGemsHeld()
 				+ SafariObjectives.orangeGemsHeld()
-			: SafariObjectives.incenseHeld() + SafariObjectives.shiningCoinsHeld();
+			: incense + SafariObjectives.shiningCoinsHeld();
 		if (localItems > 0) {
 			addPlayerRow(panel, localName, biome == SafariBiome.CAVERN
 				? gemValues(String.valueOf(SafariObjectives.purpleGemsHeld()),
 					String.valueOf(SafariObjectives.limeGemsHeld()),
 					String.valueOf(SafariObjectives.orangeGemsHeld()))
-				: hauntedValues(String.valueOf(SafariObjectives.incenseHeld()),
+				: hauntedValues(String.valueOf(incense),
 					String.valueOf(SafariObjectives.shiningCoinsHeld())));
 			showed = true;
 		}
@@ -335,8 +336,18 @@ public final class PartyObjectiveHud implements HudElement {
 		playerColourTicks = 0;
 	}
 
+    /** Player inventory counts are canonical integers; zero/unknown entries have no icon. */
+    static HudPanel.IconValue[] heldPlayerValues(HudPanel.IconValue... values) {
+        return java.util.Arrays.stream(values).filter(value -> {
+            String count=value.text();
+            return count != null && !count.isEmpty() && count.charAt(0)>='1' && count.charAt(0)<='9';
+        }).toArray(HudPanel.IconValue[]::new);
+    }
+
 	/** The UUID-backed owner identity remains rainbow; all other names retain rank color. */
 	public static void addPlayerRow(HudPanel panel, String name, HudPanel.IconValue... values) {
+		values = heldPlayerValues(values);
+        if (values.length == 0) return;
 		String displayed = CanonicalPlayerNames.display(name);
 		if (SharedSparklingProviders.specialName(displayed)) panel.rainbowIconPair(displayed, values);
 		else panel.iconPair(displayed, PlayerNameStyle.colour(displayed), values);

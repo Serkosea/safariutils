@@ -23,3 +23,7 @@ Nov 10 teammate-catch logs showed ordinary zero-scale Mantis carriers retiring, 
 ## 3.8.0 release verification
 
 The complete Normal/Extra/Developer matrix passed for 26.1.2, 26.2 and 26.3, with integrated parity checks. Backend contract tests and local Cloudflare runtime join/resume/replay tests passed. Shared completion requires a peer implementing the new negotiated handshake; live mixed-client confirmation remains a separate in-game check. See docs/integrations/PARTY_SYNC_3.8_IMPLEMENTATION.md.
+
+## 3.8.1 run persistence
+
+Every server-confirmed paid visit is retained, including zero-catch disconnects. Manager acceptance and capsule allocation share one activation path. World exit freezes elapsed time and saves immediately; a bounded three-second reward tail can amend that same record until a new visit begins. Late rewards do not invent PB timing or reactivate gameplay alerts. Alpha exclusion is latched on the session in every edition and enforced again by history storage, including delayed rewards. Headless regressions cover empty runs, late catches/rewards, expiry, visit reset and excluded histories.

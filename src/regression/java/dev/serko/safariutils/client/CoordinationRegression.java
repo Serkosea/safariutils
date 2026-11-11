@@ -60,6 +60,11 @@ public final class CoordinationRegression {
             check(!after.get("leader").getAsBoolean(), "solo claimed old party leadership");
             check(after.getAsJsonArray("present").size()==1, "outsider leaked into visit attendance");
             check(after.get("display").getAsBoolean(), "disband disabled connected assignment display");
+            PartyHotspotSync.reconcile("{\"status\":\"joined\",\"runId\":\"expanded\"}");
+            check(fixed.get(a)==SafariBiome.HAUNTED,"reconciled roster expansion must preserve finalized roles");
+            var runField=PartyHotspotSync.class.getDeclaredField("run");runField.setAccessible(true);
+            check("expanded".equals(runField.get(null)),"reconciled party run must replace singleton authority identity");
+
         } finally { PartyHotspotSync.reset(); }
         String member = "a".repeat(32);
         String snapshot = "{\"version\":1,\"run\":\"test\",\"revision\":3,\"assignments\":{\"" + member
@@ -229,6 +234,25 @@ public final class CoordinationRegression {
         check(SafariManagerTarget.choose(List.of(managerLabel, npcBody, new SafariManagerTarget.Candidate(23, npcBody.position(), "another-npc", true, false, false))) == null, "ambiguous bodies never clicked");
         check(SafariManagerTarget.choose(List.of(managerLabel, new SafariManagerTarget.Candidate(24, npcBody.position().add(1,0,0), "other-npc", true, false, false))) == null, "adjacent NPC outside label column excluded");
         var smoothTurn = new TicketTurnSmoother();
+        {
+            var owned=TicketTrading.class.getDeclaredField("hostOwnedRun");owned.setAccessible(true);
+            var active=TicketTrading.class.getDeclaredField("tradeRunActive");active.setAccessible(true);
+            var joined=TicketTrading.class.getDeclaredField("joinedTargets");joined.setAccessible(true);
+            var baseline=TicketTrading.class.getDeclaredField("baselineMembers");baseline.setAccessible(true);
+            @SuppressWarnings("unchecked") var guests=(Set<String>)joined.get(null);
+            @SuppressWarnings("unchecked") var original=(Set<String>)baseline.get(null);
+            try {
+                owned.setBoolean(null,true);active.setBoolean(null,true);
+                check(!TicketTrading.ownsCleanup(),"unaccepted invitations alone must not trigger exit cleanup");
+                guests.add("guest");
+                TicketTrading.onDisconnect();
+                check(TicketTrading.ownsCleanup(),"joined guest cleanup must survive transfer before any warp");
+                original.add("guest");
+                check(!TicketTrading.ownsCleanup(),"pre-existing members alone must not become cleanup targets");
+                original.clear();owned.setBoolean(null,false);
+                check(!TicketTrading.ownsCleanup(),"guest cannot claim host cleanup authority");
+            } finally {guests.clear();original.clear();owned.setBoolean(null,false);active.setBoolean(null,false);}
+        }
         check(TicketTrading.arrivingPlayer("⚔ [MVP++] Stuffy warped to your instance").equals("stuffy"), "ranked warp arrival parsed");
         check(TicketTrading.arrivingPlayer("ᛜ _cj joined the Critter Safari.").equals("_cj"), "non-sync Safari arrival parsed");
         check(TicketTrading.arrivingPlayer("[MVP+] _cj joined the party.").isEmpty(), "party join is not Safari arrival");

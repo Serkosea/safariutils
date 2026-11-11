@@ -70,6 +70,8 @@ public class RunRecord {
 		return record;
 	}
 
+	void preserveFieldsFrom(RunRecord previous) { preservedJson = previous.toJson(); }
+
 	JsonObject toJson() {
 		return PersistentJson.mergeRecord(preservedJson,
 			GSON.toJsonTree(this).getAsJsonObject());

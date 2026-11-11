@@ -89,6 +89,10 @@ public final class SafariSession {
 	private Integer lastEssenceBalance;
 	private long lastEventMillis;
 	private boolean interrupted;
+	private Long finishedAtMillis;
+	private boolean historyExcluded;
+	public void excludeFromHistory() { historyExcluded = true; }
+	public boolean historyExcluded() { return historyExcluded; }
 
 	public SafariSession(String selfName, long startedAtMillis) {
 		this.selfName = selfName == null ? "You" : selfName;
@@ -497,7 +501,7 @@ public final class SafariSession {
 	 * {@link #elapsedMillis(long)} instead.
 	 */
 	public long durationMillis() {
-		return Math.max(0, lastEventMillis - startedAtMillis);
+		return Math.max(0, (finishedAtMillis == null ? lastEventMillis : finishedAtMillis) - startedAtMillis);
 	}
 
 	/** How long the run has been going at {@code now} — the figure for a live timer. */
@@ -507,7 +511,7 @@ public final class SafariSession {
 
 	/** Freezes the duration at the confirmed instance transition. */
 	public void finish(long atMillis) {
-		lastEventMillis = Math.max(lastEventMillis, atMillis);
+		if (finishedAtMillis == null) finishedAtMillis = Math.max(lastEventMillis, atMillis);
 	}
 
 	/** Marks a ticket-activated run that ended without the normal reward-summary boundary. */

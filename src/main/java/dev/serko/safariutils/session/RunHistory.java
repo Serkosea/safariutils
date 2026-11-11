@@ -37,8 +37,6 @@ public final class RunHistory {
 
 	/** High enough that normal use never trims history while still bounding corrupted/imported input. */
 	private static final int MAX_RUNS = 99_999;
-	/** Runs with nothing in them are noise — leaving and re-entering makes plenty. */
-	private static final int MIN_CATCHES = 1;
 
 	/** Compact output cuts large histories substantially without changing their data. */
 	private static final Gson GSON = new GsonBuilder().create();
@@ -217,20 +215,12 @@ public final class RunHistory {
 		}
 	}
 
-	/**
-	 * Saves a finished run.
-	 *
-	 * <p>An empty run is dropped. Walking through the entrance and out again produces
-	 * one, and a history full of those buries the runs that happened.
-	 */
+	/** Saves every ticket-activated run, including zero-catch visits. */
 	public static synchronized void record(SafariSession session) {
-		if (session == null) return;
+		if (session == null || session.historyExcluded()) return;
 		boolean diagnostics = dev.serko.safariutils.client.DebugLog.isEnabled();
         long began = diagnostics ? System.nanoTime() : 0;
 		RunRecord record = RunRecord.of(session);
-		if (record.partyTotal() < MIN_CATCHES && record.safariEssence == 0
-			&& record.rainbowFeathers == 0 && record.rareDrops.isEmpty()
-			&& (record.sparklings == null || record.sparklings.isEmpty())) return;
 
 		runs.add(record);
 		if (writesBlocked) recoveryRuns.add(record);
@@ -244,6 +234,24 @@ public final class RunHistory {
             "runs="+runs.size()+" snapshotMicros="+(snapshotDone-began)/1000
             +" statsMicros="+(statsDone-snapshotDone)/1000+" saveMicros="+(System.nanoTime()-statsDone)/1000);
 	}
+
+    /** Revises an existing run only; a late reward must never create a duplicate visit. */
+    static synchronized void updateFinished(SafariSession session) {
+        if (session == null || session.historyExcluded()) return;
+        for (int index = runs.size() - 1; index >= 0; index--) {
+            RunRecord previous = runs.get(index);
+            if (previous.started != session.startedAtMillis()
+                || !java.util.Objects.equals(previous.self, session.selfName())) continue;
+            RunRecord updated = RunRecord.of(session);
+            updated.preserveFieldsFrom(previous);
+            runs.set(index, updated);
+            int recoveryIndex = recoveryRuns.indexOf(previous);
+            if (recoveryIndex >= 0) recoveryRuns.set(recoveryIndex, updated);
+            rebuildStats();
+            save();
+            return;
+        }
+    }
 
 	/** Reports suspicious counts without rewriting or rejecting historical data. */
 	private static void validateExpectedRanges(String source, List<RunRecord> records) {

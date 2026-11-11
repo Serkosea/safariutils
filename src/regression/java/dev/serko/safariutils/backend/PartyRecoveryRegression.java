@@ -45,7 +45,7 @@ public final class PartyRecoveryRegression {
         provider.disconnect();
         check((long)get(provider, "retryAt") - MonotonicTime.nowMillis() > 119000, "room changes cannot bypass service limits");
         modernReplay(context,socket);
-        return 13;
+        return 15;
     }
     private static void modernReplay(PartySyncNetworkProvider.Context old, WebSocket socket) throws Exception {
         String visit=UUID.randomUUID().toString(),run=UUID.randomUUID().toString(),connection=UUID.randomUUID().toString();
@@ -65,6 +65,12 @@ public final class PartyRecoveryRegression {
         check(!provider.replayReady(),"network receipt alone cannot mark replay applied");
         provider.tick(context,message->check(!provider.replayReady(),"reconciliation callback precedes ready boundary"));
         check(provider.replayReady() && provider.completionSupported() && provider.runId().equals(run),"ordered queue application opens completion gate");
+        call(listener,"receiveMessage",new Class<?>[]{String.class},"{\"type\":\"hotspots-unavailable\"}");
+        check(!provider.coordinationSupported() && provider.runSyncSupported(),"assignment outage must retain reconciliation capability");
+        call(listener,"receiveMessage",new Class<?>[]{String.class},"{\"type\":\"hotspots\",\"payload\":{\"run\":\""+run+"\"}}");
+        var recovered=new ArrayList<PartySyncNetworkProvider.Message>();
+        provider.tick(context,recovered::add);
+        check(provider.coordinationSupported() && recovered.stream().anyMatch(m->"H".equals(m.type())),"valid recovered authority restores coordination without reconnect");
         provider.disconnect();check(!provider.replayReady(),"disconnect closes readiness gate");
     }
     private static Object get(Object target, String name) throws Exception {

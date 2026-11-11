@@ -1,24 +1,21 @@
-## Additions & Improvements
+## Fixes & Improvements
 
-- Added shared critter completion evidence for Unique, Sparkling, and Full Clear modes across updated clients.
-- Improved hotspot assignment timing, manual reports, late arrivals, and reconnect recovery without reshuffling finalized biomes.
-- Added explicit run reconciliation and ordered catch-up, keeping stale run data separate and reducing unnecessary synchronization work.
-
-## Fixes
-
-- Fixed distant capsule effects and breakout replacements creating duplicate Sparkling alerts, extra Found entries, and retained Mantis Shrimp markers.
-- Preserved caught Sparkling evidence and objective progress through reconnects without treating old inventory as current.
-- Improved party-sync diagnostics and shared standalone/integrated consistency.
+- Preserved catches and rewards arriving as a run ends, without creating duplicate runs or extending saved run times.
+- Saved ticket-used runs even when no critters are caught before leaving or disconnecting.
+- Reinforced automatic Alpha stat protection across all editions, including late rewards after disconnecting.
+- Improved party-sync joins, reconnect recovery, and Sparkling information delivery to players warped in later.
+- Fixed ticket-trading disband cleanup when invited players join before the host leaves without warping them in.
+- Clarified objective states and simplified player item rows to show only held, relevant items.
 
 ## Downloads
 
 Choose one jar for your Minecraft version:
 
-`safariutils-3.8.0+mc26.3.jar`
-`safariutils-3.8.0+mc26.2.jar`
-`safariutils-3.8.0+mc26.1.2.jar`
-`safariutils-3.8.0-extra+mc26.3.jar`
-`safariutils-3.8.0-extra+mc26.2.jar`
-`safariutils-3.8.0-extra+mc26.1.2.jar`
+`safariutils-3.8.1+mc26.3.jar`
+`safariutils-3.8.1+mc26.2.jar`
+`safariutils-3.8.1+mc26.1.2.jar`
+`safariutils-3.8.1-extra+mc26.3.jar`
+`safariutils-3.8.1-extra+mc26.2.jar`
+`safariutils-3.8.1-extra+mc26.1.2.jar`
 
 Regular jars use Safe Mode; Extra includes Safe Mode toggles that when turned off, provide information the player cannot directly see and may not be safe to use. Minecraft 26.1.2 and 26.3 builds have received less in-game testing than 26.2.

@@ -32,10 +32,24 @@ public final class RunPersistenceRegression {
             check(SessionManager.persistenceSuppressed(), "run latches alpha suppression");
             alpha.setBoolean(null, false);
             check(SessionManager.persistenceSuppressed(), "disconnect cannot archive test run");
+            int runs = RunHistory.runs().size();
+            SessionManager.onWorldChange();
+            check(SessionManager.current() == null && RunHistory.runs().size() == runs,
+                "actual disconnect path discards Alpha run after address reset");
+            var paid = new SafariSession("Test", System.currentTimeMillis());
+            current.set(null, paid);
+            sticky.setBoolean(null, false);
+            SessionManager.onWorldChange();
+            check(SessionManager.current() == null && RunHistory.runs().size() == runs + 1
+                && RunHistory.runs().getLast().partyTotal() == 0,
+                "actual disconnect path archives a paid empty run");
+            SessionManager.onWorldChange();
+            check(RunHistory.runs().size() == runs + 1, "repeat world boundary does not duplicate run");
+            RunHistory.load(null);
         } finally {
             alpha.setBoolean(null, oldAlpha); current.set(null, oldRun); sticky.setBoolean(null, oldSticky);
         }
-        return 12;
+        return 15;
     }
     private static void check(boolean value, String reason) { if (!value) throw new AssertionError(reason); }
 }

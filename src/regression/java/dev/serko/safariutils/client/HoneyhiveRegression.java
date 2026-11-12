@@ -40,7 +40,35 @@ public final class HoneyhiveRegression {
         state.chat("HIVE! Reward",1070);
         check(state.status("old",1071)==HoneyhiveState.Status.COOLDOWN,"refill does not select previous harvest");
         check(state.status("next",1071)==HoneyhiveState.Status.READY,"queued harvest stays ready without hologram confirmation");
-        return 21;
+        alphaPersistence();
+        return 23;
+    }
+    private static void alphaPersistence() {
+        try {
+            var root=HoneyhiveStore.class.getDeclaredField("root");root.setAccessible(true);
+            var dirty=HoneyhiveStore.class.getDeclaredField("dirty");dirty.setAccessible(true);
+            var flag=Honeyhives.class.getDeclaredField("persistentConnection");flag.setAccessible(true);
+            var account=Honeyhives.class.getDeclaredField("account");account.setAccessible(true);
+            var profile=Honeyhives.class.getDeclaredField("profile");profile.setAccessible(true);
+            var stateField=Honeyhives.class.getDeclaredField("STATE");stateField.setAccessible(true);
+            var persist=Honeyhives.class.getDeclaredMethod("persist");persist.setAccessible(true);
+            var state=(HoneyhiveState)stateField.get(null);
+            var data=new com.google.gson.JsonObject();data.addProperty("schema",1);data.add("profiles",new com.google.gson.JsonObject());
+            Object priorRoot=root.get(null),priorAccount=account.get(null),priorProfile=profile.get(null);
+            boolean priorDirty=dirty.getBoolean(null),priorFlag=flag.getBoolean(null);
+            try {
+                root.set(null,data);dirty.setBoolean(null,false);account.set(null,java.util.UUID.randomUUID());profile.set(null,"test-profile");
+                flag.setBoolean(null,true);state.clear();state.click("hive",1000);state.chat("HIVE! Reward",1010);persist.invoke(null);
+                var main=data.deepCopy();dirty.setBoolean(null,false);
+                flag.setBoolean(null,false);state.clear();state.click("hive",2000);state.chat("QUEEN BEE! Refilled",2010);persist.invoke(null);
+                check(data.equals(main)&&!dirty.getBoolean(null),"Alpha hive observations never overwrite main ledger or schedule a save");
+                persist.invoke(null);
+                check(data.equals(main),"late Alpha disconnect/shutdown persists no hive data");
+            } finally {
+                state.clear();root.set(null,priorRoot);dirty.setBoolean(null,priorDirty);flag.setBoolean(null,priorFlag);
+                account.set(null,priorAccount);profile.set(null,priorProfile);
+            }
+        } catch(ReflectiveOperationException e) {throw new AssertionError(e);}
     }
     private static void check(boolean value,String message) { if(!value)throw new AssertionError(message); }
 }

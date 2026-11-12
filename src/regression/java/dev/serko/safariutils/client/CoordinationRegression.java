@@ -76,6 +76,14 @@ public final class CoordinationRegression {
             try { dev.serko.safariutils.state.HotspotSnapshot.parse(invalid, List.of(member)); } catch (RuntimeException expected) { rejected = true; }
             check(rejected, "malformed authority rejected");
         }
+        check(parsed.reports().isEmpty(), "old server snapshots retain report retry compatibility");
+        String withReports=snapshot.substring(0,snapshot.length()-1)+",\"reports\":{\""+member+"\":\"ICY\"}}";
+        var accepted=dev.serko.safariutils.state.HotspotSnapshot.parse(withReports,List.of(member));
+        check(accepted.reports().get(member)==SafariBiome.ICY, "accepted hotspot is distinct from assigned destination");
+        boolean badReport=false;
+        try {dev.serko.safariutils.state.HotspotSnapshot.parse(withReports.replace("ICY","BOGUS"),List.of(member));}
+        catch(RuntimeException expected){badReport=true;}
+        check(badReport,"invalid report acknowledgment rejected");
         check(!parsed.conflictsWith(Map.of(member, SafariBiome.FOREST)), "same locked assignment survives recovery");
         check(parsed.conflictsWith(Map.of("b".repeat(32), SafariBiome.FOREST)), "partial snapshot cannot give a locked biome to another player");
         check(parsed.conflictsWith(Map.of(member, SafariBiome.ICY)), "finalized fallback cannot move");

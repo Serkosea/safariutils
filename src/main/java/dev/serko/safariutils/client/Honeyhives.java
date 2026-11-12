@@ -17,6 +17,8 @@ public final class Honeyhives {
     private static List<Visible> visible=List.of();
     private static Object connection, level;
     private static UUID account;
+    // Captured with the owning connection: disconnect may already clear the global Alpha flag.
+    private static boolean persistentConnection;
     private static String profile="";
     private static long scanAt, profileRequestAt;
     private static int profileRequests;
@@ -33,9 +35,7 @@ public final class Honeyhives {
         HoneyhiveStore.tick();
         var client=Minecraft.getInstance();
         if(client.player==null||client.level==null||client.getConnection()==null) { visible=List.of(); return; }
-        if(connection!=client.getConnection().getConnection()||!client.player.getUUID().equals(account)) {
-            persist(); STATE.clear(); profile=""; profileRequests=0; profileRequestAt=0; connection=client.getConnection().getConnection(); account=client.player.getUUID(); scanAt=0;
-        }
+        synchronizeContext();
         if(level!=client.level) { level=client.level; STATE.resetInteractions(); visible=List.of(); scanAt=0; }
         if(!active()) { visible=List.of(); STATE.resetInteractions(); return; }
         long now=MonotonicTime.nowMillis();
@@ -83,6 +83,7 @@ public final class Honeyhives {
         }
     }
     public static void onChatMessage(String line) {
+        synchronizeContext();
         if(line.startsWith("Profile ID: ")) {
             String next=line.substring(12).trim().replace("-","").toLowerCase(Locale.ROOT);
             if(!next.matches("[0-9a-f]{32}")||account==null)return;
@@ -90,7 +91,7 @@ public final class Honeyhives {
                 boolean discovering=profile.isEmpty();
                 var provisional=discovering?STATE.snapshot(MonotonicTime.nowMillis(),System.currentTimeMillis()):Map.<String,HoneyhiveState.Saved>of();
                 persist(); profile=next;
-                var saved=new HashMap<>(HoneyhiveStore.read(account+"/"+profile,KNOWN));saved.putAll(provisional);
+                var saved=new HashMap<>(persistentConnection ? HoneyhiveStore.read(account+"/"+profile,KNOWN) : Map.<String,HoneyhiveState.Saved>of());saved.putAll(provisional);
                 STATE.restore(saved,MonotonicTime.nowMillis(),System.currentTimeMillis(),discovering);persist();visible=List.of();scanAt=0;
                 DebugLog.line("HONEYHIVE","profile scope loaded hives="+saved.size());
             }
@@ -108,7 +109,15 @@ public final class Honeyhives {
         return profileRequests>0 && MonotonicTime.nowMillis()<profileRequestAt && line.startsWith("Profile ID: ");
     }
     private static void persist() {
-        if(account!=null&&!profile.isEmpty())HoneyhiveStore.put(account+"/"+profile,STATE.snapshot(MonotonicTime.nowMillis(),System.currentTimeMillis()));
+        if(persistentConnection&&account!=null&&!profile.isEmpty())HoneyhiveStore.put(account+"/"+profile,STATE.snapshot(MonotonicTime.nowMillis(),System.currentTimeMillis()));
+    }
+    private static void synchronizeContext() {
+        var client=Minecraft.getInstance();
+        if(client.player==null || client.getConnection()==null)return;
+        if(connection==client.getConnection().getConnection() && client.player.getUUID().equals(account))return;
+        persist(); STATE.clear(); visible=List.of();profile="";profileRequests=0;profileRequestAt=0;scanAt=0;
+        connection=client.getConnection().getConnection();account=client.player.getUUID();
+        persistentConnection=HypixelConnection.refresh() && !HypixelConnection.alpha();
     }
     public static void shutdown() { persist();HoneyhiveStore.flush(); }
     private static List<Hive> loadCatalog() {

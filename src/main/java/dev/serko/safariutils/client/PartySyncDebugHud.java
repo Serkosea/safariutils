@@ -9,6 +9,8 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 /** Developer-only view of existing sync decisions; no polling requests or world scans. */
 public final class PartySyncDebugHud implements HudElement {
+    private static volatile String serviceFailure = "";
+    public static void serviceFailure(String reason) { serviceFailure = reason; }
     private static final int CYAN=0xFF65DDEC, GREEN=0xFF77E59E, GOLD=0xFFFFCE63, RED=0xFFFF7777;
     private static final int LABEL=0xFF9CCBD9, TEXT=0xFFF2F5FA;
     private static final Set<String> receivedPeers = new LinkedHashSet<>();
@@ -42,7 +44,10 @@ public final class PartySyncDebugHud implements HudElement {
         String nextLobby=Objects.toString(SafariLocation.lobbyId(), "Outside Safari");
         if (!nextLobby.equals(lobby)) { resetVisit(); lobby=nextLobby; }
         if (!rosterNames.equals(names)) { rosterNames = Map.copyOf(names); dirty = true; }
-        String nextTransport=connected ? "Connected" : engaged ? "Connecting / retrying" : "Inactive";
+        boolean ready=connected && dev.serko.safariutils.api.PartySyncNetworks.replayReady();
+        if (ready) serviceFailure="";
+        String nextTransport=ready ? "Connected \u00b7 Sync ready" : connected ? "Synchronizing \u00b7 Not ready" : engaged ? "Unavailable / retrying" : "Inactive";
+        if (!connected && engaged && !serviceFailure.isEmpty()) nextTransport=serviceFailure;
         var party=PartyState.snapshot();
         String nextAssignments=PartyHotspotSync.statusText();
         if (!nextTransport.equals(transport)) event("Connection: " + nextTransport, connected?GREEN:GOLD);
@@ -57,7 +62,7 @@ public final class PartySyncDebugHud implements HudElement {
         }
         String completionStatus=PartyCompletionSync.status()+" \u00b7 "+(dev.serko.safariutils.api.PartySyncNetworks.replayReady()?"Replay applied":"Awaiting replay");
         if(!completionStatus.equals(lastCompletionStatus)) {event(completionStatus,CYAN);lastCompletionStatus=completionStatus;}
-        transport=nextTransport; connectedState=connected;
+        transport=nextTransport; connectedState=ready;
         rosterCount=members; localLeader=party.localLeader(); assignments=nextAssignments;
 
     }

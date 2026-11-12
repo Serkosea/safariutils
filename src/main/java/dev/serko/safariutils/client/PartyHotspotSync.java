@@ -18,7 +18,7 @@ public final class PartyHotspotSync {
     private static boolean conflict;
     private static BiConsumer<String, String> sender;
     private static List<String> roster = List.of();
-    private static final Map<String, SafariBiome> reports = new LinkedHashMap<>(), locked = new LinkedHashMap<>();
+    private static final Map<String, SafariBiome> reports = new LinkedHashMap<>(), locked = new LinkedHashMap<>(), acceptedReports = new LinkedHashMap<>();
     private static final Set<String> reported = new HashSet<>(), sentNotices = new HashSet<>(), acknowledged = new HashSet<>();
     private static HotspotSnapshot latest;
     private PartyHotspotSync() { }
@@ -80,7 +80,7 @@ public final class PartyHotspotSync {
         sender = output; roster = List.copyOf(members);
         if (members.isEmpty()) return;
         if (!SafariLocation.inside() || !visitEligible() || !(PartySyncNetworks.coordinationSupported() || PartySyncNetworks.runSyncSupported())) return;
-        if (reconnected) { reported.clear(); acknowledged.clear(); lastHello = ""; }
+        if (reconnected) { reported.clear(); acceptedReports.clear(); acknowledged.clear(); lastHello = ""; }
         // A fallback already in progress must finish and upload its immutable choices first.
         // A recovering authority can still reconcile before fallback choices finalize.
         var party = PartyState.snapshot();
@@ -92,7 +92,7 @@ public final class PartyHotspotSync {
         JsonObject hello = hello(party, assignmentEligible(), ConfigManager.get().gameplay.assignHotspots);
         String text = hello.toString();
         if (!text.equals(lastHello) || now >= nextHello) {
-            output.accept("H", text); lastHello = text; nextHello = now + (PartySyncNetworks.runSyncSupported() && !PartySyncNetworks.replayReady()?2000:15000);
+            output.accept("H", text); lastHello = text; nextHello = now + (PartySyncNetworks.runSyncSupported() && !PartySyncNetworks.replayReady()?2000:60000);
         }
         if (PartySyncNetworks.runSyncSupported() && !PartySyncNetworks.replayReady()) return;
         // Run reconciliation is transport lifecycle, not assignment participation.
@@ -103,7 +103,7 @@ public final class PartyHotspotSync {
         SafariBiome actual = assignmentEligible() ? HotspotWatch.biome() : null;
         if (actual != null) reports.putIfAbsent(self(), actual);
         if(now>=nextReports) {reported.clear();nextReports=now+2000;}
-        for (var entry : reports.entrySet()) if (roster.contains(entry.getKey()) && !locked.containsKey(entry.getKey()) && reported.add(entry.getKey())) {
+        for (var entry : reports.entrySet()) if (roster.contains(entry.getKey()) && !locked.containsKey(entry.getKey()) && !acceptedReports.containsKey(entry.getKey()) && reported.add(entry.getKey())) {
             JsonObject report = message("report"); report.addProperty("player", entry.getKey()); report.addProperty("biome", entry.getValue().name());
             output.accept("H", report.toString());
         }
@@ -129,7 +129,7 @@ public final class PartyHotspotSync {
         if ("pending".equals(value.get("status").getAsString())) return;
         String next=value.get("runId").getAsString();
         if (!next.equals(run)) {
-            run=next; revision=-1; latest=null; reported.clear(); acknowledged.clear();
+            run=next; revision=-1; latest=null; reported.clear(); acceptedReports.clear(); acknowledged.clear();
             // Keep finalized choices; the next snapshot still checks them for conflicts.
         }
     }
@@ -138,7 +138,9 @@ public final class PartyHotspotSync {
         try {
             var value = HotspotSnapshot.parse(text, roster);
             if (!run.isEmpty() && !run.equals(value.run())) { conflict = true; return; }
-            if (value.revision() <= revision) return;
+            if (value.revision() < revision) return;
+            acceptedReports.putAll(value.reports());
+            if (value.revision() == revision) return;
             var parsed = value.assignments();
             conflict |= value.conflictsWith(locked);
             conflict |= value.conflict();
@@ -189,6 +191,6 @@ public final class PartyHotspotSync {
     public static void reset() {
         PartySyncDebugHud.resetVisit();
         authority = Authority.WAITING; unavailableSince = -1; waitingSince = -1; nextHello = 0; revision = -1; run = ""; lastHello = "";
-        conflict = false; sender = null; latest = null; roster = List.of(); reports.clear(); locked.clear(); reported.clear(); sentNotices.clear(); acknowledged.clear();
+        conflict = false; sender = null; latest = null; roster = List.of(); reports.clear(); acceptedReports.clear(); locked.clear(); reported.clear(); nextReports=0; sentNotices.clear(); acknowledged.clear();
     }
 }

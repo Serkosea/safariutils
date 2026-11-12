@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.8.2] - 2026-11-11
+
+- Reduced party-sync traffic with batched routine updates, compact completion refreshes, and fewer repeated reports.
+- Renewed party-sync connections without unnecessary reconnects; discoveries and catches remain immediate.
+- Improved recovery and developer diagnostics when synchronization is unavailable.
+- Prevented Alpha Honeyhive observations and reset times from overwriting saved main-server data.
+
+## [3.8.1] - 2026-11-11
+
+- Preserved late catches and rewards and saved ticketed runs with no catches.
+- Prevented Alpha runs from saving permanent stats in every edition.
+- Improved party joins, reconnect recovery and late-join Sparkling delivery.
+- Fixed ticket-trading disband cleanup and simplified objective HUD item rows.
+
 ## [3.8.0] - 2026-11-10
 
 ## Additions & Improvements

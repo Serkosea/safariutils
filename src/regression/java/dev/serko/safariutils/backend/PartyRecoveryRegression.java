@@ -45,7 +45,45 @@ public final class PartyRecoveryRegression {
         provider.disconnect();
         check((long)get(provider, "retryAt") - MonotonicTime.nowMillis() > 119000, "room changes cannot bypass service limits");
         modernReplay(context,socket);
-        return 15;
+        efficientTransport();
+        return 23;
+    }
+    private static void efficientTransport() throws Exception {
+        var sent = new ArrayList<com.google.gson.JsonObject>();
+        WebSocket socket = (WebSocket) Proxy.newProxyInstance(WebSocket.class.getClassLoader(), new Class<?>[]{WebSocket.class},
+            (proxy, method, args) -> {
+                if (method.getName().equals("sendText")) sent.add(com.google.gson.JsonParser.parseString(args[0].toString()).getAsJsonObject());
+                return method.getReturnType() == CompletableFuture.class ? CompletableFuture.completedFuture((WebSocket)proxy) : null;
+            });
+        String uuid = "a".repeat(32), visit = UUID.randomUUID().toString(), run = UUID.randomUUID().toString();
+        var provider = new RemotePartySyncProvider();
+        field(provider,"context",new PartySyncNetworkProvider.Context("m123",uuid,List.of(uuid),visit));
+        call(provider,"opened",new Class<?>[]{long.class,WebSocket.class},0L,socket);
+        field(provider,"connected",true);field(provider,"runSync",true);field(provider,"efficient",true);
+        field(provider,"replayReady",true);field(provider,"runId",run);
+        provider.send(100,"N","1");provider.send(101,"U","1,0,0,0,-1,0");
+        check(sent.isEmpty(),"ordinary updates wait for the same-tick batch");
+        provider.send(102,"S","1,0,1,0");
+        check(sent.size()==2 && sent.get(0).get("type").getAsString().equals("batch"),"urgent catch flushes ordinary batch first");
+        check(sent.get(0).getAsJsonArray("frames").size()==2 && sent.get(1).get("kind").getAsString().equals("S"),"catch is never deferred into a batch");
+        var full = new com.google.gson.JsonObject();full.addProperty("version",1);
+        var rows = new com.google.gson.JsonArray();for(int i=0;i<37;i++){var row=new com.google.gson.JsonArray();row.add(1);row.add(2);row.add(3);rows.add(row);}full.add("rows",rows);
+        provider.send(103,"C",full.toString());call(provider,"flushFrames",new Class<?>[]{});
+        long revision=sent.get(2).getAsJsonArray("frames").get(0).getAsJsonObject().get("sequence").getAsLong();
+        provider.send(104,"C",full.toString());call(provider,"flushFrames",new Class<?>[]{});
+        var refresh=sent.get(3).getAsJsonArray("frames").get(0).getAsJsonObject();
+        check(refresh.get("kind").getAsString().equals("F"),"unchanged completion uses compact refresh");
+        check(com.google.gson.JsonParser.parseString(refresh.get("payload").getAsString()).getAsJsonObject().get("revision").getAsLong()==revision,"refresh references full baseline");
+        call(provider,"resendCompletion",new Class<?>[]{long.class},0L);
+        var recovered=sent.get(4).getAsJsonArray("frames").get(0).getAsJsonObject();
+        check(recovered.get("kind").getAsString().equals("C") && recovered.get("sequence").getAsLong()>refresh.get("sequence").getAsLong(),"missing baseline resends full state with a fresh ordered sequence");
+        provider.send(105,"N","3");provider.disconnect();
+        call(provider,"opened",new Class<?>[]{long.class,WebSocket.class},1L,socket);
+        field(provider,"connected",true);call(provider,"flushFrames",new Class<?>[]{});
+        check(sent.size()==5,"reconnect cannot flush an old room batch");
+        field(provider,"updateRequired",true);
+        check((boolean)get(provider,"updateRequired"),"update requirement is retained independently of visit state");
+        provider.disconnect();
     }
     private static void modernReplay(PartySyncNetworkProvider.Context old, WebSocket socket) throws Exception {
         String visit=UUID.randomUUID().toString(),run=UUID.randomUUID().toString(),connection=UUID.randomUUID().toString();
@@ -66,11 +104,8 @@ public final class PartyRecoveryRegression {
         provider.tick(context,message->check(!provider.replayReady(),"reconciliation callback precedes ready boundary"));
         check(provider.replayReady() && provider.completionSupported() && provider.runId().equals(run),"ordered queue application opens completion gate");
         call(listener,"receiveMessage",new Class<?>[]{String.class},"{\"type\":\"hotspots-unavailable\"}");
-        check(!provider.coordinationSupported() && provider.runSyncSupported(),"assignment outage must retain reconciliation capability");
-        call(listener,"receiveMessage",new Class<?>[]{String.class},"{\"type\":\"hotspots\",\"payload\":{\"run\":\""+run+"\"}}");
-        var recovered=new ArrayList<PartySyncNetworkProvider.Message>();
-        provider.tick(context,recovered::add);
-        check(provider.coordinationSupported() && recovered.stream().anyMatch(m->"H".equals(m.type())),"valid recovered authority restores coordination without reconnect");
+        check(!provider.connected() && !provider.replayReady() && !provider.coordinationSupported(),"authority outage closes the whole connection, not just assignments");
+        check(provider.connectedPlayers().isEmpty(),"unavailable service cannot advertise connected peers");
         provider.disconnect();check(!provider.replayReady(),"disconnect closes readiness gate");
     }
     private static Object get(Object target, String name) throws Exception {

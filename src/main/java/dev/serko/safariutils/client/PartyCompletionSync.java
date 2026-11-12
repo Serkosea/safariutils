@@ -30,7 +30,7 @@ final class PartyCompletionSync {
         if(!wasReady) {nextSample=nextRefresh=0;lastPayload="";} wasReady=true;
         long now=MonotonicTime.nowMillis();if(now<nextSample)return;nextSample=now+500;
         String payload=BiomeCoordination.localCompletionSnapshot(localSources).payload();
-        if(!payload.equals(lastPayload) || now>=nextRefresh) { sender.accept("C",payload);lastPayload=payload;nextRefresh=now+10000; }
+        if(!payload.equals(lastPayload) || now>=nextRefresh) { sender.accept("C",payload);lastPayload=payload;nextRefresh=now+20000; }
     }
     static boolean completes(Critter critter,RunMode mode,boolean localCapture) {
         if(!PartySyncNetworks.replayReady() || SparklingWatch.outstandingCount(critter)>0)return false;

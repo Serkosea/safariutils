@@ -6,7 +6,7 @@ import java.util.*;
 
 /** Validated bounded wire snapshot; no game/world or transport dependencies. */
 public record HotspotSnapshot(String run, long revision, Map<String, SafariBiome> assignments,
-        Map<String, Integer> fairness, String leader, List<Notice> notifications, boolean conflict) {
+        Map<String, Integer> fairness, String leader, List<Notice> notifications, boolean conflict, Map<String, SafariBiome> reports) {
     public record Notice(String id, String player, SafariBiome biome) { }
     public static HotspotSnapshot parse(String text, Collection<String> roster) {
         if (text == null || text.length() > 4096) throw new IllegalArgumentException("snapshot size");
@@ -25,6 +25,15 @@ public record HotspotSnapshot(String run, long revision, Map<String, SafariBiome
             SafariBiome biome = SafariBiome.valueOf(entry.getValue().getAsString());
             if (assignments.containsValue(biome)) throw new IllegalArgumentException("duplicate biome");
             assignments.put(entry.getKey(), biome);
+        }
+        Map<String, SafariBiome> reports = new LinkedHashMap<>();
+        if (root.has("reports")) {
+            JsonObject accepted = root.getAsJsonObject("reports");
+            if (accepted.size() > 4) throw new IllegalArgumentException("reports");
+            for (var entry : accepted.entrySet()) {
+                requireMember(entry.getKey(), roster);
+                reports.put(entry.getKey(), SafariBiome.valueOf(entry.getValue().getAsString()));
+            }
         }
         Map<String, Integer> fairness = new LinkedHashMap<>();
         for (var entry : history.entrySet()) {
@@ -46,7 +55,7 @@ public record HotspotSnapshot(String run, long revision, Map<String, SafariBiome
             notifications.add(new Notice(id, player, biome));
         }
         return new HotspotSnapshot(run, revision, Map.copyOf(assignments), Map.copyOf(fairness),
-            leader, List.copyOf(notifications), root.get("conflict").getAsBoolean());
+            leader, List.copyOf(notifications), root.get("conflict").getAsBoolean(), Map.copyOf(reports));
     }
     /** Partial snapshots may omit a lock, but cannot move it or give its biome to another member. */
     public boolean conflictsWith(Map<String, SafariBiome> locked) {

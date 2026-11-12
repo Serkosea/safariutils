@@ -27,3 +27,16 @@ The complete Normal/Extra/Developer matrix passed for 26.1.2, 26.2 and 26.3, wit
 ## 3.8.1 run persistence
 
 Every server-confirmed paid visit is retained, including zero-catch disconnects. Manager acceptance and capsule allocation share one activation path. World exit freezes elapsed time and saves immediately; a bounded three-second reward tail can amend that same record until a new visit begins. Late rewards do not invent PB timing or reactivate gameplay alerts. Alpha exclusion is latched on the session in every edition and enforced again by history storage, including delayed rewards. Headless regressions cover empty runs, late catches/rewards, expiry, visit reset and excluded histories.
+
+## 3.8.2 transport and Alpha isolation
+
+Transport 3 batches routine state for one tick, keeps Sparkling events immediate,
+references unchanged completion baselines and renews the existing socket. The
+provider owns ordered wire sequences, including resync replies. See
+docs/reviews/party-sync-efficient-transport.md. Backend minimum remains 1 until
+an explicit operator decision; publishing this client does not disable old peers.
+
+Honeyhive persistence eligibility is captured per connection so Alpha observations
+stay temporary even during disconnect/shutdown. Alpha never loads main-server
+hive cooldowns. The integrated host independently scopes remembered typing channels
+by account and Alpha/main while retaining existing main-account keys.

@@ -64,6 +64,13 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
     private volatile String attemptToken;
 	private Context context;
 	private String signature = "";
+    private volatile boolean efficient, updateRequired, renewalPending;
+    private volatile long renewAt, renewalStarted;
+    private final JsonArray pendingFrames = new JsonArray();
+    private long wireSequence, completionRevision;
+    private String completionBaseline = "";
+    private volatile long pendingHelloAt;
+    private String lastHelloPayload = "";
 
 	@Override
 	public boolean supported() {
@@ -81,7 +88,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 			signature = nextSignature;
 			// Retain service backoff across roster changes; a new room cannot bypass a quota delay.
 		}
-		if (!valid(next)) return;
+		if (!valid(next) || updateRequired) return;
 		Delivery delivery;
 		while ((delivery = incoming.poll()) != null) {
 			if (delivery.generation() == generation.get()) {
@@ -111,7 +118,12 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		WebSocket current = socket;
 		long operationGeneration = generation.get();
 		if (current != null) {
-            if ((!connected || snapshotExpected && !runSync && !sparklingSnapshotReady) && now - openedAt >= 12_000L
+            flushFrames();
+            if (efficient && connected && now >= renewAt && !renewalPending) renew(operationGeneration, current);
+            if (renewalPending && now - renewalStarted > 20_000L) {
+                failed(operationGeneration, new java.io.IOException("Party lease renewal timeout")); return;
+            }
+            if ((!connected || runSync && !replayReady || snapshotExpected && !runSync && !sparklingSnapshotReady) && now - openedAt >= 12_000L
                     || connected && now - lastInboundAt >= 75_000L) {
                 failed(operationGeneration, new java.io.IOException("Party sync response timeout"));
                 return;
@@ -146,13 +158,13 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		send(sequence, "A", payload, catchUpOnly);
 	}
 
-	private void send(long sequence, String type, String payload, boolean catchUpOnly) {
+	private synchronized void send(long sequence, String type, String payload, boolean catchUpOnly) {
 		WebSocket current = socket;
 		long operationGeneration = generation.get();
 		WebSocketOutbox queue = outbox;
 		if (!connected || current == null || queue == null) return;
 		JsonObject state = new JsonObject();
-		state.addProperty("sequence", sequence);
+		state.addProperty("sequence", ++wireSequence);
 		state.addProperty("kind", type);
         if (runSync) {
             if ("H".equals(type)) {
@@ -168,13 +180,63 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
                 if("C".equals(type)) { var value=JsonParser.parseString(payload).getAsJsonObject();value.addProperty("runId",runId);value.addProperty("visitId",context.visitId());payload=value.toString(); }
             }
         }
+        if (efficient && "H".equals(type)) {
+            JsonObject message = JsonParser.parseString(payload).getAsJsonObject();
+            if ("hello".equals(message.get("action").getAsString())) {
+                if (payload.equals(lastHelloPayload) && (replayReady || MonotonicTime.nowMillis() < pendingHelloAt)) return;
+                lastHelloPayload = payload;
+            }
+        }
+        if (efficient && "C".equals(type)) {
+            if (payload.equals(completionBaseline)) {
+                JsonObject refresh = new JsonObject(); refresh.addProperty("version", 1);
+                refresh.addProperty("runId", runId); refresh.addProperty("visitId", context.visitId());
+                refresh.addProperty("revision", completionRevision);
+                state.addProperty("kind", "F"); payload = refresh.toString();
+            } else { completionBaseline = payload; completionRevision = wireSequence; }
+        }
 		state.addProperty("payload", payload);
 		if (catchUpOnly) state.addProperty("catchUpOnly", true);
+        if (efficient && java.util.Set.of("A", "N", "U", "C").contains(type)) {
+            if (pendingFrames.size() >= 8 || pendingFrames.toString().length() + state.toString().length() > 3800) flushFrames();
+            pendingFrames.add(state); return;
+        }
+        flushFrames(); // Keep urgent discoveries, catches and coordination immediate and ordered.
 		queue.send(state.toString()).exceptionally(error -> {
 			failedSend(operationGeneration, current, error);
 			return null;
 		});
 	}
+
+    private synchronized void flushFrames() {
+        if (pendingFrames.isEmpty()) return;
+        JsonObject batch = new JsonObject(); batch.addProperty("type", "batch"); batch.add("frames", pendingFrames.deepCopy());
+        pendingFrames.asList().clear();
+        WebSocket current = socket; WebSocketOutbox queue = outbox; long attempt = generation.get();
+        if (!connected || current == null || queue == null) return;
+        queue.send(batch.toString()).exceptionally(error -> { failedSend(attempt, current, error); return null; });
+    }
+
+    private synchronized void resendCompletion(long attempt) {
+        if (generation.get() != attempt || completionBaseline.isEmpty() || !replayReady) return;
+        String payload = completionBaseline; completionBaseline = "";
+        send(0, "C", payload, false); flushFrames();
+    }
+
+    private void renew(long attempt, WebSocket current) {
+        renewalPending = true; renewalStarted = MonotonicTime.nowMillis();
+        if (!NetworkRuntime.execute(() -> {
+            try {
+                String token = RemoteSession.instance().token();
+                synchronized (this) {
+                    if (generation.get() != attempt || socket != current || outbox == null) return;
+                    flushFrames();
+                    JsonObject request = new JsonObject(); request.addProperty("type", "renew"); request.addProperty("token", token);
+                    outbox.send(request.toString()).exceptionally(error -> { failedSend(attempt, current, error); return null; });
+                }
+            } catch (Exception error) { failedSend(attempt, current, error); }
+        })) failedSend(attempt, current, new java.io.IOException("Network queue unavailable"));
+    }
 
 	@Override
 	public synchronized void disconnect() {
@@ -205,7 +267,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 					.connectTimeout(Duration.ofSeconds(10))
 					.header("Authorization", "Bearer " + token)
 					.header("X-SafariUtils-Lobby", desired.lobbyId())
-					.header("X-SafariUtils-Sync-Protocol", "2")
+					.header("X-SafariUtils-Sync-Protocol", "3")
                     .header("X-SafariUtils-Player", desired.localUuid())
 					.header("X-SafariUtils-Roster", String.join(",", desired.roster()))
 					.buildAsync(ENDPOINT, new Listener(attempt, desired))
@@ -222,6 +284,9 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 			return;
 		}
         outbox = new WebSocketOutbox(value);
+        efficient = false; renewalPending = false; renewAt = MonotonicTime.nowMillis() + 485_000L;
+        pendingFrames.asList().clear(); completionBaseline = ""; completionRevision = 0; wireSequence = 0;
+        pendingHelloAt = 0; lastHelloPayload = "";
 		connected = false; sparklingSnapshotReady = false; coordination = false; runSync=false; completion=false; replayReady=false; connectedPlayers = java.util.Set.of();
 		connecting = false;
 		openedAt = lastInboundAt = MonotonicTime.nowMillis();
@@ -279,10 +344,17 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
         int status = 0;
         if (cause instanceof WebSocketHandshakeException handshake) {
             status = handshake.getResponse().statusCode();
+            if (status == 426 && handshake.getResponse().headers().firstValue("x-safari-sync-update-required").orElse("").equals("true")) {
+                updateRequired = true;
+                dev.serko.safariutils.client.PartySyncDebugHud.serviceFailure("Update your mod to reconnect party sync");
+                DebugLog.line("SYNC_NET", "Party sync requires a mod update; retries stopped");
+                return;
+            }
             serverDelay = RemoteSession.retryAfterMillis(handshake.getResponse().headers().firstValue("Retry-After").orElse(""));
         } else if (cause instanceof dev.serko.safariutils.api.ServiceRequestException service) {
             status = service.status(); serverDelay = Math.min(86_400L, service.retrySeconds()) * 1000L;
         }
+        dev.serko.safariutils.client.PartySyncDebugHud.serviceFailure(status==503 ? "Service unavailable (503)" : status==429 ? "Service busy (429)" : status==401 ? "Session rejected (401)" : "Connection interrupted / retrying");
         if (status == 401 && attemptToken != null) RemoteSession.instance().invalidate(attemptToken);
         attemptToken = null;
         scheduleRetry();
@@ -366,17 +438,28 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
                         .anyMatch(feature -> "room-sparklings-v1".equals(feature.getAsString()));
                     runSync = root.has("features") && root.getAsJsonArray("features").asList().stream().anyMatch(f -> "run-reconciliation-v1".equals(f.getAsString()));
                     completion = runSync && root.getAsJsonArray("features").asList().stream().anyMatch(f -> "critter-completion-v1".equals(f.getAsString()));
+                    efficient = runSync && root.getAsJsonArray("features").asList().stream().anyMatch(f -> "efficient-transport-v1".equals(f.getAsString()));
                     if(runSync)connectionId=root.get("connectionId").getAsString();
                     mapping = Map.copyOf(next);
 					ready(attempt, mapping, roomSparklings);
 					return;
 				}
+                if ("completion-resync".equals(type) && efficient && runId.equals(root.get("runId").getAsString())
+                        && desired.visitId().equals(root.get("visitId").getAsString())) { resendCompletion(attempt); return; }
+                if ("renewed".equals(type) && efficient && renewalPending) {
+                    long remaining = root.get("expiresInMillis").getAsLong();
+                    if (remaining <= 0 || remaining > 600_000) return;
+                    renewAt = MonotonicTime.nowMillis() + Math.max(1_000, remaining - 115_000);
+                    renewalPending = false; return;
+                }
                 if (runSync && ("reconcile".equals(type) || "replay-complete".equals(type))) {
                     if (!connectionId.equals(root.get("connectionId").getAsString()) || !desired.visitId().equals(root.get("visitId").getAsString())) return;
                     if("reconcile".equals(type)) {
                         String status=root.get("status").getAsString();
                         if(!java.util.Set.of("pending","resumed","joined","new").contains(status))return;
                         reconciledRun="pending".equals(status)?"":root.get("runId").getAsString();
+                        pendingHelloAt = efficient && "pending".equals(status) && root.has("retryAfterMillis")
+                            ? MonotonicTime.nowMillis() + Math.max(0, Math.min(4000, root.get("retryAfterMillis").getAsLong())) : 0;
                         enqueue(new Message("",1,"RECONCILE",root.toString()));
                     } else if(!reconciledRun.isEmpty() && reconciledRun.equals(root.get("runId").getAsString())) enqueue(new Message("",1,"REPLAY_END",reconciledRun));
                     return;
@@ -405,8 +488,10 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
                     return;
                 }
 				if ("hotspots-unavailable".equals(type)) {
-                    if (coordination) DebugLog.line("SYNC_NET", "coordination temporarily unavailable; preserving run reconciliation");
-                    coordination = false; return;
+                    DebugLog.line("SYNC_NET", "Party sync unavailable: coordination failed; shared discoveries are unavailable");
+                    long retry=root.has("retrySeconds") ? Math.max(1,Math.min(86400,root.get("retrySeconds").getAsLong())) : 30;
+                    failed(attempt,new dev.serko.safariutils.api.ServiceRequestException("Party coordination unavailable",503,retry));
+                    return;
                 }
                 if ("hotspots".equals(type) && (coordination || runSync)) {
                     coordination = true;

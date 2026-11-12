@@ -163,6 +163,7 @@ public final class TicketSelection {
             StartingItemsWatch.onTicketSubmitted("automatic " + TIERS[selected.tier() - 1] + " ticket");
             DebugLog.line("TICKET/SELECT", "submitted=" + TIERS[selected.tier() - 1] + " preferred=" + TIERS[requested - 1] + " fallback=" + (selected.tier() != requested));
         } else {
+            AutomaticTicketEntry.submissionFailed();
             ClientMessages.send("Automatic ticket selection unavailable; choose a ticket manually", ClientMessages.Tone.INFO);
         }
     }

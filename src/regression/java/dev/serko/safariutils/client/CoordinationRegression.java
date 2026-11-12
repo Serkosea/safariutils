@@ -235,6 +235,18 @@ public final class CoordinationRegression {
         var nearbyPlayer = new SafariManagerTarget.Candidate(21, npcBody.position(), "Party Member", true, false, true);
         var proxy = new SafariManagerTarget.Candidate(22, npcBody.position(), "", false, true, false);
         check(SafariManagerTarget.choose(List.of(managerLabel)) == null, "label-only snapshot waits for clickable body");
+        var skinProfile = java.util.UUID.fromString("83be6aff-5813-23aa-ba75-69629e14da6c");
+        check(!SafariManagerTarget.participant(skinProfile, false, false, true),
+            "recorded Alpha NPC temporarily listed for skin loading remains targetable");
+        check(SafariManagerTarget.participant(skinProfile, false, true, true),
+            "explicit party membership always excludes a body");
+        check(SafariManagerTarget.participant(skinProfile, true, false, false), "local body never becomes the Manager");
+        check(SafariManagerTarget.participant(java.util.UUID.fromString("3e7b516f-17dd-4eb0-a317-d8505b859409"), false, false, true),
+            "real tab-listed account remains excluded even before roster lookup");
+        check(Objects.equals(SafariManagerTarget.choose(List.of(managerLabel,
+            new SafariManagerTarget.Candidate(npcBody.id(), npcBody.position(), npcBody.name(), true, false,
+                SafariManagerTarget.participant(skinProfile, false, false, true)), nearbyPlayer)), 20),
+            "temporary tab entry no longer prevents Manager resolution beside a teammate");
         check(SafariManagerTarget.choose(List.of(npcBody)) == null, "body-only snapshot does not guess identity");
         check(Objects.equals(SafariManagerTarget.choose(List.of(managerLabel, npcBody, nearbyPlayer)), 20), "separate label resolves unnamed NPC and excludes real player");
         check(Objects.equals(SafariManagerTarget.choose(List.of(managerLabel, proxy)), 22), "interaction-only NPC supported");
@@ -302,6 +314,25 @@ public final class CoordinationRegression {
             net.minecraft.world.phys.Vec2.ZERO), "real directional input still cancels with toggle sprint");
         check(AutomaticTicketEntry.idleInput(net.minecraft.world.entity.player.Input.EMPTY, net.minecraft.world.phys.Vec2.ZERO), "only intact idle input permits automation");
         check(AutomaticTicketEntry.available() == !dev.serko.safariutils.BuildVersion.SAFE, "automatic entry is Extra only");
+        var entryWorld = AutomaticTicketEntry.class.getDeclaredField("world"); entryWorld.setAccessible(true);
+        var entryVisit = AutomaticTicketEntry.class.getDeclaredField("visit"); entryVisit.setAccessible(true);
+        var entryPending = AutomaticTicketEntry.class.getDeclaredField("confirmationPending"); entryPending.setAccessible(true);
+        Object savedWorld = entryWorld.get(null); long savedVisit = entryVisit.getLong(null);
+        boolean savedPending = entryPending.getBoolean(null);
+        try {
+            Object testWorld = new Object(); entryWorld.set(null, testWorld); entryVisit.setLong(null, 7);
+            entryPending.setBoolean(null, true);
+            check(AutomaticTicketEntry.consumeConfirmation(testWorld, 7), "confirmed auto entry sends one notice");
+            check(!AutomaticTicketEntry.consumeConfirmation(testWorld, 7), "duplicate Manager/allocation signals cannot repeat notice");
+            entryPending.setBoolean(null, true);
+            check(!AutomaticTicketEntry.consumeConfirmation(testWorld, 8), "next visit cannot confirm an earlier attempt");
+            entryPending.setBoolean(null, true);
+            check(!AutomaticTicketEntry.consumeConfirmation(new Object(), 7), "new world cannot inherit auto entry notice");
+            entryPending.setBoolean(null, true); AutomaticTicketEntry.submissionFailed();
+            check(!AutomaticTicketEntry.consumeConfirmation(testWorld, 7), "failed menu click cannot announce a later manual entry");
+        } finally {
+            entryWorld.set(null, savedWorld); entryVisit.setLong(null, savedVisit); entryPending.setBoolean(null, savedPending);
+        }
         if (dev.serko.safariutils.BuildVersion.SAFE) {
             var configField = ConfigManager.class.getDeclaredField("config");
             configField.setAccessible(true);

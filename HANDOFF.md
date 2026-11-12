@@ -40,3 +40,7 @@ Honeyhive persistence eligibility is captured per connection so Alpha observatio
 stay temporary even during disconnect/shutdown. Alpha never loads main-server
 hive cooldowns. The integrated host independently scopes remembered typing channels
 by account and Alpha/main while retaining existing main-account keys.
+
+## 3.8.3 alerts and entry
+
+Local Sparkling presentation is immediate and separate from coordinated outgoing chat. Automatic entry waits for the Manager within the existing entry window, recognizes temporary version-2 NPC tab-list entries, and announces only confirmed activation. Party-sync errors/recovery are bounded per visit and use sanitized descriptions. See docs/reviews/alpha-alert-ticket-fixes-2026-11-12.md.

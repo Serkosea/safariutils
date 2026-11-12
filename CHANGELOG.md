@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.8.3] - 2026-11-12
+
+- Made locally detected Sparkling on-screen alerts immediate, without waiting for party sync or duplicating shared alerts.
+- Improved automatic ticket entry when the Safari Manager is still loading or temporarily appears in the player list. `Extra`
+- Added `Ticket Used, In Run Now` after confirmed automatic entry, sent to party chat or shown locally when solo. `Extra`
+- Added concise party-sync failure reasons and recovery messages, without repeated reconnect spam in the same run.
+
+
 ## [3.8.2] - 2026-11-11
 
 - Reduced party-sync traffic with batched routine updates, compact completion refreshes, and fewer repeated reports.

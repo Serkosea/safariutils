@@ -29,6 +29,8 @@ public final class SparklingWatch {
 	private static final Map<UUID, Long> pendingBodylessLabels = new LinkedHashMap<>();
 	/** Finds whose user-facing alerts have fired after genuine visual confirmation. */
 	private static final Set<UUID> visuallyAnnounced = new HashSet<>();
+    /** Local presentation must never wait for shared chat-origin reconciliation. */
+    private static final Set<UUID> locallyPresented = new HashSet<>();
 	/** Detected individuals retained until an authoritative catch removes each one. */
 	private static final Map<UUID, Outstanding> outstanding = new LinkedHashMap<>();
     private static final Map<UUID, String> pendingFoundChat = new LinkedHashMap<>();
@@ -274,14 +276,6 @@ public final class SparklingWatch {
 	/** Safe Mode waits for sight; Extra announces the first trustworthy remote detection. */
 	private static void postVisibleFoundAlerts(CritterEntities.Sighting sighting, UUID key) {
 		if (visuallyAnnounced.contains(key)) return;
-        // Give shared discoveries precedence, without making local alerts depend
-        // indefinitely on an optional service during an outage.
-        long now = dev.serko.safariutils.state.MonotonicTime.nowMillis();
-        long since = awaitingSnapshot.computeIfAbsent(key, ignored -> now);
-        boolean ready = dev.serko.safariutils.api.PartySyncNetworks.sparklingSnapshotReady();
-        boolean solo = dev.serko.safariutils.state.PartyState.snapshot().status()
-            == dev.serko.safariutils.state.PartySnapshot.Status.SOLO;
-        if (!alertSnapshotReady(ready, solo, dev.serko.safariutils.api.PartySyncNetworks.supported(), now - since)) return;
 		boolean visible = bodyVisible(sighting)
 			|| !SafeMode.hiddenSpecies(sighting.critter())
 				&& VisibilityCheck.canSeeVisibleName(sighting.label())
@@ -290,6 +284,16 @@ public final class SparklingWatch {
 			|| "Hideyho".equals(sighting.critter().name())
 				&& VisibilityCheck.canSee(sighting.label());
 		if (SafeMode.sparklingCritters() && !visible) return;
+
+        var position = sighting.body().position();
+        if (locallyPresented.add(key)) PartySparklingDiscoveries.presentLocal(sighting.critter(), position);
+        // Only outgoing Found chat waits to learn whether the room already knew.
+        long now = dev.serko.safariutils.state.MonotonicTime.nowMillis();
+        long since = awaitingSnapshot.computeIfAbsent(key, ignored -> now);
+        boolean ready = dev.serko.safariutils.api.PartySyncNetworks.sparklingSnapshotReady();
+        boolean solo = dev.serko.safariutils.state.PartyState.snapshot().status()
+            == dev.serko.safariutils.state.PartySnapshot.Status.SOLO;
+        if (!alertSnapshotReady(ready, solo, dev.serko.safariutils.api.PartySyncNetworks.supported(), now - since)) return;
 		SafariConfig config = ConfigManager.get();
         awaitingSnapshot.remove(key);
         if (!ready && !solo) DebugLog.line("SPARKLING", "local alert fallback without room snapshot " + sighting.critter().name());
@@ -302,8 +306,6 @@ public final class SparklingWatch {
 				sighting.critter().name() + " reason=ticket-window-closed");
 			return;
 		}
-        var position = sighting.body().position();
-        PartySparklingDiscoveries.presentLocal(sighting.critter(), position);
         // A teammate's find still needs a banner on this client, but only its
         // originator sends the party-chat Found message.
         if (sharedFirst) {
@@ -380,6 +382,7 @@ public final class SparklingWatch {
     }
 
     private static void transferAliases(UUID before, UUID after) {
+        if (locallyPresented.remove(before)) locallyPresented.add(after);
         Long waitingSince = awaitingSnapshot.remove(before);
         if (waitingSince != null) awaitingSnapshot.merge(after, waitingSince, Math::min);
         String pending = pendingFoundChat.remove(before);
@@ -517,6 +520,11 @@ public final class SparklingWatch {
             if (outstanding.size() != 2 || pendingRemoteCatches != 0)
                 throw new AssertionError("Ambiguous remote catch must not guess or later consume a survivor");
             UUID texture = new UUID(3,1);
+            locallyPresented.add(first);
+            transferAliases(first, replacement);
+            if (!locallyPresented.contains(replacement) || locallyPresented.contains(first))
+                throw new AssertionError("Breakout replacement repeated the immediate local presentation");
+            transferAliases(replacement, first);
             if (rememberTextureAliases(Set.of(texture), first)) throw new AssertionError("First appearance suppressed as duplicate");
             if (!rememberTextureAliases(Set.of(texture), first)) throw new AssertionError("Repeated appearance lost deduplication");
             if (!first.equals(labelReplacement(species, texture, replacement, Set.of(second))))
@@ -578,7 +586,7 @@ public final class SparklingWatch {
                 throw new AssertionError("Post-run discoveries suppressed while pre-ticket detection remains enabled");
 
         } finally {
-            pendingRemoteCatches = 0; outstanding.clear();resolvedIndividuals.clear();nearbyIndividuals.clear();announcedBodies.clear();announcedLabels.clear();visuallyAnnounced.clear();individualByLabel.clear();
+            pendingRemoteCatches = 0; outstanding.clear();resolvedIndividuals.clear();nearbyIndividuals.clear();announcedBodies.clear();announcedLabels.clear();visuallyAnnounced.clear();locallyPresented.clear();individualByLabel.clear();
         }
     }
 
@@ -591,6 +599,7 @@ public final class SparklingWatch {
 		pendingBodylessLabels.clear();
 		announcedBodies.clear();
 		visuallyAnnounced.clear();
+        locallyPresented.clear();
 		outstanding.clear();
         pendingFoundChat.clear();
         awaitingSnapshot.clear();

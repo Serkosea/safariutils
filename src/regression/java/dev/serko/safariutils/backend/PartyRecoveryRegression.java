@@ -46,7 +46,36 @@ public final class PartyRecoveryRegression {
         check((long)get(provider, "retryAt") - MonotonicTime.nowMillis() > 119000, "room changes cannot bypass service limits");
         modernReplay(context,socket);
         efficientTransport();
-        return 23;
+        noticeLifecycle();
+        return 35;
+    }
+    private static void noticeLifecycle() {
+        check(ConnectionNotices.closedReason(1008, "message rate exceeded").contains("limit"), "socket limit is explained");
+        check(!ConnectionNotices.closedReason(1008, "private payload").contains("private"), "unrecognized close text stays private");
+        var notices = new ConnectionNotices();
+        notices.visit("visit-one");
+        check(notices.poll(true) == null, "healthy initial connection is silent");
+        notices.failure(ConnectionNotices.reason(429, null));
+        notices.failure("duplicate");
+        var warning = notices.poll(false);
+        check(warning != null && warning.text().contains("limit") && !warning.recovered(), "first failure explains limit");
+        check(notices.poll(false) == null, "retry is silent");
+        notices.visit("visit-one");
+        notices.failure("duplicate");
+        check(notices.poll(false) == null, "same visit reconnect retains suppression");
+        check(notices.poll(true).recovered(), "reconciled connection produces recovery");
+        notices.failure("flapping");
+        check(notices.poll(false) == null && notices.poll(true) == null, "flapping never floods the same run");
+        notices.visit("visit-two");
+        notices.failure("old pending error");
+        notices.visit("visit-three");
+        check(notices.poll(false) == null, "old visit queued failure is discarded");
+        notices.failure(ConnectionNotices.reason(426, null));
+        check(notices.poll(false).text().contains("update"), "new visit can report its own error");
+        check(ConnectionNotices.reason(0, new java.io.IOException("secret token")).equals(
+            "connection interrupted. Retrying automatically."), "exception contents remain private");
+        check(ConnectionNotices.reason(0, new java.io.IOException("Party sync response timeout")).contains("timed out"),
+            "fixed watchdog reason is understandable");
     }
     private static void efficientTransport() throws Exception {
         var sent = new ArrayList<com.google.gson.JsonObject>();

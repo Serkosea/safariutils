@@ -14,6 +14,12 @@ final class SafariManagerTarget {
     record Candidate(int id, Vec3 position, String name, boolean player, boolean interaction, boolean participant) { }
     private SafariManagerTarget() { }
 
+    // Hypixel briefly lists version-2 NPC profiles while delivering their skins.
+    // A real roster member is still excluded regardless of its UUID version.
+    static boolean participant(UUID id, boolean local, boolean partyMember, boolean listed) {
+        return local || partyMember || listed && id.version() != 2;
+    }
+
     static Integer choose(List<Candidate> candidates) {
         var labels = candidates.stream().filter(candidate ->
             TicketSelection.plain(candidate.name()).equalsIgnoreCase("Safari Manager")).toList();
@@ -44,8 +50,10 @@ final class SafariManagerTarget {
             if (entity.isRemoved()) continue;
             String name = entity.getName().getString();
             String uuid = entity.getUUID().toString().replace("-", "");
-            boolean participant = participants.contains(entity.getUUID()) || (entity instanceof Player &&
-                (party.containsName(name) || party.members().stream().anyMatch(member -> member.uuid().equals(uuid))));
+            boolean participant = participant(entity.getUUID(), entity.getUUID().equals(client.player.getUUID()),
+                entity instanceof Player && (party.containsName(name)
+                    || party.members().stream().anyMatch(member -> member.uuid().equals(uuid))),
+                participants.contains(entity.getUUID()));
             result.add(new Candidate(entity.getId(), entity.position(), name, entity instanceof Player,
                 EntityTypeIds.is(entity, "interaction"), participant));
         }
@@ -60,6 +68,7 @@ final class SafariManagerTarget {
         return "nearby=" + candidates.size() + " labels=" + candidates.stream().filter(c ->
             TicketSelection.plain(c.name()).equalsIgnoreCase("Safari Manager")).count()
             + " playerBodies=" + candidates.stream().filter(c -> c.player() && !c.participant()).count()
+            + " excludedPlayers=" + candidates.stream().filter(c -> c.player() && c.participant()).count()
             + " interactionBodies=" + candidates.stream().filter(Candidate::interaction).count();
     }
 }

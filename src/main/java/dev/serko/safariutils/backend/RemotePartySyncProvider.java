@@ -64,6 +64,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
     private volatile String attemptToken;
 	private Context context;
 	private String signature = "";
+    private final ConnectionNotices notices = new ConnectionNotices();
     private volatile boolean efficient, updateRequired, renewalPending;
     private volatile long renewAt, renewalStarted;
     private final JsonArray pendingFrames = new JsonArray();
@@ -79,6 +80,11 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 
 	@Override
 	public void tick(Context next, Consumer<Message> receiver) {
+        try { tickTransport(next, receiver); }
+        finally { publishNotice(); }
+    }
+
+    private void tickTransport(Context next, Consumer<Message> receiver) {
 		String nextSignature = signature(next);
 		if (!nextSignature.equals(signature)) {
             boolean differentVisit = context == null || next == null || !java.util.Objects.equals(context.visitId(), next.visitId());
@@ -88,7 +94,8 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 			signature = nextSignature;
 			// Retain service backoff across roster changes; a new room cannot bypass a quota delay.
 		}
-		if (!valid(next) || updateRequired) return;
+		notices.visit(next != null && !next.lobbyId().isEmpty() ? next.localUuid() + "|" + next.lobbyId() + "|" + next.visitId() : "");
+        if (!valid(next) || updateRequired) return;
 		Delivery delivery;
 		while ((delivery = incoming.poll()) != null) {
 			if (delivery.generation() == generation.get()) {
@@ -142,6 +149,15 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
         if (connecting || now < retryAt) return;
 		connect(next, generation.incrementAndGet());
 	}
+
+    private void publishNotice() {
+        // Called only from the client tick, after callback generation checks and visit selection.
+        if (net.minecraft.client.Minecraft.getInstance() == null) return;
+        var notice = notices.poll(sparklingSnapshotReady() && replayReady());
+        if (notice != null) dev.serko.safariutils.client.ClientMessages.send(notice.text(), notice.recovered()
+            ? dev.serko.safariutils.client.ClientMessages.Tone.SUCCESS
+            : dev.serko.safariutils.client.ClientMessages.Tone.WARNING);
+    }
 
 	@Override
 	public boolean connected() {
@@ -309,7 +325,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		StructuredDiagnostics.decision("party-network", "connected", "roster=" + size);
 	}
 
-	private synchronized void closed(long attempt, int statusCode) {
+	private synchronized void closed(long attempt, int statusCode, String reason) {
 		if (generation.get() != attempt) return;
 		generation.incrementAndGet();
 		incoming.clear();
@@ -322,6 +338,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		DebugLog.line("SYNC_NET", "closed status=" + statusCode + " retryMs="
 			+ Math.max(0L, retryAt - MonotonicTime.nowMillis()));
 		StructuredDiagnostics.decision("party-network", "closed", "status=" + statusCode);
+        notices.failure(ConnectionNotices.closedReason(statusCode, reason));
 	}
 
 	private synchronized void failedSend(long attempt, WebSocket origin, Throwable error) {
@@ -346,6 +363,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
             status = handshake.getResponse().statusCode();
             if (status == 426 && handshake.getResponse().headers().firstValue("x-safari-sync-update-required").orElse("").equals("true")) {
                 updateRequired = true;
+                notices.failure(ConnectionNotices.reason(426, cause));
                 dev.serko.safariutils.client.PartySyncDebugHud.serviceFailure("Update your mod to reconnect party sync");
                 DebugLog.line("SYNC_NET", "Party sync requires a mod update; retries stopped");
                 return;
@@ -355,6 +373,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
             status = service.status(); serverDelay = Math.min(86_400L, service.retrySeconds()) * 1000L;
         }
         dev.serko.safariutils.client.PartySyncDebugHud.serviceFailure(status==503 ? "Service unavailable (503)" : status==429 ? "Service busy (429)" : status==401 ? "Session rejected (401)" : "Connection interrupted / retrying");
+        notices.failure(ConnectionNotices.reason(status, cause));
         if (status == 401 && attemptToken != null) RemoteSession.instance().invalidate(attemptToken);
         attemptToken = null;
         scheduleRetry();
@@ -547,7 +566,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 
 		@Override
 		public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
-			closed(attempt, statusCode);
+			closed(attempt, statusCode, reason);
 			return null;
 		}
 

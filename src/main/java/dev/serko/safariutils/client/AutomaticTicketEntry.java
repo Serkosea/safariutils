@@ -23,6 +23,8 @@ public final class AutomaticTicketEntry {
     private static float expectedYaw, expectedPitch, forward;
     private static final TicketTurnSmoother turn = new TicketTurnSmoother();
     private static long lastViewUpdate, walkingSince, lastInteraction;
+    private static long nextManagerDiagnostic;
+    private static boolean confirmationPending;
     private static int tier, pendingTest, interactionAttempts;
     private static boolean testing, blockSelection, menuSeen;
     private static int appliedMovementTicks;
@@ -82,9 +84,29 @@ public final class AutomaticTicketEntry {
     static int entryPreference(int modePreference) { return modePreference >= 1 && modePreference <= 4 ? modePreference : 1; }
     static int requestedTier(int normal) { return choosingTicket() ? testing ? tier : entryPreference(normal) : normal; }
     static void unavailable() { if (choosingTicket()) stop("no tickets available"); }
-    static void submitting() { if (phase == Phase.MENU) stop("ticket submitted"); }
+    static void submitting() {
+        if (phase == Phase.MENU) {
+            confirmationPending = !testing && sparkling();
+            stop("ticket submitted");
+        }
+    }
+    static void submissionFailed() { confirmationPending = false; }
+    static boolean consumeConfirmation(Object activeWorld, long activeVisit) {
+        boolean notify = confirmationPending && world == activeWorld && visit == activeVisit;
+        confirmationPending = false;
+        return notify;
+    }
+    /** Called only on server-confirmed activation, not on opening/clicking a menu. */
+    public static void onTicketActivated() {
+        if (!confirmationPending || !consumeConfirmation(Minecraft.getInstance().level, SafariLocation.insideSinceMillis())) return;
+        if (dev.serko.safariutils.state.PartyState.snapshot().inParty())
+            ChatQueue.enqueueSafariScoped("pc [SU] Ticket Used, In Run Now", true);
+        else ClientMessages.send("Ticket Used, In Run Now", ClientMessages.Tone.SUCCESS);
+        DebugLog.line("TICKET/AUTO", "ticket activation confirmed; entry notice queued");
+    }
     public static void manualOverride() { stop("manual input"); }
     private static void stop(String reason) {
+        if (!reason.equals("ticket submitted") && !reason.equals("ticket activated")) confirmationPending = false;
         Minecraft client = Minecraft.getInstance();
         if (phase == Phase.APPROACH && client != null && client.player != null)
             logMovement(client, MonotonicTime.nowMillis(), "approach ended: " + reason);
@@ -115,6 +137,7 @@ public final class AutomaticTicketEntry {
             if (phase == Phase.APPROACH || phase == Phase.MENU || pendingTest != 0) stop("Safari visit changed");
             forward = 0; blockSelection = false; phase = Phase.IDLE; manager = null; pendingTest = 0; candidateSince = 0;
             world = client.level; visit = currentVisit;
+            confirmationPending = false; nextManagerDiagnostic = 0;
         }
         if (phase == Phase.FINISHED) return;
         if (!eligible(client)) {
@@ -144,9 +167,9 @@ public final class AutomaticTicketEntry {
             if (manager == null) {
                 // Preserve a debug request until both the NPC body and its separate label arrive.
                 waitFor("unambiguous Manager body and label");
-                if (now - candidateSince > 2500) {
-                    DebugLog.line("TICKET/AUTO", "Manager lookup timed out: " + SafariManagerTarget.describe(client));
-                    stop("Manager not identified");
+                if (now - candidateSince > 2500 && now >= nextManagerDiagnostic) {
+                    DebugLog.line("TICKET/AUTO", "Manager still loading: " + SafariManagerTarget.describe(client));
+                    nextManagerDiagnostic = now + 5000;
                 }
                 return;
             }
@@ -237,6 +260,8 @@ public final class AutomaticTicketEntry {
         lastInteraction = now; interactionAttempts++;
         // Vanilla reach and interaction path; menu arrival or ticket activation ends retries.
         client.gameMode.interact(client.player, manager, new EntityHitResult(manager, hit), InteractionHand.MAIN_HAND);
+        // Some Manager paths activate directly without presenting a tier menu.
+        confirmationPending = !testing && sparkling();
         if (interactionAttempts == 1) StartingItemsWatch.onTicketSubmitted("automatic Manager interaction");
         DebugLog.line("TICKET/AUTO", "Manager interacted attempt=" + interactionAttempts + " approachMs=" + (now - started) + "; awaiting verified ticket menu");
         return true;

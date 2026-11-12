@@ -542,6 +542,7 @@ public final class SessionManager {
 		resetCompletionAnnouncements();
 		PartyItemSyncProviders.onRunStarted();
 		TicketTrading.onRunStarted();
+        dev.serko.safariutils.client.AutomaticTicketEntry.onTicketActivated();
 	}
 
 	/** Clears one Safari instance's transient trackers before any ticket is submitted. */

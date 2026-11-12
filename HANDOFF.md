@@ -33,8 +33,8 @@ Every server-confirmed paid visit is retained, including zero-catch disconnects.
 Transport 3 batches routine state for one tick, keeps Sparkling events immediate,
 references unchanged completion baselines and renews the existing socket. The
 provider owns ordered wire sequences, including resync replies. See
-docs/reviews/party-sync-efficient-transport.md. Backend minimum remains 1 until
-an explicit operator decision; publishing this client does not disable old peers.
+docs/reviews/party-sync-efficient-transport.md. Backend minimum is now 3 following
+the operator's explicit cutover on 11 November 2026; old sync upgrades are rejected.
 
 Honeyhive persistence eligibility is captured per connection so Alpha observations
 stay temporary even during disconnect/shutdown. Alpha never loads main-server

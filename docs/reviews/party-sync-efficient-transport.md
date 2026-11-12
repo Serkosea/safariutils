@@ -101,8 +101,8 @@ history admission and one allocation call; late allocation batches and actual
 membership changes may require additional calls. All clients display the same
 backend result. No client-side fairness calculation or extra HTTP endpoint is needed.
 
-Current server minimum transport is **1**. Once both mods have migrated, the operator
-can set `SYNC_MIN_PROTOCOL=3`. Older sync upgrades then receive HTTP **426**,
+Current server minimum transport is **3**, enabled on 11 November 2026 after the
+operator confirmed both mods had updated. Older sync upgrades receive HTTP **426**,
 `x-safari-sync-update-required: true`, and `sync_update_required`. Stop automatic
 sync retries for that application session and show an update-required status.
 Keep unrelated lookup/market functionality available. This version gate is a

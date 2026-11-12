@@ -28,9 +28,9 @@ service. This is an intentional integration boundary, not a protocol mismatch.
 
 ## Follow-up
 
-- Keep older protocols enabled until the updated clients receive a mixed-party
-  gameplay check. Merely downloading the new version does not justify disabling
-  older clients.
+- The operator subsequently authorized the protocol-3-only cutover after confirming
+  the updated mods. Missing/1/2 headers now receive update-required; an authenticated
+  protocol-3 WebSocket welcome was verified against the deployed backend.
 - A useful remaining live check is a run longer than ten minutes, one reconnect,
   a late-joining player, and a Sparkling discovery followed by another player's
   catch. Static review cannot prove in-game timing or actual packet emission.

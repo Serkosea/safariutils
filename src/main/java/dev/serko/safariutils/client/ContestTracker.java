@@ -330,11 +330,11 @@ public final class ContestTracker implements HudElement {
 		String time = formatTime(inactive ? untilNextContestMillis(now) : remaining);
 		int timeColour = inactive ? YES : timeColour(remaining);
 
-		HudPanel panel = new HudPanel().pairGap(18).fitContentWidth();
+		HudPanel panel = new HudPanel().pairGap(14).fitContentWidth();
 		panel.title("Miria's Contest", HudBorderStyle.contestTitle(bracket, ticket, inactive));
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
 		if (display.contestTimeRemaining) {
-			panel.pair(inactive ? "Contest Starting" : "Time Left", time, LABEL, timeColour);
+			panel.pair(inactive ? "Starting" : "Time Left", time, LABEL, timeColour);
 		}
 		if (!inactive && display.contestTicketEarned) {
 			panel.pair("Safari Ticket", ticket ? "✔" : "✘", LABEL, ticket ? YES : NO);

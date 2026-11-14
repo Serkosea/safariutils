@@ -341,6 +341,9 @@ public final class CritterEntities {
             for (var sample : samples) {
                 loaded.add(sample.id());
                 if (SparklingTextureEvidence.capturePart(sample, statuses)) captureVisuals.add(sample.id());
+                else if (sample.type().equals("armor_stand")) captureVisuals.remove(sample.id());
+                // Labels can be reused for returning bodies. Only copied display
+                // models retain capture classification until the entity disappears.
             }
             captureVisuals.retainAll(loaded);
             samples.removeIf(sample -> sample.type().equals("item_display") && captureVisuals.contains(sample.id()));

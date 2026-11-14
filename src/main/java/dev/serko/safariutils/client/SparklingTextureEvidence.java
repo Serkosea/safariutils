@@ -89,7 +89,7 @@ final class SparklingTextureEvidence {
 
     static boolean capturePart(CritterScan.Sample sample, List<CritterScan.Sample> statuses) {
         if (!sample.type().equals("item_display") && !sample.type().equals("armor_stand")) return false;
-        return statuses.stream().anyMatch(status -> status.capsulePaper() ? capsuleNeighbour(sample, status) : sameColumn(sample, status));
+        return statuses.stream().anyMatch(status -> status.capsulePaper() ? capsuleNeighbour(sample, status) : captureColumn(sample, status));
     }
 
     /** Distant capsule stands arrive without their custom names. Recognize the complete
@@ -118,6 +118,13 @@ final class SparklingTextureEvidence {
             if (upper != null && lower != null && !result.contains(upper)) result.add(upper);
         }
         return result;
+    }
+
+    /** Capture assembly parts share a quantized column; nearby critters do not. */
+    private static boolean captureColumn(CritterScan.Sample left, CritterScan.Sample right) {
+        return Math.abs(left.x() - right.x()) <= .03125
+            && Math.abs(left.z() - right.z()) <= .03125
+            && Math.abs(left.y() - right.y()) < 3;
     }
 
     private static boolean capsuleNeighbour(CritterScan.Sample left, CritterScan.Sample right) {

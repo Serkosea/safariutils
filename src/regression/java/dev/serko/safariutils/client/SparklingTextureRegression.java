@@ -38,6 +38,10 @@ public final class SparklingTextureRegression {
         check(matches.size() == 2 && !matches.getFirst().sparkling(), "nearby independent body does not inherit skin evidence");
         var areita = Critters.byName("Areita");
         var status = new CritterScan.Sample(UUID.randomUUID(), "armor_stand", "CAPTURING", -4.15625, 85.875, -50.5);
+        var returningLabel = new CritterScan.Sample(UUID.randomUUID(), "armor_stand", "Mantis Shrimp", -3.90625, 85.5, -50.5);
+        var returningSkin = new CritterScan.Sample(UUID.randomUUID(), "item_display", null, -3.90625, 87.40625, -50.5, Critters.byName("Mantis Shrimp"));
+        check(!SparklingTextureEvidence.capturePart(returningLabel, List.of(status)), "nearby breakout label is not capsule scaffolding");
+        check(!SparklingTextureEvidence.capturePart(returningSkin, List.of(status)), "nearby breakout skin is not permanently retired");
         var captureLabel = new CritterScan.Sample(UUID.randomUUID(), "armor_stand", "SPARKLING Areita", -4.15625, 85.5, -50.5);
         var captureHead = new CritterScan.Sample(UUID.randomUUID(), "item_display", null, -4.15625, 87.40625, -50.5, areita);
         matches = new ArrayList<>(List.of(new CritterScan.Match(areita, captureLabel, null, true, false)));

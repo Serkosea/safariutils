@@ -1307,7 +1307,12 @@ public final class CritterState {
 			boolean replacementWins = replacement != null && (attempt.exactTarget
 				? !currentDisappeared && current.visible && replacementCount == 1
 				: !currentDisappeared || replacementDistance + IMPACT_REASSIGN_MARGIN_SQ < currentDistance);
-			if (replacementWins && !attempt.targetCorrected) {
+			// During overlapping throws, a disappearing peer can belong to another
+            // capsule whose ATTEMPT chat/body scan has not arrived yet. Do not
+            // replace an exact target using that weaker timing evidence. A
+            // confirmed returning body likewise cannot be stolen by an old impact.
+            if (replacementWins && !attempt.targetCorrected && !attempt.reappearanceConfirmed
+                    && !(attempt.exactTarget && pendingAttempts(attempt.critter) > 1)) {
 				retargetAttempt(attempt, current, replacement, replacementDistance,
 					"disappearance", true);
 				current = replacement;

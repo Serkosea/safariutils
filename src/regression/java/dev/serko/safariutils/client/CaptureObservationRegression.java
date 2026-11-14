@@ -65,7 +65,7 @@ public final class CaptureObservationRegression {
 			check(CritterState.logicalCritters().stream().noneMatch(view -> view.critter().equals(hideyho)),
 				"Hideyho stays outside capsule identity tracking"); checks++;
 		} finally { CritterState.onVisitStarted(); RecatchSpots.clear(); }
-		return checks + concealedForms() + activeRebound() + rapidRecatches() + correctedInteraction() + reorderedArrivals() + evidenceTransitions() + deferredAim() + completion();
+		return checks + concealedForms() + activeRebound() + rapidRecatches() + correctedInteraction() + reorderedArrivals() + evidenceTransitions() + deferredAim() + completion() + overlappingGimmiegolds();
 	}
 	private static int concealedForms() throws ReflectiveOperationException {
 		var effects = CritterState.class.getDeclaredField("effects");
@@ -421,6 +421,44 @@ public final class CaptureObservationRegression {
 		} finally { CritterState.onVisitStarted(); RecatchSpots.clear(); }
 		return checks;
 	}
+    private static int overlappingGimmiegolds() {
+        var species = dev.serko.safariutils.data.Critters.byName("Gimmiegold");
+        UUID a = new UUID(70,1), b = new UUID(70,2), peer = new UUID(70,3), returned = new UUID(70,4);
+        UUID la = new UUID(71,1), lb = new UUID(71,2), lp = new UUID(71,3), capsuleLabel = new UUID(71,4);
+        var box = new AABB(0,0,0,.4,.32,.4);
+        var aim = new CritterState.Aim(new Vec3(.2,.2,-3),new Vec3(0,0,1));
+        try {
+            CritterState.onVisitStarted(); RecatchSpots.clear();
+            var first = body(species,la,a,box);
+            var second = body(species,lb,b,box.move(2,0,0));
+            var third = body(species,lp,peer,box.move(1,0,0));
+            CritterState.observeBodies(List.of(first,second,third),1000);
+            CritterState.observeInteraction(a,box.getCenter(),1010);
+            CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT,species),false,1010,aim);
+            CritterState.observeInteraction(b,second.box().getCenter(),1100);
+            CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT,species),false,1100,aim);
+            CritterState.observeBodies(List.of(first,second),1200);
+            CritterState.advanceCaptureEvidence(List.of(),List.of(new CritterState.CaptureLabelObservation(
+                species,capsuleLabel,third.box().getCenter())),1200);
+            check(logical(a).pity()==1 && logical(peer).pity()==0,
+                "overlapping capsule cannot steal an exact target when a neighboring body vanishes");
+            CritterState.observeBodies(List.of(second),1300);
+            CritterState.applyEvent(event(CritterEvent.Type.FAILED,species),false,1500,aim);
+            CritterState.observeBodies(List.of(second,body(species,la,returned,box)),1600);
+            check(logical(returned).life()==CritterState.Life.BREAKOUT,
+                "returning Gimmiegold owns its breakout rather than leaving a peer pin");
+            CritterState.observeBodies(List.of(body(species,la,returned,box)),1700);
+            CritterState.applyEvent(event(CritterEvent.Type.OWN_CATCH,species),false,1800,aim);
+            CritterState.observeInteraction(returned,box.getCenter(),1900);
+            CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT,species),false,1900,aim);
+            CritterState.observeBodies(List.of(),2000);
+            CritterState.applyEvent(event(CritterEvent.Type.OWN_CATCH,species),false,2200,aim);
+            check(RecatchSpots.snapshot(true,java.util.Set.of()).pins().isEmpty(),
+                "group breakout and later catches leave no orphan recatch pins");
+            return 3;
+        } finally { CritterState.onVisitStarted(); RecatchSpots.clear(); }
+    }
+
 	private static CritterEvent event(CritterEvent.Type type, Critter species) {
 		return new CritterEvent(type, species, null, 1, false);
 	}

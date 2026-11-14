@@ -120,21 +120,15 @@ Use actual `safariutils.json` or the standard backup filenames for settings inpu
 
 ## Release copy maintenance
 
-### Minecraft 26.3 preparation (in progress)
+### Supported Minecraft profiles
 
-The requested target is both standalone SafariUtils and the complete SerkoAddons/IQ
-bundle. Normal deployments remain on 26.2; do not publish or switch instances as part
-of this preparation. The 26.3 profile pins Fabric API 0.165.0+26.3, Mod Menu 21.0.0,
-RenderChest 2.0.0-beta.1+26.3, and defaults to Loader 0.20.1.
+Standalone releases include Normal and Extra editions for 26.1.2, 26.2 and 26.3.
+The combined SerkoAddons/IQ build supports 26.2 and 26.3. Use the pinned dependency
+profiles rather than copying platform-specific source between versions. Loader and
+mixin smoke tests do not replace live rendering/input tests.
 
-Standalone `check` passes on 26.2 and 26.3. SerkoAddons now has profile-specific IQ
-render-pipeline, frame-present, input and inventory adapters, with shared feature logic.
-The full integrated 26.3 `check` passes, including declared mixin transformation under
-Fabric Loader 0.19.5, 0.20.0 and 0.20.1. These checks stop before game initialization:
-live SDL text entry, NanoVG appearance and world overlays still require in-game testing.
 Build profiles sequentially in a single checkout because Gradle's shared task execution
 history may retire the previous profile's outputs. Collected artifacts remain separate.
-No 26.3 instance deployment or public release is authorized by this preparation.
 
 Shared rendering logic lives in common sources; only platform bindings belong in
 `src/26.3/java` or `src/compat-pre26.3/java`. Both are included in source provenance

@@ -53,6 +53,10 @@ public final class SafariCommands {
 				HudEditorScreen.open();
 				return 1;
 			}))
+			.then(ClientCommands.literal("trading").executes(ctx -> {
+				TicketTradingScreen.open();
+				return 1;
+			}))
 			.then(statsRoot())
 			.then(ClientCommands.literal("profit").executes(ctx -> ProfitableCritters.show()));
 

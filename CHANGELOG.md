@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.8.4] - 2026-11-14
+
+- Added `/safari trading` to open ticket-trading members and settings directly.
+- Fixed stuck grouped-critter markers after catches and breakouts.
+- Refined Contest HUD spacing and shortened the between-contest label to `Starting`.
+
+
 ## [3.8.3] - 2026-11-12
 
 - Made locally detected Sparkling on-screen alerts immediate, without waiting for party sync or duplicating shared alerts.

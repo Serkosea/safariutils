@@ -7,6 +7,20 @@ import java.util.*;
 public final class CoordinationRegression {
     private static int checks;
     public static int run() throws Exception {
+        check(HudPanel.countdownColour(0xFFFFFF55) == 0xFFFEFF55, "timer avoids exact yellow palette identity");
+        check(HudPanel.countdownColour(0xFFFFAA00) == 0xFFFEAA00, "timer avoids exact gold palette identity");
+        check(HudPanel.countdownColour(0xFFFFAB00) == 0xFFFFAB00, "other timer gradient colors unchanged");
+        check(java.util.Arrays.equals(DashboardNavigation.Tab.values(), new DashboardNavigation.Tab[]{DashboardNavigation.Tab.STATS, DashboardNavigation.Tab.HISTORY, DashboardNavigation.Tab.PROFIT, DashboardNavigation.Tab.PERSONAL_BESTS, DashboardNavigation.Tab.SPARKLINGS, DashboardNavigation.Tab.LOOKUP}), "shared dashboard order");
+
+        for (long boundary : new long[]{0, 7500, 15000, 22500, 30000}) {
+            int before = ProgressHud.joinTimerColour(boundary - 1), after = ProgressHud.joinTimerColour(boundary + 1);
+            for (int shift : new int[]{0, 8, 16}) check(Math.abs(((before >>> shift) & 255) - ((after >>> shift) & 255)) <= 1, "join gradient boundary continuity");
+        }
+        for (long boundary : new long[]{0, 5000, 60000, 150000, 300000, 600000}) {
+            int before = ContestTracker.timeColour(boundary - 1), after = ContestTracker.timeColour(boundary + 1);
+            for (int shift : new int[]{0, 8, 16}) check(Math.abs(((before >>> shift) & 255) - ((after >>> shift) & 255)) <= 1, "contest gradient boundary continuity");
+        }
+
         check(BiomeCoordination.electedReporter("a", Set.of("b", "c")), "lowest simultaneous reporter sends chat");
         check(!BiomeCoordination.electedReporter("b", Set.of("a", "c")), "other simultaneous reporters suppress duplicate chat");
         check(BiomeCoordination.electedReporter("b", Set.of()), "sole reporter sends chat for nonmod members");
@@ -170,16 +184,48 @@ public final class CoordinationRegression {
         check(complete.assignment(Set.of("self", "friend"), Map.of(), 2, 2100) != null, "completed assignment stays fixed");
         var silent = new HotspotAllocation(); silent.begin("self", SafariBiome.ICY, 0);
         check(silent.assignment(Set.of("self", "friend"), Map.of(), 2, 20000) == null, "no shared report means no speculative assignment");
+        check(SparklingScreen.duplicateImportNeeded(2, 5), "aggregate duplicate gap offers archive import");
+        check(!SparklingScreen.duplicateImportNeeded(5, 5), "matching totals do not prompt");
+        check(!SparklingScreen.duplicateImportNeeded(6, 5), "stale lower totals do not prompt");
+        check(!SparklingScreen.duplicateImportNeeded(0, -1), "unknown aggregate does not prompt");
+        var departure = new BiomeCoordination.DepartureLedger();
+        var neededBirds = Set.of(dev.serko.safariutils.data.Critters.byName("Macaw"));
+        departure.remember(SafariBiome.FOREST, RunMode.SPARKLING, neededBirds, 1000);
+        check(departure.matches(SafariBiome.FOREST, RunMode.SPARKLING, neededBirds, 1000000),
+            "Forest waits for final bird spawns without a short timeout");
+        check(!departure.matches(SafariBiome.FOREST, RunMode.UNIQUE, neededBirds, 2000),
+            "changing mode cannot consume old departure evidence");
+        check(!departure.matches(SafariBiome.FOREST, RunMode.SPARKLING, Set.of(), 2000),
+            "changed party needs invalidate departure evidence");
+        departure.remember(SafariBiome.HAUNTED, RunMode.FULL_CLEAR, Set.of(), 1000);
+        check(departure.matches(SafariBiome.HAUNTED, RunMode.FULL_CLEAR, Set.of(), 31000),
+            "Haunted accepts a confirmed Hideyho catch within thirty seconds");
+        check(!departure.matches(SafariBiome.HAUNTED, RunMode.FULL_CLEAR, Set.of(), 31001),
+            "Haunted does not complete from an expired departure");
+        departure.forget(SafariBiome.FOREST);
+        check(!departure.matches(SafariBiome.FOREST, RunMode.SPARKLING, neededBirds, 2000),
+            "reentering a biome requires fresh qualification");
+        departure.clear();
+        check(!departure.matches(SafariBiome.HAUNTED, RunMode.FULL_CLEAR, Set.of(), 2000),
+            "new runs cannot reuse retained evidence");
         check(!BiomeCoordination.speciesComplete(RunMode.FULL_CLEAR, true, false, true, true, "Foxtrot"), "unique catch cannot send full-clear report");
         check(!BiomeCoordination.speciesComplete(RunMode.UNIQUE, true, false, false, true, "Honeybug"), "unique waits for required nest checks");
         check(BiomeCoordination.speciesComplete(RunMode.UNIQUE, true, false, false, false, "Honeybug"), "already shared Honeybug needs only unique");
         check(!BiomeCoordination.speciesComplete(RunMode.UNIQUE, true, false, false, false, "Macaw"), "birds still need feed exhaustion");
         check(BiomeCoordination.speciesComplete(RunMode.SPARKLING, false, false, true, true, "Foxtrot"), "sparkling checks need no ordinary catch");
         check(!BiomeCoordination.speciesComplete(RunMode.SPARKLING, true, false, false, true, "Foxtrot"), "one ordinary catch is not a sparkling check");
-        check(!BiomeCoordination.reportAllowed(SafariBiome.ICY, RunMode.UNIQUE, true, true, true), "focused Wumpa catch suppresses id");
-        check(BiomeCoordination.reportAllowed(SafariBiome.ICY, RunMode.FULL_CLEAR, true, true, true), "full-clear may send id");
-        check(BiomeCoordination.reportAllowed(SafariBiome.ICY, RunMode.SPARKLING, false, false, true), "id allowed for needed Icy checks without needed Wumpa");
-        check(!BiomeCoordination.reportAllowed(SafariBiome.ICY, RunMode.SPARKLING, false, true, true), "needed Wumpa blocks early id");
+        for (RunMode mode : RunMode.values()) {
+            for (SafariBiome biome : SafariBiome.values()) {
+                check(BiomeCoordination.chatReportAllowed(biome, mode)
+                    == (biome != SafariBiome.ICY || mode != RunMode.UNIQUE), "mode-specific biome chat policy");
+            }
+        }
+        check(!BiomeCoordination.speciesComplete(RunMode.UNIQUE, true, false, false, true, "Foxtrot"),
+            "ordinary needed species also require sparkling coverage before a Unique report");
+        check(BiomeCoordination.speciesComplete(RunMode.UNIQUE, true, false, true, true, "Foxtrot"),
+            "unique capture plus sparkling coverage qualifies");
+        check(BiomeCoordination.speciesComplete(RunMode.UNIQUE, true, false, false, false, "Foxtrot"),
+            "already shared ordinary species only require capture");
         check(!BiomeCoordination.inZone(dev.serko.safariutils.data.Critters.byName("Foxtrot"), 0, -60, true), "another biome is not survey proof");
         for (String prefix : List.of("[SU] ", "[SM] ", "[SafariUtils] ", "[CM] ", "[CritterMod] ", "")) {
             var report = HotspotWatch.parsePartyReport("Party > [MVP++] Example: " + prefix + "Hotspot: Forest");
@@ -314,25 +360,14 @@ public final class CoordinationRegression {
             net.minecraft.world.phys.Vec2.ZERO), "real directional input still cancels with toggle sprint");
         check(AutomaticTicketEntry.idleInput(net.minecraft.world.entity.player.Input.EMPTY, net.minecraft.world.phys.Vec2.ZERO), "only intact idle input permits automation");
         check(AutomaticTicketEntry.available() == !dev.serko.safariutils.BuildVersion.SAFE, "automatic entry is Extra only");
-        var entryWorld = AutomaticTicketEntry.class.getDeclaredField("world"); entryWorld.setAccessible(true);
-        var entryVisit = AutomaticTicketEntry.class.getDeclaredField("visit"); entryVisit.setAccessible(true);
-        var entryPending = AutomaticTicketEntry.class.getDeclaredField("confirmationPending"); entryPending.setAccessible(true);
-        Object savedWorld = entryWorld.get(null); long savedVisit = entryVisit.getLong(null);
-        boolean savedPending = entryPending.getBoolean(null);
-        try {
-            Object testWorld = new Object(); entryWorld.set(null, testWorld); entryVisit.setLong(null, 7);
-            entryPending.setBoolean(null, true);
-            check(AutomaticTicketEntry.consumeConfirmation(testWorld, 7), "confirmed auto entry sends one notice");
-            check(!AutomaticTicketEntry.consumeConfirmation(testWorld, 7), "duplicate Manager/allocation signals cannot repeat notice");
-            entryPending.setBoolean(null, true);
-            check(!AutomaticTicketEntry.consumeConfirmation(testWorld, 8), "next visit cannot confirm an earlier attempt");
-            entryPending.setBoolean(null, true);
-            check(!AutomaticTicketEntry.consumeConfirmation(new Object(), 7), "new world cannot inherit auto entry notice");
-            entryPending.setBoolean(null, true); AutomaticTicketEntry.submissionFailed();
-            check(!AutomaticTicketEntry.consumeConfirmation(testWorld, 7), "failed menu click cannot announce a later manual entry");
-        } finally {
-            entryWorld.set(null, savedWorld); entryVisit.setLong(null, savedVisit); entryPending.setBoolean(null, savedPending);
-        }
+        var admission = new TicketEntryNotice.Admission();
+        Object ticketWorld = new Object();
+        check(admission.consume(ticketWorld, 7, true), "manual or automatic confirmed admission after known sparkling notifies");
+        check(!admission.consume(ticketWorld, 7, true), "duplicate admission cannot repeat notice");
+        check(!admission.consume(ticketWorld, 8, false), "ordinary entry does not notify");
+        check(!admission.consume(ticketWorld, 8, true), "sparkling found after entry cannot announce retrospectively");
+        check(admission.consume(ticketWorld, 9, true), "next visit may notify independently");
+        check(!admission.consume(null, 10, true), "missing world cannot notify");
         if (dev.serko.safariutils.BuildVersion.SAFE) {
             var configField = ConfigManager.class.getDeclaredField("config");
             configField.setAccessible(true);
@@ -341,6 +376,13 @@ public final class CoordinationRegression {
             configField.set(null, importedConfig);
             importedConfig.gameplay.autoSparklingTicket = true; // Simulate importing an enabled Extra config into Normal.
             try {
+                check(SafeMode.critterDetection() && SafeMode.sparklingCritters() && SafeMode.floorDrops()
+                    && SafeMode.floorDropContents() && SafeMode.scrappyFood() && SafeMode.mounds()
+                    && SafeMode.nests() && SafeMode.snoozleWalls() && SafeMode.troodonWalls(),
+                    "Normal forces visibility and prediction safeguards regardless of Extra config defaults");
+                check(!AutomaticTicketEntry.available(), "Normal never enables full automatic entry");
+                check(dev.serko.safariutils.BuildVersion.has(dev.serko.safariutils.BuildVersion.Capability.REMOTE_PARTY_SYNC),
+                    "Normal retains shared party information");
                 AutomaticTicketEntry.tick(); // Must return before accessing the live Minecraft client.
                 check(AutomaticTicketEntry.forwardInput(null, null) == 0, "Normal cannot inject movement");
                 check(AutomaticTicketEntry.requestedTier(4) == 4 && !AutomaticTicketEntry.blocksSelection(), "normal menu selection remains independent");

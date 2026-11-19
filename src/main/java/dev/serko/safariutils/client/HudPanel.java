@@ -139,6 +139,23 @@ public final class HudPanel {
 		return this;
 	}
 
+    /** Keep animated timer colour attached to its text through text-render extraction. */
+    public HudPanel countdown(String label, String value, int labelColour, int valueColour) {
+        return pair(label, Component.literal(value).withColor(countdownColour(valueColour) & 0xFFFFFF), labelColour);
+    }
+
+    static int countdownColour(int colour) {
+        // Avoid exact vanilla palette identities during continuous timer gradients.
+        int rgb = colour & 0xFFFFFF;
+        return rgb == 0xFFFF55 || rgb == 0xFFAA00 ? colour ^ 0x010000 : colour;
+    }
+
+    public HudPanel compactCountdown(String label, String value, int labelColour, int valueColour) {
+        add(new Row(Kind.COMPACT_PAIR, label, value, labelColour, 0xFFFFFFFF, 0, 0,
+            Component.literal(value).withColor(countdownColour(valueColour) & 0xFFFFFF)));
+        return this;
+    }
+
 	public HudPanel pair(String label, String value, int labelColour, int valueColour) {
 		add(new Row(Kind.PAIR, label, value, labelColour, valueColour, 0, 0));
 		return this;

@@ -519,6 +519,19 @@ public final class SparklingWatch {
         awaitingSnapshot.keySet().retainAll(outstanding.keySet());
             if (outstanding.size() != 2 || pendingRemoteCatches != 0)
                 throw new AssertionError("Ambiguous remote catch must not guess or later consume a survivor");
+            UUID authoritativeReplacement = new UUID(7, 1);
+            locallyPresented.add(first);
+            visuallyAnnounced.add(first);
+            CaptureEffects.LIVE.reassign(-1L, species, first, authoritativeReplacement,
+                new net.minecraft.world.phys.AABB(BlockPos.ZERO), new net.minecraft.world.phys.AABB(BlockPos.ZERO), true, 1);
+            if (outstanding.containsKey(first) || !outstanding.containsKey(authoritativeReplacement)
+                    || !locallyPresented.contains(authoritativeReplacement)
+                    || !visuallyAnnounced.contains(authoritativeReplacement))
+                throw new AssertionError("Authoritative capture replacement lost discovery identity or alert state");
+            onCaptureResolved(species, first, authoritativeReplacement, CritterState.Outcome.CAUGHT, false);
+            if (outstanding.containsKey(authoritativeReplacement) || !outstanding.containsKey(second))
+                throw new AssertionError("Replacement catch failed to retire only its own discovery");
+            outstanding.put(first, new Outstanding(species, BlockPos.ZERO, true));
             UUID texture = new UUID(3,1);
             locallyPresented.add(first);
             transferAliases(first, replacement);

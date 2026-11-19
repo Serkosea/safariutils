@@ -5,8 +5,6 @@ import dev.serko.safariutils.data.Critters;
 import dev.serko.safariutils.data.SafariBiome;
 import dev.serko.safariutils.session.SafariSession;
 import dev.serko.safariutils.session.SessionManager;
-import dev.serko.safariutils.state.PartySnapshot;
-import dev.serko.safariutils.state.PartyState;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -68,15 +66,16 @@ public final class ProgressHud implements HudElement {
 		HudPanel panel = new HudPanel();
 		if (waiting) {
 			int joined = SafariPartyWatch.joinedPlayers();
-			PartySnapshot party = PartyState.snapshot();
-			int expected = party.known() ? party.expectedPlayers() : 4;
-			panel.titleSuffix("Critter Safari ", "(%d/%d)".formatted(joined, expected),
-				HudBorderStyle.progressTitle(), joined >= expected ? 0xFF55FF55 : 0xFFFF5555);
-			long remaining = SessionManager.ticketWindowRemainingMillis();
+            int expected = SafariPartyWatch.expectedPlayers();
+            long remaining = SessionManager.ticketWindowRemainingMillis();
+            if (remaining == 0L || SessionManager.ticketWindowLocked())
+                panel.title("Critter Safari", HudBorderStyle.progressTitle());
+            else panel.titleSuffix("Critter Safari ", "(%d/%d)".formatted(joined, expected),
+                HudBorderStyle.progressTitle(), joined >= expected ? 0xFF55FF55 : 0xFFFF5555);
 			if (remaining >= 0L) {
 				String value = SessionManager.ticketWindowLocked() ? "Closed"
 					: remaining == 0L ? "Closing" : formatCountdown(remaining);
-				panel.pair("Join", value, LABEL, joinTimerColour(remaining));
+				panel.compactCountdown("Join", value, LABEL, joinTimerColour(remaining));
 			}
 		} else {
 			panel.title(live ? "Critter Safari  "
@@ -173,7 +172,7 @@ public final class ProgressHud implements HudElement {
 	}
 
 	/** Contest-style green-to-dark-red progression across the entire join window. */
-	private static int joinTimerColour(long remaining) {
+	static int joinTimerColour(long remaining) {
 		double progress = 1.0 - Math.clamp(remaining / 30_000.0, 0.0, 1.0);
 		double scaled = progress * (JOIN_TIMER_COLOURS.length - 1);
 		int index = Math.min(JOIN_TIMER_COLOURS.length - 2, (int) scaled);

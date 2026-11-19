@@ -234,7 +234,7 @@ public final class RecatchSpots {
 		if (CritterEntities.scanRevision() != lastScan) {
 			lastScan = CritterEntities.scanRevision();
 			for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-				if (sighting.mob() == null) continue;
+				if (sighting.mob() == null || CritterEntities.isCaptureScaffolding(sighting)) continue;
 				Entity body = sighting.mob();
 				UUID id = body.getUUID();
 				if (caughtBodies.contains(id) || isCaptureArtifact(sighting.critter(), body)) continue;

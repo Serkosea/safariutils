@@ -223,6 +223,19 @@ public final class SparklingStats {
 		return Math.max(0, data.rainbowFeathers);
 	}
 
+    /** Repeated scans and overlapping history raise lower bounds, never add them together. */
+    public static int mergeLogCounts(Map<String,Integer> counts) {
+        if (SessionManager.persistenceSuppressed() || writesBlocked) return 0;
+        int added = 0;
+        for (Critter critter : Critters.all()) {
+            int observed = Math.max(0, counts.getOrDefault(critter.name(), 0));
+            int current = count(critter);
+            if (observed > current) { data.species.put(critter.name(), observed); added += observed - current; }
+        }
+        if (added > 0) { rebuildTotals(); save(); }
+        return added;
+    }
+
 	public static boolean set(Critter critter, int count) {
         if (SessionManager.persistenceSuppressed()) return false;
         revision++;

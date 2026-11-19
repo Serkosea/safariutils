@@ -145,7 +145,7 @@ public class SafariConfig {
         @SettingToggle @Expose public boolean autoSparklingTicket = false;
         @SettingInfo(name = "Assign Hotspots", desc = "Fairly assigns separate biomes to party members, preserving each finalized assignment")
         @SettingToggle @Expose public boolean assignHotspots = false;
-        @SettingInfo(name = "Biome Reports", desc = "Shares biome completion for your run mode; uses party sync when available and chat otherwise")
+        @SettingInfo(name = "Biome Reports", desc = "Announces completed biomes in party chat for your run mode; party-sync progress remains automatic")
         @SettingToggle @Expose public boolean biomeReports = false;
 
 		@SettingInfo(name = "Ticket Trading",

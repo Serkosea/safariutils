@@ -100,6 +100,7 @@ public final class CritterState {
 	record Aim(Vec3 eye, Vec3 direction) { }
 	record AttemptEvidence(Aim aim, StillCritters.AttemptTarget remembered) { }
 	record CapsuleObservation(UUID entityId, Vec3 position) { }
+	/** Positive capsule-label evidence, not an arbitrary bodyless species label. */
 	record CaptureLabelObservation(Critter critter, UUID labelId, Vec3 position) { }
 
 	private static Aim currentAim() {
@@ -216,6 +217,8 @@ public final class CritterState {
 	private static long visitEpoch;
 	private static final Set<String> loggedInvariantKeys = new HashSet<>();
 	private static RecentInteraction recentInteraction;
+	/** One bounded summary; unchanged rejected evidence must not log every scan. */
+	private static String lastCaptureLabelRejection = "";
 	private static final Map<Critter, ArrayDeque<DeferredAttempt>> deferredAttempts = new LinkedHashMap<>();
 	private static CaptureEffects effects = CaptureEffects.LIVE;
 
@@ -488,7 +491,7 @@ public final class CritterState {
 				active.targetEntityId = entityId;
 				effects.reassign(active.id, logical.critter, previousEntityId,
 					entityId, logical.presentationBox, logical.box, logical.sparkling, logical.pity);
-			} else if (entityRekeyed && active == null) {
+			} else if (entityRekeyed && (active == null || active.outcome == Outcome.BREAKOUT)) {
 				effects.bodyReplaced(logical.critter, previousEntityId, entityId);
 			}
 			if (active != null && active.outcome == Outcome.PENDING
@@ -655,8 +658,9 @@ public final class CritterState {
 					// A guaranteed catch cannot produce a replacement body. Treating a
 					// concurrently appearing peer as its reappearance steals that peer's
 					// identity and makes the next real attempt disappear from the model.
-					return attempt != null && attempt.outcome == Outcome.PENDING
-						&& (!guaranteed(attempt, logical) || awaitingRetryBody(attempt, logical, now));
+					return attempt != null && (attempt.outcome == Outcome.BREAKOUT
+						|| attempt.outcome == Outcome.PENDING
+						&& (!guaranteed(attempt, logical) || awaitingRetryBody(attempt, logical, now)));
 				})
 				.toList();
 			if (candidates.isEmpty()) continue;
@@ -668,9 +672,14 @@ public final class CritterState {
 					Logical logical = candidates.get(column);
 					Attempt attempt = attempts.get(logical.activeAttempt);
 					double distance = evidenceDistanceSq(attempt, body);
+					// A settled breakout retains its body anchor, not a possibly remote capsule path.
+					if (attempt.outcome == Outcome.BREAKOUT) {
+						distance = logical.box.getCenter().distanceToSqr(body);
+						if (distance > REAPPEAR_DISTANCE_SQ) distance = Double.POSITIVE_INFINITY;
+					}
 					// A delayed first body is a local form replacement, not an arbitrary
 					// same-species appearance near a travelling capsule.
-					if (guaranteed(attempt, logical)) {
+					if (attempt.outcome == Outcome.PENDING && guaranteed(attempt, logical)) {
 						distance = logical.box.getCenter().distanceToSqr(body);
 						if (distance > FORM_REKEY_DISTANCE_SQ) distance = Double.POSITIVE_INFINITY;
 					}
@@ -680,12 +689,23 @@ public final class CritterState {
 			int[] assignment = CapturePairing.match(distances,
 				singleton ? Double.POSITIVE_INFINITY : REAPPEAR_DISTANCE_SQ,
 				singleton ? SINGLETON_UNMATCHED_COST : UNMATCHED_REAPPEAR_COST);
+
+			int matched = 0;
+			// Settled breakouts need unique spatial evidence in both directions. Do not
+			// let assignment order manufacture identity among multiple returning peers.
+			for (int row = 0; row < assignment.length; row++) {
+				int column = assignment[row];
+				if (column < 0 || attempts.get(candidates.get(column).activeAttempt).outcome != Outcome.BREAKOUT) continue;
+				int bodies = 0, identities = 0;
+				for (double distance : distances[row]) if (distance <= REAPPEAR_DISTANCE_SQ) identities++;
+				for (double[] distancesForBody : distances) if (distancesForBody[column] <= REAPPEAR_DISTANCE_SQ) bodies++;
+				if (bodies != 1 || identities != 1) assignment[row] = -1;
+			}
 			StructuredDiagnostics.capturePairing("breakout", distances,
 				singleton ? Double.POSITIVE_INFINITY : REAPPEAR_DISTANCE_SQ,
 				singleton ? SINGLETON_UNMATCHED_COST : UNMATCHED_REAPPEAR_COST, assignment,
 				() -> rows.stream().map(index -> fresh.get(index).entityId().toString()).toList(),
 				() -> candidates.stream().map(logical -> logical.id).toList());
-			int matched = 0;
 			for (int row = 0; row < assignment.length; row++) {
 				int column = assignment[row];
 				if (column < 0) continue;
@@ -807,6 +827,13 @@ public final class CritterState {
 		Attempt active = logical.activeAttempt == 0L ? null : attempts.get(logical.activeAttempt);
 		boolean guaranteedCapture = active != null && guaranteed(active, logical);
 		boolean firstBody = acceptFirstAttemptBody(active, logical);
+		if (active != null && active.outcome == Outcome.BREAKOUT) {
+			// The attempt already retired its presentation; retire its breakout hold
+			// through the idle-body handoff and preserve the settled outcome/pity.
+			effects.bodyReplaced(logical.critter, oldId, logical.entityId);
+			confirmReappearance(logical, now);
+			return;
+		}
 		// A form substitution in one observation batch has no absence interval.
 		// Only a body returning after confirmed absence can establish a breakout.
 		boolean reappeared = active != null && active.targetAbsent && !guaranteedCapture && !firstBody;
@@ -1217,61 +1244,65 @@ public final class CritterState {
 	private static List<CaptureLabelObservation> sampleCaptureLabels() {
 		List<CaptureLabelObservation> result = new ArrayList<>();
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
-			if (sighting.mob() != null) continue;
+			if (sighting.mob() != null || !CritterEntities.isRemoteCaptureLabel(sighting)) continue;
 			result.add(new CaptureLabelObservation(sighting.critter(), sighting.label().getUUID(), sighting.label().position()));
 		}
 		return result;
 	}
 
 	private static void observeCaptureLabels(List<CaptureLabelObservation> observations, long now) {
+		Map<UUID, CaptureLabelObservation> fresh = new LinkedHashMap<>();
 		for (CaptureLabelObservation sighting : observations) {
 			UUID labelId = sighting.labelId();
-			// A previously paired live/breakout label may temporarily lose its body
-			// during waking/form changes. It is not a new capsule, even when only one
-			// same-species throw is pending elsewhere.
-			Long bodyOwnerId = logicalByLabel.get(labelId);
-			Logical bodyOwner = bodyOwnerId == null ? null : logicals.get(bodyOwnerId);
-			if (bodyOwner != null) continue;
+			// A retained body label is not new capture evidence during a form change.
+			if (logicalByLabel.containsKey(labelId)) continue;
 			Long assignedId = attemptByCaptureLabel.get(labelId);
-			if (assignedId != null) {
-				Attempt assigned = attempts.get(assignedId);
-				if (assigned != null) {
-					if (assigned.outcome == Outcome.PENDING) {
-						assigned.impact = sighting.position();
-					}
-					continue;
-				}
-				attemptByCaptureLabel.remove(labelId);
+			Attempt assigned = assignedId == null ? null : attempts.get(assignedId);
+			if (assigned != null) {
+				if (assigned.outcome == Outcome.PENDING) assigned.impact = sighting.position();
+				continue;
 			}
-			Attempt best = null;
-			Attempt sole = null;
-			int eligible = 0;
-			double bestDistance = Double.MAX_VALUE;
-			Vec3 position = sighting.position();
+			if (assignedId != null) attemptByCaptureLabel.remove(labelId);
+			fresh.put(labelId, sighting);
+		}
+		// Evaluate the whole batch before mutating ownership. Proximity is a gate,
+		// not a tie breaker: both the label and the throw must have exactly one
+		// candidate. A sole local throw never authorizes a distant party capsule.
+		Map<UUID, Attempt> unique = new LinkedHashMap<>();
+		Map<Long, Integer> labelCounts = new HashMap<>();
+		int outside = 0, ambiguous = 0;
+		for (CaptureLabelObservation sighting : fresh.values()) {
+			Attempt only = null;
+			int candidates = 0;
 			for (Attempt attempt : attempts.values()) {
 				if (!attempt.critter.equals(sighting.critter()) || attempt.outcome != Outcome.PENDING
-					|| attempt.captureLabelId != null
-					|| now - attempt.startedAt > ATTEMPT_AFTER_MILLIS) continue;
-				eligible++;
-				sole = attempt;
-				double distance = evidenceDistanceSq(attempt, position);
-				if (distance > CAPTURE_LABEL_DISTANCE_SQ) continue;
-				if (distance >= bestDistance) continue;
-				bestDistance = distance;
-				best = attempt;
+					|| now < attempt.startedAt || now - attempt.startedAt > ATTEMPT_AFTER_MILLIS
+					|| attempt.anchor.distanceToSqr(sighting.position()) > CAPTURE_LABEL_DISTANCE_SQ) continue;
+				// Already-owned throws still count as alternatives; their nearby labels
+				// must not spill into a second throw simply because its slot is free.
+				candidates++;
+				only = attempt;
+				labelCounts.merge(attempt.id, 1, Integer::sum);
 			}
-			// Species-only ATTEMPT chat can provisionally select the wrong nearby peer.
-			// A sole unresolved throw still owns the sole capture label even when that
-			// provisional anchor is far away; the impact then repairs the identity below.
-			boolean soleFallback = best == null && eligible == 1;
-			if (soleFallback) best = sole;
-			if (best != null) {
-				best.impact = position;
-				best.captureLabelId = labelId;
-				attemptByCaptureLabel.put(labelId, best.id);
-				DebugLog.line("IDENTITY", "IMPACT A" + best.id + " label=" + shortId(labelId)
-					+ " at=" + format(position) + (soleFallback ? " mode=SOLE" : ""));
-			}
+			if (candidates == 0) outside++;
+			else if (candidates > 1) ambiguous++;
+			if (candidates == 1 && only.captureLabelId == null) unique.put(sighting.labelId(), only);
+		}
+		for (var entry : unique.entrySet()) {
+			Attempt attempt = entry.getValue();
+			if (labelCounts.get(attempt.id) != 1) { ambiguous++; continue; }
+			CaptureLabelObservation sighting = fresh.get(entry.getKey());
+			attempt.impact = sighting.position();
+			attempt.captureLabelId = sighting.labelId();
+			attemptByCaptureLabel.put(sighting.labelId(), attempt.id);
+			DebugLog.line("IDENTITY", "IMPACT A" + attempt.id + " label=" + shortId(sighting.labelId())
+				+ " at=" + format(sighting.position()) + " mode=UNIQUE-LOCAL");
+		}
+		String rejected = outside == 0 && ambiguous == 0 ? ""
+			: "noLocalCandidate=" + outside + " ambiguous=" + ambiguous;
+		if (!rejected.equals(lastCaptureLabelRejection)) {
+			lastCaptureLabelRejection = rejected;
+			if (!rejected.isEmpty()) DebugLog.line("IDENTITY", "CAPTURE-LABEL-DEFER " + rejected);
 		}
 	}
 
@@ -1336,7 +1367,10 @@ public final class CritterState {
 		for (Attempt attempt : attempts.values()) {
 			if (attempt.outcome != Outcome.PENDING || attempt.targetCorrected) continue;
 			Logical current = logicals.get(attempt.logicalId);
-			if (current == null || !guaranteed(attempt, current)) continue;
+			// Native shrink proves ownership for ordinary capsules too. Guarantee only
+			// chooses the presentation (shrink versus recatch pin); gating correction
+			// on it can resolve a catch against a still-live provisional neighbor.
+			if (current == null) continue;
 			Logical shrinking = null;
 			for (Logical candidate : logicals.values()) {
 				if (!candidate.critter.equals(attempt.critter) || !candidate.visible
@@ -1865,6 +1899,7 @@ public final class CritterState {
 		deferredAttempts.clear();
 		exhaustedSpecies.clear();
 		loggedInvariantKeys.clear();
+		lastCaptureLabelRejection = "";
 		recentInteraction = null;
 		lastScan = 0L;
 		CaptureReplayTrace.reset(newVisitEpoch, nextLogicalId, nextAttemptId);

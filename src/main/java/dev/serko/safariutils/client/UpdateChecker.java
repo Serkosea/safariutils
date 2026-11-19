@@ -1,7 +1,6 @@
 package dev.serko.safariutils.client;
 
 import dev.serko.safariutils.BuildVersion;
-import dev.serko.safariutils.api.SharedSparklingProviders;
 import dev.serko.safariutils.concurrent.HttpBodies;
 import net.minecraft.client.Minecraft;
 
@@ -21,7 +20,7 @@ public final class UpdateChecker {
 	private static final String INSTALLED_VERSION = BuildVersion.releaseVersion();
 	private static final AtomicBoolean STARTED = new AtomicBoolean();
 	private static final URI releasePage =
-		SharedSparklingProviders.updatePage(BuildVersion.downloadPage());
+		BuildVersion.downloadPage();
 	private record Snapshot(Status status, ReleaseMetadata release) { }
 	private static volatile Snapshot snapshot = new Snapshot(Status.NOT_STARTED, null);
 	private static boolean notified;
@@ -76,7 +75,7 @@ public final class UpdateChecker {
 	public static String publishedAt() { var value = snapshot.release(); return value == null ? "" : value.publishedAt(); }
 	public static URI releasePage() { return releasePage; }
 	public static String releaseLinkLabel() {
-		return "Mod Website";
+		return "GitHub Releases";
 	}
 
 	public static boolean updateAvailable() {

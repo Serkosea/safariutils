@@ -52,6 +52,10 @@ public final class PartyRecoveryRegression {
     private static void noticeLifecycle() {
         check(ConnectionNotices.closedReason(1008, "message rate exceeded").contains("limit"), "socket limit is explained");
         check(!ConnectionNotices.closedReason(1008, "private payload").contains("private"), "unrecognized close text stays private");
+        check(ConnectionNotices.limited("sync-reconnect").contains("connection attempts"), "reconnect reason");
+        check(ConnectionNotices.limited("sync-concurrent").contains("active connections"), "concurrent reason");
+        check(ConnectionNotices.limitCode("private token").equals("unspecified"), "untrusted metadata rejected");
+        check(!ConnectionNotices.limited("private token").contains("private"), "untrusted metadata not displayed");
         var notices = new ConnectionNotices();
         notices.visit("visit-one");
         check(notices.poll(true) == null, "healthy initial connection is silent");

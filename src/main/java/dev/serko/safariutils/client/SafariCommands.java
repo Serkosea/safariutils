@@ -57,6 +57,7 @@ public final class SafariCommands {
 				TicketTradingScreen.open();
 				return 1;
 			}))
+			.then(ClientCommands.literal("importsparkling").executes(ctx -> SparklingLogImport.start()))
 			.then(statsRoot())
 			.then(ClientCommands.literal("profit").executes(ctx -> ProfitableCritters.show()));
 

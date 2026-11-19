@@ -419,9 +419,9 @@ public final class CritterEntities {
 
 	/** Whether this sighting is temporary capsule/capture scaffolding, not a live critter. */
 	static boolean isCaptureScaffolding(Sighting sighting) {
-		return sighting.mob() == null
+		return isRemoteCaptureLabel(sighting) || (sighting.mob() == null
 			? RecatchSpots.captureInProgress(sighting.critter())
-			: RecatchSpots.isCaptureArtifact(sighting.critter(), sighting.mob());
+			: RecatchSpots.isCaptureArtifact(sighting.critter(), sighting.mob()));
 	}
 
 }

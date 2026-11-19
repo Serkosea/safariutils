@@ -10,7 +10,7 @@ import java.util.*;
 final class DashboardNavigation {
     enum Tab {
         STATS("Stats"), HISTORY("History"), PROFIT("Profit"),
-        SPARKLINGS("Sparklings"), LOOKUP("Lookup"), PERSONAL_BESTS("Personal Bests");
+        PERSONAL_BESTS("Personal Bests"), SPARKLINGS("Sparklings"), LOOKUP("Lookup");
         final String label;
         Tab(String label) { this.label = label; }
         void open() {

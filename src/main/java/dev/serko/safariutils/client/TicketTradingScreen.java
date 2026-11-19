@@ -89,10 +89,26 @@ public final class TicketTradingScreen extends Screen {
 		this.parent = parent;
 	}
 
+	private static Runnable pendingOpen;
+	static {
+		net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(client -> {
+			Runnable open = pendingOpen;
+			pendingOpen = null;
+			if (open != null) open.run();
+		});
+	}
+
 	public static void open() {
-		Minecraft client = Minecraft.getInstance();
-		Screen parent = ClientCompat.screen();
-		client.execute(() -> ClientCompat.setScreen(new TicketTradingScreen(parent)));
+		Screen current = ClientCompat.screen();
+		// Chat is a command entry point, not a settings screen to return to.
+		Screen parent = current instanceof net.minecraft.client.gui.screens.ChatScreen ? null : current;
+		// Queue even on the client thread so command submission can finish closing chat.
+		pendingOpen = () -> {
+			Screen active = ClientCompat.screen();
+			if (active == current || (active == null && current instanceof net.minecraft.client.gui.screens.ChatScreen)) {
+				ClientCompat.setScreen(new TicketTradingScreen(parent));
+			}
+		};
 	}
 
 	@Override protected void init() {
@@ -148,7 +164,6 @@ public final class TicketTradingScreen extends Screen {
 			float partialTick) {
 		applyTheme();
 		if (parent != null) parent.extractRenderState(g, Integer.MIN_VALUE, Integer.MIN_VALUE, partialTick);
-		else g.fill(0, 0, width, height, background);
 		g.fill(0, 0, width, height, 0x96000000);
 		int mx = Math.round(mouseX / scale), my = Math.round(mouseY / scale);
 		g.pose().pushMatrix();

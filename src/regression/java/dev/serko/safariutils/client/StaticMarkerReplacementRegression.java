@@ -3,6 +3,10 @@ package dev.serko.safariutils.client;
 public final class StaticMarkerReplacementRegression {
 	public static int run() {
 		int checks = 0;
+        check(StillCritters.remoteCaptureOffset(1.40625, 1.28125, 2.53125), "recorded remote Hideonfloor capsule displacement"); checks++;
+        check(!StillCritters.remoteCaptureOffset(4.01, 0, 0), "distant peer is not capture origin"); checks++;
+        check(!StillCritters.remoteCaptureOffset(0, 3.01, 0), "different vertical spawn is not capture origin"); checks++;
+        check(CritterEntities.capsuleLabelOffset(-0.0203, -1.8865, -0.0276), "recorded remote capsule label is scaffolding"); checks++;
 		var empty = new StaticMarkerReplacement<String>();
 		check(empty.replacement() == null, "no spatial evidence"); checks++;
 		empty.consider("old", false);

@@ -95,7 +95,8 @@ final class RemoteSession {
             JsonObject root = JsonParser.parseString(response.body()).getAsJsonObject();
             if (root.has("message")) detail = root.get("message").getAsString();
         } catch (RuntimeException ignored) { }
-        return new dev.serko.safariutils.api.ServiceRequestException(detail, response.statusCode(), retrySeconds);
+        return new dev.serko.safariutils.api.ServiceRequestException(detail, response.statusCode(), retrySeconds,
+            ConnectionNotices.limitCode(response.headers().firstValue("x-safari-limit-reason").orElse("")));
     }
     /** Shared HTTP and WebSocket backoff parsing; bounded to one day. */
     static long retryAfterMillis(String value) {

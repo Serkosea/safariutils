@@ -325,6 +325,7 @@ public final class WaypointRenderer {
 	/** Mirrors live-render eligibility without relying on render-pass ordering. */
 	private static boolean rendersLiveHitbox(CritterEntities.Sighting sighting,
 			MarkerRegistry.Snapshot snapshot) {
+        if (CritterEntities.isCaptureScaffolding(sighting)) return false;
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
 		RecatchSpots.PresentationSnapshot presentation = snapshot.presentation();
 		StillCritters.PresentationSnapshot tracked = snapshot.tracked();
@@ -539,6 +540,7 @@ public final class WaypointRenderer {
 		List<Found> drawn = new java.util.ArrayList<>();
 
 		for (CritterEntities.Sighting sighting : snapshot.sightings()) {
+            if (CritterEntities.isCaptureScaffolding(sighting)) continue;
             if (LitterbugTimers.replaces(sighting)) continue;
 			String name = sighting.critter().name();
 			boolean sparkling = SparklingWatch.presentsAsSparkling(sighting);
@@ -693,6 +695,7 @@ public final class WaypointRenderer {
 		List<Found> labels = new java.util.ArrayList<>();
 
 		for (CritterEntities.Sighting sighting : snapshot.sightings()) {
+            if (CritterEntities.isCaptureScaffolding(sighting)) continue;
 			if (!SparklingWatch.isOutstanding(sighting)) continue;
 			// Hideyho's solver owns its box and START/END title. This path retains only
 			// its Sparkling beacon so a generic pity marker can never appear beside it.
@@ -1147,6 +1150,7 @@ public final class WaypointRenderer {
 					drawn.add(new Found(new Markers.Marker(box, hideyhoLabel, liveColour,
 						Markers.Style.WAYPOINT), Math.sqrt(distanceSquared(box, camera)), seeThrough));
 					for (CritterEntities.Sighting sighting : snapshot.sightings()) {
+            if (CritterEntities.isCaptureScaffolding(sighting)) continue;
 						if ("Hideyho".equals(sighting.critter().name())) {
 							markVanillaNameReplaced(sighting);
 						}

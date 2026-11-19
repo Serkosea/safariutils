@@ -28,6 +28,7 @@ interface CaptureEffects {
 		}
 		public void reassign(long attempt, Critter species, UUID before, UUID after, AABB visual, AABB body, boolean sparkling, int pity) {
 			RecatchSpots.reassignIdentity(attempt, species, before, after, visual, sparkling, pity);
+            SparklingWatch.onBodyReplaced(species, before, after);
 			StillCritters.reassignIdentity(attempt, species, before, after, body);
 		}
 		public void anchor(long attempt, UUID entity, Critter species, AABB box) { RecatchSpots.updateIdentityAnchor(attempt, entity, species, box); }

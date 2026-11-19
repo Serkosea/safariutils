@@ -19,7 +19,7 @@ public final class BuildVersion {
 		REMOTE_PARTY_SYNC
 	}
 	private static final EnumSet<Capability> CAPABILITIES = capabilities();
-	private static final URI MOD_WEBSITE = URI.create("https://serkosea.dev/safariutils/");
+	private static final URI RELEASES_PAGE = URI.create("https://github.com/Serkosea/safariutils/releases/");
 
 	private BuildVersion() {
 	}
@@ -99,6 +99,6 @@ public final class BuildVersion {
 
 	/** Public update destination shared by every distributed build. */
 	public static URI downloadPage() {
-		return MOD_WEBSITE;
+		return RELEASES_PAGE;
 	}
 }

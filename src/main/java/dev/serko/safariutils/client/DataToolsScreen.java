@@ -13,7 +13,7 @@ import java.util.List;
 final class DataToolsScreen extends Screen {
 	private enum Tab {
 		SETTINGS("Settings", "Import or export current settings"),
-		RUNS("Run History", "Check or safely repair saved run data");
+		RUNS("Run History", "Recover Sparkling counts or check and repair saved runs");
 
 		private final String label;
 		private final String description;
@@ -127,17 +127,17 @@ final class DataToolsScreen extends Screen {
 		int width = panelWidth - 40;
 		if (tab == Tab.SETTINGS) {
 			action(graphics, x, y, width, "Import Settings",
-				"Reads settings from clipboard; Click again to confirm valid import",
+				"Paste a settings code; click twice to confirm",
 				mouseX, mouseY, this::importSettings);
 			action(graphics, x, y + 48, width, "Export Settings",
-				"Exports settings to clipboard", mouseX, mouseY, DataActions::exportSettings);
+				"Copies settings only; excludes runs and collection counts", mouseX, mouseY, DataActions::exportSettings);
 		} else {
-			action(graphics, x, y, width, "Check Run History",
-				"Checks saved runs without changing any data",
-				mouseX, mouseY, DataActions::checkRunHistory);
-			action(graphics, x, y + 48, width, "Repair Run History",
-				"Backs up runs before repairing objectively invalid structure",
-				mouseX, mouseY, DataActions::repairRunHistory);
+            action(graphics, x, y, width, "Import Sparklings",
+                "Recovers personal Sparkling counts from archived logs",
+                mouseX, mouseY, DataActions::importSparklings);
+            action(graphics, x, y + 48, width, "Check Run History",
+                "Checks runs and backs up before safe automatic repairs",
+                mouseX, mouseY, DataActions::checkRunHistory);
 		}
 	}
 

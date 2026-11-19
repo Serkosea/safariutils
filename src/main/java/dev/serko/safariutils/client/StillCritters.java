@@ -194,6 +194,10 @@ public final class StillCritters {
 
 		for (CritterEntities.Sighting sighting : sightings) {
 			if (!TRACKED.contains(sighting.critter().name())) continue;
+            if (CritterEntities.isRemoteCaptureLabel(sighting)) {
+                retireRemoteCaptureOrigin(sighting, liveBodies);
+                continue;
+            }
 
 			Entity entity = sighting.mob();
 			BlockPos observedPos = entity == null
@@ -290,6 +294,33 @@ public final class StillCritters {
 		staticAbsenceSince.retain(remembered.keySet());
 	}
 
+    /** Retire presentation only: a missing static body plus one nearby capsule is not catch credit. */
+    private static void retireRemoteCaptureOrigin(CritterEntities.Sighting capture, Set<UUID> liveBodies) {
+        if (SafeMode.active() && !VisibilityCheck.canSeeVisibleName(capture.label())) return;
+        var selection = new StaticMarkerReplacement<UUID>();
+        Vec3 label = capture.label().position();
+        for (var item : remembered.entrySet()) {
+            Entry entry = item.getValue();
+            if (!entry.critter().equals(capture.critter())) continue;
+            Vec3 center = entry.box().getCenter();
+            if (!remoteCaptureOffset(center.x - label.x, center.y - label.y, center.z - label.z)) continue;
+            selection.consider(item.getKey(), liveBodies.contains(item.getKey())
+                || WorldEntities.find(item.getKey()) != null || isStillResolving(item.getKey())
+                || suppressedBodies.contains(item.getKey()));
+        }
+        UUID retired = selection.replacement();
+        if (retired == null) return;
+        remembered.remove(retired);
+        staticAbsenceSince.remove(retired);
+        StructuredDiagnostics.decision("CAPTURE/STATIC", "remote-capsule-origin-retired",
+            "species=" + capture.critter().name() + " body=" + shortId(retired)
+                + " label=" + shortId(capture.label().getUUID()));
+    }
+
+    static boolean remoteCaptureOffset(double x, double y, double z) {
+        return x * x + z * z <= 16.0 && Math.abs(y) <= 3.0;
+    }
+
 	private static boolean caughtStatic(CritterEntities.Sighting sighting) {
 		BlockPos actual = sighting.mob() != null
 			? sighting.mob().blockPosition() : sighting.label().blockPosition();
@@ -309,6 +340,7 @@ public final class StillCritters {
 		if (client.level == null) return;
 		Map<Critter, List<LiveStatic>> liveByCritter = new HashMap<>();
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
+            if (CritterEntities.isRemoteCaptureLabel(sighting)) continue;
 			BlockPos position = sighting.mob() == null
 				? sighting.label().blockPosition() : sighting.mob().blockPosition();
 			if (!staticTracked(sighting.critter(), position)) continue;

@@ -32,9 +32,37 @@ final class ConnectionNotices {
         return null;
     }
 
+    static String limitCode(String code) {
+        return switch (code == null ? "" : code) {
+            case "sync-reconnect", "sync-concurrent", "sync-global", "sync-cooldown",
+                 "upstream-account", "ingress-rate", "service-rate", "client-rate",
+                 "auth-rate", "auth-account-rate", "service-burst", "storage-budget" -> code;
+            default -> "unspecified";
+        };
+    }
+
+    static String limited(String code) {
+        String description = switch (limitCode(code)) {
+            case "sync-reconnect" -> "too many recent connection attempts";
+            case "sync-concurrent" -> "your account still has the maximum active connections";
+            case "sync-global" -> "the service has reached its active connection limit";
+            case "sync-cooldown" -> "temporary cooldown after repeated connection rejections";
+            case "upstream-account" -> "your account's player-lookup request limit was reached";
+            case "ingress-rate" -> "too many recent requests from your network";
+            case "client-rate" -> "too many recent requests from your account";
+            case "auth-rate" -> "too many recent authentication requests from your network";
+            case "auth-account-rate" -> "too many recent authentication requests from your account";
+            case "service-rate", "service-burst" -> "the service's short-term request limit was reached";
+            case "storage-budget" -> "the service's storage allowance was reached";
+            default -> "request limit reached; server did not specify which limit";
+        };
+        return description + ". Retrying automatically.";
+    }
+
     static String closedReason(int status, String reason) {
-        if (status == 1008 && "message rate exceeded".equals(reason)) return reason(429, null);
+        if (status == 1008 && "message rate exceeded".equals(reason)) return "too many messages on this connection. Retrying automatically after the message limit.";
         if (status == 1008 && "session renewal rejected".equals(reason)) return reason(401, null);
+        if (status == 1013 && "storage-budget".equals(reason)) return limited(reason);
         if (status == 1013) return reason(503, null);
         if (status == 1011) return "server connection error. Retrying automatically.";
         return "connection closed. Retrying automatically.";

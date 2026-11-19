@@ -65,8 +65,166 @@ public final class CaptureObservationRegression {
 			check(CritterState.logicalCritters().stream().noneMatch(view -> view.critter().equals(hideyho)),
 				"Hideyho stays outside capsule identity tracking"); checks++;
 		} finally { CritterState.onVisitStarted(); RecatchSpots.clear(); }
-		return checks + concealedForms() + activeRebound() + rapidRecatches() + correctedInteraction() + reorderedArrivals() + evidenceTransitions() + deferredAim() + completion() + overlappingGimmiegolds();
+		return checks + hideonfloorNativeCorrection() + settledBreakoutReturns() + captureLabelOwnership() + concealedForms() + activeRebound() + rapidRecatches() + correctedInteraction() + reorderedArrivals() + evidenceTransitions() + deferredAim() + completion() + overlappingGimmiegolds();
 	}
+	/** Nov 18 18:59:15: inferred neighbor stayed live while the actual target shrank. */
+	private static int hideonfloorNativeCorrection() {
+		int checks = 0;
+		var species = dev.serko.safariutils.data.Critters.byName("Hideonfloor");
+		UUID peer = new UUID(120, 1), caught = new UUID(120, 2);
+		UUID peerLabel = new UUID(121, 1), caughtLabel = new UUID(121, 2);
+		var peerBox = new AABB(37, 80, 50, 38, 81, 51);
+		var caughtBox = new AABB(28, 79, 59, 29, 80, 60);
+		var aim = new CritterState.Aim(new Vec3(37.5, 80.5, 47), new Vec3(0, 0, 1));
+		try {
+			for (boolean reverse : List.of(false, true)) {
+				for (boolean breakout : List.of(false, true)) {
+					CritterState.onVisitStarted(); RecatchSpots.clear();
+					var neighbor = body(species, peerLabel, peer, peerBox);
+					var target = body(species, caughtLabel, caught, caughtBox);
+					CritterState.observeBodies(reverse ? List.of(target, neighbor) : List.of(neighbor, target), 1000);
+					CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT, species), false, 1010, aim);
+					check(RecatchSpots.snapshot(true, java.util.Set.of()).isPinned(peer),
+						"fixture must provisionally pin the wrong non-guaranteed neighbor"); checks++;
+					var shrinking = body(species, caughtLabel, caught, new AABB(28.25, 79, 59.25, 28.75, 79.5, 59.75));
+					CritterState.observeBodies(reverse ? List.of(shrinking, neighbor) : List.of(neighbor, shrinking), 1100);
+					CritterState.advanceCaptureEvidence(List.of(), List.of(), 1100);
+					var corrected = RecatchSpots.snapshot(true, CritterState.nativeCaptureBodies());
+					check(corrected.isPinned(caught) && !corrected.suppresses(peer) && !corrected.isAnimated(caught),
+						"native evidence must move the recatch pin off the live neighbor without claiming a guarantee"); checks++;
+					check(logical(peer).pity() == 0 && logical(caught).pity() == 1,
+						"native correction must transfer pity once"); checks++;
+					CritterState.advanceCaptureEvidence(List.of(), List.of(), 1150);
+					check(logical(peer).pity() == 0 && logical(caught).pity() == 1,
+						"repeated native evidence must not transfer pity again"); checks++;
+					CritterState.observeBodies(List.of(neighbor), 1400);
+					CritterState.applyEvent(event(breakout ? CritterEvent.Type.FAILED : CritterEvent.Type.OWN_CATCH, species), false, 3270, aim);
+					if (breakout) {
+						CritterState.observeBodies(List.of(neighbor, target), 3280);
+						CritterState.advanceCaptureEvidence(List.of(), List.of(), 3280);
+					}
+					check(logical(peer).life() == CritterState.Life.LIVE
+						&& !RecatchSpots.snapshot(true, CritterState.nativeCaptureBodies()).suppresses(peer),
+						"outcome must never hide the untouched neighbor during the contradiction timeout"); checks++;
+					check(logical(caught).life() == (breakout ? CritterState.Life.BREAKOUT : CritterState.Life.CAUGHT),
+						"outcome must resolve the physically confirmed body"); checks++;
+				}
+			}
+			return checks;
+		} finally { CritterState.onVisitStarted(); RecatchSpots.clear(); }
+	}
+	/** Server breakout settles before fresh body/label UUIDs return to the scan. */
+	private static int settledBreakoutReturns() {
+		int checks = 0;
+		var species = dev.serko.safariutils.data.Critters.byName("Bloodbat");
+		var box = new AABB(0, 0, 0, 1, 1, 1);
+		var aim = new CritterState.Aim(new Vec3(.5, .5, -3), new Vec3(0, 0, 1));
+		UUID old = new UUID(110, 1), returned = new UUID(110, 2), peer = new UUID(110, 3);
+		try {
+			for (int scenario = 0; scenario < 6; scenario++) {
+				CritterState.onVisitStarted(); RecatchSpots.clear();
+				var initial = body(species, new UUID(111, 1), old, box);
+				var initialPeer = body(species, new UUID(111, 4), peer, box.move(2, 0, 0));
+				CritterState.observeBodies(scenario == 5 ? List.of(initial, initialPeer) : List.of(initial), 1000);
+				CritterState.observeInteraction(old, box.getCenter(), 1001);
+				long identity = logical(old).id();
+				CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT, species), false, 1010, aim);
+				if (scenario == 5) {
+					CritterState.observeInteraction(peer, initialPeer.box().getCenter(), 1011);
+					CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT, species), false, 1012, aim);
+				}
+				CritterState.observeBodies(List.of(), 1100);
+				CritterState.applyEvent(event(CritterEvent.Type.FAILED, species), false, 2000, aim);
+				if (scenario == 5) CritterState.applyEvent(event(CritterEvent.Type.FAILED, species), false, 2000, aim);
+				CritterState.advanceCaptureEvidence(List.of(), List.of(), 7001);
+				check(CritterState.activeAttempts().isEmpty() && logical(old).life() == CritterState.Life.BREAKOUT,
+					"fixture must settle breakout before the new UUID arrives"); checks++;
+				check(RecatchSpots.snapshot(true, java.util.Set.of()).isPinned(old), "absent breakout retains hold"); checks++;
+				var replacement = body(species, new UUID(111, scenario == 3 ? 1 : 2), returned, box.move(scenario == 1 ? 30 : .2, 0, 0));
+				var other = body(species, new UUID(111, 3), peer, box.move(.4, 0, 0));
+				CritterState.observeBodies(scenario == 2 ? List.of(other, replacement) : scenario == 4 ? List.of(replacement, other) : List.of(replacement), 7100);
+				if (scenario == 0 || scenario == 3) {
+					check(logical(returned).id() == identity && logical(returned).pity() == 1
+						&& logical(returned).life() == CritterState.Life.BREAKOUT, "settled breakout preserves identity and pity"); checks++;
+					check(CritterState.logicalCritters().size() == 1 && RecatchSpots.snapshot(true, java.util.Set.of()).pins().isEmpty(),
+						"settled breakout handoff retires old pin without ghost identity"); checks++;
+					CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT, species), false, 7200, aim);
+					check(logical(returned).pity() == 2 && CritterState.activeAttempts().size() == 1,
+						"settled breakout releases ownership for retry"); checks++;
+				} else {
+					check(logical(returned).id() != identity && logical(returned).pity() == 0,
+						"distant or ambiguous return cannot inherit settled pity"); checks++;
+					check(RecatchSpots.snapshot(true, java.util.Set.of()).isPinned(old), "unproven return cannot retire hold"); checks++;
+				}
+			}
+		} finally { CritterState.onVisitStarted(); RecatchSpots.clear(); }
+		return checks;
+	}
+
+	/** Capsule label inputs are positively classified; ownership still requires local, unique evidence. */
+	private static int captureLabelOwnership() {
+		int checks = 0;
+		var species = dev.serko.safariutils.data.Critters.byName("Bloodbat");
+		var box = new AABB(0, 0, 0, 1, 1, 1);
+		var aim = new CritterState.Aim(new Vec3(.5, .5, -3), new Vec3(0, 0, 1));
+		UUID a = new UUID(112, 1), b = new UUID(112, 2);
+		var near = new CritterState.CaptureLabelObservation(species, new UUID(113, 3), box.getCenter());
+		var competing = new CritterState.CaptureLabelObservation(species, new UUID(113, 4), box.move(1, 0, 0).getCenter());
+		var remote = new CritterState.CaptureLabelObservation(species, new UUID(113, 5), box.move(50, 0, 0).getCenter());
+		try {
+			for (boolean reverse : List.of(false, true)) {
+				CritterState.onVisitStarted(); RecatchSpots.clear();
+				CritterState.observeBodies(List.of(body(species, new UUID(113, 1), a, box)), 1000);
+				CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT, species), false, 1010, aim);
+				CritterState.advanceCaptureEvidence(List.of(), List.of(remote), 1020);
+				check(CritterState.activeAttempts().getFirst().impact() == null, "sole throw must not claim a remote capsule"); checks++;
+				CritterState.advanceCaptureEvidence(List.of(), reverse ? List.of(competing, near) : List.of(near, competing), 1030);
+				check(CritterState.activeAttempts().getFirst().impact() == null, "two local labels must remain ambiguous in either order"); checks++;
+				CritterState.advanceCaptureEvidence(List.of(), reverse ? List.of(remote, near) : List.of(near, remote), 1040);
+				check(near.position().equals(CritterState.activeAttempts().getFirst().impact()),
+					"rejected evidence must not occupy slot; later unique local label binds"); checks++;
+				CritterState.advanceCaptureEvidence(List.of(), List.of(competing), 1050);
+				check(near.position().equals(CritterState.activeAttempts().getFirst().impact()), "another label cannot overwrite established ownership"); checks++;
+			}
+			CritterState.onVisitStarted(); RecatchSpots.clear();
+			CritterState.observeBodies(List.of(body(species, new UUID(113, 1), a, box),
+				body(species, new UUID(113, 2), b, box.move(3, 0, 0))), 1000);
+			CritterState.observeInteraction(a, box.getCenter(), 1001);
+			CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT, species), false, 1010, aim);
+			CritterState.observeInteraction(b, box.move(3, 0, 0).getCenter(), 1011);
+			CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT, species), false, 1012, aim);
+			CritterState.advanceCaptureEvidence(List.of(), List.of(near), 1020);
+			check(CritterState.activeAttempts().size() == 2 && CritterState.activeAttempts().stream().allMatch(v -> v.impact() == null),
+				"one label near two throws cannot choose the nearest owner"); checks++;
+
+			// Throw range is measured from the player; the evidence gate is target-relative.
+			CritterState.onVisitStarted(); RecatchSpots.clear();
+			var distantBox = box.move(0, 0, 50);
+			CritterState.observeBodies(List.of(body(species, new UUID(113, 1), a, distantBox)), 1000);
+			CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT, species), false, 1010, aim);
+			var distantImpact = new CritterState.CaptureLabelObservation(species, new UUID(113, 6), distantBox.getCenter());
+			CritterState.advanceCaptureEvidence(List.of(), List.of(distantImpact), 1020);
+			check(distantImpact.position().equals(CritterState.activeAttempts().getFirst().impact()),
+				"50-block throw accepts capsule evidence near its identified target"); checks++;
+
+			// An uncorroborated remote label cannot fix a bad provisional target. Native
+			// shrink independently repairs that target, after which the label can bind.
+			CritterState.onVisitStarted(); RecatchSpots.clear();
+			var visible = body(species, new UUID(113, 1), a, box);
+			CritterState.observeBodies(List.of(visible, body(species, new UUID(113, 2), b, distantBox)), 1000);
+			CritterState.applyEvent(event(CritterEvent.Type.ATTEMPT, species), true, 1010, aim);
+			CritterState.advanceCaptureEvidence(List.of(), List.of(distantImpact), 1020);
+			check(CritterState.activeAttempts().getFirst().targetEntityId().equals(a)
+				&& CritterState.activeAttempts().getFirst().impact() == null, "distant capsule alone cannot retarget local throw"); checks++;
+			CritterState.observeBodies(List.of(visible, body(species, new UUID(113, 2), b, distantBox.deflate(.2))), 1030);
+			CritterState.advanceCaptureEvidence(List.of(), List.of(distantImpact), 1030);
+			check(CritterState.activeAttempts().getFirst().targetEntityId().equals(b)
+				&& distantImpact.position().equals(CritterState.activeAttempts().getFirst().impact())
+				&& logical(a).pity() == 0 && logical(b).pity() == 1, "independent native evidence preserves distant correction and label binding"); checks++;
+		} finally { CritterState.onVisitStarted(); RecatchSpots.clear(); }
+		return checks;
+	}
+
 	private static int concealedForms() throws ReflectiveOperationException {
 		var effects = CritterState.class.getDeclaredField("effects");
 		effects.setAccessible(true);

@@ -77,6 +77,7 @@ public final class SafariPartyWatch {
 			DebugLog.line("PARTYTIME", "accepted " + observed + "/4 after "
 				+ (now - candidateSince) + "ms stable at +" + (now - instanceObservedAt) + "ms");
 			joinedPlayers = observed;
+            expectedPlayersFloor = Math.max(expectedPlayersFloor, observed);
 			publishAttendance();
 		}
 		if (now >= nextAttendanceRefreshAt) {
@@ -98,6 +99,13 @@ public final class SafariPartyWatch {
 			EncounterAlerts.fireFullPartyJoined(expected);
 		}
 	}
+
+    /** Attendance expectation belongs to the visit, not the current party roster. */
+    public static int expectedPlayers() {
+        PartySnapshot party = PartyState.snapshot();
+        return Math.clamp(Math.max(expectedPlayersFloor,
+            Math.max(joinedPlayers, party.known() ? party.expectedPlayers() : 4)), 1, 4);
+    }
 
 	public static int joinedPlayers() {
 		return Math.clamp(joinedPlayers, 0, 4);

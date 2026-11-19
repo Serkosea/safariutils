@@ -359,8 +359,10 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
         Throwable cause = unwrap(error);
         long serverDelay = 0;
         int status = 0;
+        String limitCode = "unspecified";
         if (cause instanceof WebSocketHandshakeException handshake) {
             status = handshake.getResponse().statusCode();
+            limitCode = ConnectionNotices.limitCode(handshake.getResponse().headers().firstValue("x-safari-limit-reason").orElse(""));
             if (status == 426 && handshake.getResponse().headers().firstValue("x-safari-sync-update-required").orElse("").equals("true")) {
                 updateRequired = true;
                 notices.failure(ConnectionNotices.reason(426, cause));
@@ -370,18 +372,21 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
             }
             serverDelay = RemoteSession.retryAfterMillis(handshake.getResponse().headers().firstValue("Retry-After").orElse(""));
         } else if (cause instanceof dev.serko.safariutils.api.ServiceRequestException service) {
+            limitCode = ConnectionNotices.limitCode(service.limitReason());
             status = service.status(); serverDelay = Math.min(86_400L, service.retrySeconds()) * 1000L;
         }
         dev.serko.safariutils.client.PartySyncDebugHud.serviceFailure(status==503 ? "Service unavailable (503)" : status==429 ? "Service busy (429)" : status==401 ? "Session rejected (401)" : "Connection interrupted / retrying");
-        notices.failure(ConnectionNotices.reason(status, cause));
+        String failureReason = status == 429 ? ConnectionNotices.limited(limitCode) : ConnectionNotices.reason(status, cause);
+        notices.failure(failureReason);
+        if (status == 429) dev.serko.safariutils.client.PartySyncDebugHud.serviceFailure(failureReason);
         if (status == 401 && attemptToken != null) RemoteSession.instance().invalidate(attemptToken);
         attemptToken = null;
         scheduleRetry();
         retryAt = Math.max(retryAt, MonotonicTime.nowMillis() + serverDelay);
         // HTTP status and bounded timing are enough; never log handshake response headers.
-        DebugLog.line("SYNC_NET", "retry status=" + status + " delayMs=" + Math.max(0, retryAt - MonotonicTime.nowMillis()));
+        DebugLog.line("SYNC_NET", "retry status=" + status + " limit=" + limitCode + " serverRetryMs=" + serverDelay + " delayMs=" + Math.max(0, retryAt - MonotonicTime.nowMillis()));
 		StructuredDiagnostics.decision("party-network", "retry",
-			"attempt=" + failures);
+			"attempt=" + failures + " status=" + status + " limit=" + limitCode + " serverRetryMs=" + serverDelay);
 	}
 
 	private void scheduleRetry() {
@@ -509,7 +514,9 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 				if ("hotspots-unavailable".equals(type)) {
                     DebugLog.line("SYNC_NET", "Party sync unavailable: coordination failed; shared discoveries are unavailable");
                     long retry=root.has("retrySeconds") ? Math.max(1,Math.min(86400,root.get("retrySeconds").getAsLong())) : 30;
-                    failed(attempt,new dev.serko.safariutils.api.ServiceRequestException("Party coordination unavailable",503,retry));
+                    String reason = ConnectionNotices.limitCode(root.has("reason") ? root.get("reason").getAsString() : "");
+                    failed(attempt,new dev.serko.safariutils.api.ServiceRequestException("Party coordination unavailable",
+                        "storage-budget".equals(reason) ? 429 : 503,retry,reason));
                     return;
                 }
                 if ("hotspots".equals(type) && (coordination || runSync)) {

@@ -14,7 +14,6 @@ final class DataActions {
 	private static ClientMessages.Tone statusTone = ClientMessages.Tone.INFO;
 	private static long statusUntil;
 	private static long importArmedUntil;
-	private static long repairArmedUntil;
 
 	private DataActions() { }
 
@@ -28,7 +27,6 @@ final class DataActions {
 		pendingImport = null;
 		pendingCode = "";
 		importArmedUntil = 0L;
-		repairArmedUntil = 0L;
 	}
 
 	private static void status(String message, ClientMessages.Tone tone) {
@@ -79,33 +77,25 @@ final class DataActions {
 		}
 	}
 
-	static void checkRunHistory() {
-		RunDataIntegrity.Audit audit = RunDataIntegrity.audit();
-		status(audit.runs() + " saved runs — " + audit.message(), audit.healthy()
-			? ClientMessages.Tone.SUCCESS
-			: audit.readable() ? ClientMessages.Tone.WARNING : ClientMessages.Tone.ERROR);
-	}
+    static void importSparklings() {
+        SparklingLogImport.start(DataActions::status);
+    }
 
-	static void repairRunHistory() {
-		RunDataIntegrity.Audit audit = RunDataIntegrity.audit();
-		if (!audit.readable()) {
-			status(audit.message(), ClientMessages.Tone.ERROR);
-			return;
-		}
-		if (audit.repairable() == 0) {
-			status("Run history is already healthy", ClientMessages.Tone.SUCCESS);
-			return;
-		}
-		long now = MonotonicTime.nowMillis();
-		if (now >= repairArmedUntil) {
-			status(audit.issues() + " issue" + (audit.issues() == 1 ? "" : "s")
-				+ " found — click Repair Run History again to confirm", ClientMessages.Tone.WARNING);
-			repairArmedUntil = statusUntil;
-			return;
-		}
-		repairArmedUntil = 0L;
-		RunDataIntegrity.Repair result = RunDataIntegrity.repair();
-		status(result.message(), result.success()
-			? ClientMessages.Tone.SUCCESS : ClientMessages.Tone.ERROR);
-	}
+    static void checkRunHistory() {
+        RunDataIntegrity.Audit audit = RunDataIntegrity.audit();
+        if (!audit.readable() || audit.healthy() || audit.repairable() == 0) {
+            status(audit.runs() + " saved runs � " + audit.message(), audit.healthy()
+                ? ClientMessages.Tone.SUCCESS : ClientMessages.Tone.ERROR);
+            return;
+        }
+        if (dev.serko.safariutils.session.SessionManager.persistenceSuppressed()) {
+            status("Issues found; repair is unavailable on Alpha or while saving is disabled", ClientMessages.Tone.WARNING);
+            return;
+        }
+        RunDataIntegrity.Repair result = RunDataIntegrity.repair();
+        status(result.message(), result.success() && result.audit().healthy()
+            ? ClientMessages.Tone.SUCCESS : ClientMessages.Tone.WARNING);
+        ClientMessages.send(result.message(), result.success()
+            ? ClientMessages.Tone.SUCCESS : ClientMessages.Tone.ERROR);
+    }
 }

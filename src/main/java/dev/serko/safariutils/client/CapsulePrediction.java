@@ -46,6 +46,7 @@ public final class CapsulePrediction {
         var player=client.player;
         List<Target> next=new ArrayList<>();Set<UUID> seen=new HashSet<>();
         for(var sighting:CritterEntities.all()) {
+            if (CritterEntities.isCaptureScaffolding(sighting)) continue;
             var body=sighting.mob();
             if(body==null||body.isRemoved()||body.distanceToSqr(player)>128*128||!seen.add(body.getUUID()))continue;
             if(SafeMode.hiddenCritter(sighting.critter(),sighting.sparkling())

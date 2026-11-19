@@ -69,6 +69,9 @@ public final class SparklingScreen extends Screen {
 	private final List<Hit> hits = new ArrayList<>();
 	private final List<NumberHit> numberHits = new ArrayList<>();
 	private Tab tab = Tab.COLLECTION;
+    private static boolean duplicateImportPromptShown;
+    private boolean duplicateImportPrompt;
+    static boolean duplicateImportNeeded(int detailed, int imported) { return imported > detailed; }
 	private float scale = 1f;
 	private int panelLeft;
 	private int panelTop;
@@ -212,17 +215,41 @@ public final class SparklingScreen extends Screen {
 			SpecialTheme.border(graphics, lookupName.getX(), lookupName.getY(),
 				lookupName.getWidth(), lookupName.getHeight(), 1);
 		}
+        if (duplicateImportPrompt) drawDuplicateImportPrompt(graphics, mx, my);
         graphics.pose().popMatrix();
 	}
 
     @Override public void tick() {
         super.tick();
         checkCachedLocalCollection();
+        if (tab == Tab.COLLECTION && editor == null && !duplicateImportPromptShown && !SparklingLogImport.busy()
+                && !dev.serko.safariutils.session.SessionManager.persistenceSuppressed()
+                && duplicateImportNeeded(SparklingStats.duplicates(), SparklingStats.importedDuplicates())) {
+            duplicateImportPromptShown = true; duplicateImportPrompt = true;
+        }
         if(lastLookup!=null) for(var recent:recentLookups.entries()) {
             if(recent.username().equalsIgnoreCase(lastLookup.username())&&recent.fetchedAt()>lastLookup.fetchedAt()) {
                 lastLookup=recent;break;
             }
         }
+    }
+
+    private void drawDuplicateImportPrompt(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+        hits.clear(); numberHits.clear();
+        graphics.fill(panelLeft, panelTop, panelLeft + panelWidth, panelTop + panelHeight, 0xB0000000);
+        int w = Math.min(360, panelWidth - 16), x = panelLeft + (panelWidth - w) / 2;
+        var lines = wrap("Your imported duplicate total is higher than your per-species counts. Try archived logs to recover missing Sparkling catches? Logs may be incomplete. Run history is unchanged.", w - 24, 8);
+        int h = 65 + lines.size() * 11, y = panelTop + (panelHeight - h) / 2;
+        graphics.fill(x, y, x + w, y + h, 0xFF141B25);
+        themedOutline(graphics, x, y, w, h, GOLD);
+        centered(graphics, "Recover Duplicate Sparklings?", x, w, y + 10, GOLD);
+        for (int i = 0; i < lines.size(); i++) text(graphics, lines.get(i), x + 12, y + 27 + i * 11, WHITE);
+        int bw = (w - 32) / 2;
+        button(graphics, x + 12, y + h - 28, bw, 18, "Import Sparklings", true, mouseX, mouseY, () -> {
+            duplicateImportPrompt = false; SparklingLogImport.start();
+        });
+        button(graphics, x + 20 + bw, y + h - 28, bw, 18, "Not Now", false, mouseX, mouseY,
+            () -> duplicateImportPrompt = false);
     }
 
 	private void updateLookupHint() {
@@ -672,6 +699,10 @@ public final class SparklingScreen extends Screen {
 	public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
 		double mouseX = event.x() / scale;
 		double mouseY = event.y() / scale;
+        if (duplicateImportPrompt) {
+            for (Hit hit : List.copyOf(hits)) if ((hit.label().equals("Import Sparklings") || hit.label().equals("Not Now")) && hit.contains(mouseX, mouseY)) { hit.action().run(); break; }
+            return true;
+        }
 		if (lookupName != null && lookupName.isMouseOver(mouseX, mouseY)) {
 			setFocused(lookupName);
 			MouseButtonEvent scaledEvent = scale == 1f ? event
@@ -728,6 +759,10 @@ public final class SparklingScreen extends Screen {
 
 	@Override
 	public boolean keyPressed(KeyEvent event) {
+        if (duplicateImportPrompt) {
+            if (event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) duplicateImportPrompt = false;
+            return true;
+        }
 		if (event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_TAB) return true;
 		if (editor != null && (event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_RETURN || event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_NUMPADENTER)) {
 			commitEditor();

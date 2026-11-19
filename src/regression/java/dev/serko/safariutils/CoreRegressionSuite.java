@@ -124,6 +124,7 @@ public final class CoreRegressionSuite {
 		checks += dev.serko.safariutils.backend.BackendValuesRegression.run();
         checks += dev.serko.safariutils.client.LitterbugTimersRegression.run();
         checks += dev.serko.safariutils.backend.PartyRecoveryRegression.run();
+        checks += dev.serko.safariutils.client.SparklingLogImportRegression.run();
 		// Last: this loopback test closes the process-wide network runtime.
 		checks += dev.serko.safariutils.client.NetworkRuntimeRegression.run();
 		System.out.println("Core regression checks passed: " + checks);

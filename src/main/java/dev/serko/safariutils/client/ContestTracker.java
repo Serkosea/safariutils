@@ -334,7 +334,7 @@ public final class ContestTracker implements HudElement {
 		panel.title("Miria's Contest", HudBorderStyle.contestTitle(bracket, ticket, inactive));
 		SafariConfig.DisplayConfig display = ConfigManager.get().display;
 		if (display.contestTimeRemaining) {
-			panel.pair(inactive ? "Starting" : "Time Left", time, LABEL, timeColour);
+			panel.countdown(inactive ? "Starting" : "Time Left", time, LABEL, timeColour);
 		}
 		if (!inactive && display.contestTicketEarned) {
 			panel.pair("Safari Ticket", ticket ? "✔" : "✘", LABEL, ticket ? YES : NO);
@@ -368,11 +368,9 @@ public final class ContestTracker implements HudElement {
 		return "%d:%02d".formatted(seconds / 60, seconds % 60);
 	}
 
-	private static int timeColour(long remaining) {
-		// Hold the endpoint steady across the active/inactive boundary. The HUD render
-		// and contest tick sample the wall clock separately, and without this clamp the
-		// final frame can briefly show an interpolated red before the green start timer.
-		if (remaining <= 5_000L) return 0xFFAA0000;
+	static int timeColour(long remaining) {
+		// Clamp only at expiry so the final gradient remains continuous.
+		if (remaining <= 0L) return 0xFFAA0000;
 		if (remaining >= 10 * 60_000L) return 0xFF55FF55;
 		if (remaining >= 5 * 60_000L) {
 			return blend(0xFF55FF55, 0xFFFFFF55,

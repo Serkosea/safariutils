@@ -24,6 +24,24 @@ public final class BiomeCoordination {
     private static final Set<SafariBiome> received = EnumSet.noneOf(SafariBiome.class);
     private static final Map<Critter, Integer> population = new HashMap<>();
     private static final Survey survey = new Survey();
+    private static final DepartureLedger departures = new DepartureLedger();
+    private static long hideyhoDialogueAt = -1;
+    static final class DepartureLedger {
+        private record Evidence(RunMode mode, Set<Critter> needed, long until) { }
+        private final Map<SafariBiome, Evidence> evidence = new EnumMap<>(SafariBiome.class);
+        void clear() { evidence.clear(); }
+        void forget(SafariBiome biome) { evidence.remove(biome); }
+        boolean contains(SafariBiome biome) { return evidence.containsKey(biome); }
+        void remember(SafariBiome biome, RunMode mode, Set<Critter> needed, long now) {
+            if (biome == SafariBiome.FOREST || biome == SafariBiome.HAUNTED)
+                evidence.put(biome, new Evidence(mode, Set.copyOf(needed),
+                    biome == SafariBiome.FOREST ? Long.MAX_VALUE : now + 30000));
+        }
+        boolean matches(SafariBiome biome, RunMode mode, Set<Critter> needed, long now) {
+            Evidence saved = evidence.get(biome);
+            return saved != null && saved.mode == mode && saved.needed.equals(needed) && now <= saved.until;
+        }
+    }
     /** Coverage is retained per run; separated regions need not overlap. */
     static final class Survey {
         private final Set<Critter> full = new HashSet<>(), sparkling = new HashSet<>();
@@ -69,6 +87,7 @@ public final class BiomeCoordination {
         SafariSession current = SessionManager.current();
         if (current != session) {
             session = current; sent.clear(); pendingChat.clear(); population.clear(); survey.clear();
+            departures.clear(); hideyhoDialogueAt = -1;
             nextCheck = 0; candidate = null; lastSent = 0; lastDecision = ""; partyGeneration = -1; soloDiagnostic.clear();
         }
         if (session == null || !SafariLocation.inside()) {
@@ -79,16 +98,20 @@ public final class BiomeCoordination {
         nextCheck = now + 250;
         SafariBiome biome = SafariLocation.biome();
         var player = Minecraft.getInstance().player;
-        if (biome == null || player == null) { candidate = null; soloDiagnostic.clear(); lastDecision = ""; return; }
+        if (player == null) { candidate = null; soloDiagnostic.clear(); lastDecision = ""; return; }
         Map<Critter, Integer> sparklings = SparklingWatch.outstandingCounts();
-        for (Critter critter : Critters.inBiome(biome)) {
+        for (Critter critter : biome == null ? List.<Critter>of() : Critters.inBiome(biome)) {
             int live = DetectedCritters.currentConcurrent(critter) + sparklings.getOrDefault(critter, 0);
             int caught = session.partyCatches(critter);
             // Max concurrent bodies + confirmed catches avoids counting breakout UUID replacements twice.
             population.merge(critter, Math.min(CritterSpawnRanges.maximum(critter), caught + live), Math::max);
             survey.observe(critter, player.getX(), player.getZ(), caught + live);
         }
-        if (!ConfigManager.get().gameplay.biomeReports) return;
+        RunMode mode = RunMode.current();
+        if (biome != null) rememberDeparture(biome, mode, sparklings, player.getX(), player.getZ(), now);
+        // The option controls announcements; shared completion evidence remains available.
+        if (!ConfigManager.get().gameplay.biomeReports
+                && !dev.serko.safariutils.api.PartySyncNetworks.coordinationSupported()) return;
         var party = PartyState.snapshot();
         boolean soloTest = dev.serko.safariutils.BuildVersion.has(dev.serko.safariutils.BuildVersion.Capability.DEVELOPER_TOOLS)
             && DebugLog.isEnabled() && party.known() && !party.inParty();
@@ -99,20 +122,19 @@ public final class BiomeCoordination {
         if (partyGeneration != party.generation()) {
             partyGeneration = party.generation(); candidate = null; soloDiagnostic.clear();
         }
-        RunMode mode = RunMode.current();
         flushReports(now, mode, sparklings, player.getX(), player.getZ());
-        boolean ready;
-        if (sent.contains(biome)) { blocker = "already-reported"; ready = false; }
-        else if (!reportAllowed(biome, mode,
-                session.caughtByParty(Critters.byName("Wumpa")), needs(Critters.byName("Wumpa")),
-                Critters.inBiome(SafariBiome.ICY).stream().anyMatch(c -> !c.name().equals("Wumpa") && needs(c)))) {
-            blocker = "icy-report-not-needed"; ready = false;
-        } else if (received.contains(biome) && (mode == RunMode.UNIQUE || biome == SafariBiome.FOREST || biome == SafariBiome.HAUNTED)) {
-            blocker = "already-reported-by-party"; ready = false;
-        } else {
-            blocker = "no-survey-evidence";
-            ready = complete(biome, mode, sparklings, player.getX(), player.getZ());
+        SafariBiome selected = null;
+        // Check retained departure evidence as well as the current biome, including the center.
+        for (SafariBiome area : SafariBiome.values()) {
+            if (sent.contains(area)) continue;
+            if (received.contains(area) && (mode == RunMode.UNIQUE || area == SafariBiome.FOREST || area == SafariBiome.HAUNTED)) continue;
+            if (complete(area, mode, sparklings, player.getX(), player.getZ())) {
+                selected = area;
+                if (candidate == area) break;
+            }
         }
+        boolean ready = selected != null;
+        if (ready) biome = selected;
         if (DebugLog.isEnabled()) {
             String decision = (soloTest ? "solo-test " : "") + biome + "/" + mode + "/" + (ready ? "ready" : blocker);
             if (!decision.equals(lastDecision)) {
@@ -137,9 +159,10 @@ public final class BiomeCoordination {
             CommandCoordinator.Cooldown.CHAT, CommandCoordinator.Scope.RUN, false, true);
         boolean network = PartyHotspotSync.networkAuthority()
             && dev.serko.safariutils.api.PartySyncNetworks.coordinationSupported();
-        if (network ? PartyHotspotSync.sendBiome(word(biome)) : CommandCoordinator.trySend(request)) {
+        boolean chatAllowed = ConfigManager.get().gameplay.biomeReports && chatReportAllowed(biome, mode);
+        if (network ? PartyHotspotSync.sendBiome(word(biome)) : chatAllowed && CommandCoordinator.trySend(request)) {
             sent.add(biome); lastSent = now; candidate = null;
-            if (network) pendingChat.put(biome, new Pending(mode, now + 1500));
+            if (network && chatAllowed) pendingChat.put(biome, new Pending(mode, now + 1500));
             DebugLog.line("COORDINATION/BIOME", "sent=" + word(biome) + " mode=" + mode + " evidence=local");
         }
     }
@@ -157,7 +180,7 @@ public final class BiomeCoordination {
             var entry = iterator.next();
             SafariBiome biome = entry.getKey();
             Pending pending = entry.getValue();
-            if (chatReceived.contains(biome) || pending.mode() != mode) { iterator.remove(); continue; }
+            if (!ConfigManager.get().gameplay.biomeReports || chatReceived.contains(biome) || pending.mode() != mode || !chatReportAllowed(biome, mode)) { iterator.remove(); continue; }
             if (now < pending.due()) continue;
             // Stable UUID election for concurrently submitted reports.
             if (!electedReporter(self, reporters.getOrDefault(biome, Set.of()))) { iterator.remove(); continue; }
@@ -178,9 +201,17 @@ public final class BiomeCoordination {
         }
         // A failed/incomplete collection fetch must not mean 'everyone owns everything'.
         boolean collectionReady = SharedSparklingProviders.partySnapshot().apiManaged();
-        if (mode == RunMode.SPARKLING && !collectionReady) { blocker = "party-collection-pending"; return false; }
+        if (mode != RunMode.FULL_CLEAR && !collectionReady) { blocker = "party-collection-pending"; return false; }
+        if (SafariLocation.biome() != biome) return departureComplete(biome, mode, outstanding, x, z);
+        return completeSpecies(biome, mode, outstanding, x, z, Set.of(), true);
+    }
+
+    private static boolean completeSpecies(SafariBiome biome, RunMode mode, Map<Critter, Integer> outstanding,
+            double x, double z, Set<String> excluded, boolean requireTarget) {
+        boolean collectionReady = SharedSparklingProviders.partySnapshot().apiManaged();
         boolean target = false;
         for (Critter critter : Critters.inBiome(biome)) {
+            if (excluded.contains(critter.name())) continue;
             if (outstanding.containsKey(critter)) { blocker = "sparkling-uncaught:" + critter.name(); return false; }
             boolean needed = !collectionReady || needs(critter);
             if (mode == RunMode.SPARKLING && !needed) continue;
@@ -189,14 +220,48 @@ public final class BiomeCoordination {
             // Evaluate only this mode's expensive objective checks, not all three policies.
             boolean full = mode == RunMode.FULL_CLEAR && fullCaught(critter, x, z);
             boolean checkRequired = mode == RunMode.SPARKLING || mode == RunMode.UNIQUE
-                && (BIRDS.contains(critter.name()) || needed && UNIQUE_CHECKS.contains(critter.name()));
+                && (BIRDS.contains(critter.name()) || needed);
             boolean check = checkRequired && sparklingChecked(critter, x, z);
-            boolean shared = !localContradiction(critter,mode) && PartyCompletionSync.completes(critter,mode,capture);
-            if (!shared && !speciesComplete(mode, capture, full, check, needed, critter.name())) { blocker = "incomplete:" + critter.name(); return false; }
+            // Remote completion can help the HUD, but must not be re-exported as our own report.
+            if (!speciesComplete(mode, capture, full, check, needed, critter.name())) { blocker = "incomplete:" + critter.name(); return false; }
         }
-        // No missing species is a valid empty target set, but entering the biome alone
-        // before any entity/catch data arrives must not announce it as surveyed.
-        return target || population.entrySet().stream().anyMatch(e -> e.getKey().biome() == biome && e.getValue() > 0);
+        // No target is not a newly completed check to announce.
+        return target || !requireTarget;
+    }
+
+    private static Set<Critter> neededIn(SafariBiome biome) {
+        Set<Critter> needed = new HashSet<>();
+        for (Critter critter : Critters.inBiome(biome)) if (needs(critter)) needed.add(critter);
+        return needed;
+    }
+
+    private static void rememberDeparture(SafariBiome biome, RunMode mode, Map<Critter, Integer> outstanding,
+            double x, double z, long now) {
+        departures.forget(biome);
+        if (biome != SafariBiome.FOREST && biome != SafariBiome.HAUNTED) return;
+        if (mode != RunMode.FULL_CLEAR && !SharedSparklingProviders.partySnapshot().apiManaged()) return;
+        boolean observed = population.entrySet().stream().anyMatch(e -> e.getKey().biome() == biome && e.getValue() > 0);
+        boolean specialReady = biome == SafariBiome.FOREST ? BirdfeederWatch.departureFeedReady()
+            : session.caughtByParty(Critters.byName("Hideyho"))
+                || hideyhoDialogueAt >= 0 && now - hideyhoDialogueAt <= 30000;
+        if (!observed || !specialReady) return;
+        Set<String> excluded = biome == SafariBiome.FOREST ? BIRDS : Set.of("Hideyho");
+        if (completeSpecies(biome, mode, outstanding, x, z, excluded, false))
+            departures.remember(biome, mode, neededIn(biome), now);
+    }
+
+    private static boolean departureComplete(SafariBiome biome, RunMode mode, Map<Critter, Integer> outstanding,
+            double x, double z) {
+        if (!departures.contains(biome)) return false;
+        Set<Critter> needed = neededIn(biome);
+        if (!departures.matches(biome, mode, needed, MonotonicTime.nowMillis())
+                || mode == RunMode.SPARKLING && needed.isEmpty()) return false;
+        if (Critters.inBiome(biome).stream().anyMatch(outstanding::containsKey)) return false;
+        if (biome == SafariBiome.HAUNTED) return session.caughtByParty(Critters.byName("Hideyho"));
+        if (biome != SafariBiome.FOREST || !BirdfeederWatch.allForestFeedUsed()) return false;
+        Set<String> nonBirds = new HashSet<>();
+        for (Critter critter : Critters.inBiome(biome)) if (!BIRDS.contains(critter.name())) nonBirds.add(critter.name());
+        return completeSpecies(biome, mode, outstanding, x, z, nonBirds, false);
     }
 
     static CompletionSnapshot localCompletionSnapshot(java.util.function.Predicate<Critter> localSources) {
@@ -240,14 +305,12 @@ public final class BiomeCoordination {
             case FULL_CLEAR -> full;
             case SPARKLING -> !needed || checked;
             case UNIQUE -> unique && (!BIRDS.contains(name) || checked)
-                && (!needed || !UNIQUE_CHECKS.contains(name) || checked);
+                && (!needed || checked);
         };
     }
-    static boolean reportAllowed(SafariBiome biome, RunMode mode, boolean wumpaCaught,
-            boolean wumpaNeeded, boolean otherIcyNeeded) {
-        if (biome != SafariBiome.ICY || mode == RunMode.FULL_CLEAR) return true;
-        if (wumpaCaught) return false;
-        return mode == RunMode.UNIQUE || !wumpaNeeded && otherIcyNeeded;
+    static boolean chatReportAllowed(SafariBiome biome, RunMode mode) {
+        // Icy still participates in sync; Unique-mode chat omits its redundant id message.
+        return biome != SafariBiome.ICY || mode != RunMode.UNIQUE;
     }
     static String word(SafariBiome biome) {
         return switch (biome) { case FOREST -> "fd"; case CAVERN -> "cd"; case ICY -> "id"; case HAUNTED -> "hd"; };
@@ -334,7 +397,7 @@ public final class BiomeCoordination {
         }
         return Double.isFinite(x) && Double.isFinite(z) && (x-cx)*(x-cx)+(z-cz)*(z-cz) <= radius*radius;
     }
-    public static void resetVisit() { received.clear(); reporters.clear(); pendingChat.clear(); chatReceived.clear(); soloDiagnostic.clear(); lastDecision = ""; }
+    public static void resetVisit() { departures.clear(); hideyhoDialogueAt = -1; received.clear(); reporters.clear(); pendingChat.clear(); chatReceived.clear(); soloDiagnostic.clear(); lastDecision = ""; }
     public static void onNetworkReport(String code, String sender) {
         if (!SafariLocation.inside()) return;
         for (SafariBiome biome : SafariBiome.values()) if (word(biome).equals(code)) {
@@ -344,6 +407,8 @@ public final class BiomeCoordination {
     }
     public static void onChatMessage(String line) {
         if (SessionManager.current() == null || !SafariLocation.inside()) return;
+        if (SafariLocation.biome() == SafariBiome.HAUNTED && (line.startsWith("[MOB] Hideyho:") || line.startsWith("[NPC] Hideyho:")))
+            hideyhoDialogueAt = MonotonicTime.nowMillis();
         var matcher = REPORT.matcher(line);
         if (!matcher.matches() || !PartyState.snapshot().containsName(matcher.group(1))) return;
         // Chat supplies coordination only; never a fabricated catch, PB, or collection entry.

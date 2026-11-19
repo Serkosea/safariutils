@@ -15,7 +15,7 @@ public final class DashboardRegression {
     }
     private static int checkDashboard() {
         if(!java.util.Arrays.stream(DashboardNavigation.Tab.values()).map(t->t.label).toList()
-            .equals(List.of("Stats","History","Profit","Sparklings","Lookup","Personal Bests")))throw new AssertionError("dashboard tab order");
+            .equals(List.of("Stats","History","Profit","Personal Bests","Sparklings","Lookup")))throw new AssertionError("dashboard tab order");
         RunRecord old=new RunRecord();old.started=99;
         RunRecord archived=new RunRecord();archived.started=101;archived.totalShards=5;
         RunRecord live=new RunRecord();live.started=101;live.totalShards=8;

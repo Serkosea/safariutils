@@ -221,6 +221,12 @@ public final class BirdfeederWatch {
 		return spawnEventsObserved >= requiredForestFeed(startingFeed) && allFeedUsed();
 	}
 
+    /** All local floor food accounted for and no held food; final feeder spawns may still be pending. */
+    static boolean departureFeedReady() {
+        return floorFeedFound >= 9 && java.util.Arrays.stream(lastHeld).sum() == 0
+            && (feederCount > 0 || personalFeedDeposited >= requiredForestFeed(startingFeed) || allForestFeedUsed());
+    }
+
     static int requiredForestFeed(int ownStartingFeed) { return 9 + Math.max(0, ownStartingFeed); }
     static int spawnedCount(dev.serko.safariutils.data.Critter bird) { return birdSpawns.getOrDefault(bird, 0); }
 

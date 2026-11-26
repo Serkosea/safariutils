@@ -4,6 +4,12 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -35,12 +41,24 @@ public final class VisibilityCheck {
 
 		if (!inFieldOfView(eye, client.player.getViewVector(1.0f), target)) return false;
 
-		// OUTLINE matches what the player sees; COLLIDER answers a movement question.
-		ClipContext clip = new ClipContext(eye, target,
-			ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, client.player);
-		HitResult hit = client.level.clip(clip);
+		HitResult hit = sightRay(client, eye, target);
 		return hit.getType() == HitResult.Type.MISS && !paintingBlocks(eye, target);
 	}
+
+    /** Skip foliage during the same ray traversal so solid blocks behind it still occlude. */
+    private static HitResult sightRay(Minecraft client, Vec3 eye, Vec3 target) {
+        return client.level.clip(new ClipContext(eye, target, ClipContext.Block.OUTLINE,
+                ClipContext.Fluid.NONE, client.player) {
+            @Override
+            public VoxelShape getBlockShape(BlockState state, BlockGetter level, BlockPos pos) {
+                if (state.is(BlockTags.LEAVES) || state.is(Blocks.BUSH) || state.is(Blocks.DEAD_BUSH)
+                        || state.is(Blocks.ROSE_BUSH) || state.is(Blocks.SWEET_BERRY_BUSH)
+                        || state.is(Blocks.FIREFLY_BUSH) || state.is(Blocks.AZALEA)
+                        || state.is(Blocks.FLOWERING_AZALEA)) return Shapes.empty();
+                return super.getBlockShape(state, level, pos);
+            }
+        });
+    }
 
 	/** Whether an entity is on screen, even when its rendered nametag is visible through terrain. */
 	public static boolean onScreen(Entity entity) {
@@ -66,7 +84,7 @@ public final class VisibilityCheck {
 		return canSee(new Vec3(pos.getX() + 0.5, pos.getY() + 1.3, pos.getZ() + 0.5));
 	}
 
-	/** Checks several sides because leaves often block a nest's center point. */
+	/** Checks several sides because a nearby branch can obscure the center of a nest. */
 	public static boolean canSeeBeeNest(BlockPos pos) {
 		double x = pos.getX() + 0.5;
 		double y = pos.getY() + 0.5;
@@ -107,8 +125,7 @@ public final class VisibilityCheck {
 		Vec3 eye = client.player.getEyePosition();
 		Vec3 target = Vec3.atCenterOf(pos);
 		if (!inFieldOfView(eye, client.player.getViewVector(1.0f), target)) return false;
-		HitResult hit = client.level.clip(new ClipContext(eye, target,
-			ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, client.player));
+		HitResult hit = sightRay(client, eye, target);
 		return reachesBlockSurface(hit, pos) && !paintingBlocks(eye, hit.getLocation());
 	}
 
@@ -142,8 +159,7 @@ public final class VisibilityCheck {
 		if (client.player == null || client.level == null || !onScreen(entity)) return false;
 		Vec3 eye = client.player.getEyePosition();
 		Vec3 target = entity.position().add(0, entity.getBbHeight() / 2.0, 0);
-		HitResult hit = client.level.clip(new ClipContext(eye, target,
-			ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, client.player));
+		HitResult hit = sightRay(client, eye, target);
 		return hit.getType() == HitResult.Type.BLOCK
 			&& hit.getLocation().distanceToSqr(target) <= 0.81
 			&& !paintingBlocks(eye, hit.getLocation());

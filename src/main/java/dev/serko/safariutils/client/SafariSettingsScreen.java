@@ -153,6 +153,62 @@ public final class SafariSettingsScreen extends Screen {
 	private int constellationProgress;
 	private boolean constellationPanel;
 	private boolean customThemePanel;
+    private boolean predictionPanel;
+    private List<String> order;
+    private String displayedHotspotOrder;
+    static void openHotspotOrder() {
+        if (!(ClientCompat.screen() instanceof SafariSettingsScreen screen)) return;
+        var names = new java.util.LinkedHashSet<String>();
+        for (String name : ConfigManager.get().gameplay.hotspotPreferenceOrder.split(",")) {
+            var biome = dev.serko.safariutils.data.SafariBiome.fromDisplayName(name.strip());
+            if (biome != null) names.add(biome.displayName());
+        }
+        names.addAll(List.of("Icy","Forest","Haunted","Cavern"));
+        screen.order = new java.util.ArrayList<>(names);
+        screen.setFocused(null);
+        if (screen.search != null) screen.search.visible = false;
+    }
+    private void closeOrder() {
+        order = null;
+        if (search != null) search.visible = true;
+    }
+    private void drawHotspotOrder(GuiGraphicsExtractor g, int mx, int my) {
+        int w=Math.min(260,width-12), x=(width-w)/2, y=(height-164)/2;
+        g.fill(0,0,width,height,0x88000000);
+        g.fill(x,y,x+w,y+164,SURFACE);
+        outline(g,x,y,w,164,CYAN);
+        drawText(g,"Hotspot preference order",x+10,y+9,TEXT);
+        for (int i=0;i<order.size();i++) {
+            int row=i, top=y+26+i*27;
+            String name=order.get(i);
+            g.fill(x+8,top,x+w-8,top+23,CARD);
+            drawText(g,(i+1)+". "+name,x+14,top+7,0xff000000 | dev.serko.safariutils.data.SafariBiome.fromDisplayName(name).colour());
+            for (int step=-1;step<=1;step+=2) {
+                int target=row+step, left=x+w-(step<0?76:42), buttonTop=top+3;
+                boolean enabled=target>=0 && target<order.size();
+                boolean hovered=enabled && inside(mx,my,left,buttonTop,left+30,buttonTop+17);
+                g.fill(left,buttonTop,left+30,buttonTop+17,hovered ? SELECTED : shade(BLUE,enabled?.34f:.15f));
+                outline(g,left,buttonTop,30,17,hovered ? CYAN : enabled ? BLUE : BORDER);
+                drawCenteredText(g,step<0?"Up":"Down",left+15,buttonTop+5,enabled ? TEXT : MUTED);
+                if (target<0 || target>=order.size()) continue;
+
+                hits.add(new Hit(left,buttonTop,left+30,buttonTop+17,()->{
+                    java.util.Collections.swap(order,row,target);
+                    ConfigManager.get().gameplay.hotspotPreferenceOrder=String.join(", ",order);
+                    ConfigManager.save();
+                }));
+            }
+        }
+        drawButton(g,x+8,y+136,w-16,"Done",mx,my);
+        hits.add(new Hit(x+8,y+136,x+w-8,y+158,this::closeOrder));
+    }
+    private boolean previewHit;
+    static void openPrediction() {
+        if(ClientCompat.screen() instanceof SafariSettingsScreen screen) {
+            screen.predictionPanel=true; screen.setFocused(null);
+            if(screen.search!=null)screen.search.visible=false;
+        }
+    }
 	private boolean specialSparklingConfirmation;
 	private boolean customSparklingPanel;
 	private int customSparklingPage;
@@ -381,7 +437,7 @@ public final class SafariSettingsScreen extends Screen {
 		addRootPage(display, displaySource, "display.safari.chat", "Chat Filtering",
 			"Hide selected server dialogue while retaining mod detection", "hiddenChatMessages");
 		addRootPage(display, displaySource, "display.safari.comfort", "Visual Comfort",
-			"Reduce disruptive Safari screen effects", "removeColdOverlay", "removeDarkness");
+			"Reduce disruptive Safari screen effects", BuildVersion.has(BuildVersion.Capability.SAFE_MODE_CONTROLS) ? new String[]{"removeColdOverlay","removeDarkness","hideHauntedPaintings"} : new String[]{"removeColdOverlay","removeDarkness"});
         addRootPage(display, displaySource, "display.safari.water", "Water",
             "Water clarity in Safari", "clearWater", "waterOpacity");
         addRootPage(display, displaySource, "display.safari.prefix", "Client Message Prefix",
@@ -408,12 +464,12 @@ public final class SafariSettingsScreen extends Screen {
         addRootPage(gameplay, gameplaySource, "gameplay.ticket-trading", "Ticket Trading",
             "Configure trusted invites and timed party warps", "configureTicketTrading");
         addRootPage(gameplay, gameplaySource, "gameplay.coordination", "Party Coordination",
-            "Assign party biomes and share completion", "assignHotspots", "biomeReports");
+            "Assign party biomes and share completion", "assignHotspots", "reorderHotspots", "biomeReports");
         addRootPage(gameplay, gameplaySource, "gameplay.personal-bests", "Personal Bests",
             "Unique-clear and personal biome-mob catch messages", "personalBestMessages", "biomeMobBestMessages");
 
         addRootPage(gameplay, gameplaySource, "gameplay.prediction", "Capsule Prediction",
-            "Predicted throw path and contact", "capsulePrediction", "capsulePredictionColour", "capsulePredictionHitColour");
+            "Predicted throw path and contact", "capsulePrediction", "customizePrediction");
         addRootPage(gameplay, gameplaySource, "gameplay.honeyhives", "Honeyhives",
             "Canyon hive availability and beacons", "honeyhiveBeacons", "honeyhiveColour");
 
@@ -874,7 +930,7 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	private boolean backgroundBlocked() {
-		return constellationPanel || customThemePanel || customSparklingPanel || specialSparklingConfirmation
+		return constellationPanel || order != null || predictionPanel || customThemePanel || customSparklingPanel || specialSparklingConfirmation
 			|| editor != null && !editingInlineText || choiceField != null;
 	}
 
@@ -927,7 +983,7 @@ public final class SafariSettingsScreen extends Screen {
 		boolean editingSameSlider = editingInlineText && editingNumber && editor != null
 			&& inside(mouseX, mouseY, editingSliderLeft, editingSliderTop,
 				editingSliderRight, editingSliderBottom);
-		boolean modalOpen = constellationPanel || customThemePanel || customSparklingPanel
+		boolean modalOpen = constellationPanel || order != null || predictionPanel || customThemePanel || customSparklingPanel
 			|| specialSparklingConfirmation
 			|| editor != null && !editingInlineText || choiceField != null || editingSameSlider;
 		SettingsUiKit.available(search, !backgroundBlocked());
@@ -965,6 +1021,8 @@ public final class SafariSettingsScreen extends Screen {
 			modalHitStart = hits.size();
 			drawConstellationPanel(graphics);
 		}
+		if(order != null){ modalHitStart=hits.size(); drawHotspotOrder(graphics,mouseX,mouseY); }
+        if(predictionPanel){ modalHitStart=hits.size(); drawPrediction(graphics,mouseX,mouseY); }
 		if (customThemePanel) {
 			modalHitStart = hits.size();
 			drawCustomThemePanel(graphics, mouseX, mouseY);
@@ -1886,9 +1944,15 @@ public final class SafariSettingsScreen extends Screen {
 					return size() > 8;
 				}
 			});
-		SettingTextLayout cached = widths.get(availableWidth);
+		boolean hotspot = field.getName().equals("reorderHotspots");
+        String configured = hotspot ? ConfigManager.get().gameplay.hotspotPreferenceOrder : null;
+        if (hotspot && !java.util.Objects.equals(displayedHotspotOrder,configured)) {
+            displayedHotspotOrder=configured;
+            widths.clear();
+        }
+        SettingTextLayout cached = widths.get(availableWidth);
 		if (cached != null) return cached;
-		String description = option.desc();
+		String description = hotspot ? configured.replace(", ", " → ") : option.desc();
 		int split = description.indexOf('\n');
 		String main = clean(split < 0 ? description : description.substring(0, split));
 		String tag = split < 0 ? "" : clean(description.substring(split + 1));
@@ -1908,6 +1972,22 @@ public final class SafariSettingsScreen extends Screen {
 		return layout;
 	}
 
+    private void drawDescriptionLine(GuiGraphicsExtractor graphics, Field field, String line, int x, int y, int colour) {
+        if (!field.getName().equals("reorderHotspots")) {
+            drawText(graphics,line,x,y,colour);
+            return;
+        }
+        var styled=Component.empty();
+        for (String word : line.split(" ")) {
+            if (!styled.getSiblings().isEmpty()) styled.append(" ");
+            var biome=dev.serko.safariutils.data.SafariBiome.fromDisplayName(word);
+            var part=Component.literal(word);
+            if (biome!=null) part.withStyle(style -> style.withColor(biome.colour()));
+            styled.append(part);
+        }
+        graphics.text(font,styled,x,y,colour);
+    }
+
 	private void drawCombinedSettingRow(GuiGraphicsExtractor graphics, Object owner, Field field,
 			SettingInfo option, String previousName, int left, int right, int y, int height,
 			int mouseX, int mouseY) {
@@ -1917,7 +1997,7 @@ public final class SafariSettingsScreen extends Screen {
 		drawText(graphics, name, left + 12, y + 9, TEXT);
 		int lineY = y + 24;
 		for (String line : layout.mainLines) {
-			drawText(graphics, line, left + 12, lineY, layout.safeModeComparison ? CYAN : MUTED);
+			drawDescriptionLine(graphics, field, line, left + 12, lineY, layout.safeModeComparison ? CYAN : MUTED);
 			lineY += 11;
 		}
 		for (String line : layout.tagLines) {
@@ -1950,7 +2030,7 @@ public final class SafariSettingsScreen extends Screen {
 		drawText(graphics, displayName(option.name()), left + 12, y + 9, TEXT);
 		int lineY = y + 24;
 		for (String line : layout.mainLines) {
-			drawText(graphics, line, left + 12, lineY, layout.safeModeComparison ? CYAN : MUTED);
+			drawDescriptionLine(graphics, field, line, left + 12, lineY, layout.safeModeComparison ? CYAN : MUTED);
 			lineY += 11;
 		}
 		for (String line : layout.tagLines) {
@@ -3439,7 +3519,63 @@ public final class SafariSettingsScreen extends Screen {
 	}
 
 	/** Role-based palette editor; every change is reflected by the screen behind it. */
-	private void drawCustomThemePanel(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+	private void closePrediction(){
+        predictionPanel=false;
+        if(search!=null){search.visible=true;search.active=true;}
+        ConfigManager.save();
+    }
+    private void drawPrediction(GuiGraphicsExtractor g,int mx,int my){
+        var cfg=ConfigManager.get().gameplay;
+        int w=Math.min(350,width-12),x=(width-w)/2,y=(height-198)/2;
+        g.fill(0,0,width,height,0x88000000);g.fill(x,y,x+w,y+198,SURFACE);
+        outline(g,x,y,w,198,CYAN);drawText(g,"Capsule prediction",x+10,y+9,TEXT);
+        g.fill(x+10,y+26,x+w-10,y+77,CARD);
+        int colour=Colours.argb(previewHit?cfg.capsulePredictionHitColour:cfg.capsulePredictionColour,0xffffffff);
+        int span=w-56;
+        for(int i=0;i<=span;i++){
+            double t=(double)i/span;
+            int py=y+65-(int)(112*t*(1-t));
+            int alpha=cfg.predictionFade?(int)(255*Math.min(1,.12+5*t)):255;
+            g.fill(x+18+i,py,x+20+i,py+2,(colour&0xffffff)|(alpha<<24));
+        }
+        var outline = dev.serko.safariutils.state.CapsulePath.markerOutline(cfg.predictionMarker);
+        double previewScale=36*dev.serko.safariutils.state.CapsulePath.sizeScale(cfg.predictionMarkerSize);
+        for (int i=1;i<outline.size();i++) {
+            var from=outline.get(i-1);
+            var to=outline.get(i);
+            int steps=Math.max(1,(int)Math.ceil(from.distanceTo(to)*previewScale));
+            for (int j=0;j<=steps;j++) {
+                double t=(double)j/steps;
+                int px=x+18+span+(int)Math.round((from.x+(to.x-from.x)*t)*previewScale);
+                int py=y+65-(int)Math.round((from.y+(to.y-from.y)*t)*previewScale);
+                g.fill(px,py,px+1,py+1,colour);
+            }
+        }
+        int controlY=y+83;
+        int size=Math.clamp(cfg.predictionMarkerSize,dev.serko.safariutils.state.CapsulePath.MIN_SIZE,dev.serko.safariutils.state.CapsulePath.MAX_SIZE);
+        for (int direction=-1;direction<=1;direction+=2) {
+            int left=direction<0 ? x+10 : x+w-42;
+            int next=Math.clamp(size+direction*10,dev.serko.safariutils.state.CapsulePath.MIN_SIZE,dev.serko.safariutils.state.CapsulePath.MAX_SIZE);
+            drawButton(g,left,controlY,32,direction<0?"−":"+",mx,my);
+            if(next!=size) hits.add(new Hit(left,controlY,left+32,controlY+22,()->cfg.predictionMarkerSize=next));
+        }
+        drawCenteredText(g,"Marker size: "+size+"%",x+w/2,controlY+7,TEXT);
+        int cell=(w-24)/2;
+        for(int i=0;i<6;i++){
+            int cx=x+10+i%2*(cell+4),cy=y+111+i/2*28;
+            String label=switch(i){case 0->"Path color";case 1->"Hit color";case 2->"Marker: "+dev.serko.safariutils.state.CapsulePath.markerName(cfg.predictionMarker);case 3->"Near fade: "+(cfg.predictionFade?"On":"Off");case 4->previewHit?"Preview: Critter":"Preview: Terrain";default->"Done";};
+            drawButton(g,cx,cy,cell,label,mx,my);
+            final int action=i;
+            hits.add(new Hit(cx,cy,cx+cell,cy+22,()->{
+                if(action<2)try{openEditor(cfg,cfg.getClass().getField(action==0?"capsulePredictionColour":"capsulePredictionHitColour"),true);}catch(NoSuchFieldException e){throw new IllegalStateException(e);}
+                else if(action==2)cfg.predictionMarker=dev.serko.safariutils.state.CapsulePath.nextMarker(cfg.predictionMarker);
+                else if(action==3)cfg.predictionFade=!cfg.predictionFade;
+                else if(action==4)previewHit=!previewHit;
+                else closePrediction();
+            }));
+        }
+    }
+    private void drawCustomThemePanel(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
 		int columns = 3;
 		int rows = (CUSTOM_THEME_ROLES.size() + columns - 1) / columns;
 		int w = Math.min(620, width - 30);
@@ -3906,7 +4042,7 @@ public final class SafariSettingsScreen extends Screen {
 		editingNumberOriginal = null;
 		inlineEditorLeft = inlineEditorTop = inlineEditorRight = inlineEditorBottom = 0;
 		editingSliderLeft = editingSliderTop = editingSliderRight = editingSliderBottom = 0;
-		if (search != null) search.visible = !customThemePanel && !customSparklingPanel;
+		if (search != null) search.visible = order == null && !predictionPanel && !customThemePanel && !customSparklingPanel;
 	}
 
 	private void drawConstellationPanel(GuiGraphicsExtractor graphics) {
@@ -4191,6 +4327,9 @@ public final class SafariSettingsScreen extends Screen {
     }
     @Override public void tick() {
         super.tick();
+        updateWindowFocus();
+    }
+    private void updateWindowFocus() {
         boolean focused=Minecraft.getInstance().isWindowActive();
         if(focused!=windowFocused) {
             releasePointerCapture();setFocused(null);
@@ -4202,6 +4341,8 @@ public final class SafariSettingsScreen extends Screen {
 
 	@Override
 	public boolean mouseClicked(MouseButtonEvent event, boolean doubled) {
+        updateWindowFocus();
+        if(!windowFocused)return false;
         // A new press cannot belong to a drag whose release was lost during Alt+Tab.
         releasePointerCapture();
         if(!backgroundBlocked()) {modalHitStart=-1;customPresetHitStart=-1;}
@@ -4378,6 +4519,8 @@ public final class SafariSettingsScreen extends Screen {
 
 	@Override
 	public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+        updateWindowFocus();
+        if(!windowFocused)return false;
 		if (updateColourControl(event.x(), event.y())) return true;
 		if (customDurationDragging) {
 			updateCustomDuration(event.x());
@@ -4483,7 +4626,9 @@ public final class SafariSettingsScreen extends Screen {
 			cancelEditor();
 			return true;
 		}
-		if (customThemePanel && event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) {
+		if(order != null && event.key()==com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE){closeOrder();return true;}
+        if(predictionPanel && event.key()==com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE){closePrediction();return true;}
+        if (customThemePanel && event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) {
 			closeCustomThemePanel();
 			return true;
 		}

@@ -49,7 +49,7 @@ import java.util.Set;
 /** Starts, updates, finishes, and saves Safari runs. */
 public final class SessionManager {
 
-	private static final String LEADER_RUN_START =
+	public static final String LEADER_RUN_START =
 		"[NPC] Safari Manager: I already saw your ticket, so you're free to go.";
 	private static final String TICKET_LOCKOUT =
 		"[NPC] Safari Manager: Dude, if you're not gonna pay, you're not gonna play.";

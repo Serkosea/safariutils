@@ -60,6 +60,18 @@ public final class FloorDropPatternRegression {
             model.observe(base + 999, SafariBiome.FOREST);
             require(model.kind(base + 999) == FloorDropPattern.Kind.UNKNOWN, "visit reset retained anchor"); checks++;
         }
+        FloorDropPattern partial = new FloorDropPattern();
+        partial.observe(100, SafariBiome.CAVERN);
+        partial.observe(103, SafariBiome.CAVERN);
+        require(partial.pickupDerivedKind(103) == FloorDropPattern.Kind.UNKNOWN, "missing pickup anchor"); checks++;
+        partial.reward(100, FloorDropPattern.Kind.PURPLE);
+        require(partial.pickupDerivedKind(103) == FloorDropPattern.Kind.ORANGE, "missing earlier gems shifted late pickup prediction"); checks++;
+        partial.reset();
+        partial.observe(200, SafariBiome.ICY);
+        partial.observe(210, SafariBiome.FOREST);
+        partial.reward(200, FloorDropPattern.Kind.LOOT);
+        require(partial.pickupDerivedKind(210) == FloorDropPattern.Kind.LOOT, "later observed drop follows confirmed loot boundary"); checks++;
+        require(partial.pickupDerivedCoinSupply() == -1, "loot alone cannot identify coin supply"); checks++;
         for (String fixture : new String[] {"/floor-pattern-five-runs.json", "/floor-pattern-oct29-runs.json"})
         try (var input = FloorDropPatternRegression.class.getResourceAsStream(fixture)) {
             if (input == null) throw new AssertionError("Missing five-run fixture");

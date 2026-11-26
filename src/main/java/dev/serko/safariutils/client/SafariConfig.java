@@ -107,6 +107,11 @@ public class SafariConfig {
         @SettingColor @Expose public String honeyhiveColour = DisplayConfig.colour(0xFF,0xDA,0x70);
         @SettingInfo(name = "Capsule Prediction", desc = "Shows an estimated capsule path while holding a capsule")
         @SettingToggle @Expose public boolean capsulePrediction = true;
+        @SettingInfo(name = "Prediction Appearance", desc = "Preview the path and contact marker")
+        @SettingAction(buttonText = "Customize") public Runnable customizePrediction = SafariSettingsScreen::openPrediction;
+        @Expose public boolean predictionFade=true;
+        @Expose public int predictionMarker=0;
+        @Expose public int predictionMarkerSize=100;
         @SettingInfo(name = "Critter Contact Color", desc = "Path color when a critter is predicted to be hit")
         @SettingColor @Expose public String capsulePredictionHitColour = DisplayConfig.colour(0xFF,0x70,0x70);
         @SettingInfo(name = "Path Color", desc = "Color of the capsule path before a predicted critter hit")
@@ -145,6 +150,9 @@ public class SafariConfig {
         @SettingToggle @Expose public boolean autoSparklingTicket = false;
         @SettingInfo(name = "Assign Hotspots", desc = "Fairly assigns separate biomes to party members, preserving each finalized assignment")
         @SettingToggle @Expose public boolean assignHotspots = false;
+        @Expose public String hotspotPreferenceOrder = "Icy, Forest, Haunted, Cavern";
+        @SettingInfo(name = "Hotspot Preference Order", desc = "Rank biomes from first choice to last")
+        @SettingAction(buttonText = "Reorder") public Runnable reorderHotspots = SafariSettingsScreen::openHotspotOrder;
         @SettingInfo(name = "Biome Reports", desc = "Announces completed biomes in party chat for your run mode; party-sync progress remains automatic")
         @SettingToggle @Expose public boolean biomeReports = false;
 
@@ -990,6 +998,8 @@ public class SafariConfig {
 		@SettingToggle
 		@Expose
 		public boolean removeDarkness = true;
+        @SettingInfo(name = "Hide Haunted Paintings", desc = "Hides paintings in the Haunted biome")
+        @SettingToggle @Expose public boolean hideHauntedPaintings=false;
 
 		@SettingInfo(name = "Hide Chat Messages",
 			desc = "Hides selected server dialogue and objective messages")

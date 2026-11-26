@@ -43,5 +43,5 @@ final class PartyCompletionSync {
             case UNIQUE -> (flags&1)!=0 || (flags&2)!=0 && (localCapture || remote.value(index,2,now)>0);
         };
     }
-    static String status() { return "Completion reporters: "+remote.size(MonotonicTime.nowMillis()); }
+    static int reporterCount() { return remote.size(MonotonicTime.nowMillis()); }
 }

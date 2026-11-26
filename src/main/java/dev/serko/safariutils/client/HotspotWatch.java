@@ -125,11 +125,12 @@ public final class HotspotWatch {
 	public static void onChatMessage(String line) {
 		if (enabled() && SafariLocation.inside()) {
             PartyReport shared = parsePartyReport(line);
-            if (shared != null && (PARTY_HOTSPOT.matcher(line).matches() || (dev.serko.safariutils.session.SessionManager.current()==null
-                    ? System.currentTimeMillis()-SafariLocation.insideSinceMillis()<=30000
-                    : dev.serko.safariutils.session.SessionManager.current().personalBestElapsed()<=30000)) && dev.serko.safariutils.state.PartyState.snapshot().containsName(shared.name())) {
+            var session = dev.serko.safariutils.session.SessionManager.current();
+            boolean tagged = shared != null && CLIENT_TAG.matcher(line).find();
+            boolean manualWindow = session != null && session.personalBestElapsed() >= 0 && session.personalBestElapsed() <= 30000;
+            if (shared != null && (tagged || manualWindow) && dev.serko.safariutils.state.PartyState.snapshot().containsName(shared.name())) {
                 PartyHotspotSync.report(shared.name(), shared.biome());
-                allocation.report(shared.name(), shared.biome(), dev.serko.safariutils.state.MonotonicTime.nowMillis());
+                allocation.report(shared.name(), shared.biome(), dev.serko.safariutils.state.MonotonicTime.nowMillis(), tagged);
                 return;
             }
         }
@@ -145,6 +146,7 @@ public final class HotspotWatch {
 		announce(found);
 	}
 
+    private static final Pattern CLIENT_TAG = Pattern.compile(":\\s*\\[(?:SM|SU|SafariUtils)]", Pattern.CASE_INSENSITIVE);
     record PartyReport(String name, SafariBiome biome) { }
     static PartyReport parsePartyReport(String line) {
         if (line == null) return null;

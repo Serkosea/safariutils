@@ -83,7 +83,8 @@ public final class CapsulePrediction {
         List<Vec3> points=new ArrayList<>(CapsulePath.SAMPLES);
         for(int i=0;i<CapsulePath.SAMPLES;i++) points.add(CapsulePath.point(eye,aim,CapsulePath.START+(end-CapsulePath.START)*i/(CapsulePath.SAMPLES-1)));
         if(endpoint!=null) points.set(points.size()-1,endpoint);
-        current=new Frame(client.level,List.copyOf(points),endpoint==null?List.of():CapsulePath.ring(endpoint,normal),normal,contact,entity,estimated);
+        current=new Frame(client.level,List.copyOf(points),endpoint==null?List.of():CapsulePath.ring(endpoint,normal,ConfigManager.get().gameplay.predictionMarker,
+            Vec3.directionFromRotation(0,player.getYRot()+90),aim.scale(-1),ConfigManager.get().gameplay.predictionMarkerSize),normal,contact,entity,estimated);
         String next=contact+"/"+estimated;
         if(cachedRevision!=revision&&!next.equals(diagnostic)) {diagnostic=next;DebugLog.line("CAPSULE_PREDICTION","contact="+contact+" estimated="+estimated+" targets="+targets.size()+" radius="+CapsulePath.CONTACT_RADIUS);}
     }

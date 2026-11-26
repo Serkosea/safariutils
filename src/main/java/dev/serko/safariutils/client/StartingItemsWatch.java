@@ -133,6 +133,14 @@ public final class StartingItemsWatch {
 		return capsules;
 	}
 
+    static void addStartingGrant(com.google.gson.JsonObject hello) {
+        if (startingInventory == null) return;
+        var items = new com.google.gson.JsonObject();
+        items.addProperty("birdFood", startingInventory[6] + startingInventory[7] + startingInventory[8]);
+        items.addProperty("shiningCoins", startingInventory[4]);
+        hello.add("startingItems", items);
+    }
+
 	private static int[] countStartingItems(Inventory inventory) {
 		int[] found = new int[StartingItems.ORDERED.size()];
 		for (int i = 0; i < inventory.getContainerSize(); i++) {

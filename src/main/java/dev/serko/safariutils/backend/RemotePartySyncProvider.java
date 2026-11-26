@@ -62,7 +62,9 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 	private volatile long nextPingAt;
     private volatile long openedAt, lastInboundAt, connectingAt;
     private volatile String attemptToken;
-	private Context context;
+	private volatile Context context;
+    private volatile boolean expandable, expanding, explicitEnd;
+    private volatile String activeConnectionId = "";
 	private String signature = "";
     private final ConnectionNotices notices = new ConnectionNotices();
     private volatile boolean efficient, updateRequired, renewalPending;
@@ -88,6 +90,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		String nextSignature = signature(next);
 		if (!nextSignature.equals(signature)) {
             boolean differentVisit = context == null || next == null || !java.util.Objects.equals(context.visitId(), next.visitId());
+            if (!differentVisit && tryExpand(next,nextSignature)) return;
 			disconnect();
             if (differentVisit) runId = "";
 			context = next;
@@ -150,6 +153,24 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		connect(next, generation.incrementAndGet());
 	}
 
+    private synchronized boolean tryExpand(Context next,String nextSignature) {
+        if (!valid(next) || !expandable || expanding || renewalPending || !connected || !replayReady || outbox==null
+                || !context.localUuid().equals(next.localUuid()) || !context.lobbyId().equals(next.lobbyId())
+                || next.roster().size() <= context.roster().size() || !next.roster().containsAll(context.roster())) return false;
+        flushFrames();
+        JsonObject change=new JsonObject(); change.addProperty("type","expand");
+        change.addProperty("connectionId",activeConnectionId);change.addProperty("visitId",context.visitId());change.addProperty("runId",runId);
+        JsonArray roster=new JsonArray();
+        next.roster().forEach(id -> roster.add(id.replace("-", "").toLowerCase(java.util.Locale.ROOT)));
+        change.add("roster",roster);
+        expanding=true; connected=false; replayReady=false; sparklingSnapshotReady=false; connectedPlayers=java.util.Set.of();
+        openedAt=MonotonicTime.nowMillis();context=next;signature=nextSignature;
+        incoming.clear();lastHelloPayload="";completionBaseline="";pendingHelloAt=0;
+        var current=socket;long attempt=generation.get();
+        outbox.send(change.toString()).exceptionally(error->{failedSend(attempt,current,error);return null;});
+        return true;
+    }
+
     private void publishNotice() {
         // Called only from the client tick, after callback generation checks and visit selection.
         if (net.minecraft.client.Minecraft.getInstance() == null) return;
@@ -174,6 +195,9 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 		send(sequence, "A", payload, catchUpOnly);
 	}
 
+    private boolean preferenceSupported;
+    private com.google.gson.JsonElement sharedPreference;
+
 	private synchronized void send(long sequence, String type, String payload, boolean catchUpOnly) {
 		WebSocket current = socket;
 		long operationGeneration = generation.get();
@@ -187,9 +211,14 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
                 JsonObject hello=JsonParser.parseString(payload).getAsJsonObject();
                 hello.addProperty("visitId",context.visitId());
                 if ("hello".equals(hello.get("action").getAsString())) {
+                    if (!preferenceSupported) hello.remove("startingItems");
+                    var order = hello.get("hotspotPreference");
+                    if (!preferenceSupported || java.util.Objects.equals(order, sharedPreference)) hello.remove("hotspotPreference");
+                    else if (order != null) sharedPreference = order;
                     JsonArray capabilities=new JsonArray();capabilities.add("run-reconciliation-v1");capabilities.add("critter-completion-v1");hello.add("capabilities",capabilities);
                     if(runId.isEmpty())hello.add("resumeRunId",com.google.gson.JsonNull.INSTANCE);else hello.addProperty("resumeRunId",runId);
-                } else { if(runId.isEmpty())hello.add("runId",com.google.gson.JsonNull.INSTANCE);else hello.addProperty("runId",runId); }
+                } else { if(explicitEnd && "leave".equals(hello.get("action").getAsString()))hello.addProperty("visitEnded",true);
+                    if(runId.isEmpty())hello.add("runId",com.google.gson.JsonNull.INSTANCE);else hello.addProperty("runId",runId); }
                 payload=hello.toString();
             } else {
                 if(!replayReady || runId.isEmpty())return;
@@ -300,7 +329,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 			return;
 		}
         outbox = new WebSocketOutbox(value);
-        efficient = false; renewalPending = false; renewAt = MonotonicTime.nowMillis() + 485_000L;
+        expanding=false; expandable=false; explicitEnd=false; efficient = false; renewalPending = false; renewAt = MonotonicTime.nowMillis() + 485_000L;
         pendingFrames.asList().clear(); completionBaseline = ""; completionRevision = 0; wireSequence = 0;
         pendingHelloAt = 0; lastHelloPayload = "";
 		connected = false; sparklingSnapshotReady = false; coordination = false; runSync=false; completion=false; replayReady=false; connectedPlayers = java.util.Set.of();
@@ -346,6 +375,10 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 	}
 
 	private synchronized void failed(long attempt, Throwable error) {
+        failed(attempt, error, "session-request");
+    }
+
+    private synchronized void failed(long attempt, Throwable error, String serviceStage) {
 		if (generation.get() != attempt) return;
 		generation.incrementAndGet();
 		incoming.clear();
@@ -359,8 +392,10 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
         Throwable cause = unwrap(error);
         long serverDelay = 0;
         int status = 0;
+        String stage = "socket";
         String limitCode = "unspecified";
         if (cause instanceof WebSocketHandshakeException handshake) {
+            stage = "websocket-handshake";
             status = handshake.getResponse().statusCode();
             limitCode = ConnectionNotices.limitCode(handshake.getResponse().headers().firstValue("x-safari-limit-reason").orElse(""));
             if (status == 426 && handshake.getResponse().headers().firstValue("x-safari-sync-update-required").orElse("").equals("true")) {
@@ -372,21 +407,26 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
             }
             serverDelay = RemoteSession.retryAfterMillis(handshake.getResponse().headers().firstValue("Retry-After").orElse(""));
         } else if (cause instanceof dev.serko.safariutils.api.ServiceRequestException service) {
+            stage = serviceStage;
             limitCode = ConnectionNotices.limitCode(service.limitReason());
             status = service.status(); serverDelay = Math.min(86_400L, service.retrySeconds()) * 1000L;
         }
         dev.serko.safariutils.client.PartySyncDebugHud.serviceFailure(status==503 ? "Service unavailable (503)" : status==429 ? "Service busy (429)" : status==401 ? "Session rejected (401)" : "Connection interrupted / retrying");
         String failureReason = status == 429 ? ConnectionNotices.limited(limitCode) : ConnectionNotices.reason(status, cause);
+        if (status == 503 && ("room-coordination".equals(stage) || cause instanceof WebSocketHandshakeException handshake
+                && "coordination-unavailable".equals(handshake.getResponse().headers().firstValue("x-safari-error-reason").orElse(""))))
+            failureReason = "lobby coordination temporarily unavailable. Retrying automatically.";
+        if (status == 429) failureReason += " (" + stage + ")";
         notices.failure(failureReason);
-        if (status == 429) dev.serko.safariutils.client.PartySyncDebugHud.serviceFailure(failureReason);
+        if (status == 429 || status == 503) dev.serko.safariutils.client.PartySyncDebugHud.serviceFailure(failureReason);
         if (status == 401 && attemptToken != null) RemoteSession.instance().invalidate(attemptToken);
         attemptToken = null;
         scheduleRetry();
         retryAt = Math.max(retryAt, MonotonicTime.nowMillis() + serverDelay);
         // HTTP status and bounded timing are enough; never log handshake response headers.
-        DebugLog.line("SYNC_NET", "retry status=" + status + " limit=" + limitCode + " serverRetryMs=" + serverDelay + " delayMs=" + Math.max(0, retryAt - MonotonicTime.nowMillis()));
+        DebugLog.line("SYNC_NET", "retry stage=" + stage + " status=" + status + " limit=" + limitCode + " serverRetryMs=" + serverDelay + " delayMs=" + Math.max(0, retryAt - MonotonicTime.nowMillis()));
 		StructuredDiagnostics.decision("party-network", "retry",
-			"attempt=" + failures + " status=" + status + " limit=" + limitCode + " serverRetryMs=" + serverDelay);
+			"attempt=" + failures + " stage=" + stage + " status=" + status + " limit=" + limitCode + " serverRetryMs=" + serverDelay);
 	}
 
 	private void scheduleRetry() {
@@ -437,16 +477,19 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 			try {
 				JsonObject root = JsonParser.parseString(value).getAsJsonObject();
 				String type = root.get("type").getAsString();
+				if (expanding && !"welcome".equals(type)) return;
 				if ("welcome".equals(type)) {
+                    Context welcomeContext=context;
+                    if(welcomeContext==null)return;
 					JsonArray tags = root.getAsJsonArray("roster");
-					if (tags == null || tags.size() != desired.roster().size()) {
+					if (tags == null || tags.size() != welcomeContext.roster().size()) {
 						rejectWelcome("size");
 						return;
 					}
 					Map<String, String> next = new HashMap<>();
 					for (int index = 0; index < tags.size(); index++) {
 						String tag = tags.get(index).getAsString();
-						if (tag.length() < 32 || next.put(tag, desired.roster().get(index)) != null) {
+						if (tag.length() < 32 || next.put(tag, welcomeContext.roster().get(index)) != null) {
 							rejectWelcome("tag");
 							return;
 						}
@@ -458,12 +501,17 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
 					}
 					coordination = root.has("features") && root.getAsJsonArray("features").asList().stream()
                         .anyMatch(feature -> "hotspots-v1".equals(feature.getAsString()));
+                    expanding=false;
+                    expandable=coordination && root.getAsJsonArray("features").asList().stream().anyMatch(f->"roster-expand-v1".equals(f.getAsString()));
+                    explicitEnd=coordination && root.getAsJsonArray("features").asList().stream().anyMatch(f->"visit-ended-v1".equals(f.getAsString()));
+                    preferenceSupported = coordination && root.getAsJsonArray("features").asList().stream().anyMatch(f -> "hotspot-preferences-v1".equals(f.getAsString()));
+                    sharedPreference = root.get("hotspotPreference");
                     roomSparklings = root.has("features") && root.getAsJsonArray("features").asList().stream()
                         .anyMatch(feature -> "room-sparklings-v1".equals(feature.getAsString()));
                     runSync = root.has("features") && root.getAsJsonArray("features").asList().stream().anyMatch(f -> "run-reconciliation-v1".equals(f.getAsString()));
                     completion = runSync && root.getAsJsonArray("features").asList().stream().anyMatch(f -> "critter-completion-v1".equals(f.getAsString()));
                     efficient = runSync && root.getAsJsonArray("features").asList().stream().anyMatch(f -> "efficient-transport-v1".equals(f.getAsString()));
-                    if(runSync)connectionId=root.get("connectionId").getAsString();
+                    if(runSync)activeConnectionId=connectionId=root.get("connectionId").getAsString();
                     mapping = Map.copyOf(next);
 					ready(attempt, mapping, roomSparklings);
 					return;
@@ -502,7 +550,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
                 }
                 if ("presence".equals(type)) {
                     JsonArray members = root.getAsJsonArray("members");
-                    if (members == null || members.size() > desired.roster().size()) return;
+                    if (members == null || members.size() > context.roster().size()) return;
                     var players = new java.util.HashSet<String>();
                     for (var member : members) {
                         String id = mapping.get(member.getAsString());
@@ -516,7 +564,7 @@ public final class RemotePartySyncProvider implements PartySyncNetworkProvider {
                     long retry=root.has("retrySeconds") ? Math.max(1,Math.min(86400,root.get("retrySeconds").getAsLong())) : 30;
                     String reason = ConnectionNotices.limitCode(root.has("reason") ? root.get("reason").getAsString() : "");
                     failed(attempt,new dev.serko.safariutils.api.ServiceRequestException("Party coordination unavailable",
-                        "storage-budget".equals(reason) ? 429 : 503,retry,reason));
+                        "storage-budget".equals(reason) ? 429 : 503,retry,reason), "room-coordination");
                     return;
                 }
                 if ("hotspots".equals(type) && (coordination || runSync)) {

@@ -6,6 +6,7 @@ import java.util.*;
 /** Shared hotspot allocation: fewest retained hotspots, UUID hash tie-break, shared report window. */
 public final class HotspotAllocation {
     private final Map<String, SafariBiome> reports = new LinkedHashMap<>();
+    private final Set<String> coordinated = new HashSet<>();
     private final Map<String, Integer> wins;
     private String self;
     private SafariBiome actual, finished;
@@ -22,10 +23,14 @@ public final class HotspotAllocation {
         self = name.toLowerCase(Locale.ROOT); actual = hotspot; started = now;
     }
     public void report(String name, SafariBiome biome, long now) {
+        report(name, biome, now, false);
+    }
+    public void report(String name, SafariBiome biome, long now, boolean tagged) {
         if (name == null || biome == null) return;
         String key = name.toLowerCase(Locale.ROOT);
         if (reports.size() >= 4 && !reports.containsKey(key)) return;
         if (firstReport == null) firstReport = now;
+        if (tagged) coordinated.add(key);
         reports.putIfAbsent(key, biome);
         if(finished!=null && !finalized.containsKey(key) && lateAt==0)lateAt=now+250;
     }
@@ -36,12 +41,12 @@ public final class HotspotAllocation {
                 Map<String,SafariBiome> fixed=new LinkedHashMap<>(finalized);
                 Set<String> attendees=new HashSet<>();members.forEach(n->attendees.add(n.toLowerCase(Locale.ROOT)));
                 List<String> late=reports.keySet().stream().filter(n->attendees.contains(n) && !fixed.containsKey(n)).sorted(
-                    Comparator.comparingInt((String n)->wins.getOrDefault(n,0)).thenComparingInt(n->identity(n,uuids).hashCode()).thenComparing(n->identity(n,uuids))).collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+                    claimOrder(wins, coordinated, uuids)).collect(java.util.stream.Collectors.toCollection(ArrayList::new));
                 for(SafariBiome biome:SafariBiome.values())if(!fixed.containsValue(biome)) {
                     String winner=late.stream().filter(n->reports.get(n)==biome).findFirst().orElse(null);
                     if(winner!=null) {fixed.put(winner,biome);late.remove(winner);wins.merge(winner,1,Integer::sum);}
                 }
-                late.sort(Comparator.comparingInt((String n)->identity(n,uuids).hashCode()).thenComparing(n->identity(n,uuids)));
+                late.sort(Comparator.comparingInt((String n)->wins.getOrDefault(n,0)).thenComparingInt(n->identity(n,uuids).hashCode()).thenComparing(n->identity(n,uuids)));
                 for(SafariBiome biome:SafariBiome.values())if(!fixed.containsValue(biome) && !late.isEmpty())fixed.put(late.removeFirst(),biome);
                 finalized=Map.copyOf(fixed);lateAt=0;
             }
@@ -54,11 +59,11 @@ public final class HotspotAllocation {
         names.add(self);
         boolean complete = names.size() >= expected && reports.keySet().containsAll(names);
         long elapsed = now - firstReport;
-        if (!complete && elapsed < 30000) return null;
+        if (names.size() < expected || !complete && elapsed < 30000) return null;
         Map<String, SafariBiome> known = new LinkedHashMap<>();
         reports.forEach((name, biome) -> { if (names.contains(name)) known.put(name, biome); });
         known.putIfAbsent(self, actual);
-        Map<String, SafariBiome> assignments = allocate(known, uuids, wins);
+        Map<String, SafariBiome> assignments = allocate(known, uuids, wins, coordinated);
         finalized = assignments;
         assignments.forEach((name, biome) -> {
             if (biome == known.get(name)) wins.merge(name, 1, Integer::sum);
@@ -71,12 +76,20 @@ public final class HotspotAllocation {
     }
     public static Map<String, SafariBiome> allocate(Map<String, SafariBiome> reports,
             Map<String, String> uuids, Map<String, Integer> wins) {
+        return allocate(reports, uuids, wins, Set.of());
+    }
+    private static Comparator<String> claimOrder(Map<String,Integer> wins, Set<String> clients, Map<String,String> uuids) {
+        return Comparator.comparingInt((String name) -> wins.getOrDefault(name, 0))
+            .thenComparing(name -> !clients.contains(name))
+            .thenComparing(name -> identity(name, uuids), Comparator.reverseOrder());
+    }
+    private static Map<String,SafariBiome> allocate(Map<String,SafariBiome> reports, Map<String,String> uuids,
+            Map<String,Integer> wins, Set<String> clients) {
         Map<String, SafariBiome> result = new LinkedHashMap<>();
         List<String> duplicates = new ArrayList<>();
         Comparator<String> identityOrder = Comparator.comparingInt((String name) -> identity(name, uuids).hashCode())
             .thenComparing(name -> identity(name, uuids));
-        Comparator<String> priority = Comparator.comparingInt((String name) -> wins.getOrDefault(name, 0))
-            .thenComparing(identityOrder);
+        Comparator<String> priority = claimOrder(wins, clients, uuids);
         for (SafariBiome biome : SafariBiome.values()) {
             List<String> holders = new ArrayList<>();
             reports.forEach((name, reported) -> { if (reported == biome) holders.add(name); });

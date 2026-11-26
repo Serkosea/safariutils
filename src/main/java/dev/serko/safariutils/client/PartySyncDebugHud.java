@@ -13,14 +13,14 @@ public final class PartySyncDebugHud implements HudElement {
     public static void serviceFailure(String reason) { serviceFailure = reason; }
     private static final int CYAN=0xFF65DDEC, GREEN=0xFF77E59E, GOLD=0xFFFFCE63, RED=0xFFFF7777;
     private static final int LABEL=0xFF9CCBD9, TEXT=0xFFF2F5FA;
-    private static final Set<String> receivedPeers = new LinkedHashSet<>();
+    private static String displayedFailure="";
     private static String assignments = "Outside Safari";
     private static boolean connectedState;
     private static Set<String> connectedPlayers = Set.of();
     private static Map<String, String> rosterNames = Map.of();
     private static final SyncActivityFeed feed = new SyncActivityFeed();
     private static final Map<String,int[]> previous = new LinkedHashMap<>();
-    private static String lastCompletionStatus="";
+    private static int reporters;
     private static String transport="Inactive", lobby="";
     private static long started;
     private static int rosterCount;
@@ -46,22 +46,22 @@ public final class PartySyncDebugHud implements HudElement {
         if (!rosterNames.equals(names)) { rosterNames = Map.copyOf(names); dirty = true; }
         boolean ready=connected && dev.serko.safariutils.api.PartySyncNetworks.replayReady();
         if (ready) serviceFailure="";
-        String nextTransport=ready ? "Connected \u00b7 Sync ready" : connected ? "Synchronizing \u00b7 Not ready" : engaged ? "Unavailable / retrying" : "Inactive";
-        if (!connected && engaged && !serviceFailure.isEmpty()) nextTransport=serviceFailure;
+        String failure=engaged && !connected ? serviceFailure : "";
+        String nextTransport=ready ? "Ready" : connected ? "Applying replay" : !engaged ? "Idle"
+            : failure.isEmpty() ? "Connecting" : "Disconnected";
         var party=PartyState.snapshot();
         String nextAssignments=PartyHotspotSync.statusText();
-        if (!nextTransport.equals(transport)) event("Connection: " + nextTransport, connected?GREEN:GOLD);
-        if (members != rosterCount || party.localLeader() != localLeader)
-            event("Party: " + members + " on roster · You are " + (party.localLeader()?"leader":"member"), CYAN);
-        if (!nextAssignments.equals(assignments)) event("Hotspots: " + nextAssignments,
-            PartyHotspotSync.conflicted()?RED:CYAN);
         var nextPlayers=dev.serko.safariutils.api.PartySyncNetworks.connectedPlayers();
+        int nextReporters=ready ? PartyCompletionSync.reporterCount() : 0;
+        if (!nextTransport.equals(transport) || !failure.equals(displayedFailure) || members!=rosterCount
+                || party.localLeader()!=localLeader || !assignments.equals(nextAssignments) || nextReporters!=reporters)
+            dirty=true;
         if (!nextPlayers.equals(connectedPlayers)) {
             connectedPlayers=Set.copyOf(nextPlayers);
-            event("Connected players: " + connectedNames(), connectedPlayers.isEmpty()?GOLD:GREEN);
+            dirty=true;
         }
-        String completionStatus=PartyCompletionSync.status()+" \u00b7 "+(dev.serko.safariutils.api.PartySyncNetworks.replayReady()?"Replay applied":"Awaiting replay");
-        if(!completionStatus.equals(lastCompletionStatus)) {event(completionStatus,CYAN);lastCompletionStatus=completionStatus;}
+        displayedFailure=failure;
+        reporters=nextReporters;
         transport=nextTransport; connectedState=ready;
         rosterCount=members; localLeader=party.localLeader(); assignments=nextAssignments;
 
@@ -72,7 +72,7 @@ public final class PartySyncDebugHud implements HudElement {
     }
     public static void received(String player, String type, int[] values, boolean local) {
         if (!active()) return;
-        if (!local && receivedPeers.size() < 4 && receivedPeers.add(player)) dirty=true;
+
         String key=(local?"local:":"remote:")+player+":"+type;
         int[] old=previous.get(key);
         if (Arrays.equals(old,values)) return;
@@ -101,7 +101,7 @@ public final class PartySyncDebugHud implements HudElement {
             if ((caught&~previousCaught)!=0) changes.add("Caught "+PartySparklingDiscoveries.names(caught&~previousCaught));
         }
         else if(type.equals("U")) changes.add("Bird feeder progress updated");
-        if(changes.isEmpty()) changes.add("Snapshot accepted (no new objectives)");
+        if(changes.isEmpty()) return;
         String detail=String.join(", ",changes.subList(0,Math.min(3,changes.size())));
         if(changes.size()>3) detail+=" (+"+(changes.size()-3)+" fields)";
         event((local?"You":player)+": "+detail,local?GOLD:CYAN);
@@ -119,12 +119,12 @@ public final class PartySyncDebugHud implements HudElement {
         };
     }
     public static void resetVisit() {
-        feed.clear(); previous.clear(); receivedPeers.clear(); rosterNames = Map.of(); lobby=""; transport="Inactive";
+        feed.clear(); previous.clear(); displayedFailure=""; serviceFailure=""; reporters=0; rosterNames = Map.of(); lobby=""; transport="Inactive";
         assignments="Outside Safari"; connectedPlayers=Set.of(); connectedState=false; rosterCount=0; localLeader=false; cached=null; dirty=true;
         started=MonotonicTime.nowMillis();
     }
     private static String connectedNames() {
-        if (connectedPlayers.isEmpty()) return connectedState?"Awaiting confirmation":"None";
+        if (connectedPlayers.isEmpty()) return "Awaiting presence";
         var members=PartyState.snapshot().members();
         return connectedPlayers.stream().sorted().map(id -> members.stream()
             .filter(member -> member.uuid().equals(id.replace("-", "").toLowerCase(Locale.ROOT))).map(member -> member.name()).findFirst()
@@ -135,21 +135,29 @@ public final class PartySyncDebugHud implements HudElement {
         if(!active()) return null;
         if(!dirty && cached!=null) return cached;
         HudPanel panel=new HudPanel(); panel.title("PARTY SYNC",CYAN);
-        panel.pair("Connection",transport,LABEL,connectedState?GREEN:GOLD);
-        panel.pair("Safari lobby",lobby.isBlank()?"Outside Safari":lobby,LABEL,TEXT);
-        panel.pair("Party roster",rosterCount==0?"No active room":rosterCount+" player"+(rosterCount==1?"":"s")
-            +" · You are "+(localLeader?"leader":"member"),LABEL,TEXT);
-        panel.pair("Connected players",connectedNames(),LABEL,connectedPlayers.isEmpty()?GOLD:GREEN);
-        panel.pair("Received from",receivedPeers.isEmpty()?"No other players yet":String.join(", ",receivedPeers),LABEL,
-            receivedPeers.isEmpty()?GOLD:CYAN);
-        panel.pair("Hotspots",assignments,LABEL,PartyHotspotSync.conflicted()?RED:
-            SafariLocation.inside() && PartyHotspotSync.networkAuthority()?GREEN:GOLD);
-        panel.blank();
-        panel.line("ACTIVITY · oldest → newest",CYAN);
-        panel.line("Gold: you · Cyan: shared · Green: success",LABEL);
+        panel.pair("Status",transport,LABEL,connectedState?GREEN:displayedFailure.isEmpty()?GOLD:RED);
+        if(!displayedFailure.isEmpty()) {
+            String line="";
+            for(String word:displayedFailure.split(" ")) {
+                if(!line.isEmpty() && (line.length()+word.length()>42)) { panel.line(line,RED); line=""; }
+                line=line.isEmpty()?word:line+" "+word;
+            }
+            if(!line.isEmpty())panel.line(line,RED);
+        }
+        if(SafariLocation.inside()) {
+            panel.pair("Lobby",lobby+(localLeader?"  \u00b7  Leader":""),LABEL,TEXT);
+            if(rosterCount>0) {
+                String count=connectedPlayers.size()+"/"+rosterCount;
+                panel.pair("Connected "+count,connectedNames(),LABEL,connectedPlayers.isEmpty()?LABEL:GREEN);
+            }
+            if(rosterCount>1)panel.pair("Hotspots",assignments,LABEL,PartyHotspotSync.conflicted()?RED:
+                PartyHotspotSync.networkAuthority()?GREEN:GOLD);
+            if(reporters>0)panel.pair("Completion reporters",Integer.toString(reporters),LABEL,TEXT);
+        }
         var entries=feed.entries();
-        if(entries.isEmpty()) panel.line("Waiting for sync activity",TEXT);
-        for(var entry:entries) {
+        if(!entries.isEmpty()) { panel.blank(); panel.line("Recent activity",LABEL); }
+        for(int i=entries.size()-1;i>=Math.max(0,entries.size()-5);i--) {
+            var entry=entries.get(i);
             long seconds=Math.max(0,entry.time()/1000);
             panel.line(net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT,"%02d:%02d  ",seconds/60,seconds%60))
                 .withColor(LABEL).append(net.minecraft.network.chat.Component.literal(entry.text()).withColor(entry.colour())));

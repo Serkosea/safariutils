@@ -268,9 +268,19 @@ public final class RecatchSpots {
 		while (iterator.hasNext()) {
 			Map.Entry<UUID, Pin> entry = iterator.next();
 			Pin pin = entry.getValue();
-			if (now - pin.pinnedAt() <= HOLD_MILLIS) continue;
+			// A resolved breakout only needs a short bridge to the replacement body.
+            // Its old UUID can never rejoin when the server spawns a new entity.
+            long age = now - pin.pinnedAt();
+            if (age < 3_000) continue;
+            if (age < RESOLVED_TRANSITION_MILLIS) {
+                var player = net.minecraft.client.Minecraft.getInstance().player;
+                if (player == null || player.position().distanceToSqr(pin.box().getCenter()) > 48 * 48
+                    || CritterEntities.all().stream().anyMatch(sighting -> sighting.mob() != null
+                        && !CritterEntities.isCaptureScaffolding(sighting)
+                        && sighting.mob().getBoundingBox().intersects(pin.box()))) continue;
+            }
 			DebugLog.line("RECATCH", "TIMEOUT " + pin.critter().name() + " id="
-				+ shortId(entry.getKey()) + " held " + HOLD_MILLIS + "ms unresolved");
+				+ shortId(entry.getKey()) + " held " + age + "ms without rejoin");
 			escapedPins.remove(entry.getKey());
 			iterator.remove();
 			removed = true;
@@ -374,6 +384,16 @@ public final class RecatchSpots {
 		presentation.box = updated;
 		MarkerRegistry.invalidate();
 	}
+
+    /** A live ambiguous body replaces overlapping visual holds without claiming their pity. */
+    static void retireOverlappingHolds(Critter species, AABB liveBox) {
+        boolean changed = pins.entrySet().removeIf(entry -> {
+            Pin pin = entry.getValue();
+            return pin.critter().equals(species) && liveBox.inflate(0.25).intersects(pin.box())
+                && escapedPins.remove(entry.getKey());
+        });
+        if (changed) MarkerRegistry.invalidate();
+    }
 
 	/** Records the final body-owned pin location once, when that body leaves the scan. */
 	static void freezeIdentityAnchor(long attemptId, UUID entityId) {

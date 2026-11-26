@@ -644,6 +644,7 @@ public final class CritterState {
 	/** Globally minimizes each same-species batch so one body cannot satisfy two breakouts. */
 	private static void matchFreshBodies(List<BodyObservation> fresh, long now) {
 		Set<Integer> claimedBodies = new HashSet<>();
+		Set<Integer> ambiguousBodies = new HashSet<>();
 		Map<Critter, List<Integer>> rowsBySpecies = new LinkedHashMap<>();
 		for (int index = 0; index < fresh.size(); index++) {
 			rowsBySpecies.computeIfAbsent(fresh.get(index).critter(), ignored -> new ArrayList<>()).add(index);
@@ -695,11 +696,23 @@ public final class CritterState {
 			// let assignment order manufacture identity among multiple returning peers.
 			for (int row = 0; row < assignment.length; row++) {
 				int column = assignment[row];
-				if (column < 0 || attempts.get(candidates.get(column).activeAttempt).outcome != Outcome.BREAKOUT) continue;
+				if (column < 0 || singleton) continue;
+                Vec3 center = fresh.get(rows.get(row)).box().getCenter();
+                boolean resolvedCandidate = logicals.values().stream().anyMatch(peer ->
+                    peer.activeAttempt == 0L && !peer.visible && peer.life == Life.BREAKOUT
+                    && peer.critter.equals(speciesRows.getKey()) && peer.pity > 0
+                    && (now - peer.seenAt <= FORM_REKEY_MILLIS || stationaryHideonBreakout(peer))
+                    && peer.box.getCenter().distanceToSqr(center) <= FORM_REKEY_DISTANCE_SQ);
 				int bodies = 0, identities = 0;
 				for (double distance : distances[row]) if (distance <= REAPPEAR_DISTANCE_SQ) identities++;
 				for (double[] distancesForBody : distances) if (distancesForBody[column] <= REAPPEAR_DISTANCE_SQ) bodies++;
-				if (bodies != 1 || identities != 1) assignment[row] = -1;
+				if (resolvedCandidate || identities > 1 && bodies != identities
+                    || attempts.get(candidates.get(column).activeAttempt).outcome == Outcome.BREAKOUT
+                        && (bodies != 1 || identities != 1)) {
+                    assignment[row] = -1;
+                    ambiguousBodies.add(rows.get(row));
+                    RecatchSpots.retireOverlappingHolds(speciesRows.getKey(), fresh.get(rows.get(row)).box());
+                }
 			}
 			StructuredDiagnostics.capturePairing("breakout", distances,
 				singleton ? Double.POSITIVE_INFINITY : REAPPEAR_DISTANCE_SQ,
@@ -720,7 +733,7 @@ public final class CritterState {
 					+ " matched=" + matched);
 			}
 		}
-		matchResolvedBodyForms(fresh, claimedBodies, now);
+		matchResolvedBodyForms(fresh, claimedBodies, ambiguousBodies, now);
 		for (int index = 0; index < fresh.size(); index++) {
 			if (claimedBodies.contains(index)) continue;
 			BodyObservation sighting = fresh.get(index);
@@ -741,10 +754,10 @@ public final class CritterState {
 	 * candidate in both directions; other species keep the short form-change window.
 	 */
 	private static void matchResolvedBodyForms(List<BodyObservation> fresh,
-			Set<Integer> claimedBodies, long now) {
+			Set<Integer> claimedBodies, Set<Integer> ambiguousBodies, long now) {
 		Map<Critter, List<Integer>> rowsBySpecies = new LinkedHashMap<>();
 		for (int index = 0; index < fresh.size(); index++) {
-			if (!claimedBodies.contains(index)) {
+			if (!claimedBodies.contains(index) && !ambiguousBodies.contains(index)) {
 				rowsBySpecies.computeIfAbsent(fresh.get(index).critter(), ignored -> new ArrayList<>())
 					.add(index);
 			}

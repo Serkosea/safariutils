@@ -35,8 +35,8 @@ final class ConnectionNotices {
     static String limitCode(String code) {
         return switch (code == null ? "" : code) {
             case "sync-reconnect", "sync-concurrent", "sync-global", "sync-cooldown",
-                 "upstream-account", "ingress-rate", "service-rate", "client-rate",
-                 "auth-rate", "auth-account-rate", "service-burst", "storage-budget" -> code;
+                 "upstream-account", "lookup-concurrent", "lookup-window", "sync-room-full", "ingress-rate", "service-rate", "client-rate",
+                 "auth-rate", "auth-account-rate", "service-burst", "burst-challenge", "burst-session", "burst-sync", "burst-data", "storage-budget" -> code;
             default -> "unspecified";
         };
     }
@@ -46,6 +46,9 @@ final class ConnectionNotices {
             case "sync-reconnect" -> "too many recent connection attempts";
             case "sync-concurrent" -> "your account still has the maximum active connections";
             case "sync-global" -> "the service has reached its active connection limit";
+            case "sync-room-full" -> "this Safari lobby has reached its connection limit";
+            case "lookup-window" -> "your player lookup allowance for this minute was reached";
+            case "lookup-concurrent" -> "too many player lookups are already running for your account";
             case "sync-cooldown" -> "temporary cooldown after repeated connection rejections";
             case "upstream-account" -> "your account's player-lookup request limit was reached";
             case "ingress-rate" -> "too many recent requests from your network";
@@ -53,6 +56,10 @@ final class ConnectionNotices {
             case "auth-rate" -> "too many recent authentication requests from your network";
             case "auth-account-rate" -> "too many recent authentication requests from your account";
             case "service-rate", "service-burst" -> "the service's short-term request limit was reached";
+            case "burst-challenge" -> "the service authentication challenge limit was reached";
+            case "burst-session" -> "the service session creation limit was reached";
+            case "burst-sync" -> "the service party-sync admission limit was reached";
+            case "burst-data" -> "the service lookup request limit was reached";
             case "storage-budget" -> "the service's storage allowance was reached";
             default -> "request limit reached; server did not specify which limit";
         };
@@ -62,6 +69,7 @@ final class ConnectionNotices {
     static String closedReason(int status, String reason) {
         if (status == 1008 && "message rate exceeded".equals(reason)) return "too many messages on this connection. Retrying automatically after the message limit.";
         if (status == 1008 && "session renewal rejected".equals(reason)) return reason(401, null);
+        if (status == 1008 && "lease expired".equals(reason)) return "the connection lease expired. Reconnecting.";
         if (status == 1013 && "storage-budget".equals(reason)) return limited(reason);
         if (status == 1013) return reason(503, null);
         if (status == 1011) return "server connection error. Retrying automatically.";

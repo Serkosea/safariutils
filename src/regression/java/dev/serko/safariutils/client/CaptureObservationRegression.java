@@ -154,7 +154,7 @@ public final class CaptureObservationRegression {
 				} else {
 					check(logical(returned).id() != identity && logical(returned).pity() == 0,
 						"distant or ambiguous return cannot inherit settled pity"); checks++;
-					check(RecatchSpots.snapshot(true, java.util.Set.of()).isPinned(old), "unproven return cannot retire hold"); checks++;
+					check(RecatchSpots.snapshot(true, java.util.Set.of()).isPinned(old) == (scenario == 1), "only a distant return needs a separate visual hold"); checks++;
 				}
 			}
 		} finally { CritterState.onVisitStarted(); RecatchSpots.clear(); }

@@ -52,12 +52,13 @@ public final class FloorDrops {
 	private static int ticks;
     private static final FloorDropPattern pattern = new FloorDropPattern();
     private static final Map<BlockPos, Integer> patternIds = new HashMap<>();
+    private static final FloorDropPattern visiblePattern = new FloorDropPattern();
     private static int loggedCandidates = -1;
 
     static FloorDropPattern.Kind content(BlockPos pos) {
-        if (SafeMode.floorDropContents()) return FloorDropPattern.Kind.UNKNOWN;
+        if (SafeMode.floorDropContents() && !confirmedVisible.contains(pos)) return FloorDropPattern.Kind.UNKNOWN;
         Integer id = patternIds.get(pos);
-        return id == null ? FloorDropPattern.Kind.UNKNOWN : pattern.kind(id);
+        return id == null ? FloorDropPattern.Kind.UNKNOWN : SafeMode.floorDropContents() ? visiblePattern.pickupDerivedKind(id) : pattern.kind(id);
     }
 	private static String preparedLobby;
 
@@ -207,13 +208,14 @@ public final class FloorDrops {
 				.map(Map.Entry::getKey)
 				// Drop positions sit against the floor; checking above the block avoids
 				// the floor itself occluding an otherwise visible empty candidate.
-				.filter(pos -> !strings.containsKey(pos))
+				.filter(pos -> !strings.containsKey(pos) && !pending.containsKey(pos))
 				.filter(VisibilityCheck::canInspectCandidate)
 				.toList();
 			confirmed.keySet().removeAll(visiblyGone);
 			completed.addAll(visiblyGone);
 		} else {
-			confirmed.values().removeIf(seen -> now - seen > HOLD_MILLIS);
+			confirmed.entrySet().removeIf(entry -> !pending.containsKey(entry.getKey())
+                && !strings.containsKey(entry.getKey()) && now - entry.getValue() > HOLD_MILLIS);
 		}
 	}
 
@@ -249,7 +251,13 @@ public final class FloorDrops {
 			DebugLog.line("FLOOR", "SHARD " + shard.critter().name() + " x" + shard.amount());
 		}
 
-		if (pending.isEmpty()) return;
+		long now = System.currentTimeMillis();
+        pending.values().removeIf(clicked -> now - clicked > PENDING_MILLIS);
+        if (pending.size() != 1) {
+            // An acknowledgement cannot identify which overlapping click succeeded.
+            pending.clear();
+            return;
+        }
 
 		Iterator<Map.Entry<BlockPos, Long>> it = pending.entrySet().iterator();
 		if (!it.hasNext()) return;
@@ -261,6 +269,8 @@ public final class FloorDrops {
             FloorDropPattern.Kind actual = FloorDropPattern.Kind.reward(line);
             // Only a single fresh interaction can constrain the model; ambiguous replies remain research-only.
             pattern.reward(patternId, actual);
+            visiblePattern.observe(patternId, confirmedBiome.get(confirmedPos));
+            visiblePattern.reward(patternId, actual);
             if (StructuredDiagnostics.enabled()) DebugLog.line("FLOOR_PATTERN", "pickup id=" + patternId
                 + " predicted=" + expected + " actual=" + actual + " candidates=" + pattern.candidateCount());
         }
@@ -315,15 +325,26 @@ public final class FloorDrops {
 				&& VisibilityCheck.canSeeSolidBlock(pos)) {
 				confirmedVisible.add(pos);
 			}
+			Integer id = patternIds.get(pos);
+			if (id != null && confirmedVisible.contains(pos)) visiblePattern.observe(id, biome);
 			result.add(pos);
 		}
 		return result;
 	}
 
-    static int knownCoinSupply() { return SafeMode.floorDropContents() ? -1 : pattern.coinSupply(); }
+    static int knownCoinSupply() { return SafeMode.floorDropContents() ? visiblePattern.pickupDerivedCoinSupply() : pattern.coinSupply(); }
     /** Unfiltered objective evidence: presentation settings must not hide unfinished work. */
     static boolean coinsRemain() {
-        if (knownCoinSupply() < 0) return true;
+        int supply = knownCoinSupply();
+        if (supply < 0) return true;
+        if (SafeMode.floorDropContents()) {
+            int cleared = 0;
+            for (BlockPos pos : completed) {
+                Integer id = patternIds.get(pos);
+                if (id != null && visiblePattern.pickupDerivedKind(id) == FloorDropPattern.Kind.COIN) cleared++;
+            }
+            return cleared < supply;
+        }
         for (BlockPos pos : confirmed.keySet()) {
             if (confirmedBiome.get(pos) != dev.serko.safariutils.data.SafariBiome.HAUNTED) continue;
             var kind = content(pos);
@@ -409,7 +430,7 @@ public final class FloorDrops {
 	}
 
 	public static void reset() {
-        pattern.reset(); patternIds.clear(); loggedCandidates = -1;
+        visiblePattern.reset(); pattern.reset(); patternIds.clear(); loggedCandidates = -1;
         ScrappyFeeding.reset();
 		confirmed.clear();
 		detectedActual.clear();

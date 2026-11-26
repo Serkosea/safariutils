@@ -49,7 +49,8 @@ final class FloorDropPattern {
     private final NavigableMap<Integer, SafariBiome> observed = new TreeMap<>();
     private final Map<Integer, Kind> rewards = new HashMap<>();
     private List<Candidate> candidates = List.of();
-    private boolean dirty, invalid;
+    private boolean dirty, invalid, questPickup;
+    private int firstLoot = Integer.MAX_VALUE;
 
     void observe(int id, SafariBiome biome) {
         if (biome == null || invalid) return;
@@ -62,8 +63,19 @@ final class FloorDropPattern {
         if (kind == Kind.UNKNOWN || !observed.containsKey(id)) return;
         Kind old = rewards.putIfAbsent(id, kind);
         if (old != null && old != kind) invalid = true;
+        questPickup |= kind.biome != null;
+        if (kind == Kind.LOOT) firstLoot = Math.min(firstLoot, id);
         dirty = true;
     }
+    Kind pickupDerivedKind(int id) {
+        if (invalid || !observed.containsKey(id)) return Kind.UNKNOWN;
+        if (firstLoot != Integer.MAX_VALUE && id >= firstLoot) {
+            return questPickup && candidatesContradictEvidence() ? Kind.UNKNOWN : Kind.LOOT;
+        }
+        return questPickup ? kind(id) : Kind.UNKNOWN;
+    }
+    private boolean candidatesContradictEvidence() { refresh(); return candidates.isEmpty(); }
+    int pickupDerivedCoinSupply() { return questPickup ? coinSupply() : -1; }
     Kind kind(int id) {
         refresh();
         if (invalid || candidates.isEmpty() || !observed.containsKey(id)) return Kind.UNKNOWN;
@@ -84,12 +96,24 @@ final class FloorDropPattern {
         dirty = false;
         candidates = List.of();
         if (observed.isEmpty()) return;
-        int base = observed.firstKey();
+        Set<Integer> bases = new LinkedHashSet<>();
+        int first = observed.firstKey();
+        boolean signature = true;
         for (int ordinal = 0; ordinal < 20; ordinal++) {
             SafariBiome expected = ordinal < 6 ? SafariBiome.CAVERN : ordinal < 15 ? SafariBiome.FOREST : SafariBiome.HAUNTED;
-            if (observed.get(base + ordinal * 3) != expected) return;
+            if (observed.get(first + ordinal * 3) != expected) signature = false;
+        }
+        if (signature) bases.add(first);
+        else {
+            // A confirmed quest item anchors a late visit even when earlier drops are gone.
+            for (var reward : rewards.entrySet()) {
+                if (reward.getValue().biome == null) continue;
+                for (int ordinal = 0; ordinal < 31; ordinal++) bases.add(reward.getKey() - 3 * ordinal);
+                break;
+            }
         }
         List<Candidate> valid = new ArrayList<>();
+        for (int base : bases)
         for (int coins = 3; coins <= 6; coins++) for (int ice = 4; ice <= 5; ice++) {
             Candidate candidate = new Candidate(base, coins, ice);
             boolean fits = true;
@@ -102,9 +126,9 @@ final class FloorDropPattern {
         }
         // Five is the observed spawn rule. Keep four only as an evidence-driven
         // fallback: a confirmed non-ice reward at the boundary can overturn it.
-        if (valid.stream().anyMatch(candidate -> candidate.ice() == 5))
+        if (signature && valid.stream().anyMatch(candidate -> candidate.ice() == 5))
             valid.removeIf(candidate -> candidate.ice() != 5);
         candidates = List.copyOf(valid);
     }
-    void reset() { observed.clear(); rewards.clear(); candidates = List.of(); dirty = false; invalid = false; }
+    void reset() { observed.clear(); rewards.clear(); candidates = List.of(); dirty = false; invalid = false; questPickup = false; firstLoot = Integer.MAX_VALUE; }
 }

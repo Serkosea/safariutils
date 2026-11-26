@@ -16,6 +16,7 @@
     "GuiGraphicsExtractorAccessor",
     "GuiMixin",
     "EntityRendererMixin",
+    "HauntedPaintingMixin",
     "MobEffectFogEnvironmentMixin",
     "SoundEngineMixin",
     "ClientPacketListenerMixin"

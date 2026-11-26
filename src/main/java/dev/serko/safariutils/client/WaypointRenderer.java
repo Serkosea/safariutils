@@ -141,6 +141,7 @@ public final class WaypointRenderer {
 
     /** Fade only the path near the camera; the contact ring stays fully visible. */
     private static int capsulePathColour(int colour, Vec3 point, Vec3 camera) {
+        if(!ConfigManager.get().gameplay.predictionFade)return colour;
         double distanceSquared=point.distanceToSqr(camera);
         if(distanceSquared>=36) return colour;
         double progress=Math.clamp((Math.sqrt(distanceSquared)-.5)/5.5,0,1);

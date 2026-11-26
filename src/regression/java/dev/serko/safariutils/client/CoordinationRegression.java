@@ -67,8 +67,8 @@ public final class CoordinationRegression {
             var foreign = new dev.serko.safariutils.state.PartySnapshot.Member("Other",outsider);
             var solo = new dev.serko.safariutils.state.PartySnapshot(1,1,
                 dev.serko.safariutils.state.PartySnapshot.Status.SOLO,true,1,List.of(self),1,List.of(self,foreign));
-            var before = PartyHotspotSync.hello(solo,false,true);
-            var after = PartyHotspotSync.hello(solo,true,true);
+            var before = PartyHotspotSync.hello(solo,false,true,"Icy, Forest, Haunted, Cavern");
+            var after = PartyHotspotSync.hello(solo,true,true,"Icy, Forest, Haunted, Cavern");
             check(!before.get("ticketed").getAsBoolean() && after.get("ticketed").getAsBoolean(),
                 "disband blocked ticket activation hello");
             check(!after.get("leader").getAsBoolean(), "solo claimed old party leadership");
@@ -154,14 +154,14 @@ public final class CoordinationRegression {
         reports.put("fourth", SafariBiome.ICY);
         var ids = Map.of("first", "c", "second", "b", "fourth", "a");
         var allocated = HotspotAllocation.allocate(reports, ids);
-        check(allocated.get("fourth") == SafariBiome.ICY, "UUID hash chooses initial winner, not chat arrival");
+        check(allocated.get("first") == SafariBiome.ICY, "Higher UUID chooses initial winner, not chat arrival");
         check(allocated.get("third") == SafariBiome.FOREST, "uncontested hotspot retained");
-        check(allocated.get("second") == SafariBiome.CAVERN && allocated.get("first") == SafariBiome.HAUNTED,
+        check(allocated.get("fourth") == SafariBiome.CAVERN && allocated.get("second") == SafariBiome.HAUNTED,
             "losers use hash order and free biome enum order");
         var reversed = new LinkedHashMap<String, SafariBiome>();
         new ArrayList<>(reports.keySet()).reversed().forEach(n -> reversed.put(n, reports.get(n)));
         check(allocated.equals(HotspotAllocation.allocate(reversed, ids)), "arrival order does not change assignment");
-        check(HotspotAllocation.allocate(reports, ids, Map.of("fourth", 1)).get("second") == SafariBiome.ICY,
+        check(HotspotAllocation.allocate(reports, ids, Map.of("first", 1)).get("second") == SafariBiome.ICY,
             "fewer previous hotspot wins have priority");
         for (SafariBiome biome : SafariBiome.values()) {
             var solo = new HotspotAllocation(); solo.begin("Self", biome, 100);

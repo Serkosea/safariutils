@@ -1,7 +1,11 @@
 # Changelog
 
-## [3.8.5] - 2026-11-18
+## [3.9.0] - 2026-11-25
 
+- Added a ranked hotspot preference picker with Up and Down controls and clearer party-sync diagnostics.
+- Added a capsule prediction preview with customizable marker shapes, size, colors, and fade. Contact markers follow the viewing direction while staying aligned to terrain.
+- Added pickup-based floor-drop identification in Safe Mode and for late entries. Unconfirmed clicks preserve markers while waiting for pickup confirmation.
+- Added an Extra option to hide Haunted paintings and expanded Safari Manager chat filtering.
 - Improved grouped-critter capture, breakout, and marker ownership, including other players’ capsules and Sparkling alert deduplication.
 - Added `/safari importsparkling` and `Import Sparklings` to recover personal counts from archived Minecraft logs without changing run history. Missing duplicate detail can prompt an optional import.
 - `Check Run History` now also repairs supported inconsistencies; clarified settings import/export.

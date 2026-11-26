@@ -70,11 +70,12 @@ public final class PartyHotspotSync {
             .filter(m -> !m.uuid().isBlank()).findFirst().ifPresent(m -> reports.putIfAbsent(m.uuid(), biome));
     }
     public static void lockFallback(Map<String, SafariBiome> assignments, Map<String, String> identities) {
+        int previousSize = locked.size();
         assignments.forEach((name, biome) -> {
             String id = identities.get(name);
             if (id != null) locked.putIfAbsent(id.replace("-", "").toLowerCase(Locale.ROOT), biome);
         });
-        lastHello = "";
+        if (locked.size() != previousSize) lastHello = "";
     }
     public static void tick(List<String> members, BiConsumer<String, String> output, boolean reconnected) {
         sender = output; roster = List.copyOf(members);
@@ -87,9 +88,9 @@ public final class PartyHotspotSync {
         // Keep the frozen room and assignments during disbands, but do not coordinate
         // a different actual party against the previous party's room.
         boolean matchingParty = !party.inParty() || party.completeRoster()
-            && party.members().stream().allMatch(member -> roster.contains(member.uuid()));
+            && party.members().size() == roster.size() && party.members().stream().allMatch(member -> roster.contains(member.uuid()));
         long now = MonotonicTime.nowMillis();
-        JsonObject hello = hello(party, assignmentEligible(), ConfigManager.get().gameplay.assignHotspots);
+        JsonObject hello = hello(party, assignmentEligible(), ConfigManager.get().gameplay.assignHotspots, ConfigManager.get().gameplay.hotspotPreferenceOrder);
         String text = hello.toString();
         if (!text.equals(lastHello) || now >= nextHello) {
             output.accept("H", text); lastHello = text; nextHello = now + (PartySyncNetworks.runSyncSupported() && !PartySyncNetworks.replayReady()?2000:60000);
@@ -160,8 +161,18 @@ public final class PartyHotspotSync {
         } catch (RuntimeException malformed) { DebugLog.line("HOTSPOT/NETWORK", "invalid assignment snapshot ignored"); }
     }
     // The visit roster is deliberately frozen; a disband must not stop ticket-state updates.
-    static JsonObject hello(PartySnapshot party, boolean ticketed, boolean display) {
+    static JsonObject hello(PartySnapshot party, boolean ticketed, boolean display, String configured) {
         JsonObject hello = message("hello");
+        if (display && configured != null) {
+            var order = new java.util.LinkedHashSet<String>();
+            for (String name : configured.split(",", -1)) order.add(name.strip().toUpperCase(java.util.Locale.ROOT));
+            if (order.equals(java.util.Set.of("FOREST","CAVERN","ICY","HAUNTED")) && configured.split(",", -1).length == 4) {
+                JsonArray preference = new JsonArray();
+                order.forEach(preference::add);
+                hello.add("hotspotPreference", preference);
+            }
+        }
+        if (ticketed) StartingItemsWatch.addStartingGrant(hello);
         hello.addProperty("display", display);
         hello.addProperty("ticketed", ticketed);
         hello.addProperty("leader", announcementLeader(party));

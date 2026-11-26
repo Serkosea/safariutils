@@ -171,7 +171,11 @@ public final class ChatMessageFilter {
 	public static boolean shouldHide(Component message, boolean overlay) {
 		// These phrases are only Safari-specific while the player is in an active
 		// Safari instance. Do not suppress an unrelated server message elsewhere.
-		if (overlay || message == null || !SafariLocation.inside()) return false;
+		if (overlay || message == null) return false;
+        if (!SafariLocation.inside()) {
+            if ((ConfigManager.get().display.hiddenChatMessages & MANAGER)==0) return false;
+            return ChatParser.clean(message.getString()).equals(dev.serko.safariutils.session.SessionManager.LEADER_RUN_START);
+        }
 		int selected = ConfigManager.get().display.hiddenChatMessages;
 		if (selected == 0) return false;
 		for (String part : message.getString().split("\\r?\\n|\\\\n")) {

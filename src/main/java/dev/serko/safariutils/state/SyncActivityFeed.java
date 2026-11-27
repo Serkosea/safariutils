@@ -11,9 +11,10 @@ public final class SyncActivityFeed {
         String clean = text.replace('\r', ' ').replace('\n', ' ').replace('\t', ' ');
         if (clean.length() > 88) clean = clean.substring(0, 85) + "...";
         if (!entries.isEmpty() && entries.getLast().text().equals(clean)) return;
-        if (entries.size() == 8) entries.removeFirst();
+        if (entries.size() == 128) entries.removeFirst();
         entries.addLast(new Entry(time, clean, colour));
     }
+    public int size() { return entries.size(); }
     public List<Entry> entries() { return List.copyOf(entries); }
     public void clear() { entries.clear(); }
 }

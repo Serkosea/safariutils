@@ -116,9 +116,9 @@ public final class CoordinationRegression {
         }
         var activityFeed = new dev.serko.safariutils.state.SyncActivityFeed();
         for(int i=0;i<1000;i++) activityFeed.add(i,"Update "+i,0);
-        check(activityFeed.entries().size()==8 && activityFeed.entries().getFirst().text().equals("Update 992"), "debug feed bounded and chronological");
+        check(activityFeed.entries().size()==128 && activityFeed.entries().getFirst().text().equals("Update 872"), "debug feed bounded and chronological");
         activityFeed.add(1001,"Update 999",0);
-        check(activityFeed.entries().size()==8 && activityFeed.entries().getLast().time()==999, "duplicate heartbeat cannot flood feed");
+        check(activityFeed.entries().size()==128 && activityFeed.entries().getLast().time()==999, "duplicate heartbeat cannot flood feed");
         activityFeed.add(1002,"Line\nBreak",0);
         check(!activityFeed.entries().getLast().text().contains("\n"), "feed entries cannot inject extra rows");
         activityFeed.clear(); check(activityFeed.entries().isEmpty(), "visit reset clears debug history");

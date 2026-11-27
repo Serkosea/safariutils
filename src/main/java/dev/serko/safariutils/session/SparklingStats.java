@@ -224,6 +224,8 @@ public final class SparklingStats {
 	}
 
     /** Repeated scans and overlapping history raise lower bounds, never add them together. */
+    public static boolean logImportBlocked() { return writesBlocked; }
+
     public static int mergeLogCounts(Map<String,Integer> counts) {
         if (SessionManager.persistenceSuppressed() || writesBlocked) return 0;
         int added = 0;

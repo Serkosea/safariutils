@@ -34,7 +34,7 @@ final class SafariCommandHelp {
             return List.copyOf(entries);
         }
         entries.add(new Entry("/safari", "", "Settings"));
-        entries.add(new Entry("/safari importsparkling", "", "Recover known personal Sparkling counts from archived logs"));
+        entries.add(new Entry("/safari importsparkling", "[directory]", "Recover known personal Sparkling counts from archived logs"));
         entries.add(new Entry("/safari trading", "", "Ticket trading members and settings"));
         entries.add(new Entry("/safari gui", "", "Edit HUD positions"));
         entries.add(new Entry("/safari stats", "", "Stats, history, PBs, profit & collections"));

@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.9.1] - 2026-11-27
+
+- Improved Sparkling imports with a per-critter breakdown, including imports that add zero catches. Use `/safari importsparkling` with an instance directory to include archived logs from another installation.
+- Fixed Rockmite catch capsules appearing as mound waypoints and reduced false Sparkling markers when critters are close together.
+- Expanded the developer party-sync activity feed to show objective progress, biome reports and Sparkling discoveries and catches.
+
 ## [3.9.0] - 2026-11-25
 
 - Added a ranked hotspot preference picker with Up and Down controls and clearer party-sync diagnostics.

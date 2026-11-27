@@ -71,8 +71,10 @@ public final class PartySyncDebugHud implements HudElement {
         feed.add(MonotonicTime.nowMillis()-started,text,colour); dirty=true;
     }
     public static void received(String player, String type, int[] values, boolean local) {
+        received(player,type,values,local,false);
+    }
+    static void received(String player,String type,int[] values,boolean local,boolean restored) {
         if (!active()) return;
-
         String key=(local?"local:":"remote:")+player+":"+type;
         int[] old=previous.get(key);
         if (Arrays.equals(old,values)) return;
@@ -82,12 +84,19 @@ public final class PartySyncDebugHud implements HudElement {
             if (oldLength<=38 && values.length>38) old[38]=-1;
         }
         if (previous.size()>=32 && !previous.containsKey(key)) previous.remove(previous.keySet().iterator().next());
-        previous.put(key,values.clone());
+        int[] baseline=values.clone();
+        if (restored) {
+            // Replay omits stale inventories and substitutes the current feeder state.
+            for (int i : new int[]{10,11,12,17,18,19,20,21,22,38})
+                if(i<baseline.length) baseline[i]=old==null ? (i==17 || i==38 ? -1 : 0) : old[i];
+            values=baseline;
+        }
+        previous.put(key,baseline);
         List<String> changes=new ArrayList<>();
         if (type.equals("A")) {
             for(int i=0;i<values.length;i++) {
                 if(i==33 || i==37) continue;
-                boolean changed=old==null?(values[i]!=0 || i==38):old[i]!=values[i];
+                boolean changed=old==null?((i==17 || i==38 ? values[i]>0 : values[i]!=0)):old[i]!=values[i];
                 if(i==36) changed=old==null?(values[36]|values[37])!=0:old[36]!=values[36] || old[37]!=values[37];
                 if(!changed) continue;
                 String label=i<9?StartingItems.ORDERED.get(i).singular()+" found":aggregateLabel(i);
@@ -100,11 +109,32 @@ public final class PartySyncDebugHud implements HudElement {
             if ((found&~previousFound)!=0) changes.add("Found "+PartySparklingDiscoveries.names(found&~previousFound));
             if ((caught&~previousCaught)!=0) changes.add("Caught "+PartySparklingDiscoveries.names(caught&~previousCaught));
         }
-        else if(type.equals("U")) changes.add("Bird feeder progress updated");
+        else if(type.equals("U")) {
+            for(int i=0;i<values.length;i++)
+                if(old==null ? values[i]>0 : values[i]!=old[i])
+                    changes.add(aggregateLabel(13+i)+": "+values[i]);
+        }
         if(changes.isEmpty()) return;
-        String detail=String.join(", ",changes.subList(0,Math.min(3,changes.size())));
-        if(changes.size()>3) detail+=" (+"+(changes.size()-3)+" fields)";
-        event((local?"You":player)+": "+detail,local?GOLD:CYAN);
+        String prefix=(local?"You":player)+(restored?" · restored · ":" · ");
+        for(String change:changes) event(prefix+change,local?GOLD:CYAN);
+    }
+    private static final Map<String,CompletionSnapshot> completions=new HashMap<>();
+    static void completion(String reporter,CompletionSnapshot next,boolean local) {
+        if(!active() || next==null) return;
+        CompletionSnapshot prior=completions.put(reporter,next);
+        var species=dev.serko.safariutils.data.Critters.selectionOrder();
+        String player=local?"You":rosterNames.getOrDefault(reporter.replace("-",""),"Party member");
+        for(int i=0;i<species.size();i++) {
+            var changes=new ArrayList<String>();
+            int flags=next.value(i,0), old=prior==null?0:prior.value(i,0);
+            for(int bit=0;bit<3;bit++) if(((flags^old)&(1<<bit))!=0) {
+                String mode=switch(bit){case 0->"Unique";case 1->"Sparkling";default->"Full Clear";};
+                changes.add(mode+((flags&(1<<bit))!=0?" done":" open"));
+            }
+            for(int col=1;col<=2;col++) if(next.value(i,col)!=(prior==null?0:prior.value(i,col)))
+                changes.add(next.value(i,col)+(col==1?" seen":" caught"));
+            if(!changes.isEmpty()) event(player+" · "+species.get(i).name()+" · "+String.join(", ",changes),local?GOLD:CYAN);
+        }
     }
     private static String aggregateLabel(int index) {
         return switch(index) {
@@ -119,7 +149,7 @@ public final class PartySyncDebugHud implements HudElement {
         };
     }
     public static void resetVisit() {
-        feed.clear(); previous.clear(); displayedFailure=""; serviceFailure=""; reporters=0; rosterNames = Map.of(); lobby=""; transport="Inactive";
+        feed.clear(); completions.clear(); previous.clear(); displayedFailure=""; serviceFailure=""; reporters=0; rosterNames = Map.of(); lobby=""; transport="Inactive";
         assignments="Outside Safari"; connectedPlayers=Set.of(); connectedState=false; rosterCount=0; localLeader=false; cached=null; dirty=true;
         started=MonotonicTime.nowMillis();
     }
@@ -131,8 +161,18 @@ public final class PartySyncDebugHud implements HudElement {
             .orElse(rosterNames.getOrDefault(id.replace("-", "").toLowerCase(Locale.ROOT), "Party member")))
             .collect(java.util.stream.Collectors.joining(", "));
     }
+    private static long historyOpened;
+    private static int displayedPage;
     static HudPanel buildPanel() {
         if(!active()) return null;
+        // Keep five lines during play. Opening chat pages through this visit’s history.
+        boolean browsing=ClientCompat.screen() instanceof net.minecraft.client.gui.screens.ChatScreen;
+        long now=MonotonicTime.nowMillis();
+        if(!browsing) historyOpened=0;
+        else if(historyOpened==0) historyOpened=now;
+        int pages=Math.max(1,(feed.size()+4)/5);
+        int page=browsing ? (int)(((now-historyOpened)/3500)%pages) : 0;
+        if(page!=displayedPage){displayedPage=page;dirty=true;}
         if(!dirty && cached!=null) return cached;
         HudPanel panel=new HudPanel(); panel.title("PARTY SYNC",CYAN);
         panel.pair("Status",transport,LABEL,connectedState?GREEN:displayedFailure.isEmpty()?GOLD:RED);
@@ -155,8 +195,9 @@ public final class PartySyncDebugHud implements HudElement {
             if(reporters>0)panel.pair("Completion reporters",Integer.toString(reporters),LABEL,TEXT);
         }
         var entries=feed.entries();
-        if(!entries.isEmpty()) { panel.blank(); panel.line("Recent activity",LABEL); }
-        for(int i=entries.size()-1;i>=Math.max(0,entries.size()-5);i--) {
+        if(!entries.isEmpty()) { panel.blank(); panel.line(page==0?"Recent activity":"Earlier activity · "+(page+1)+"/"+pages,LABEL); }
+        int end=entries.size()-5*page;
+        for(int i=end-1;i>=Math.max(0,end-5);i--) {
             var entry=entries.get(i);
             long seconds=Math.max(0,entry.time()/1000);
             panel.line(net.minecraft.network.chat.Component.literal(String.format(Locale.ROOT,"%02d:%02d  ",seconds/60,seconds%60))

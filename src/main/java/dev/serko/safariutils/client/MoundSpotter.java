@@ -443,13 +443,19 @@ public final class MoundSpotter {
 		if (client.level == null || client.player == null) return found;
 
 		List<Entity> candidates = new ArrayList<>();
+        List<Vec3> capsuleModels = new ArrayList<>();
         List<Entity> texturedMounds = new ArrayList<>();
 		List<Entity> creatures = new ArrayList<>();
 		Set<BlockPos> catalog = StaticWaypointCatalog.mounds();
 		for (Entity entity : WorldEntities.current()) {
 			if (!inCavern(entity.getX(), entity.getY(), entity.getZ())) continue;
 			if (!EntityTypeIds.is(entity, "interaction")) {
-                if (EntityTypeIds.is(entity, "item_display")) {
+                if (entity instanceof net.minecraft.world.entity.Display.ItemDisplay display) {
+                    if (display.getItemStack().is(net.minecraft.world.item.Items.PAPER) || CritterCapsules.matches(display)) {
+                        capsuleModels.add(display.position());
+                        continue;
+                    }
+                    if (display.getPosRotInterpolationDuration() != 0) continue;
                     var appearance = SparklingTextures.identify(entity);
                     if (appearance != null && appearance.mound() && entity.getY() <= MAX_Y
                         && isDry(client, entity.blockPosition())) texturedMounds.add(entity);
@@ -479,6 +485,7 @@ public final class MoundSpotter {
         // Appearance identity is authoritative and is not subject to the interaction
         // hitbox's smaller tracking range or size/centering heuristics.
         for (Entity texture : texturedMounds) {
+            if (onCapsule(texture.position(), capsuleModels)) continue;
             BlockPos added = mergeTextureMound(texture.position(), catalog, exactMounds);
             if (added != null) found.add(added);
         }
@@ -491,6 +498,7 @@ public final class MoundSpotter {
 			candidate -> nearestCatalogDistance(candidate.blockPosition(), catalog)));
 		Set<BlockPos> claimedCatalogPositions = new HashSet<>(texturePositions);
 		for (Entity candidate : candidates) {
+            if (onCapsule(candidate.position(), capsuleModels)) continue;
             if (coveredByTexture(candidate.position(), catalog, exactMounds, texturePositions)) continue;
 			// Fish and other creatures can carry a mound-sized interaction box. A
 			// learned position normally strengthens only the location match. An exact,
@@ -511,6 +519,11 @@ public final class MoundSpotter {
 
 		return found;
 	}
+
+    static boolean onCapsule(Vec3 position, List<Vec3> models) {
+        for (Vec3 model : models) if (position.distanceToSqr(model) <= .0625) return true;
+        return false;
+    }
 
     /** A weaker interaction must not be redirected to a neighbouring catalog slot. */
     static boolean coveredByTexture(Vec3 interaction, Set<BlockPos> catalog,

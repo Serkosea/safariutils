@@ -19,7 +19,14 @@ public final class SparklingLogImportRegression {
    if(result.counts().getOrDefault("Flitter",0)!=2) throw new AssertionError("only unique personal main-server events: "+result);
    if(!SparklingLogImport.scan(root,"Different").counts().isEmpty())throw new AssertionError("account isolation");
    if(!SparklingLogImport.scan(root,"Tester").counts().equals(result.counts()))throw new AssertionError("repeat scan stability");
-   return 3;
+   Path extra=Files.createDirectory(root.resolve("logs"));
+   Path archive=extra.resolve("2026-11-18-4.log");
+   try {
+    Files.writeString(archive,header+catchLine+catchLine.replace("12:01:00","12:05:00"));
+    var both=SparklingLogImport.scan(java.util.List.of(root,SparklingLogImport.archiveFolder(root.toString()),extra),"Tester");
+    if(both.counts().get("Flitter")!=3 || both.files()!=4)throw new AssertionError("combined archives: "+both);
+   } finally {Files.deleteIfExists(archive);Files.delete(extra);}
+   return 4;
   } finally {try(var files=Files.list(root)){for(Path f:files.toList())Files.delete(f);}Files.delete(root);}
  }
 }

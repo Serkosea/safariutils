@@ -46,7 +46,12 @@ public final class PartySparklingDiscoveries {
         SparklingWatch.remoteCaught(state.caughtMask() & ~previouslyCaught);
 		// Species-only remote catch masks cannot erase individually observed local bodies.
 		long added = state.active() & ~before;
-		// tick() presents new shared discoveries without rebroadcasting Found chat.
+		if(room && PartySyncDebugHud.enabled()) {
+            long newCaught=state.caughtMask() & ~previouslyCaught;
+            if(added!=0) PartySyncDebugHud.event("Room · Sparkling found · "+names(added),0xFF65DDEC);
+            if(newCaught!=0) PartySyncDebugHud.event("Room · Sparkling caught · "+names(newCaught),0xFF77E59E);
+        }
+        // tick() presents new shared discoveries without rebroadcasting Found chat.
 		if (before != state.active()) StructuredDiagnostics.decision("party-sparkling", "received",
 			"active=" + Long.bitCount(state.active()) + " added=" + Long.bitCount(added));
 		return true;

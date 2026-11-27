@@ -53,9 +53,12 @@ public final class ParticleDiagnostics {
 	/** Requires several matching packets around the same plausible loaded critter. */
 	private static void observeSparklingPattern(Vec3 position) {
 		CritterEntities.Sighting nearest = null;
+		boolean knownEmitterNearby = false;
 		double nearestSq = SPARKLING_ASSOCIATION_DISTANCE_SQ;
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
 			double distanceSq = sighting.body().position().distanceToSqr(position);
+			if (distanceSq < SPARKLING_ASSOCIATION_DISTANCE_SQ
+					&& (sighting.sparkling() || !sighting.textureIds().isEmpty())) knownEmitterNearby = true;
 			if (distanceSq >= nearestSq) continue;
 			nearestSq = distanceSq;
 			nearest = sighting;
@@ -63,6 +66,10 @@ public final class ParticleDiagnostics {
 		// Do not redirect a capsule's particles onto the next-nearest real critter.
 		if (nearest == null || CritterEntities.isRemoteCaptureLabel(nearest)
 				|| CritterEntities.isCaptureScaffolding(nearest)) return;
+
+		// A particle near an independently identified Sparkling cannot establish another
+		// Sparkling on an ordinary neighbour, even when that neighbour is closer.
+		if (knownEmitterNearby && !nearest.sparkling() && nearest.textureIds().isEmpty()) return;
 
 		// The named stand is the stable identity we detected first. A mob can pair a
 		// scan later, which must not reset accumulated particle evidence merely because

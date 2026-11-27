@@ -57,7 +57,9 @@ public final class SafariCommands {
 				TicketTradingScreen.open();
 				return 1;
 			}))
-			.then(ClientCommands.literal("importsparkling").executes(ctx -> SparklingLogImport.start()))
+			.then(ClientCommands.literal("importsparkling").executes(ctx -> SparklingLogImport.start())
+                .then(ClientCommands.argument("directory", com.mojang.brigadier.arguments.StringArgumentType.greedyString())
+                    .executes(ctx -> SparklingLogImport.start(com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "directory")))))
 			.then(statsRoot())
 			.then(ClientCommands.literal("profit").executes(ctx -> ProfitableCritters.show()));
 

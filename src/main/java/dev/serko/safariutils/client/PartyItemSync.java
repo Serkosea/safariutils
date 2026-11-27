@@ -705,7 +705,10 @@ public final class PartyItemSync implements PartyItemSyncProvider {
                 if(values.length>38)values[38]=0;
                 values[17]=feederType;values[18]=feederCount;
                 State state=states.computeIfAbsent(member.uuid(),ignored->new State());
-                if(applyAggregate(state,values))state.reported=false;
+                if(applyAggregate(state,values)) {
+                    state.reported=false;
+                    PartySyncDebugHud.received(member.name(),"A",values,false,true);
+                }
             } catch(NumberFormatException ignored) { }
             return;
         }

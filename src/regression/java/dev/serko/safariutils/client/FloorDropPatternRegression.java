@@ -15,6 +15,8 @@ public final class FloorDropPatternRegression {
         var neighbour = new net.minecraft.core.BlockPos(-80, 59, 61);
         var moundBodies = new HashMap<net.minecraft.core.BlockPos, net.minecraft.world.phys.Vec3>();
         var texture = new net.minecraft.world.phys.Vec3(-79.5, 58, 61.5);
+        require(MoundSpotter.onCapsule(texture, java.util.List.of(texture.add(0, .125, 0)))
+            && !MoundSpotter.onCapsule(texture, java.util.List.of(texture.add(1, 0, 0))), "capsule copy versus adjacent mound"); checks++;
         require(mound.equals(MoundSpotter.mergeTextureMound(texture, Set.of(mound), moundBodies)), "texture-only mound must use canonical objective slot"); checks++;
         require(MoundSpotter.mergeTextureMound(texture, Set.of(mound, neighbour), moundBodies) == null && moundBodies.size() == 1, "duplicate visual cannot claim neighbouring slot"); checks++;
         moundBodies.clear();

@@ -22,15 +22,19 @@ final class PartyCompletionSync {
     }
     static void accept(PartySyncNetworkProvider.Message message) {
         if(run.isEmpty() || message.senderUuid().isEmpty())return;
-        remote.accept(message.senderUuid(),CompletionSnapshot.parse(message.payload(),run),message.ageMillis(),MonotonicTime.nowMillis());
+        var snapshot=CompletionSnapshot.parse(message.payload(),run);
+        if(snapshot==null || message.ageMillis()<0 || message.ageMillis()>=CompletionSnapshot.TTL)return;
+        remote.accept(message.senderUuid(),snapshot,message.ageMillis(),MonotonicTime.nowMillis());
+        if(PartySyncDebugHud.enabled())PartySyncDebugHud.completion(message.senderUuid(),snapshot,false);
     }
     static void tick(BiConsumer<String,String> sender,Predicate<Critter> localSources) {
         boolean ready=PartySyncNetworks.completionSupported();
         if(!ready) { wasReady=false;return; }
         if(!wasReady) {nextSample=nextRefresh=0;lastPayload="";} wasReady=true;
         long now=MonotonicTime.nowMillis();if(now<nextSample)return;nextSample=now+500;
-        String payload=BiomeCoordination.localCompletionSnapshot(localSources).payload();
-        if(!payload.equals(lastPayload) || now>=nextRefresh) { sender.accept("C",payload);lastPayload=payload;nextRefresh=now+20000; }
+        var snapshot=BiomeCoordination.localCompletionSnapshot(localSources);
+        String payload=snapshot.payload();
+        if(!payload.equals(lastPayload) || now>=nextRefresh) { sender.accept("C",payload);if(PartySyncDebugHud.enabled() && !payload.equals(lastPayload))PartySyncDebugHud.completion("You",snapshot,true);lastPayload=payload;nextRefresh=now+20000; }
     }
     static boolean completes(Critter critter,RunMode mode,boolean localCapture) {
         if(!PartySyncNetworks.replayReady() || SparklingWatch.outstandingCount(critter)>0)return false;

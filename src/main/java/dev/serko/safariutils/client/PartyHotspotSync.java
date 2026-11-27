@@ -62,7 +62,9 @@ public final class PartyHotspotSync {
     public static boolean networkAuthority() { return authority == Authority.BACKEND; }
     public static boolean sendBiome(String code) {
         if (!networkAuthority() || !PartySyncNetworks.coordinationSupported() || sender == null) return false;
-        sender.accept("B", code); return true;
+        sender.accept("B", code);
+        if (PartySyncDebugHud.enabled()) PartySyncDebugHud.event("You · biome report "+code,0xFFFFCE63);
+        return true;
     }
     public static void report(String name, SafariBiome biome) {
         if (biome == null) return;

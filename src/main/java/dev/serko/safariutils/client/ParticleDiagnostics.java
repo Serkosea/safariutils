@@ -58,7 +58,7 @@ public final class ParticleDiagnostics {
 		for (CritterEntities.Sighting sighting : CritterEntities.all()) {
 			double distanceSq = sighting.body().position().distanceToSqr(position);
 			if (distanceSq < SPARKLING_ASSOCIATION_DISTANCE_SQ
-					&& (sighting.sparkling() || !sighting.textureIds().isEmpty())) knownEmitterNearby = true;
+					&& sighting.sparkling()) knownEmitterNearby = true;
 			if (distanceSq >= nearestSq) continue;
 			nearestSq = distanceSq;
 			nearest = sighting;
@@ -69,7 +69,7 @@ public final class ParticleDiagnostics {
 
 		// A particle near an independently identified Sparkling cannot establish another
 		// Sparkling on an ordinary neighbour, even when that neighbour is closer.
-		if (knownEmitterNearby && !nearest.sparkling() && nearest.textureIds().isEmpty()) return;
+		if (knownEmitterNearby && !nearest.sparkling()) return;
 
 		// The named stand is the stable identity we detected first. A mob can pair a
 		// scan later, which must not reset accumulated particle evidence merely because
@@ -108,7 +108,7 @@ public final class ParticleDiagnostics {
 
 	static String source(CritterEntities.Sighting sighting) {
 		boolean named = sighting != null && sighting.sparkling();
-        if (sighting != null && !sighting.textureIds().isEmpty()) return confirms(sighting) ? "texture+particles" : "texture";
+        if (named && !sighting.textureIds().isEmpty()) return confirms(sighting) ? "texture+particles" : "texture";
 		boolean particles = confirms(sighting);
 		if (named && particles) return "name+particles";
 		return named ? "name" : particles ? "particles" : "none";

@@ -24,15 +24,10 @@ or copy it into component snapshots/artifacts. The local backend has moved to th
 Preserve caches during routine work. Future temporary work belongs under ignored `local/`,
 not a new root staging folder. Never put a key in tracked source, build metadata, or logs.
 
-## Website release updates
+## Public downloads
 
-The authoritative local website is now `../SerkoAddons/website/`, moved out of
-`private-api/serkosea-site/` and deployed to the existing Cloudflare Pages project `serkosea`.
-The copy under SerkoAddons' `components/SafariUtils/private-api/` is an obsolete
-v2.7.0 snapshot, not a deployment source. Never deploy the whole `private-api/`
-directory: it contains credentials. The website folder contains public static assets only.
-Update `safariutils/index.html` within the site folder after preparing release assets;
-publish GitHub downloads before deploying the site, and verify all six public links.
+Publish the six Normal and Extra jars on [GitHub Releases](https://github.com/Serkosea/safariutils/releases/).
+The legacy website redirects there. A mod release requires no site deployment.
 
 ## Ready-to-use artifacts
 
@@ -134,4 +129,4 @@ Shared rendering logic lives in common sources; only platform bindings belong in
 `src/26.3/java` or `src/compat-pre26.3/java`. Both are included in source provenance
 when applicable. Do not duplicate feature behavior to resolve version differences.
 
-Use the user-edited GitHub release notes as the wording authority. Preserve the Downloads section structure and wording; do not replace it with new prose or feature caveats. Keep website edition descriptions concise and general, and keep the limited-testing line limited to testing. In release notes only, put edition/version-specific qualifiers beside the relevant feature using inline code, for example `(EXTRA ONLY)` or `(26.2 ONLY)`. Keep website feature bullets general, without individual critter/item examples or edition tags. Update actual asset links for a new release; flag inconsistencies in user-edited notes instead of silently rewriting their download section.
+Use the user-edited GitHub release notes as the wording authority. Preserve the Downloads section, updating the six filenames for the new version. Keep edition-specific qualifiers beside the feature they apply to, for example `(EXTRA ONLY)`.
